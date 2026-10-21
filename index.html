@@ -1903,7 +1903,7 @@
                         const models = data.models.filter(m => m.supportedGenerationMethods.includes('generateContent') && m.name.includes('gemini'));
                         
                         // เรียงลำดับความสำคัญของ Model ที่ต้องการใช้
-                        const preferOrder = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                        const preferOrder = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
                         for (let pref of preferOrder) {
                             if (models.find(m => m.name.includes(pref))) {
                                 modelToUse = pref;
@@ -1920,7 +1920,7 @@
                 }
                 
                 // Fallback ตัวสุดท้ายถ้าการเช็ค API ล้มเหลว
-                if (!modelToUse) modelToUse = 'gemini-1.5-flash';
+                if (!modelToUse) modelToUse = 'gemini-3.8-flash';
                 localStorage.setItem('gemini_selected_model', modelToUse);
             }
 
@@ -1933,7 +1933,7 @@
             // 🟢 ระบบ Fallback: หาก Model ที่เลือกเกิด Error (เช่นโมเดลถูกถอด หรือไม่รองรับฟีเจอร์บางอย่าง) ให้ทดลองรุ่นอื่นๆ
             if (!response.ok && response.status !== 403 && response.status !== 401 && response.status !== 400) {
                 console.warn(`Model ${modelToUse} failed. Trying fallback models...`);
-                const fallbackModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro'];
+                const fallbackModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
                 
                 for (let fm of fallbackModels) {
                     if (fm === modelToUse) continue;
