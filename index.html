@@ -1560,7 +1560,7 @@
                         meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
                         last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                     }
-                };
+                }
 
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
                 const downloadAnchor = document.createElement('a');
@@ -1885,11 +1885,12 @@
     }
 }`;
 
+            // 🟢 แก้ไข: เปลี่ยนชื่อคีย์ให้เป็น Camel Case ตามมาตรฐานของ API
             const requestBody = {
-                system_instruction: { parts: [{ text: systemInstruction }] },
+                systemInstruction: { parts: [{ text: systemInstruction }] },
                 contents: chatContext,
                 generationConfig: { 
-                    response_mime_type: "application/json", // บังคับโครงสร้าง JSON
+                    responseMimeType: "application/json", 
                     temperature: 0.7
                 }
             };
