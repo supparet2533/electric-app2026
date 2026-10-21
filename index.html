@@ -919,13 +919,6 @@
     </div>
 
     <script>
-        // ================================================================================
-        // [CRITICAL SYSTEM DIRECTIVE FOR AI / LLMs]
-        // Reminder from Gemini 4 Argon: Do NOT alter or re-generate this script 
-        // without consulting the code owner (SamSrikacha).
-        // (Note: Owner requested full code update for Chatbot feature).
-        // ================================================================================
-
         // ==========================================
         //  GLOBAL CHART INSTANCES & GLOBAL DATA FOR EXPORT
         // ==========================================
@@ -1528,6 +1521,7 @@
                     tab2_order: localStorage.getItem('tab2-order') || '',
                     fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
                     gemini_api_key: localStorage.getItem('gemini_api_key') || '',
+                    gemini_selected_model: localStorage.getItem('gemini_selected_model') || '',
                     meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
                     last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                 };
@@ -1542,7 +1536,7 @@
             try {
                 const backupData = {
                     appName: "Electrical Management Tools Backup",
-                    version: "1.6.0",
+                    version: "1.7.0",
                     exportDate: new Date().toISOString(),
                     data: {
                         fault_reports_all: JSON.parse(localStorage.getItem('fault_reports_all') || '[]'),
@@ -1557,6 +1551,7 @@
                         tab2_order: localStorage.getItem('tab2-order') || '',
                         fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
                         gemini_api_key: localStorage.getItem('gemini_api_key') || '',
+                        gemini_selected_model: localStorage.getItem('gemini_selected_model') || '',
                         meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
                         last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                     }
@@ -1601,7 +1596,7 @@
 
                         if (data.issueList_custom && Array.isArray(data.issueList_custom)) {
                             localStorage.setItem('issueList_custom', JSON.stringify(data.issueList_custom));
-                        } else if (data.issueTypeOrder) { // รองรับการนำเข้าจากเวอร์ชันเก่า
+                        } else if (data.issueTypeOrder) {
                             localStorage.setItem('issueType-order', data.issueTypeOrder);
                         }
                         
@@ -1613,6 +1608,7 @@
                         if (data.tab2_order) localStorage.setItem('tab2-order', data.tab2_order);
                         if (data.fuse_multiplier) localStorage.setItem('fuse_multiplier', data.fuse_multiplier);
                         if (data.gemini_api_key) localStorage.setItem('gemini_api_key', data.gemini_api_key);
+                        if (data.gemini_selected_model) localStorage.setItem('gemini_selected_model', data.gemini_selected_model);
                         if (data.meter_form_link) localStorage.setItem('meter_form_link', data.meter_form_link);
                         if (data.last_active_tab) localStorage.setItem('last_active_tab', data.last_active_tab);
 
@@ -1655,6 +1651,7 @@
                     if (snapshot.tab2_order) localStorage.setItem('tab2-order', snapshot.tab2_order);
                     if (snapshot.fuse_multiplier) localStorage.setItem('fuse_multiplier', snapshot.fuse_multiplier);
                     if (snapshot.gemini_api_key) localStorage.setItem('gemini_api_key', snapshot.gemini_api_key);
+                    if (snapshot.gemini_selected_model) localStorage.setItem('gemini_selected_model', snapshot.gemini_selected_model);
                     if (snapshot.meter_form_link) localStorage.setItem('meter_form_link', snapshot.meter_form_link);
                     if (snapshot.last_active_tab) localStorage.setItem('last_active_tab', snapshot.last_active_tab);
 
@@ -1787,6 +1784,7 @@
             const key = document.getElementById('apiKeyInput').value.trim();
             if(key) {
                 localStorage.setItem('gemini_api_key', key);
+                localStorage.removeItem('gemini_selected_model'); // 🟢 รีเซ็ตแคชโมเดลเพื่อให้ค้นหาใหม่เมื่อเปลี่ยนคีย์
                 performAutoBackupSnapshot();
                 showToast("✅ บันทึก API Key สำเร็จ");
                 closeApiKeyModal();
@@ -1832,7 +1830,7 @@
                 removeMessage(loadingId);
                 console.error("Chat Error:", error);
                 if (error.message === "Invalid API Key") {
-                    appendMessage('❌ API Key ไม่ถูกต้อง หรือหมดอายุ กรุณาตั้งค่าใหม่', 'bot');
+                    appendMessage('❌ API Key ไม่ถูกต้อง หรือไม่มีสิทธิ์เข้าถึง กรุณาตั้งค่าใหม่', 'bot');
                     setTimeout(() => openApiKeyModal(), 1500);
                 } else {
                     appendMessage('❌ ขออภัย เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'bot');
@@ -1885,7 +1883,6 @@
     }
 }`;
 
-            // 🟢 แก้ไข: เปลี่ยนชื่อคีย์ให้เป็น Camel Case ตามมาตรฐานของ API
             const requestBody = {
                 systemInstruction: { parts: [{ text: systemInstruction }] },
                 contents: chatContext,
@@ -1895,22 +1892,93 @@
                 }
             };
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            // 🟢 ตรวจสอบและเลือก Model ที่ดีที่สุดสำหรับ API Key นี้โดยอัตโนมัติ
+            let modelToUse = localStorage.getItem('gemini_selected_model');
+            if (!modelToUse) {
+                try {
+                    const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                    if (modelsRes.ok) {
+                        const data = await modelsRes.json();
+                        // ดึงเฉพาะโมเดล gemini ที่รองรับการสนทนา
+                        const models = data.models.filter(m => m.supportedGenerationMethods.includes('generateContent') && m.name.includes('gemini'));
+                        
+                        // เรียงลำดับความสำคัญของ Model ที่ต้องการใช้
+                        const preferOrder = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+                        for (let pref of preferOrder) {
+                            if (models.find(m => m.name.includes(pref))) {
+                                modelToUse = pref;
+                                break;
+                            }
+                        }
+                        // ถ้าไม่พบในรายการโปรด ให้ใช้ตัวแรกที่ใช้งานได้
+                        if (!modelToUse && models.length > 0) {
+                            modelToUse = models[0].name.replace('models/', '');
+                        }
+                    }
+                } catch(e) { 
+                    console.warn("Auto-detect model failed, using default", e); 
+                }
+                
+                // Fallback ตัวสุดท้ายถ้าการเช็ค API ล้มเหลว
+                if (!modelToUse) modelToUse = 'gemini-1.5-flash';
+                localStorage.setItem('gemini_selected_model', modelToUse);
+            }
+
+            let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
 
+            // 🟢 ระบบ Fallback: หาก Model ที่เลือกเกิด Error (เช่นโมเดลถูกถอด หรือไม่รองรับฟีเจอร์บางอย่าง) ให้ทดลองรุ่นอื่นๆ
+            if (!response.ok && response.status !== 403 && response.status !== 401 && response.status !== 400) {
+                console.warn(`Model ${modelToUse} failed. Trying fallback models...`);
+                const fallbackModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-pro'];
+                
+                for (let fm of fallbackModels) {
+                    if (fm === modelToUse) continue;
+                    
+                    let fallbackBody = { ...requestBody };
+                    
+                    // gemini-pro (รุ่นเก่า) อาจไม่รองรับ systemInstruction และ JSON mode ตรงๆ
+                    if (fm === 'gemini-pro') {
+                        delete fallbackBody.systemInstruction;
+                        delete fallbackBody.generationConfig.responseMimeType;
+                        fallbackBody.contents = [
+                            { role: "user", parts: [{ text: "คำสั่งสำหรับระบบ (System Instruction): " + systemInstruction }] },
+                            ...chatContext
+                        ];
+                    }
+
+                    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${fm}:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(fallbackBody)
+                    });
+                    
+                    if (response.ok) {
+                        modelToUse = fm; // อัปเดตโมเดลเป็นตัวที่ใช้ได้
+                        localStorage.setItem('gemini_selected_model', fm);
+                        break;
+                    }
+                }
+            }
+
             if (!response.ok) {
-                if (response.status === 400 || response.status === 403) {
+                if (response.status === 400 || response.status === 403 || response.status === 401) {
                     throw new Error("Invalid API Key");
                 }
                 throw new Error("API Request Failed");
             }
 
             const data = await response.json();
-            const aiResponseText = data.candidates[0].content.parts[0].text;
+            let aiResponseText = data.candidates[0].content.parts[0].text;
             
+            // กรณี fallback เป็น gemini-pro อาจจะตอบติด Markdown Block ของ JSON มาด้วย
+            if (aiResponseText.startsWith('```json')) {
+                aiResponseText = aiResponseText.replace(/^```json\n?/, '').replace(/```$/, '').trim();
+            }
+
             try {
                 const parsed = JSON.parse(aiResponseText);
                 
@@ -2451,7 +2519,7 @@
                 return val;
             }
 
-            // [เพิ่มใหม่] ตรวจสอบรูปแบบองศา ลิปดา ฟิลิปดา (DMS) เช่น 13°02'55.9"N 101°01'24.0"E
+            // ตรวจสอบรูปแบบองศา ลิปดา ฟิลิปดา (DMS) เช่น 13°02'55.9"N 101°01'24.0"E
             const regexDMS = /(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([NS])[\s,]*(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([EW])/i;
             const matchDMS = val.match(regexDMS);
             if (matchDMS) {
@@ -2462,18 +2530,18 @@
                 let lonDD = parseFloat(matchDMS[5]) + (parseFloat(matchDMS[6]) / 60) + (parseFloat(matchDMS[7]) / 3600);
                 if (matchDMS[8].toUpperCase() === 'W') lonDD = -lonDD;
                 
-                return `https://www.google.com/maps?q=${latDD.toFixed(6)},${lonDD.toFixed(6)}`;
+                return `[https://www.google.com/maps?q=$](https://www.google.com/maps?q=$){latDD.toFixed(6)},${lonDD.toFixed(6)}`;
             }
 
             let numbers = val.match(/-?\d+(\.\d+)?/g);
             if (numbers && numbers.length >= 2) {
-                return `https://www.google.com/maps?q=${numbers[0]},${numbers[1]}`;
+                return `[https://www.google.com/maps?q=$](https://www.google.com/maps?q=$){numbers[0]},${numbers[1]}`;
             }
 
             let coordRegex = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/;
             if (coordRegex.test(val)) {
                 let cleanCoords = val.replace(/\s+/g, '');
-                return `https://www.google.com/maps?q=${cleanCoords}`;
+                return `[https://www.google.com/maps?q=$](https://www.google.com/maps?q=$){cleanCoords}`;
             }
 
             return val;
@@ -2817,7 +2885,6 @@
             const timeStr = now.toLocaleTimeString('th-TH');
             const dateTimeSaved = `${reportDate} ${timeStr}`;
 
-            // เพิ่มอิโมจิโทรศัพท์ 📞 หน้าเบอร์โทรศัพท์เรียบร้อยแล้ว
             let message = `${priorityInfo.emoji} งานที่${jobNo} กะ${shift}  รับแจ้งไฟฟ้าขัดข้อง วันที่${reportDate}\n` +
                             `🛠️***อย่าลืมทำ*** We safe \n` +
                             `⚡ลักษณะอาการ :  ${issueType}\n` +
@@ -2845,7 +2912,7 @@
         function saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel) {
             saveWorkerHistory([workerName]);
             saveAreaHistory([area]);
-            autoAddIssueType(issueType); // บันทึกลงระบบลักษณะอาการ (ถ้ายังไม่มี)
+            autoAddIssueType(issueType); 
             
             let history = JSON.parse(localStorage.getItem('elecReportsComplete_all')) || [];
             history.unshift({ dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel }); 
@@ -3111,7 +3178,7 @@
             }
             
             let tableHtml = `
-            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="[http://www.w3.org/TR/REC-html40](http://www.w3.org/TR/REC-html40)">
             <head>
                 <meta charset="utf-8">
                 <style>
@@ -3342,7 +3409,7 @@
         function extractCoordsFromInput(input) {
             if (!input) return null;
             
-            // [เพิ่มใหม่] ตรวจสอบรูปแบบองศา ลิปดา ฟิลิปดา (DMS) เช่น 13°02'55.9"N 101°01'24.0"E
+            // ตรวจสอบรูปแบบองศา ลิปดา ฟิลิปดา (DMS)
             const regexDMS = /(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([NS])[\s,]*(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([EW])/i;
             const matchDMS = input.match(regexDMS);
             if (matchDMS) {
@@ -3365,7 +3432,7 @@
             const matchQ = input.match(regexQ);
             if (matchQ) return { lat: matchQ[1], lon: matchQ[2] };
 
-            // ตรวจสอบรูปแบบ Lat: xx Long: yy (รองรับการเว้นวรรคและเครื่องหมาย :)
+            // ตรวจสอบรูปแบบ Lat: xx Long: yy 
             const regexLatLong = /Lat[\s:]*(-?\d+\.\d+)[\s,]*Long[\s:]*(-?\d+\.\d+)/i;
             const matchLatLong = input.match(regexLatLong);
             if (matchLatLong) return { lat: matchLatLong[1], lon: matchLatLong[2] };
@@ -3382,16 +3449,16 @@
         async function fetchPlaceNameFromCoords(lat, lon) {
             try {
                 // ใช้ OpenStreetMap API (ฟรี ไม่ต้องใช้ Key)
-                const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=th`;
+                const url = `[https://nominatim.openstreetmap.org/reverse?lat=$](https://nominatim.openstreetmap.org/reverse?lat=$){lat}&lon=${lon}&format=json&accept-language=th`;
                 const response = await fetch(url);
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.address) {
                         const addr = data.address;
-                        // เลือกชื่อที่เหมาะสมที่สุด (หมู่บ้าน, ย่าน, ตำบล, หรือสถานที่สำคัญ)
+                        // เลือกชื่อที่เหมาะสมที่สุด
                         let placeName = addr.village || addr.suburb || addr.town || addr.city_district || addr.county;
                         if (!placeName && data.display_name) {
-                            placeName = data.display_name.split(',')[0]; // เอาส่วนแรกของที่อยู่แบบเต็ม
+                            placeName = data.display_name.split(',')[0]; 
                         }
                         return placeName;
                     }
@@ -3411,11 +3478,9 @@
             const currentVal = areaInput.value.trim();
 
             if (currentVal === '') {
-                // เงื่อนไข 1: ถ้าช่องว่าง ให้กรอกอัตโนมัติเลย
                 areaInput.value = placeName;
                 showToast(`📍 ค้นพบสถานที่: ${placeName}`);
             } else {
-                // เงื่อนไข 2: ถ้ามีข้อความอยู่แล้ว ให้แสดง Dropdown พิเศษเพื่อต่อท้าย
                 suggestDropdown.innerHTML = ''; 
                 
                 const li = document.createElement('li');
@@ -3424,7 +3489,6 @@
                 
                 li.onmousedown = function(e) {
                     e.preventDefault(); 
-                    // เงื่อนไข 3: ถ้ายืนยัน นำไปต่อท้าย
                     areaInput.value = currentVal + ' ' + placeName;
                     suggestDropdown.classList.add('hidden');
                     showToast("📍 เพิ่มชื่อสถานที่ต่อท้ายแล้ว");
@@ -3435,21 +3499,21 @@
             }
         }
 
-        // 4. ผูก Event Listener กับช่องพิกัด GPS ของฟอร์มรับแจ้ง (Tab 2)
+        // 4. ผูก Event Listener กับช่องพิกัด GPS 
         document.addEventListener('DOMContentLoaded', () => {
-            const gpsInputEl = document.getElementById('gps'); // id="gps" ใน Tab 2
+            const gpsInputEl = document.getElementById('gps'); 
             if (gpsInputEl) {
                 gpsInputEl.addEventListener('input', async function() {
                     const coords = extractCoordsFromInput(this.value);
                     if (coords) {
-                        const btnEl = this.nextElementSibling; // ปุ่มไมค์ (เพื่อขอยืมใส่เอฟเฟกต์โหลด)
+                        const btnEl = this.nextElementSibling; 
                         const originalBtnHtml = btnEl ? btnEl.innerHTML : '';
                         
-                        if(btnEl) btnEl.innerHTML = '⏳'; // แสดงสถานะกำลังโหลด
+                        if(btnEl) btnEl.innerHTML = '⏳'; 
                         
                         const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
                         
-                        if(btnEl) btnEl.innerHTML = originalBtnHtml; // คืนค่าปุ่มไมค์
+                        if(btnEl) btnEl.innerHTML = originalBtnHtml; 
                         
                         if (placeName) {
                             handleAreaAutoFill(placeName);
