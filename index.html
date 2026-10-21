@@ -446,7 +446,7 @@
             <div id="geminiChatbot" class="mb-4 bg-white border border-purple-200 rounded-xl shadow-md overflow-hidden flex flex-col h-[350px]">
                 <!-- Header -->
                 <div class="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-3 flex justify-between items-center shadow-sm z-10">
-                    <h3 class="font-bold text-sm flex items-center gap-2">🤖 ผู้ช่วย AI (Gemini)</h3>
+                    <h3 class="font-bold text-sm flex items-center gap-2">🤖 ผู้ช่วย AI (Gemini 3.8 Flash)</h3>
                     <button type="button" onclick="openApiKeyModal()" class="text-white hover:text-purple-200 bg-white/20 hover:bg-white/30 rounded-full w-7 h-7 flex items-center justify-center transition" title="ตั้งค่า API Key">⚙️</button>
                 </div>
                 
@@ -1521,7 +1521,6 @@
                     tab2_order: localStorage.getItem('tab2-order') || '',
                     fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
                     gemini_api_key: localStorage.getItem('gemini_api_key') || '',
-                    gemini_selected_model: localStorage.getItem('gemini_selected_model') || '',
                     meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
                     last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                 };
@@ -1551,7 +1550,6 @@
                         tab2_order: localStorage.getItem('tab2-order') || '',
                         fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
                         gemini_api_key: localStorage.getItem('gemini_api_key') || '',
-                        gemini_selected_model: localStorage.getItem('gemini_selected_model') || '',
                         meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
                         last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                     }
@@ -1608,7 +1606,6 @@
                         if (data.tab2_order) localStorage.setItem('tab2-order', data.tab2_order);
                         if (data.fuse_multiplier) localStorage.setItem('fuse_multiplier', data.fuse_multiplier);
                         if (data.gemini_api_key) localStorage.setItem('gemini_api_key', data.gemini_api_key);
-                        if (data.gemini_selected_model) localStorage.setItem('gemini_selected_model', data.gemini_selected_model);
                         if (data.meter_form_link) localStorage.setItem('meter_form_link', data.meter_form_link);
                         if (data.last_active_tab) localStorage.setItem('last_active_tab', data.last_active_tab);
 
@@ -1651,7 +1648,6 @@
                     if (snapshot.tab2_order) localStorage.setItem('tab2-order', snapshot.tab2_order);
                     if (snapshot.fuse_multiplier) localStorage.setItem('fuse_multiplier', snapshot.fuse_multiplier);
                     if (snapshot.gemini_api_key) localStorage.setItem('gemini_api_key', snapshot.gemini_api_key);
-                    if (snapshot.gemini_selected_model) localStorage.setItem('gemini_selected_model', snapshot.gemini_selected_model);
                     if (snapshot.meter_form_link) localStorage.setItem('meter_form_link', snapshot.meter_form_link);
                     if (snapshot.last_active_tab) localStorage.setItem('last_active_tab', snapshot.last_active_tab);
 
@@ -1766,7 +1762,7 @@
         }
 
         // ==========================================
-        //  AI CHATBOT (GEMINI) SCRIPT
+        //  AI CHATBOT (GEMINI 3.8 FLASH) SCRIPT
         // ==========================================
         let chatContext = []; // เก็บประวัติสนทนา
 
@@ -1784,7 +1780,6 @@
             const key = document.getElementById('apiKeyInput').value.trim();
             if(key) {
                 localStorage.setItem('gemini_api_key', key);
-                localStorage.removeItem('gemini_selected_model'); // 🟢 รีเซ็ตแคชโมเดลเพื่อให้ค้นหาใหม่เมื่อเปลี่ยนคีย์
                 performAutoBackupSnapshot();
                 showToast("✅ บันทึก API Key สำเร็จ");
                 closeApiKeyModal();
@@ -1798,11 +1793,9 @@
             const message = inputEl.value.trim();
             if (!message) return;
 
-            // 1. แสดงข้อความผู้ใช้
             appendMessage(message, 'user');
             inputEl.value = '';
 
-            // ตรวจสอบ API Key
             const apiKey = localStorage.getItem('gemini_api_key');
             if (!apiKey) {
                 appendMessage('⚠️ กรุณาตั้งค่า API Key (กดไอคอนรูปเฟือง ⚙️) ก่อนใช้งานครับ', 'bot');
@@ -1810,18 +1803,13 @@
                 return;
             }
 
-            // 2. แสดงสถานะกำลังคิด
             const loadingId = appendMessage('⏳ กำลังประมวลผล...', 'bot', true);
 
             try {
-                // 3. ส่งข้อความไป Gemini
                 const response = await fetchGeminiChat(message, apiKey);
-                
-                // 4. ลบสถานะกำลังคิด และแสดงคำตอบจาก Gemini
                 removeMessage(loadingId);
                 appendMessage(response.text, 'bot');
 
-                // 5. พยายามดึงข้อมูล (Extract) มาลงฟอร์ม
                 if (response.extractedData) {
                    fillFormWithData(response.extractedData);
                 }
@@ -1853,7 +1841,7 @@
 
             msgDiv.innerHTML = `<div class="${innerClass}">${text}</div>`;
             chatHistory.appendChild(msgDiv);
-            chatHistory.scrollTop = chatHistory.scrollHeight; // เลื่อนลงล่างสุด
+            chatHistory.scrollTop = chatHistory.scrollHeight;
             
             return id;
         }
@@ -1864,7 +1852,6 @@
         }
 
         async function fetchGeminiChat(userText, apiKey) {
-            // เพิ่มข้อความผู้ใช้ลงใน Context
             chatContext.push({ role: "user", parts: [{ text: userText }] });
 
             const systemInstruction = `คุณคือผู้ช่วย AI รับแจ้งเหตุไฟฟ้าขัดข้อง หน้าที่ของคุณ:
@@ -1892,77 +1879,14 @@
                 }
             };
 
-            // 🟢 ตรวจสอบและเลือก Model ที่ดีที่สุดสำหรับ API Key นี้โดยอัตโนมัติ
-            let modelToUse = localStorage.getItem('gemini_selected_model');
-            if (!modelToUse) {
-                try {
-                    const modelsRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-                    if (modelsRes.ok) {
-                        const data = await modelsRes.json();
-                        // ดึงเฉพาะโมเดล gemini ที่รองรับการสนทนา
-                        const models = data.models.filter(m => m.supportedGenerationMethods.includes('generateContent') && m.name.includes('gemini'));
-                        
-                        // เรียงลำดับความสำคัญของ Model ที่ต้องการใช้
-                        const preferOrder = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-                        for (let pref of preferOrder) {
-                            if (models.find(m => m.name.includes(pref))) {
-                                modelToUse = pref;
-                                break;
-                            }
-                        }
-                        // ถ้าไม่พบในรายการโปรด ให้ใช้ตัวแรกที่ใช้งานได้
-                        if (!modelToUse && models.length > 0) {
-                            modelToUse = models[0].name.replace('models/', '');
-                        }
-                    }
-                } catch(e) { 
-                    console.warn("Auto-detect model failed, using default", e); 
-                }
-                
-                // Fallback ตัวสุดท้ายถ้าการเช็ค API ล้มเหลว
-                if (!modelToUse) modelToUse = 'gemini-3.8-flash';
-                localStorage.setItem('gemini_selected_model', modelToUse);
-            }
+            // 🟢 เรียกใช้โมเดล Gemini 3.8 Flash โดยตรงเท่านั้น
+            const modelToUse = 'gemini-3.8-flash';
 
             let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
-
-            // 🟢 ระบบ Fallback: หาก Model ที่เลือกเกิด Error (เช่นโมเดลถูกถอด หรือไม่รองรับฟีเจอร์บางอย่าง) ให้ทดลองรุ่นอื่นๆ
-            if (!response.ok && response.status !== 403 && response.status !== 401 && response.status !== 400) {
-                console.warn(`Model ${modelToUse} failed. Trying fallback models...`);
-                const fallbackModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
-                
-                for (let fm of fallbackModels) {
-                    if (fm === modelToUse) continue;
-                    
-                    let fallbackBody = { ...requestBody };
-                    
-                    // gemini-pro (รุ่นเก่า) อาจไม่รองรับ systemInstruction และ JSON mode ตรงๆ
-                    if (fm === 'gemini-pro') {
-                        delete fallbackBody.systemInstruction;
-                        delete fallbackBody.generationConfig.responseMimeType;
-                        fallbackBody.contents = [
-                            { role: "user", parts: [{ text: "คำสั่งสำหรับระบบ (System Instruction): " + systemInstruction }] },
-                            ...chatContext
-                        ];
-                    }
-
-                    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${fm}:generateContent?key=${apiKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(fallbackBody)
-                    });
-                    
-                    if (response.ok) {
-                        modelToUse = fm; // อัปเดตโมเดลเป็นตัวที่ใช้ได้
-                        localStorage.setItem('gemini_selected_model', fm);
-                        break;
-                    }
-                }
-            }
 
             if (!response.ok) {
                 if (response.status === 400 || response.status === 403 || response.status === 401) {
@@ -1974,18 +1898,14 @@
             const data = await response.json();
             let aiResponseText = data.candidates[0].content.parts[0].text;
             
-            // กรณี fallback เป็น gemini-pro อาจจะตอบติด Markdown Block ของ JSON มาด้วย
             if (aiResponseText.startsWith('```json')) {
                 aiResponseText = aiResponseText.replace(/^```json\n?/, '').replace(/```$/, '').trim();
             }
 
             try {
                 const parsed = JSON.parse(aiResponseText);
-                
-                // เพิ่มข้อความที่ AI ตอบกลับลงใน Context (เก็บเฉพาะ replyText เพื่อไม่ให้ Context บวม)
                 chatContext.push({ role: "model", parts: [{ text: parsed.replyText || "รับทราบครับ" }] });
 
-                // จำกัดขนาด Context ไว้ที่ 10 ข้อความล่าสุด (5 turns) เพื่อประหยัด Token
                 if(chatContext.length > 10) chatContext = chatContext.slice(chatContext.length - 10);
 
                 return {
@@ -2340,7 +2260,6 @@
                     issueList = JSON.parse(saved);
                 } catch(e) { issueList = [...defaultIssueTypes]; }
             } else {
-                // อัปเกรดฐานข้อมูลแบบเก่ามารวมเป็นแบบใหม่ที่จัดการได้
                 let oldHistory = JSON.parse(localStorage.getItem('issueHistory') || '[]');
                 let savedOrder = localStorage.getItem('issueType-order');
                 let merged = [...defaultIssueTypes];
@@ -2461,7 +2380,7 @@
                 if (issueList.includes(val)) {
                     showToast('มีอาการนี้อยู่ในระบบแล้ว');
                 } else {
-                    issueList.unshift(val); // เพิ่มไว้บนสุด
+                    issueList.unshift(val);
                     saveIssues();
                     input.value = '';
                     showToast('เพิ่มลักษณะอาการสำเร็จ');
@@ -2519,11 +2438,9 @@
                 return val;
             }
 
-            // ตรวจสอบรูปแบบองศา ลิปดา ฟิลิปดา (DMS) เช่น 13°02'55.9"N 101°01'24.0"E
             const regexDMS = /(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([NS])[\s,]*(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([EW])/i;
             const matchDMS = val.match(regexDMS);
             if (matchDMS) {
-                // แปลง DMS เป็น Decimal Degrees
                 let latDD = parseFloat(matchDMS[1]) + (parseFloat(matchDMS[2]) / 60) + (parseFloat(matchDMS[3]) / 3600);
                 if (matchDMS[4].toUpperCase() === 'S') latDD = -latDD;
                 
@@ -3404,12 +3321,9 @@
         // ==========================================
         //  GPS TO AREA (AUTO-FILL & APPEND)
         // ==========================================
-        
-        // 1. ฟังก์ชันสกัดค่า ละติจูด, ลองจิจูด จากข้อความหรือลิงก์
         function extractCoordsFromInput(input) {
             if (!input) return null;
             
-            // ตรวจสอบรูปแบบองศา ลิปดา ฟิลิปดา (DMS)
             const regexDMS = /(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([NS])[\s,]*(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([EW])/i;
             const matchDMS = input.match(regexDMS);
             if (matchDMS) {
@@ -3422,22 +3336,18 @@
                 return { lat: latDD.toFixed(6), lon: lonDD.toFixed(6) };
             }
 
-            // ตรวจสอบรูปแบบลิงก์ Google Maps ที่มี @lat,lon
             const regexUrl = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
             const matchUrl = input.match(regexUrl);
             if (matchUrl) return { lat: matchUrl[1], lon: matchUrl[2] };
 
-            // ตรวจสอบรูปแบบลิงก์ที่มี q=lat,lon
             const regexQ = /q=(-?\d+\.\d+),(-?\d+\.\d+)/;
             const matchQ = input.match(regexQ);
             if (matchQ) return { lat: matchQ[1], lon: matchQ[2] };
 
-            // ตรวจสอบรูปแบบ Lat: xx Long: yy 
             const regexLatLong = /Lat[\s:]*(-?\d+\.\d+)[\s,]*Long[\s:]*(-?\d+\.\d+)/i;
             const matchLatLong = input.match(regexLatLong);
             if (matchLatLong) return { lat: matchLatLong[1], lon: matchLatLong[2] };
 
-            // ตรวจสอบรูปแบบ Lat, Lon ตรงๆ ที่คั่นด้วยลูกน้ำ
             const regexCoord = /(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/;
             const matchCoord = input.match(regexCoord);
             if (matchCoord) return { lat: matchCoord[1], lon: matchCoord[2] };
@@ -3445,17 +3355,14 @@
             return null;
         }
 
-        // 2. ฟังก์ชันเรียก API เพื่อแปลงพิกัดเป็นชื่อสถานที่
         async function fetchPlaceNameFromCoords(lat, lon) {
             try {
-                // ใช้ OpenStreetMap API (ฟรี ไม่ต้องใช้ Key)
                 const url = `[https://nominatim.openstreetmap.org/reverse?lat=$](https://nominatim.openstreetmap.org/reverse?lat=$){lat}&lon=${lon}&format=json&accept-language=th`;
                 const response = await fetch(url);
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.address) {
                         const addr = data.address;
-                        // เลือกชื่อที่เหมาะสมที่สุด
                         let placeName = addr.village || addr.suburb || addr.town || addr.city_district || addr.county;
                         if (!placeName && data.display_name) {
                             placeName = data.display_name.split(',')[0]; 
@@ -3469,7 +3376,6 @@
             return null;
         }
 
-        // 3. ฟังก์ชันจัดการหน้าจอ (UI) สำหรับช่อง "บริเวณ"
         function handleAreaAutoFill(placeName) {
             if (!placeName) return;
 
@@ -3499,7 +3405,6 @@
             }
         }
 
-        // 4. ผูก Event Listener กับช่องพิกัด GPS 
         document.addEventListener('DOMContentLoaded', () => {
             const gpsInputEl = document.getElementById('gps'); 
             if (gpsInputEl) {
