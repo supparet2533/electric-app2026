@@ -2932,7 +2932,7 @@
                 copyTextToClipboard(message, "บันทึกและคัดลอกข้อความสำเร็จ!");
             }
 
-            saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, priorityInfo.level);
+            saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel);
             resetOutageForm();
         }
 
@@ -3522,17 +3522,14 @@
                 gpsInputEl.addEventListener('input', async function() {
                     const coords = extractCoordsFromInput(this.value);
                     if (coords) {
-                        const btnEl = this.nextElementSibling; 
-                        const originalBtnHtml = btnEl ? btnEl.innerHTML : '';
-                        
-                        if(btnEl) btnEl.innerHTML = '⏳'; 
+                        showToast("⏳ กำลังค้นหาชื่อสถานที่จากพิกัด...");
                         
                         const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
                         
-                        if(btnEl) btnEl.innerHTML = originalBtnHtml; 
-                        
                         if (placeName) {
                             handleAreaAutoFill(placeName);
+                        } else {
+                            showToast("❌ ไม่พบชื่อสถานที่สำหรับพิกัดนี้");
                         }
                     }
                 });
