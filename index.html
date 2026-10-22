@@ -978,7 +978,7 @@
             
             const lower = issueText.toLowerCase();
             const criticalKeywords = ['เสาหัก', 'เสาล้ม', 'ระเบิด', 'ช็อต', 'ประกายไฟ', 'รถชน', 'สายขาด', 'ไหม้', 'หลายหลัง', 'อันตราย'];
-            const urgentKeywords = ['ดับ', 'ตก', 'เสียงดัง', 'กระพริบ', 'หย่อน', 'มิเตอร์ชำรุด'];
+            const urgentKeywords = ['ดับ', 'ตก', 'เสียงดัง', 'กระพริบ', 'หย่อน', ''];
 
             if (criticalKeywords.some(kw => lower.includes(kw))) {
                 return { level: 'critical', label: 'วิกฤต/อันตรายมาก', color: 'text-rose-600 bg-rose-50 border-rose-200', emoji: '🔴' };
@@ -2458,7 +2458,8 @@
             let coordRegex = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/;
             if (coordRegex.test(val)) {
                 let cleanCoords = val.replace(/\s+/g, '');
-                return `[https://www.google.com/maps?q=$](https://www.google.com/maps?q=$){cleanCoords}`;
+                return `https://www.google.com/maps?q=${cleanCoords}`;
+
             }
 
             return val;
@@ -3095,7 +3096,8 @@
             }
             
             let tableHtml = `
-            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="[http://www.w3.org/TR/REC-html40](http://www.w3.org/TR/REC-html40)">
+            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+
             <head>
                 <meta charset="utf-8">
                 <style>
@@ -3318,94 +3320,7 @@
             recognition.start();
         }
 
-        // ==========================================
-        //  GPS TO AREA (AUTO-FILL & APPEND)
-        // ==========================================
-        function extractCoordsFromInput(input) {
-            if (!input) return null;
-            
-            const regexDMS = /(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([NS])[\s,]*(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([EW])/i;
-            const matchDMS = input.match(regexDMS);
-            if (matchDMS) {
-                let latDD = parseFloat(matchDMS[1]) + (parseFloat(matchDMS[2]) / 60) + (parseFloat(matchDMS[3]) / 3600);
-                if (matchDMS[4].toUpperCase() === 'S') latDD = -latDD;
-                
-                let lonDD = parseFloat(matchDMS[5]) + (parseFloat(matchDMS[6]) / 60) + (parseFloat(matchDMS[7]) / 3600);
-                if (matchDMS[8].toUpperCase() === 'W') lonDD = -lonDD;
-                
-                return { lat: latDD.toFixed(6), lon: lonDD.toFixed(6) };
-            }
 
-            const regexUrl = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
-            const matchUrl = input.match(regexUrl);
-            if (matchUrl) return { lat: matchUrl[1], lon: matchUrl[2] };
-
-            const regexQ = /q=(-?\d+\.\d+),(-?\d+\.\d+)/;
-            const matchQ = input.match(regexQ);
-            if (matchQ) return { lat: matchQ[1], lon: matchQ[2] };
-
-            const regexLatLong = /Lat[\s:]*(-?\d+\.\d+)[\s,]*Long[\s:]*(-?\d+\.\d+)/i;
-            const matchLatLong = input.match(regexLatLong);
-            if (matchLatLong) return { lat: matchLatLong[1], lon: matchLatLong[2] };
-
-            const regexCoord = /(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/;
-            const matchCoord = input.match(regexCoord);
-            if (matchCoord) return { lat: matchCoord[1], lon: matchCoord[2] };
-
-            return null;
-        }
-
-        async function fetchPlaceNameFromCoords(lat, lon) {
-            try {
-                const url = `[https://nominatim.openstreetmap.org/reverse?lat=$](https://nominatim.openstreetmap.org/reverse?lat=$){lat}&lon=${lon}&format=json&accept-language=th`;
-                const response = await fetch(url);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.address) {
-                        const addr = data.address;
-                        let placeName = addr.village || addr.suburb || addr.town || addr.city_district || addr.county;
-                        if (!placeName && data.display_name) {
-                            placeName = data.display_name.split(',')[0]; 
-                        }
-                        return placeName;
-                    }
-                }
-            } catch (error) {
-                console.error("Reverse Geocoding Error:", error);
-            }
-            return null;
-        }
-
-        function handleAreaAutoFill(placeName) {
-            if (!placeName) return;
-
-            const areaInput = document.getElementById('area');
-            const suggestDropdown = document.getElementById('suggest-area');
-            const currentVal = areaInput.value.trim();
-
-            if (currentVal === '') {
-                areaInput.value = placeName;
-                showToast(`📍 ค้นพบสถานที่: ${placeName}`);
-            } else {
-                suggestDropdown.innerHTML = ''; 
-                
-                const li = document.createElement('li');
-                li.className = 'px-4 py-2 bg-emerald-50 hover:bg-emerald-100 cursor-pointer text-emerald-700 border-b border-emerald-200 truncate font-bold flex justify-between items-center';
-                li.innerHTML = `<span>📍 นำไปต่อท้ายข้อความเดิม</span> <span class="text-xs font-normal bg-white px-2 py-0.5 rounded shadow-sm border border-emerald-100">${placeName}</span>`;
-                
-                li.onmousedown = function(e) {
-                    e.preventDefault(); 
-                    areaInput.value = currentVal + ' ' + placeName;
-                    suggestDropdown.classList.add('hidden');
-                    showToast("📍 เพิ่มชื่อสถานที่ต่อท้ายแล้ว");
-                };
-                
-                suggestDropdown.appendChild(li);
-                suggestDropdown.classList.remove('hidden');
-            }
-        }
-
-                // ==========================================
         //  GPS TO AREA (AUTO-FILL & APPEND)
         // ==========================================
         function extractCoordsFromInput(input) {
