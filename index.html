@@ -312,7 +312,7 @@
                         </div>
                     </div>
                     <div class="px-2 mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
-                        <span id="liveWeatherStatus" class="flex items-center gap-1 font-medium text-blue-700">🟢 Rain Alarm Stream ทำงาน (อัปเดตทุก 5 นาที)</span>
+                        <span id="liveWeatherStatus" class="flex items-center gap-1 font-medium text-blue-700">🟢 Rain Alarm Stream ทำงาน (อัปเดตทุก 1 นาที)</span>
                         <button type="button" onclick="manualRefreshWeather()" class="text-blue-600 hover:text-blue-800 font-bold underline">รีเฟรชทันที</button>
                     </div>
                 </div>
@@ -442,30 +442,25 @@
                 <span class="text-[10px] text-slate-400">ลาก ≡ เพื่อสลับลำดับ</span>
             </div>
             
-            <!-- Gemini Chatbot UI พร้อมปุ่ม Live Real-time Voice -->
-            <div id="geminiChatbot" class="mb-4 bg-white border border-purple-200 rounded-xl shadow-md overflow-hidden flex flex-col h-[380px]">
+            <!-- Gemini Chatbot UI แทนที่ปุ่มเดิม -->
+            <div id="geminiChatbot" class="mb-4 bg-white border border-purple-200 rounded-xl shadow-md overflow-hidden flex flex-col h-[350px]">
                 <!-- Header -->
                 <div class="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-3 flex justify-between items-center shadow-sm z-10">
                     <h3 class="font-bold text-sm flex items-center gap-2">🤖 ผู้ช่วย AI (Gemini 3.8 Flash)</h3>
-                    <div class="flex items-center gap-1.5">
-                        <button type="button" onclick="toggleLiveVoiceMode()" id="liveVoiceToggleBtn" class="bg-white/20 hover:bg-white/30 text-white text-xs px-2.5 py-1 rounded-full font-semibold transition flex items-center gap-1 shadow-sm" title="เปิดโหมดพูดคุยเรียลไทม์แบบต่อเนื่อง">
-                            🎙️ <span id="liveVoiceStatusText">พูดคุยสด (Live)</span>
-                        </button>
-                        <button type="button" onclick="openApiKeyModal()" class="text-white hover:text-purple-200 bg-white/20 hover:bg-white/30 rounded-full w-7 h-7 flex items-center justify-center transition" title="ตั้งค่า API Key">⚙️</button>
-                    </div>
+                    <button type="button" onclick="openApiKeyModal()" class="text-white hover:text-purple-200 bg-white/20 hover:bg-white/30 rounded-full w-7 h-7 flex items-center justify-center transition" title="ตั้งค่า API Key">⚙️</button>
                 </div>
                 
                 <!-- Chat History -->
                 <div id="chatHistory" class="flex-1 p-3 overflow-y-auto space-y-3 bg-slate-50 text-sm flex flex-col">
                     <div class="flex justify-start">
-                        <div class="bg-purple-100 text-purple-800 p-2.5 rounded-xl rounded-tl-none max-w-[85%] shadow-sm whitespace-pre-wrap">สวัสดีครับ ผมคือผู้ช่วย AI แจ้งรายละเอียดเหตุไฟฟ้าขัดข้องมาได้เลยครับ สามารถกดปุ่ม **"พูดคุยสด (Live)"** เพื่อพูดคุยโต้ตอบด้วยเสียงแบบเรียลไทม์ได้ทันทีครับ!</div>
+                        <div class="bg-purple-100 text-purple-800 p-2.5 rounded-xl rounded-tl-none max-w-[85%] shadow-sm whitespace-pre-wrap">สวัสดีครับ ผมคือผู้ช่วย AI แจ้งรายละเอียดเหตุไฟฟ้าขัดข้องมาได้เลยครับ ผมจะช่วยสรุปและนำไปกรอกลงฟอร์มด้านล่างให้อัตโนมัติ หรือจะสอบถามปรึกษาก็ได้ครับ</div>
                     </div>
                 </div>
                 
                 <!-- Input Area -->
                 <div class="p-2 border-t border-slate-200 bg-white flex gap-2 items-center">
                     <input type="text" id="chatInput" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition shadow-inner" placeholder="พิมพ์รายละเอียด..." onkeypress="if(event.key === 'Enter') sendChatMessage()">
-                    <button onclick="startChatVoiceInput()" class="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition flex items-center justify-center shadow-sm" title="พิมพ์ด้วยเสียงครั้งเดียว">🎙️</button>
+                    <button onclick="startChatVoiceInput()" class="p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition flex items-center justify-center shadow-sm" title="พิมพ์ด้วยเสียง">🎙️</button>
                     <button onclick="sendChatMessage()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-purple-700 transition shadow-sm">ส่ง</button>
                 </div>
             </div>
@@ -1096,13 +1091,12 @@
         function startRealtimeWeatherStream() {
             if (weatherStreamInterval) clearInterval(weatherStreamInterval);
             
-            // เปลี่ยนรอบการอัปเดตเป็นทุกๆ 5 นาที (300000 ms)
             weatherStreamInterval = setInterval(() => {
                 const tambonVal = document.getElementById('tambonSelect').value;
                 if (tambonVal) {
                     fetchLiveWeatherForTambon(tambonVal, true);
                 }
-            }, 300000);
+            }, 60000);
         }
 
         // ==========================================
@@ -1420,7 +1414,6 @@
 
             let filterInfo = `วันที่พิมพ์รายงาน: ${new Date().toLocaleDateString('th-TH')}`;
 
-            // แก้ไขปัญหา xmlns ที่ส่งออก Excel
             let tableHtml = `
             <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
             <head>
@@ -1769,11 +1762,9 @@
         }
 
         // ==========================================
-        //  AI CHATBOT & REAL-TIME LIVE VOICE SYSTEM
+        //  AI CHATBOT (GEMINI 3.8 FLASH) SCRIPT
         // ==========================================
-        let chatContext = []; 
-        let isLiveVoiceActive = false;
-        let liveRecognition = null;
+        let chatContext = []; // เก็บประวัติสนทนา
 
         function openApiKeyModal() {
             const savedKey = localStorage.getItem('gemini_api_key') || '';
@@ -1797,15 +1788,13 @@
             }
         }
 
-        async function sendChatMessage(customText = null) {
+        async function sendChatMessage() {
             const inputEl = document.getElementById('chatInput');
-            const message = customText !== null ? customText : inputEl.value.trim();
+            const message = inputEl.value.trim();
             if (!message) return;
 
             appendMessage(message, 'user');
-            if (customText === null) {
-                inputEl.value = '';
-            }
+            inputEl.value = '';
 
             const apiKey = localStorage.getItem('gemini_api_key');
             if (!apiKey) {
@@ -1821,11 +1810,6 @@
                 removeMessage(loadingId);
                 appendMessage(response.text, 'bot');
 
-                // ออกเสียงข้อความตอบกลับด้วยเสียง (Speech Synthesis) ในโหมด Live
-                if (isLiveVoiceActive && 'speechSynthesis' in window) {
-                    speakText(response.text);
-                }
-
                 if (response.extractedData) {
                    fillFormWithData(response.extractedData);
                 }
@@ -1839,101 +1823,6 @@
                 } else {
                     appendMessage('❌ ขออภัย เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'bot');
                 }
-            }
-        }
-
-        function speakText(text) {
-            if (!('speechSynthesis' in window)) return;
-            window.speechSynthesis.cancel(); // หยุดเสียงค้างเดิม
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'th-TH';
-            utterance.rate = 1.0;
-            
-            utterance.onend = function() {
-                // หากยังเปิดโหมด Live อยู่ เมื่อ AI พูดจบ ให้เปิดไมค์ฟังต่ออัตโนมัติทันที (Real-time Continuous Loop)
-                if (isLiveVoiceActive && liveRecognition) {
-                    try { liveRecognition.start(); } catch(e){}
-                }
-            };
-            
-            window.speechSynthesis.speak(utterance);
-        }
-
-        function toggleLiveVoiceMode() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) {
-                alert("เบราว์เซอร์นี้ไม่รองรับการพูดคุยด้วยเสียงแบบเรียลไทม์ (แนะนำให้ใช้ Chrome)");
-                return;
-            }
-
-            const toggleBtn = document.getElementById('liveVoiceToggleBtn');
-            const statusText = document.getElementById('liveVoiceStatusText');
-
-            if (!isLiveVoiceActive) {
-                isLiveVoiceActive = true;
-                toggleBtn.classList.remove('bg-white/20', 'hover:bg-white/30');
-                toggleBtn.classList.add('bg-rose-500', 'animate-pulse');
-                statusText.textContent = "🔴 กำลังฟังสด...";
-                showToast("🎙️ เปิดโหมดพูดคุยสด (Live) แล้ว พูดคุยต่อเนื่องได้เลยครับ");
-
-                startContinuousLiveRecognition();
-            } else {
-                stopLiveVoiceMode();
-                showToast("⏹️ ปิดโหมดพูดคุยสดแล้ว");
-            }
-        }
-
-        function startContinuousLiveRecognition() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SpeechRecognition) return;
-
-            liveRecognition = new SpeechRecognition();
-            liveRecognition.lang = 'th-TH';
-            liveRecognition.interimResults = false;
-            liveRecognition.maxAlternatives = 1;
-
-            liveRecognition.onresult = function(event) {
-                const transcript = event.results[0][0].transcript.trim();
-                if (transcript) {
-                    // ส่งข้อความที่พูดเข้าสู่ระบบ AI ทันที
-                    sendChatMessage(transcript);
-                }
-            };
-
-            liveRecognition.onerror = function(event) {
-                console.error("Live Recognition Error:", event.error);
-            };
-
-            liveRecognition.onend = function() {
-                // ถ้ายังอยู่ในโหมด Live และ AI ไม่ได้กำลังพูดอยู่ ให้เริ่มฟังต่อทันที
-                if (isLiveVoiceActive && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
-                    try {
-                        liveRecognition.start();
-                    } catch(e) {}
-                }
-            };
-
-            try {
-                liveRecognition.start();
-            } catch(e) {}
-        }
-
-        function stopLiveVoiceMode() {
-            isLiveVoiceActive = false;
-            if (liveRecognition) {
-                try { liveRecognition.stop(); } catch(e){}
-                liveRecognition = null;
-            }
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-            }
-
-            const toggleBtn = document.getElementById('liveVoiceToggleBtn');
-            const statusText = document.getElementById('liveVoiceStatusText');
-            if (toggleBtn && statusText) {
-                toggleBtn.classList.remove('bg-rose-500', 'animate-pulse');
-                toggleBtn.classList.add('bg-white/20', 'hover:bg-white/30');
-                statusText.textContent = "พูดคุยสด (Live)";
             }
         }
 
@@ -1966,12 +1855,12 @@
             chatContext.push({ role: "user", parts: [{ text: userText }] });
 
             const systemInstruction = `คุณคือผู้ช่วย AI รับแจ้งเหตุไฟฟ้าขัดข้อง หน้าที่ของคุณ:
-1. สนทนากับผู้ใช้ด้วยความสุภาพและเป็นธรรมชาติ ตอบสั้นๆ กระชับ เพื่อให้เหมาะกับการสนทนาด้วยเสียงแบบเรียลไทม์
+1. สนทนากับผู้ใช้ด้วยความสุภาพและเป็นธรรมชาติ ตอบสั้นๆ กระชับ
 2. วิเคราะห์ข้อความเพื่อดึงข้อมูลไปกรอกฟอร์ม ได้แก่: ลักษณะอาการ (issueType), ชื่อผู้แจ้ง (workerName), บริเวณ (area), ที่อยู่ (address), เบอร์โทร (phone)
 3. ให้ตอบกลับมาเป็นรูปแบบ JSON เท่านั้น ห้ามมีข้อความอื่นปน
 รูปแบบ JSON ที่ต้องการ:
 {
-    "replyText": "ข้อความตอบกลับผู้ใช้แบบสั้นกระชับ",
+    "replyText": "ข้อความตอบกลับผู้ใช้แบบปกติ",
     "extractedData": {
         "issueType": "ถ้าพบข้อมูลให้ใส่ ถ้าไม่พบให้ปล่อยว่าง",
         "workerName": "ถ้าพบข้อมูลให้ใส่ ถ้าไม่พบให้ปล่อยว่าง",
@@ -1990,6 +1879,7 @@
                 }
             };
 
+            // 🟢 เรียกใช้โมเดล Gemini 3.8 Flash โดยตรงเท่านั้น
             const modelToUse = 'gemini-3.8-flash';
 
             let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`, {
@@ -2557,12 +2447,12 @@
                 let lonDD = parseFloat(matchDMS[5]) + (parseFloat(matchDMS[6]) / 60) + (parseFloat(matchDMS[7]) / 3600);
                 if (matchDMS[8].toUpperCase() === 'W') lonDD = -lonDD;
                 
-                return `[https://www.google.com/maps?q=$](https://www.google.com/maps?q=$){latDD.toFixed(6)},${lonDD.toFixed(6)}`;
+                return `https://www.google.com/maps?q=${latDD.toFixed(6)},${lonDD.toFixed(6)}`;
             }
 
             let numbers = val.match(/-?\d+(\.\d+)?/g);
             if (numbers && numbers.length >= 2) {
-                return `[https://www.google.com/maps?q=$](https://www.google.com/maps?q=$){numbers[0]},${numbers[1]}`;
+                return `https://www.google.com/maps?q=${numbers[0]},${numbers[1]}`;
             }
 
             let coordRegex = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?/;
@@ -2932,7 +2822,7 @@
                 copyTextToClipboard(message, "บันทึกและคัดลอกข้อความสำเร็จ!");
             }
 
-            saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel);
+            saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, priorityInfo.level);
             resetOutageForm();
         }
 
@@ -3204,7 +3094,6 @@
                 filename = `Outage_Report_${selectedDate || 'All'}.xls`;
             }
             
-            // แก้ไขปัญหา xmlns ที่ส่งออก Excel ในฟังก์ชันนี้
             let tableHtml = `
             <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="[http://www.w3.org/TR/REC-html40](http://www.w3.org/TR/REC-html40)">
             <head>
@@ -3522,14 +3411,17 @@
                 gpsInputEl.addEventListener('input', async function() {
                     const coords = extractCoordsFromInput(this.value);
                     if (coords) {
-                        showToast("⏳ กำลังค้นหาชื่อสถานที่จากพิกัด...");
+                        const btnEl = this.nextElementSibling; 
+                        const originalBtnHtml = btnEl ? btnEl.innerHTML : '';
+                        
+                        if(btnEl) btnEl.innerHTML = '⏳'; 
                         
                         const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
                         
+                        if(btnEl) btnEl.innerHTML = originalBtnHtml; 
+                        
                         if (placeName) {
                             handleAreaAutoFill(placeName);
-                        } else {
-                            showToast("❌ ไม่พบชื่อสถานที่สำหรับพิกัดนี้");
                         }
                     }
                 });
