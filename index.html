@@ -312,7 +312,7 @@
                         </div>
                     </div>
                     <div class="px-2 mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
-                        <span id="liveWeatherStatus" class="flex items-center gap-1 font-medium text-blue-700">🟢 Rain Alarm Stream ทำงาน (อัปเดตทุก 1 นาที)</span>
+                        <span id="liveWeatherStatus" class="flex items-center gap-1 font-medium text-blue-700">🟢 Rain Alarm Stream ทำงาน (อัปเดตทุก 5 นาที)</span>
                         <button type="button" onclick="manualRefreshWeather()" class="text-blue-600 hover:text-blue-800 font-bold underline">รีเฟรชทันที</button>
                     </div>
                 </div>
@@ -1096,12 +1096,13 @@
         function startRealtimeWeatherStream() {
             if (weatherStreamInterval) clearInterval(weatherStreamInterval);
             
+            // เปลี่ยนรอบการอัปเดตเป็นทุกๆ 5 นาที (300000 ms)
             weatherStreamInterval = setInterval(() => {
                 const tambonVal = document.getElementById('tambonSelect').value;
                 if (tambonVal) {
                     fetchLiveWeatherForTambon(tambonVal, true);
                 }
-            }, 60000);
+            }, 300000);
         }
 
         // ==========================================
@@ -1419,6 +1420,7 @@
 
             let filterInfo = `วันที่พิมพ์รายงาน: ${new Date().toLocaleDateString('th-TH')}`;
 
+            // แก้ไขปัญหา xmlns ที่ส่งออก Excel
             let tableHtml = `
             <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
             <head>
@@ -3202,6 +3204,7 @@
                 filename = `Outage_Report_${selectedDate || 'All'}.xls`;
             }
             
+            // แก้ไขปัญหา xmlns ที่ส่งออก Excel ในฟังก์ชันนี้
             let tableHtml = `
             <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="[http://www.w3.org/TR/REC-html40](http://www.w3.org/TR/REC-html40)">
             <head>
