@@ -3405,28 +3405,126 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const gpsInputEl = document.getElementById('gps'); 
-            if (gpsInputEl) {
-                gpsInputEl.addEventListener('input', async function() {
-                    const coords = extractCoordsFromInput(this.value);
-                    if (coords) {
-                        const btnEl = this.nextElementSibling; 
-                        const originalBtnHtml = btnEl ? btnEl.innerHTML : '';
-                        
-                        if(btnEl) btnEl.innerHTML = '⏳'; 
-                        
-                        const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
-                        
-                        if(btnEl) btnEl.innerHTML = originalBtnHtml; 
-                        
-                        if (placeName) {
-                            handleAreaAutoFill(placeName);
+                // ==========================================
+        //  GPS TO AREA (AUTO-FILL & APPEND)
+        // ==========================================
+        function extractCoordsFromInput(input) {
+            if (!input) return null;
+            
+            const regexDMS = /(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([NS])[\s,]*(\d+)[°\s]+(\d+)['’\s]+([\d\.]+)["”\s]*([EW])/i;
+            const matchDMS = input.match(regexDMS);
+            if (matchDMS) {
+                let latDD = parseFloat(matchDMS[1]) + (parseFloat(matchDMS[2]) / 60) + (parseFloat(matchDMS[3]) / 3600);
+                if (matchDMS[4].toUpperCase() === 'S') latDD = -latDD;
+                
+                let lonDD = parseFloat(matchDMS[5]) + (parseFloat(matchDMS[6]) / 60) + (parseFloat(matchDMS[7]) / 3600);
+                if (matchDMS[8].toUpperCase() === 'W') lonDD = -lonDD;
+                
+                return { lat: latDD.toFixed(6), lon: lonDD.toFixed(6) };
+            }
+
+            const regexUrl = /@(-?\d+\.\d+),(-?\d+\.\d+)/;
+            const matchUrl = input.match(regexUrl);
+            if (matchUrl) return { lat: matchUrl[1], lon: matchUrl[2] };
+
+            const regexQ = /q=(-?\d+\.\d+),(-?\d+\.\d+)/;
+            const matchQ = input.match(regexQ);
+            if (matchQ) return { lat: matchQ[1], lon: matchQ[2] };
+
+            const regexLatLong = /Lat[\s:]*(-?\d+\.\d+)[\s,]*Long[\s:]*(-?\d+\.\d+)/i;
+            const matchLatLong = input.match(regexLatLong);
+            if (matchLatLong) return { lat: matchLatLong[1], lon: matchLatLong[2] };
+
+            const regexCoord = /(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/;
+            const matchCoord = input.match(regexCoord);
+            if (matchCoord) return { lat: matchCoord[1], lon: matchCoord[2] };
+
+            return null;
+        }
+
+        async function fetchPlaceNameFromCoords(lat, lon) {
+            try {
+                const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=th`;
+                const response = await fetch(url);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.address) {
+                        const addr = data.address;
+                        let placeName = addr.village || addr.suburb || addr.town || addr.city_district || addr.county;
+                        if (!placeName && data.display_name) {
+                            placeName = data.display_name.split(',')[0]; 
                         }
+                        return placeName;
                     }
+                }
+            } catch (error) {
+                console.error("Reverse Geocoding Error:", error);
+            }
+            return null;
+        }
+
+        function handleAreaAutoFill(placeName) {
+            if (!placeName) return;
+
+            const areaInput = document.getElementById('area');
+            const suggestDropdown = document.getElementById('suggest-area');
+            const currentVal = areaInput.value.trim();
+
+            if (currentVal === '') {
+                areaInput.value = placeName;
+                showToast(`📍 ค้นพบสถานที่: ${placeName}`);
+            } else {
+                suggestDropdown.innerHTML = ''; 
+                
+                const li = document.createElement('li');
+                li.className = 'px-4 py-2 bg-emerald-50 hover:bg-emerald-100 cursor-pointer text-emerald-700 border-b border-emerald-200 truncate font-bold flex justify-between items-center';
+                li.innerHTML = `<span>📍 นำไปต่อท้ายข้อความเดิม</span> <span class="text-xs font-normal bg-white px-2 py-0.5 rounded shadow-sm border border-emerald-100">${placeName}</span>`;
+                
+                li.onmousedown = function(e) {
+                    e.preventDefault(); 
+                    areaInput.value = currentVal + ' ' + placeName;
+                    suggestDropdown.classList.add('hidden');
+                    showToast("📍 เพิ่มชื่อสถานที่ต่อท้ายแล้ว");
+                };
+                
+                suggestDropdown.appendChild(li);
+                suggestDropdown.classList.remove('hidden');
+            }
+        }
+
+        // --- 🟢 ส่วนที่แก้ไขหลักคือตรงนี้ครับ (ใส่ตัวหน่วงเวลา Debounce) ---
+        document.addEventListener('DOMContentLoaded', () => {
+            let gpsTimeout; // ตัวแปรสำหรับหน่วงเวลา
+            
+            const gpsInputEl = document.getElementById('gps'); // ทำงานที่หน้าฟอร์มรับแจ้ง (Tab 2)
+            if (gpsInputEl) {
+                gpsInputEl.addEventListener('input', function() {
+                    // หากยังพิมพ์ไม่เสร็จ ให้ยกเลิกคำสั่งเดิมก่อน
+                    clearTimeout(gpsTimeout);
+                    const inputValue = this.value;
+                    
+                    // รอ 1 วินาที (1000ms) หลังจากผู้ใช้พิมพ์หรือวางข้อความเสร็จ ถึงจะส่งข้อมูลไปหาแผนที่
+                    gpsTimeout = setTimeout(async () => {
+                        const coords = extractCoordsFromInput(inputValue);
+                        if (coords) {
+                            const btnEl = gpsInputEl.nextElementSibling; 
+                            const originalBtnHtml = btnEl ? btnEl.innerHTML : '';
+                            
+                            if(btnEl) btnEl.innerHTML = '⏳'; 
+                            
+                            const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
+                            
+                            if(btnEl) btnEl.innerHTML = originalBtnHtml; 
+                            
+                            if (placeName) {
+                                handleAreaAutoFill(placeName);
+                            }
+                        }
+                    }, 1000); 
                 });
             }
         });
+
     </script>
 </body>
 </html>
