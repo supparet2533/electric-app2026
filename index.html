@@ -570,7 +570,7 @@
                             <span id="mapCoordLabel" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span>
                             <a id="mapExternalLink" href="#" target="_blank" class="text-blue-300 hover:text-white underline whitespace-nowrap ml-2">เปิดแอป Maps ↗</a>
                         </div>
-                        <iframe id="googleMapIframe" class="w-full h-56 border-0" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+                        <iframe id="googleMapIframe" class="w-full h-56 border-0"  allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
                     </div>
                 </div>
             </div>
@@ -3438,7 +3438,7 @@ function getIssuePriority(issueText) {
             }
         }
 
-                // 🟢 ฟังก์ชันควบคุมการแสดงผลและปักหมุดบนหน้าต่าง Google Maps
+                        // 🟢 ฟังก์ชันควบคุมการแสดงผลและปักหมุดบนหน้าต่าง Google Maps (รองรับทั้งมือถือและ PC)
         function updateMapPreview(coords) {
             const container = document.getElementById('mapPreviewContainer');
             const iframe = document.getElementById('googleMapIframe');
@@ -3448,19 +3448,21 @@ function getIssuePriority(issueText) {
             if (!container || !iframe) return;
 
             if (coords && coords.lat && coords.lon) {
-                const embedUrl = `https://maps.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
+                const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
                 const directUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}`;
                 
-                // อัปเดต Iframe เฉพาะเมื่อพิกัดเปลี่ยน ป้องกันแผนที่กระพริบซ้ำ
-                if (iframe.src !== embedUrl) {
-                    iframe.src = embedUrl;
-                }
                 if (coordLabel) coordLabel.textContent = `📍 พิกัด: ${coords.lat}, ${coords.lon}`;
                 if (extLink) extLink.href = directUrl;
                 
                 container.classList.remove('hidden');
+
+                if (iframe.getAttribute('data-loaded-url') !== embedUrl) {
+                    iframe.src = embedUrl;
+                    iframe.setAttribute('data-loaded-url', embedUrl);
+                }
             } else {
-                iframe.src = '';
+                iframe.src = 'about:blank';
+                iframe.removeAttribute('data-loaded-url');
                 container.classList.add('hidden');
             }
         }
@@ -3501,6 +3503,7 @@ function getIssuePriority(issueText) {
                 });
             }
         });
+
 
 
     </script>
