@@ -3507,24 +3507,44 @@ function getIssuePriority(issueText) {
             const gpsInputEl = document.getElementById('gps');
             const addressInputEl = document.getElementById('address');
 
-            // 1. ตรวจหาพิกัดในช่อง "ที่อยู่" แล้วดึงไปใส่ช่อง "พิกัด (GPS Link)" อัตโนมัติ
+            // 1. ตรวจหา "ชื่อผู้ใช้ไฟฟ้า" และ "พิกัด" ในช่อง "ที่อยู่"
             if (addressInputEl && gpsInputEl) {
                 addressInputEl.addEventListener('input', function() {
-                    const addrText = this.value;
-                    // ตรวจจับรูปแบบ Lat: XX.XXXXXX Long: YY.YYYYYY (รองรับทั้งติดกับคำว่า พิกัด หรือเว้นวรรค)
-                    const latLongRegex = /Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
-                    const match = addrText.match(latLongRegex);
+                    let addrText = this.value;
+                    let isModified = false;
 
-                    if (match) {
-                        const extractedGps = `Lat: ${match[1]} Long: ${match[2]}`;
+                    // 1.1 ลบ "ชื่อผู้ใช้ไฟฟ้า : ชื่อ นามสกุล" หรือ "ชื่อ : ชื่อ นามสกุล" (รองรับการขึ้นบรรทัดใหม่และคำนำหน้าชื่อ)
+                    // ยกเว้นกรณีที่มีคำว่า "บริษัท" ตามหลัง จะคงไว้ไม่ลบออก
+                    const customerNameRegex = /(?:ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ชื่อ)\s*[:：]\s*(?:\r?\n\s*)?(?!บริษัท)(?:(?:นาย|นางสาว|นาง|น\.ส\.|คุณ|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙a-zA-Z.]+(?:[ \t]+ณ)?[ \t]+[ก-๙a-zA-Z.]+[ \t]*\r?\n?/gi;
+                    
+                    if (customerNameRegex.test(addrText)) {
+                        addrText = addrText.replace(customerNameRegex, '');
+                        isModified = true;
+                        showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
+                    }
+
+                    // 1.2 ตรวจจับรูปแบบ พิกัดLat: XX.XXXXXX Long: YY.YYYYYY หรือ Lat: ... Long: ...
+                    const latLongRegex = /(?:พิกัด\s*[:=]?\s*)?Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
+                    const matchGps = addrText.match(latLongRegex);
+
+                    if (matchGps) {
+                        const extractedGps = `Lat: ${matchGps[1]} Long: ${matchGps[2]}`;
                         
-                        // อัปเดตเฉพาะเมื่อค่าพิกัดยังไม่ตรงกับในช่อง GPS เพื่อไม่ให้รีโหลดแผนที่ซ้ำซ้อนขณะพิมพ์ที่อยู่
-                        if (gpsInputEl.value !== extractedGps) {
-                            gpsInputEl.value = extractedGps;
-                            // สั่งให้ช่อง GPS ทำงานต่ออัตโนมัติ (แสดงแผนที่ + ดึงชื่อบริเวณ)
-                            gpsInputEl.dispatchEvent(new Event('input'));
-                            showToast("📌 ดึงพิกัดไปใส่ช่อง GPS อัตโนมัติแล้ว");
-                        }
+                        // นำพิกัดไปใส่ในช่อง GPS Link และสั่งโหลดแผนที่ + ชื่อบริเวณ
+                        gpsInputEl.value = extractedGps;
+                        gpsInputEl.dispatchEvent(new Event('input'));
+                        
+                        // ลบข้อความพิกัดออกจากช่อง "ที่อยู่"
+                        addrText = addrText.replace(matchGps[0], '');
+                        isModified = true;
+                        showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
+                    }
+
+                    // อัปเดตค่าในช่อง "ที่อยู่" และจัดระเบียบช่องว่างใหม่หากมีการตัดข้อความ
+                    if (isModified) {
+                        this.value = addrText.replace(/[ \t]{2,}/g, ' ').replace(/\n\s*\n/g, '\n').trim();
+                        this.style.height = 'auto';
+                        this.style.height = (this.scrollHeight) + 'px';
                     }
                 });
             }
@@ -3561,6 +3581,8 @@ function getIssuePriority(issueText) {
                 });
             }
         });
+
+
 
 
 
