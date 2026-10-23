@@ -3507,14 +3507,13 @@ function getIssuePriority(issueText) {
             const gpsInputEl = document.getElementById('gps');
             const addressInputEl = document.getElementById('address');
 
-            // 1. ตรวจหา "ชื่อผู้ใช้ไฟฟ้า" และ "พิกัด" ในช่อง "ที่อยู่"
+            // 1. ตรวจหา "ชื่อผู้ใช้ไฟฟ้า", "เบอร์โทร" และ "พิกัด" ในช่อง "ที่อยู่"
             if (addressInputEl && gpsInputEl) {
                 addressInputEl.addEventListener('input', function() {
                     let addrText = this.value;
                     let isModified = false;
 
-                    // 1.1 ลบ "ชื่อผู้ใช้ไฟฟ้า : ชื่อ นามสกุล" หรือ "ชื่อ : ชื่อ นามสกุล" (รองรับการขึ้นบรรทัดใหม่และคำนำหน้าชื่อ)
-                    // ยกเว้นกรณีที่มีคำว่า "บริษัท" ตามหลัง จะคงไว้ไม่ลบออก
+                    // 1.1 ลบ "ชื่อผู้ใช้ไฟฟ้า : ชื่อ นามสกุล" หรือ "ชื่อ : ชื่อ นามสกุล" (ยกเว้นกรณีที่มีคำว่า "บริษัท" ตามหลัง)
                     const customerNameRegex = /(?:ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ชื่อ)\s*[:：]\s*(?:\r?\n\s*)?(?!บริษัท)(?:(?:นาย|นางสาว|นาง|น\.ส\.|คุณ|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙a-zA-Z.]+(?:[ \t]+ณ)?[ \t]+[ก-๙a-zA-Z.]+[ \t]*\r?\n?/gi;
                     
                     if (customerNameRegex.test(addrText)) {
@@ -3523,7 +3522,16 @@ function getIssuePriority(issueText) {
                         showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
                     }
 
-                    // 1.2 ตรวจจับรูปแบบ พิกัดLat: XX.XXXXXX Long: YY.YYYYYY หรือ Lat: ... Long: ...
+                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" (ปรับปรุงใหม่ รองรับทุกรูปแบบการเว้นวรรคและการขึ้นบรรทัดใหม่)
+                    const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)\s*[:：]\s*[\r?\n\s]*[\d\-\s\(\)]{8,20}/gi;
+                    
+                    if (phoneRegex.test(addrText)) {
+                        addrText = addrText.replace(phoneRegex, '');
+                        isModified = true;
+                        showToast("✂️ ลบเบอร์โทรออกจากช่องที่อยู่แล้ว");
+                    }
+
+                    // 1.3 ตรวจจับรูปแบบ พิกัดLat: XX.XXXXXX Long: YY.YYYYYY หรือ Lat: ... Long: ...
                     const latLongRegex = /(?:พิกัด\s*[:=]?\s*)?Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
                     const matchGps = addrText.match(latLongRegex);
 
@@ -3581,6 +3589,7 @@ function getIssuePriority(issueText) {
                 });
             }
         });
+
 
 
 
