@@ -3196,9 +3196,10 @@ function getIssuePriority(issueText) {
             document.getElementById('transformer-list').appendChild(div);
         }
 
-        function calculateFuseCalc() {
-            const groups = document.querySelectorAll('#tab3 .flex');
-            let totalKva = 0;
+                function calculateFuseCalc() {
+            const groups = document.querySelectorAll('#transformer-list .flex');
+            let kva1Phase = 0;
+            let kva3Phase = 0;
             
             let multiplier = parseFloat(document.getElementById('multiplier-input').value);
             if (isNaN(multiplier) || multiplier < 1) {
@@ -3209,21 +3210,39 @@ function getIssuePriority(issueText) {
             groups.forEach(group => {
                 const kvaInput = group.querySelector('.tx-input');
                 const qtyInput = group.querySelector('.tx-qty');
-                if(!kvaInput || !qtyInput) return;
+                if (!kvaInput || !qtyInput) return;
                 
                 const kva = parseFloat(kvaInput.value);
                 let qty = parseInt(qtyInput.value);
                 if (isNaN(qty) || qty <= 0) qty = 1;
-                if (!isNaN(kva) && kva > 0) totalKva += (kva * qty);
+                
+                if (!isNaN(kva) && kva > 0) {
+                    // ตรวจสอบว่าเป็นหม้อแปลง 1 เฟส (จากกลุ่ม optgroup หรือขนาด 30 kVA)
+                    const selectedOpt = kvaInput.options[kvaInput.selectedIndex];
+                    const isSinglePhase = (selectedOpt && selectedOpt.parentElement && selectedOpt.parentElement.label.includes('1 เฟส')) || kva === 30;
+                    
+                    if (isSinglePhase) {
+                        kva1Phase += (kva * qty);
+                    } else {
+                        kva3Phase += (kva * qty);
+                    }
+                }
             });
+
+            const totalKva = kva1Phase + kva3Phase;
 
             if (totalKva === 0) {
                 alert('กรุณาเลือกขนาดหม้อแปลงอย่างน้อย 1 ลูก');
                 return;
             }
 
-            const current = totalKva / (1.73205 * 22);
-            const inrush = current * multiplier;
+            // คำนวณกระแสแยกตามระบบ:
+            // - ระบบ 1 เฟส (22kV Line-to-Line): I = kVA / 22
+            // - ระบบ 3 เฟส (22kV 3-Phase): I = kVA / (1.73205 * 22)
+            const current1Phase = kva1Phase / 22;
+            const current3Phase = kva3Phase / (1.73205 * 22);
+            const totalCurrent = current1Phase + current3Phase;
+            const inrush = totalCurrent * multiplier;
 
             const standardFuses = [2, 3, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 65, 80, 100, 140, 200];
             let selectedFuse = null;
@@ -3235,16 +3254,29 @@ function getIssuePriority(issueText) {
                 }
             }
 
-            const formattedTotalKva = new Intl.NumberFormat('en-US').format(totalKva);
+            const fmt = (num) => new Intl.NumberFormat('en-US').format(num);
 
-            document.getElementById('res-kva').innerText = formattedTotalKva + " kVA";
-            document.getElementById('res-amp').innerText = current.toFixed(2) + " A";
+            // แสดงรายละเอียดแยก 1 เฟส และ 3 เฟส หากมีการเลือกผสมกัน
+            let kvaDetail = `${fmt(totalKva)} kVA`;
+            let ampDetail = `${totalCurrent.toFixed(2)} A`;
+
+            if (kva1Phase > 0 && kva3Phase > 0) {
+                kvaDetail = `${fmt(totalKva)} kVA <span class="text-[11px] font-normal text-slate-500">(1Ø: ${fmt(kva1Phase)}, 3Ø: ${fmt(kva3Phase)})</span>`;
+                ampDetail = `${totalCurrent.toFixed(2)} A <span class="text-[11px] font-normal text-slate-500">(1Ø: ${current1Phase.toFixed(2)}A + 3Ø: ${current3Phase.toFixed(2)}A)</span>`;
+            } else if (kva1Phase > 0) {
+                kvaDetail = `${fmt(totalKva)} kVA <span class="text-[11px] font-normal text-blue-600">(1 เฟส 22kV)</span>`;
+            } else {
+                kvaDetail = `${fmt(totalKva)} kVA <span class="text-[11px] font-normal text-indigo-600">(3 เฟส 22kV)</span>`;
+            }
+
+            document.getElementById('res-kva').innerHTML = kvaDetail;
+            document.getElementById('res-amp').innerHTML = ampDetail;
             document.getElementById('res-inrush-label').innerHTML = `เผื่อกระแส (x${multiplier}): <span class="font-bold text-slate-800">${inrush.toFixed(2)} A</span>`;
             
             if (selectedFuse) {
                 document.getElementById('res-fuse').innerHTML = selectedFuse + ' <span class="text-sm text-slate-500">A</span>';
             } else {
-                document.getElementById('res-fuse').innerHTML = '> 200 <span class="text-sm text-slate-500">A</span>';
+                document.getElementById('res-fuse').innerHTML = 'มากกว่า 200 <span class="text-sm text-slate-500">A</span>';
             }
 
             document.getElementById('result-box-fuse').style.display = 'block';
@@ -3260,6 +3292,7 @@ function getIssuePriority(issueText) {
                 toast.classList.add('opacity-0');
             }, 2500);
         }
+
 
         function copyTextToClipboard(text, successMsg) {
             if (navigator.clipboard && window.isSecureContext) {
@@ -3467,11 +3500,36 @@ function getIssuePriority(issueText) {
             }
         }
 
-        // 🟢 ดักจับการกรอกช่อง "พิกัด (GPS Link)" พร้อมตัวหน่วงเวลา (Debounce)
+        // 🟢 ดักจับการกรอกช่อง "พิกัด (GPS Link)" และช่อง "ที่อยู่" พร้อมตัวหน่วงเวลา (Debounce)
         document.addEventListener('DOMContentLoaded', () => {
             let gpsTimeout;
             
             const gpsInputEl = document.getElementById('gps');
+            const addressInputEl = document.getElementById('address');
+
+            // 1. ตรวจหาพิกัดในช่อง "ที่อยู่" แล้วดึงไปใส่ช่อง "พิกัด (GPS Link)" อัตโนมัติ
+            if (addressInputEl && gpsInputEl) {
+                addressInputEl.addEventListener('input', function() {
+                    const addrText = this.value;
+                    // ตรวจจับรูปแบบ Lat: XX.XXXXXX Long: YY.YYYYYY (รองรับทั้งติดกับคำว่า พิกัด หรือเว้นวรรค)
+                    const latLongRegex = /Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
+                    const match = addrText.match(latLongRegex);
+
+                    if (match) {
+                        const extractedGps = `Lat: ${match[1]} Long: ${match[2]}`;
+                        
+                        // อัปเดตเฉพาะเมื่อค่าพิกัดยังไม่ตรงกับในช่อง GPS เพื่อไม่ให้รีโหลดแผนที่ซ้ำซ้อนขณะพิมพ์ที่อยู่
+                        if (gpsInputEl.value !== extractedGps) {
+                            gpsInputEl.value = extractedGps;
+                            // สั่งให้ช่อง GPS ทำงานต่ออัตโนมัติ (แสดงแผนที่ + ดึงชื่อบริเวณ)
+                            gpsInputEl.dispatchEvent(new Event('input'));
+                            showToast("📌 ดึงพิกัดไปใส่ช่อง GPS อัตโนมัติแล้ว");
+                        }
+                    }
+                });
+            }
+
+            // 2. เมื่อช่อง "พิกัด (GPS Link)" มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
             if (gpsInputEl) {
                 gpsInputEl.addEventListener('input', function() {
                     clearTimeout(gpsTimeout);
@@ -3487,10 +3545,10 @@ function getIssuePriority(issueText) {
                     gpsTimeout = setTimeout(async () => {
                         const coords = extractCoordsFromInput(inputValue);
                         if (coords) {
-                            // 1. แสดงจุดพิกัดบนหน้าต่างแผนที่ Google Maps ทันที
+                            // แสดงจุดพิกัดบนหน้าต่างแผนที่ Google Maps ทันที
                             updateMapPreview(coords);
                             
-                            // 2. ดึงชื่อสถานที่ไปเติมในช่อง "บริเวณ" อัตโนมัติ
+                            // ดึงชื่อสถานที่ไปเติมในช่อง "บริเวณ" อัตโนมัติ
                             const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
                             if (placeName) {
                                 handleAreaAutoFill(placeName);
@@ -3503,6 +3561,7 @@ function getIssuePriority(issueText) {
                 });
             }
         });
+
 
 
 
