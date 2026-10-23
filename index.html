@@ -973,21 +973,42 @@
         }
 
         // ฟังก์ชันคำนวณและแยกความเร่งด่วนอัตโนมัติ (Priority)
-        function getIssuePriority(issueText) {
-            if (!issueText) return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
-            
-            const lower = issueText.toLowerCase();
-            const criticalKeywords = ['เสาหัก', 'เสาล้ม', 'ระเบิด', 'ช็อต', 'ประกายไฟ', 'รถชน', 'สายขาด', 'ไหม้', 'หลายหลัง', 'อันตราย'];
-            const urgentKeywords = ['ดับ', 'ตก', 'เสียงดัง', 'กระพริบ', 'หย่อน', ''];
+function getIssuePriority(issueText) {
+    // ถ้าไม่ได้ป้อนข้อความ หรือเคาะเว้นวรรคมาอย่างเดียว ให้เป็นสีเขียว (ปกติ)
+    if (!issueText || !issueText.trim()) {
+        return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
+    }
+    
+    // แปลงตัวพิมพ์เล็ก + ตัดช่องว่าง + แปลงสระ "เเ" (เอสองตัว) ให้เป็นสระ "แ" อัตโนมัติ
+    const lower = issueText.toLowerCase().trim().replace(/เเ/g, 'แ');
+    
+    // 🔴 สีแดง: วิกฤต/อันตรายมาก
+    const criticalKeywords = [
+        'เสาหัก', 'เสาล้ม', 'ระเบิด', 'ช็อต', 'ประกายไฟ', 
+        'รถชน', 'รถชนเสา', 'สายขาด', 'ไหม้', 'หลายหลัง', 
+        'อันตราย', 'ไฟรั่ว', 'ฟิวส์แรงสูงขาด', 'ฟิวส์ไลน์', 
+        'ดร๊อปไลน์', 'ดร็อปไลน์', 'ดรอปไลน์', 
+        'สายไฟแรงสูงขาด', 'ต้นไม้ทับสายไฟแรงสูง', 'ต้นไม้ล้มทับสายไฟแรงสูง',
+        'ทับสายไฟ', 'ต้นไม้ล้ม', 'แรงสูง' // คำแกนหลักที่ช่วยดักจับประโยคใกล้เคียงได้ทั้งหมด
+    ];
+    
+    // 🟡 สีเหลือง: เร่งด่วน
+    const urgentKeywords = [
+        'ไฟดับ', 'ไฟตก', 'กระแสไฟตก', 'เสียงดัง', 
+        'กระพริบ', 'กะพริบ', 'สายหย่อน', 'หย่อน'
+    ];
 
-            if (criticalKeywords.some(kw => lower.includes(kw))) {
-                return { level: 'critical', label: 'วิกฤต/อันตรายมาก', color: 'text-rose-600 bg-rose-50 border-rose-200', emoji: '🔴' };
-            } else if (urgentKeywords.some(kw => lower.includes(kw))) {
-                return { level: 'urgent', label: 'เร่งด่วน', color: 'text-amber-600 bg-amber-50 border-amber-200', emoji: '🟡' };
-            } else {
-                return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
-            }
-        }
+    if (criticalKeywords.some(kw => kw && lower.includes(kw))) {
+        return { level: 'critical', label: 'วิกฤต/อันตรายมาก', color: 'text-rose-600 bg-rose-50 border-rose-200', emoji: '🔴' };
+    } else if (urgentKeywords.some(kw => kw && lower.includes(kw))) {
+        return { level: 'urgent', label: 'เร่งด่วน', color: 'text-amber-600 bg-amber-50 border-amber-200', emoji: '🟡' };
+    } else {
+        return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
+    }
+}
+
+
+
 
         // ==========================================
         //  REAL-TIME WEATHER STREAM VIA RAIN ALARM & OPEN-METEO
