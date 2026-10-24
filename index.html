@@ -3507,7 +3507,7 @@ function getIssuePriority(issueText) {
             const gpsInputEl = document.getElementById('gps');
             const addressInputEl = document.getElementById('address');
 
-            // 1. ตรวจหา "ชื่อผู้ใช้ไฟฟ้า", "เบอร์โทร" และ "พิกัด" ในช่อง "ที่อยู่"
+            // 1. ตรวจหา "ชื่อผู้ใช้ไฟฟ้า", "เบอร์โทร", "พิกัด" และคำว่า "ที่อยู่ :" ในช่อง "ที่อยู่"
             if (addressInputEl && gpsInputEl) {
                 addressInputEl.addEventListener('input', function() {
                     let addrText = this.value;
@@ -3522,7 +3522,7 @@ function getIssuePriority(issueText) {
                         showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
                     }
 
-                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" (ปรับปรุงใหม่ รองรับทุกรูปแบบการเว้นวรรคและการขึ้นบรรทัดใหม่)
+                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" (รองรับทุกรูปแบบการเว้นวรรคและการขึ้นบรรทัดใหม่)
                     const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)\s*[:：]\s*[\r?\n\s]*[\d\-\s\(\)]{8,20}/gi;
                     
                     if (phoneRegex.test(addrText)) {
@@ -3546,6 +3546,13 @@ function getIssuePriority(issueText) {
                         addrText = addrText.replace(matchGps[0], '');
                         isModified = true;
                         showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
+                    }
+
+                    // 1.4 ลบเฉพาะคำว่า "ที่อยู่ :" หรือ "ที่อยู่:" ออก (แต่เก็บรายละเอียดที่อยู่ไว้)
+                    const addressPrefixRegex = /ที่อยู่\s*[:：]\s*/gi;
+                    if (addressPrefixRegex.test(addrText)) {
+                        addrText = addrText.replace(addressPrefixRegex, '');
+                        isModified = true;
                     }
 
                     // อัปเดตค่าในช่อง "ที่อยู่" และจัดระเบียบช่องว่างใหม่หากมีการตัดข้อความ
@@ -3589,13 +3596,6 @@ function getIssuePriority(issueText) {
                 });
             }
         });
-
-
-
-
-
-
-
     </script>
 </body>
 </html>
