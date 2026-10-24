@@ -55,8 +55,9 @@
             transition: all 0.2s ease;
         }
 
-        /* Custom Inputs & Selects */
-        input[type="text"], input[type="number"], input[type="tel"], input[type="date"], select, textarea {
+                /* Custom Inputs & Selects */
+        input[type="text"], input[type="password"], input[type="number"], input[type="tel"], input[type="date"], select, textarea {
+
             background-color: #f8fafc;
             border: 1.5px solid #e2e8f0;
             border-radius: 0.75rem;
@@ -98,8 +99,204 @@
 </head>
 <body class="bg-slate-100 min-h-screen py-6 px-4 lg:py-10 flex items-start justify-center">
 
-    <!-- 🌟 กล่องใหญ่แบ่ง 2 ฝั่งสำหรับหน้าจอคอมพิวเตอร์ -->
-    <div class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-4">
+        <!-- ================= 🔐 หน้าล็อกอิน (Login Screen - โครงข่ายไฟฟ้าออกแบบใหม่) ================= -->
+    <div id="loginScreen" class="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
+        
+        <!-- ⚡ พื้นหลังกราฟิกโครงข่ายไฟฟ้าแรงสูง (Custom Smart Grid SVG + แอนิเมชันกระแสไฟ) -->
+        <svg class="absolute inset-0 w-full h-full object-cover pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                <!-- ไล่สีท้องฟ้ากลางคืนโทน PEA Smart Grid (น้ำเงินเข้ม - ม่วงมืด - ทองขอบฟ้า) -->
+                <linearGradient id="gridSky" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#060913" />
+                    <stop offset="45%" stop-color="#0f172a" />
+                    <stop offset="80%" stop-color="#1e1b4b" />
+                    <stop offset="100%" stop-color="#3b1d5e" />
+                </linearGradient>
+
+                <!-- แสงเรืองรองขอบฟ้า -->
+                <radialGradient id="horizonGlow" cx="50%" cy="85%" r="60%">
+                    <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.22" />
+                    <stop offset="45%" stop-color="#8b5cf6" stop-opacity="0.15" />
+                    <stop offset="100%" stop-color="#0f172a" stop-opacity="0" />
+                </radialGradient>
+
+                <!-- สีเรืองแสงของสายส่งและกระแสไฟฟ้า -->
+                <linearGradient id="powerLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.2" />
+                    <stop offset="50%" stop-color="#60a5fa" stop-opacity="0.6" />
+                    <stop offset="100%" stop-color="#c084fc" stop-opacity="0.2" />
+                </linearGradient>
+
+                <!-- เอฟเฟกต์เรืองแสง (Glow Filter) -->
+                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+            </defs>
+
+            <!-- พื้นหลังหลัก -->
+            <rect width="1440" height="900" fill="url(#gridSky)" />
+            <rect width="1440" height="900" fill="url(#horizonGlow)" />
+
+            <!-- ตารางโครงข่ายพื้นดิน (Perspective Smart Grid Floor) -->
+            <g stroke="rgba(139, 92, 246, 0.15)" stroke-width="1">
+                <line x1="0" y1="680" x2="1440" y2="680" />
+                <line x1="0" y1="720" x2="1440" y2="720" />
+                <line x1="0" y1="770" x2="1440" y2="770" />
+                <line x1="0" y1="830" x2="1440" y2="830" />
+                <line x1="0" y1="895" x2="1440" y2="895" />
+                <line x1="720" y1="650" x2="-200" y2="900" />
+                <line x1="720" y1="650" x2="150" y2="900" />
+                <line x1="720" y1="650" x2="450" y2="900" />
+                <line x1="720" y1="650" x2="720" y2="900" />
+                <line x1="720" y1="650" x2="990" y2="900" />
+                <line x1="720" y1="650" x2="1290" y2="900" />
+                <line x1="720" y1="650" x2="1640" y2="900" />
+            </g>
+
+            <!-- โครงข่ายโหนดดิจิทัลบนท้องฟ้า (SCADA / Smart Grid Constellation) -->
+            <g stroke="rgba(56, 189, 248, 0.18)" stroke-width="1.2" stroke-dasharray="4 4">
+                <line x1="250" y1="160" x2="480" y2="110" />
+                <line x1="480" y1="110" x2="720" y2="180" />
+                <line x1="720" y1="180" x2="960" y2="100" />
+                <line x1="960" y1="100" x2="1200" y2="170" />
+                <line x1="480" y1="110" x2="520" y2="290" />
+                <line x1="720" y1="180" x2="720" y2="320" />
+                <line x1="960" y1="100" x2="920" y2="290" />
+            </g>
+            <g fill="#38bdf8" filter="url(#glow)">
+                <circle cx="250" cy="160" r="4" opacity="0.7" />
+                <circle cx="480" cy="110" r="5" opacity="0.9">
+                    <animate attributeName="opacity" values="0.3;1;0.3" dur="3s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="720" cy="180" r="6" fill="#f59e0b">
+                    <animate attributeName="r" values="5;8;5" dur="2.5s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="960" cy="100" r="5" opacity="0.9">
+                    <animate attributeName="opacity" values="1;0.3;1" dur="3.5s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="1200" cy="170" r="4" opacity="0.7" />
+            </g>
+
+            <!-- 🗼 เสาส่งไฟฟ้าแรงสูง ต้นที่ 1 (ซ้าย) -->
+            <g stroke="rgba(148, 163, 184, 0.35)" stroke-width="2" fill="none">
+                <path d="M360,820 L395,360 L415,360 L450,820" />
+                <line x1="340" y1="420" x2="470" y2="420" stroke-width="2.5" />
+                <line x1="325" y1="490" x2="485" y2="490" stroke-width="2.5" />
+                <line x1="350" y1="560" x2="460" y2="560" stroke-width="2" />
+                <!-- โครงถัก (Truss) -->
+                <path d="M395,360 L420,420 L388,490 L425,560 L375,660 L438,750" stroke-width="1.2" />
+                <path d="M415,360 L390,420 L422,490 L385,560 L435,660 L372,750" stroke-width="1.2" />
+            </g>
+
+            <!-- 🗼 เสาส่งไฟฟ้าแรงสูง ต้นที่ 2 (กลาง - เด่นชัดบนมือถือและคอม) -->
+            <g stroke="rgba(203, 213, 225, 0.45)" stroke-width="2.2" fill="none">
+                <path d="M670,850 L708,300 L732,300 L770,850" />
+                <path d="M708,300 L720,250 L732,300" />
+                <line x1="635" y1="370" x2="805" y2="370" stroke-width="3" />
+                <line x1="615" y1="450" x2="825" y2="450" stroke-width="3" />
+                <line x1="640" y1="530" x2="800" y2="530" stroke-width="2.5" />
+                <!-- โครงถัก (Truss) -->
+                <path d="M708,300 L736,370 L700,450 L742,530 L688,640 L755,750" stroke-width="1.4" />
+                <path d="M732,300 L704,370 L740,450 L698,530 L752,640 L685,750" stroke-width="1.4" />
+                <!-- ลูกถ้วยเรืองแสง -->
+                <circle cx="635" cy="378" r="3.5" fill="#38bdf8" filter="url(#glow)" />
+                <circle cx="805" cy="378" r="3.5" fill="#38bdf8" filter="url(#glow)" />
+                <circle cx="615" cy="458" r="3.5" fill="#f59e0b" filter="url(#glow)" />
+                <circle cx="825" cy="458" r="3.5" fill="#f59e0b" filter="url(#glow)" />
+            </g>
+
+            <!-- 🗼 เสาส่งไฟฟ้าแรงสูง ต้นที่ 3 (ขวา) -->
+            <g stroke="rgba(148, 163, 184, 0.35)" stroke-width="2" fill="none">
+                <path d="M990,820 L1025,360 L1045,360 L1080,820" />
+                <line x1="970" y1="420" x2="1100" y2="420" stroke-width="2.5" />
+                <line x1="955" y1="490" x2="1115" y2="490" stroke-width="2.5" />
+                <line x1="980" y1="560" x2="1090" y2="560" stroke-width="2" />
+                <!-- โครงถัก (Truss) -->
+                <path d="M1025,360 L1050,420 L1018,490 L1055,560 L1005,660 L1068,750" stroke-width="1.2" />
+                <path d="M1045,360 L1020,420 L1052,490 L1015,560 L1065,660 L1002,750" stroke-width="1.2" />
+            </g>
+
+            <!-- ⚡ สายส่งไฟฟ้าหลัก (Power Lines) -->
+            <g fill="none" stroke="url(#powerLineGrad)" stroke-width="1.8">
+                <!-- สายชุดบน -->
+                <path id="line1" d="M-50,460 Q150,530 340,420 Q500,510 635,378" />
+                <path id="line2" d="M805,378 Q900,510 970,420 Q1200,530 1500,450" />
+                <!-- สายชุดกลาง -->
+                <path id="line3" d="M-50,530 Q150,600 325,490 Q480,580 615,458" />
+                <path id="line4" d="M825,458 Q920,580 955,490 Q1200,600 1500,520" />
+            </g>
+
+            <!-- 💥 แอนิเมชันกระแสไฟฟ้าวิ่งตามสายส่ง (Animated Energy Pulses) -->
+            <g fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="18 220" filter="url(#glow)">
+                <path d="M-50,460 Q150,530 340,420 Q500,510 635,378">
+                    <animate attributeName="stroke-dashoffset" from="238" to="0" dur="3s" repeatCount="indefinite" />
+                </path>
+                <path d="M805,378 Q900,510 970,420 Q1200,530 1500,450">
+                    <animate attributeName="stroke-dashoffset" from="238" to="0" dur="3s" repeatCount="indefinite" />
+                </path>
+            </g>
+            <g fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="14 260" filter="url(#glow)">
+                <path d="M-50,530 Q150,600 325,490 Q480,580 615,458">
+                    <animate attributeName="stroke-dashoffset" from="0" to="274" dur="3.5s" repeatCount="indefinite" />
+                </path>
+                <path d="M825,458 Q920,580 955,490 Q1200,600 1500,520">
+                    <animate attributeName="stroke-dashoffset" from="0" to="274" dur="3.5s" repeatCount="indefinite" />
+                </path>
+            </g>
+        </svg>
+
+        <!-- ฟิลเตอร์มืดทับเบาๆ เพื่อให้อ่านตัวหนังสือชัดเจน -->
+        <div class="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px] pointer-events-none"></div>
+
+        <!-- เนื้อหาหน้าล็อกอิน -->
+        <div class="relative z-10 w-full max-w-6xl mx-6 flex flex-col md:flex-row items-center justify-between gap-10">
+            
+            <!-- ข้อความฝั่งซ้าย (สไตล์ PEA MWM) -->
+            <div class="text-white space-y-2 text-center md:text-left">
+                <div class="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-semibold px-3 py-1 rounded-full mb-1 backdrop-blur-sm">
+                    ⚡ SMART GRID & FAULT MANAGEMENT
+                </div>
+                <h1 class="text-2xl md:text-4xl font-bold tracking-wide drop-shadow-md">
+                    Mobile Workforce Management
+                </h1>
+                <h2 class="text-xl md:text-3xl font-semibold text-slate-100 drop-shadow">
+                    สำหรับรับแจ้งเหตุไฟฟ้าขัดข้อง
+                </h2>
+                <p class="text-amber-400 font-semibold text-base md:text-xl pt-1 tracking-wide">
+                    Provincial Electricity Authority
+                </p>
+            </div>
+
+            <!-- กล่องเข้าสู่ระบบฝั่งขวา -->
+            <div class="bg-white/95 backdrop-blur-md p-7 rounded-2xl shadow-2xl w-full max-w-sm space-y-5 border border-white/40">
+                <h3 class="text-2xl font-normal text-slate-600">เข้าสู่ระบบ</h3>
+                
+                <div class="space-y-3">
+                    <input type="text" id="loginUsername" placeholder="ชื่อผู้ใช้งาน หรือ รหัสพนักงาน " class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none">
+                    <input type="password" id="loginPassword" placeholder="รหัสผ่านเข้าใช้งาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key === 'Enter') handleLogin()">
+                    
+                    <button type="button" onclick="handleLogin()" class="w-full bg-[#9b4dca] hover:bg-[#833ab4] text-white font-semibold py-2.5 rounded-xl shadow-md transition duration-200 text-sm">
+                        เข้าสู่ระบบ
+                    </button>
+                </div>
+
+                <div class="pt-3 border-t border-slate-200 text-[11px] text-slate-500 space-y-1">
+                    <div class="font-semibold text-slate-600">เข้าสู่ระบบ Admin</div>
+                    <div>พบปัญหาติดต่อผู้ดูแลระบบ</div>
+                    <div>Developed by SamSrikacha</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-4 left-0 right-0 z-10 text-center text-[11px] text-white/75 px-4">
+            © Provincial Electricity Authority All Rights Reserved.
+        </div>
+    </div>
+
+
+    <!-- 🌟 กล่องใหญ่แบ่ง 2 ฝั่ง (ซ่อนไว้ด้วย hidden จนกว่าจะล็อกอินผ่าน) -->
+    <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-4">
         
         <!-- ================= ฝั่งซ้าย: รูปกราฟิก (แสดงเฉพาะในคอมพิวเตอร์) ================= -->
         <div class="hidden lg:flex flex-col justify-center sticky top-10 space-y-6">
@@ -136,7 +333,7 @@
                     <rect x="65" y="395" width="20" height="20" rx="6" fill="#34d399" />
                     <rect x="95" y="400" width="70" height="5" rx="2.5" fill="#cbd5e1" />
                     <rect x="95" y="412" width="40" height="5" rx="2.5" fill="#94a3b8" />
-                    <rect x="380" y="70" width="160" height="60" rx="12" fill="rgba(255,255,255,0.1)" />
+                                        <rect x="380" y="70" width="160" height="60" rx="12" fill="rgba(255,255,255,0.1)" />
                     <rect x="395" y="85" width="20" height="20" rx="6" fill="#f472b6" />
                     <rect x="425" y="90" width="80" height="5" rx="2.5" fill="#cbd5e1" />
                     <rect x="425" y="102" width="50" height="5" rx="2.5" fill="#94a3b8" />
@@ -165,18 +362,23 @@
         <div class="max-w-xl w-full mx-auto bg-white rounded-2xl shadow-xl overflow-visible mb-6 lg:mb-0 relative z-10">
 
         <!-- Main Header & Tab Navigation -->
-        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 text-white rounded-t-2xl">
-            <div class="flex justify-between items-center">
-                <div>
-                    <h1 class="text-xl font-bold flex items-center gap-2">
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-4 text-white rounded-t-2xl">
+            <div class="flex justify-between items-center gap-2">
+                <div class="min-w-0">
+                    <h1 class="text-lg sm:text-xl font-bold flex items-center gap-1.5 truncate">
                         ⚡ ระบบเครื่องมือจัดการงานไฟฟ้า
                     </h1>
-                    <p class="text-xs text-blue-100 mt-1">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
+                    <p class="text-[11px] sm:text-xs text-blue-100 mt-0.5 truncate">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
                 </div>
-                <!-- ปุ่มสำรอง/กู้คืนข้อมูล -->
-                <button type="button" onclick="openBackupModal()" class="bg-white/20 hover:bg-white/30 text-white p-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="สำรองและกู้คืนข้อมูล">
-                    💾 <span class="text-xs hidden sm:inline">สำรอง/กู้คืน</span>
-                </button>
+                <!-- ปุ่มสำรอง/กู้คืนข้อมูล และ ปุ่มออกจากระบบ -->
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onclick="openBackupModal()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="สำรองและกู้คืนข้อมูล">
+                        💾 <span class="text-xs hidden sm:inline">สำรอง</span>
+                    </button>
+                    <button type="button" onclick="handleLogout()" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="ออกจากระบบ">
+                        🚪 <span class="text-xs hidden sm:inline">ออก</span>
+                    </button>
+                </div>
             </div>
             
             <!-- Tab Buttons (4 ปุ่ม) -->
@@ -195,6 +397,7 @@
                 </button>
             </div>
         </div>
+
 
         <!-- ================= TAB 1: ระบบรายงานเหตุไฟฟ้าขัดข้อง ================= -->
         <div id="tab1" class="tab-content active p-6 space-y-4">
@@ -988,12 +1191,64 @@
         </div>
     </div>
 
-    <!-- Toast Notification Global -->
+        <!-- Toast Notification Global -->
     <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none text-sm z-[70]">
         แจ้งเตือนระบบ
     </div>
 
     <script>
+        // ==========================================
+        //  🔐 LOGIN & AUTHENTICATION SYSTEM
+        // ==========================================
+        const APP_PASSCODE = "1234"; // 👈 เปลี่ยนรหัสผ่านเข้าใช้งานได้ที่นี่
+
+        function handleLogin() {
+            const passInput = document.getElementById('loginPassword');
+            const pass = passInput.value.trim();
+            
+            if (pass === APP_PASSCODE) {
+                localStorage.setItem('elec_app_logged_in', 'true');
+                passInput.value = '';
+                checkLoginStatus();
+                showToast("🔓 เข้าสู่ระบบสำเร็จ");
+            } else {
+                alert("❌ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง");
+                passInput.value = '';
+                passInput.focus();
+            }
+        }
+
+        function handleLogout() {
+            if (confirm("คุณต้องการออกจากระบบใช่หรือไม่?")) {
+                localStorage.removeItem('elec_app_logged_in');
+                checkLoginStatus();
+                showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
+            }
+        }
+
+                function checkLoginStatus() {
+            const isLoggedIn = localStorage.getItem('elec_app_logged_in') === 'true';
+            const loginScreen = document.getElementById('loginScreen');
+            const mainContent = document.getElementById('mainAppContent');
+
+            if (isLoggedIn) {
+                if (loginScreen) loginScreen.classList.add('hidden');
+                if (mainContent) {
+                    mainContent.classList.remove('hidden');
+                    mainContent.classList.add('grid');
+                }
+            } else {
+                if (loginScreen) loginScreen.classList.remove('hidden');
+                if (mainContent) {
+                    mainContent.classList.remove('grid');
+                    mainContent.classList.add('hidden');
+                }
+            }
+        }
+
+
+        window.addEventListener('DOMContentLoaded', checkLoginStatus);
+
         // ==========================================
         //  GLOBAL CHART INSTANCES & GLOBAL DATA FOR EXPORT
         // ==========================================
@@ -1142,7 +1397,7 @@ function getIssuePriority(issueText) {
                 weatherSelect.value = weatherStr;
                 weatherSelect.disabled = false;
                 
-                weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-50 bg-white text-sm font-bold transition-colors ";
+                weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold transition-colors ";
                 if (weatherStr === "ปกติ") weatherSelect.classList.add("text-emerald-600");
                 else if (weatherStr === "ฝนตกเล็กน้อย") weatherSelect.classList.add("text-blue-500");
                 else if (weatherStr === "ฝนตกปานกลาง") weatherSelect.classList.add("text-amber-500");
@@ -1482,15 +1737,18 @@ function getIssuePriority(issueText) {
                         borderWidth: 2
                     }]
                 },
-                options: {
+                                options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { position: 'bottom', labels: { font: { family: 'Prompt' } } } },
-                    tooltips: { enabled: (val22 !== 0 || val115 !== 0) },
+                    plugins: { 
+                        legend: { position: 'bottom', labels: { font: { family: 'Prompt' } } },
+                        tooltip: { enabled: (val22 !== 0 || val115 !== 0) }
+                    },
                     hover: { mode: (val22 !== 0 || val115 !== 0) ? 'nearest' : null }
                 }
             });
         }
+
 
         function exportAnalyticsToExcel() {
             if (currentFilteredFaults.length === 0 && currentFilteredOutages.length === 0) {
