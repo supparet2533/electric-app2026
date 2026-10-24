@@ -296,7 +296,7 @@
 
 
     <!-- 🌟 กล่องใหญ่แบ่ง 2 ฝั่ง (ซ่อนไว้ด้วย hidden จนกว่าจะล็อกอินผ่าน) -->
-    <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-4">
+    <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-4">
         
         <!-- ================= ฝั่งซ้าย: รูปกราฟิก (แสดงเฉพาะในคอมพิวเตอร์) ================= -->
         <div class="hidden lg:flex flex-col justify-center sticky top-10 space-y-6">
@@ -806,15 +806,26 @@
                     </div>
                 </div>
 
-                <div data-id="address">
-                    <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
-                        <span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 ที่อยู่ (บ้านเลขที่/หมู่):</span>
-                    </label>
+                                <div data-id="address">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
+                            <span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 ที่อยู่ (บ้านเลขที่/หมู่):</span>
+                        </label>
+                        <button type="button" onclick="openCaManageModal()" class="text-[10px] text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded font-semibold transition flex items-center gap-1">
+                            💳 ฐานข้อมูล CA (<span id="caCountBadge">0</span>)
+                        </button>
+                    </div>
                     <div class="relative">
-                        <textarea id="address" rows="2" class="w-full px-4 py-2 pr-10 border rounded-lg text-sm resize-none overflow-hidden" placeholder="เช่น ***/** ม.* ต.บึง" oninput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px';"></textarea>
+                        <textarea id="address" rows="2" class="w-full px-4 py-2 pr-10 border rounded-lg text-sm resize-none overflow-hidden" placeholder="เช่น ***/** ม.* ต.บึง (วาง CA : 12 หลักเพื่อเช็กยอดค้าง)" oninput="this.style.height = 'auto'; this.style.height = this.scrollHeight + 'px';"></textarea>
                         <button type="button" onclick="startVoiceInput('address', this)" class="absolute right-1 top-1 p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">🎙️</button>
                     </div>
+                    <!-- 🚨 แถบแจ้งเตือนเมื่อตรวจพบ CA มียอดค้างจ่าย -->
+                    <div id="caOverdueBanner" class="hidden mt-2 p-2.5 bg-rose-600 text-white rounded-xl text-xs font-bold flex items-center justify-between shadow-md animate-pulse">
+                        <span id="caOverdueText">🚨 มียอดค่าบริการค้างจ่าย</span>
+                        <button type="button" onclick="this.parentElement.classList.add('hidden')" class="text-white/80 hover:text-white px-1.5 text-sm leading-none">&times;</button>
+                    </div>
                 </div>
+
 
                 <div data-id="phone">
                     <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
@@ -1190,6 +1201,27 @@
             </div>
         </div>
     </div>
+    <!-- Modal จัดการฐานข้อมูล CA ค้างจ่าย (12 หลัก) -->
+    <div id="caModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-4 py-3 border-b flex justify-between items-center bg-gradient-to-r from-rose-600 to-red-700 text-white">
+                <h3 class="font-bold text-sm flex items-center gap-2">💳 ฐานข้อมูล CA ค้างจ่าย (12 หลัก)</h3>
+                <button type="button" onclick="closeCaManageModal()" class="text-rose-100 hover:text-white text-xl font-bold leading-none">&times;</button>
+            </div>
+            <div class="p-3 bg-white border-b space-y-2">
+                <div class="flex gap-2">
+                    <input type="text" id="newCaInput" placeholder="กรอกหรือวางเลข CA 12 หลัก (วางหลายชุดได้)..." onkeypress="if(event.key === 'Enter') addCaNumber()" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-rose-500">
+                    <button type="button" onclick="addCaNumber()" class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-rose-700 shadow-sm transition">เพิ่ม</button>
+                </div>
+                <input type="text" id="searchCaInput" oninput="renderCaModalList()" placeholder="🔍 ค้นหาเลข CA ในระบบ..." class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-mono bg-slate-50 focus:outline-none">
+            </div>
+            <div class="p-3 flex-1 overflow-y-auto space-y-1.5 bg-slate-50" id="caListContainer"></div>
+            <div class="p-3 border-t bg-white flex justify-between items-center">
+                <button type="button" onclick="clearAllCaNumbers()" class="text-xs text-rose-600 hover:underline font-semibold">🗑️ ล้างทั้งหมด</button>
+                <button type="button" onclick="closeCaManageModal()" class="px-4 py-1.5 text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition">ปิดหน้าต่าง</button>
+            </div>
+        </div>
+    </div>
 
         <!-- Toast Notification Global -->
     <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none text-sm z-[70]">
@@ -1200,44 +1232,161 @@
         // ==========================================
         //  🔐 LOGIN & AUTHENTICATION SYSTEM
         // ==========================================
-        const APP_PASSCODE = "1234"; // 👈 เปลี่ยนรหัสผ่านเข้าใช้งานได้ที่นี่
+                const APP_PASSCODE = "1234"; // 👈 เปลี่ยนรหัสผ่านเข้าใช้งานได้ที่นี่
+        const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 ชั่วโมง (3,600,000 มิลลิวินาที)
+        let inactivityTimer = null;
+        let lastSavedActivityTime = 0;
+
+        // ฟังก์ชันสร้างกล่องแจ้งเตือนแบบกำหนดหัวข้อเองได้ (แทนที่ alert เดิม)
+        function showCustomAlert(message, title = "⚡ แจ้งเตือนระบบ") {
+            let modal = document.getElementById('customAlertModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'customAlertModal';
+                modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+                modal.innerHTML = `
+                    <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700 animate-[fadeIn_0.2s_ease-in-out]">
+                        <h3 id="customAlertTitle" class="text-lg font-bold text-amber-400"></h3>
+                        <p id="customAlertMessage" class="text-sm text-slate-200 leading-relaxed"></p>
+                        <div class="flex justify-end pt-2">
+                            <button type="button" onclick="document.getElementById('customAlertModal').classList.add('hidden')" class="text-blue-400 hover:text-blue-300 font-bold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
+                                ตกลง
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            document.getElementById('customAlertTitle').textContent = title;
+            document.getElementById('customAlertMessage').textContent = message;
+            modal.classList.remove('hidden');
+        }
 
         function handleLogin() {
             const passInput = document.getElementById('loginPassword');
             const pass = passInput.value.trim();
             
             if (pass === APP_PASSCODE) {
+                const now = Date.now();
                 localStorage.setItem('elec_app_logged_in', 'true');
+                localStorage.setItem('elec_app_last_active', now.toString());
+                lastSavedActivityTime = now;
                 passInput.value = '';
                 checkLoginStatus();
                 showToast("🔓 เข้าสู่ระบบสำเร็จ");
             } else {
-                alert("❌ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง");
+                showCustomAlert("❌ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง", "⚡ ระบบจัดการงานไฟฟ้า");
                 passInput.value = '';
                 passInput.focus();
             }
         }
 
-        function handleLogout() {
-            if (confirm("คุณต้องการออกจากระบบใช่หรือไม่?")) {
-                localStorage.removeItem('elec_app_logged_in');
-                checkLoginStatus();
-                showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
+                // ฟังก์ชันสร้างกล่องยืนยันออกจากระบบแบบกำหนดหัวข้อเองได้ (แทนที่ confirm เดิม)
+        function showCustomConfirm(message, onConfirm, title = "⚡ ระบบจัดการงานไฟฟ้า") {
+            let modal = document.getElementById('customConfirmModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'customConfirmModal';
+                modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+                modal.innerHTML = `
+                    <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700 animate-[fadeIn_0.2s_ease-in-out]">
+                        <h3 id="customConfirmTitle" class="text-lg font-bold text-amber-400"></h3>
+                        <p id="customConfirmMessage" class="text-sm text-slate-200 leading-relaxed"></p>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" onclick="document.getElementById('customConfirmModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
+                                ยกเลิก
+                            </button>
+                            <button type="button" id="customConfirmOkBtn" class="bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">
+                                ตกลง
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
             }
+            document.getElementById('customConfirmTitle').textContent = title;
+            document.getElementById('customConfirmMessage').textContent = message;
+            
+            const okBtn = document.getElementById('customConfirmOkBtn');
+            okBtn.onclick = function() {
+                modal.classList.add('hidden');
+                if (typeof onConfirm === 'function') onConfirm();
+            };
+            
+            modal.classList.remove('hidden');
         }
 
-                function checkLoginStatus() {
+        function handleLogout() {
+            // 👈 แก้ไขข้อความคำถาม หรือหัวข้อด้านหลังได้ตรงบรรทัดนี้เลยครับ
+            showCustomConfirm("คุณต้องการออกจากระบบใช่หรือไม่?", function() {
+                localStorage.removeItem('elec_app_logged_in');
+                localStorage.removeItem('elec_app_last_active');
+                if (inactivityTimer) clearTimeout(inactivityTimer);
+                checkLoginStatus();
+                showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
+            }, "🚪 ยืนยันการออกจากระบบ");
+        }
+
+
+        // ฟังก์ชันสั่งตัดออกจากระบบอัตโนมัติเมื่อครบ 1 ชั่วโมง
+        function triggerAutoLogout() {
+            localStorage.removeItem('elec_app_logged_in');
+            localStorage.removeItem('elec_app_last_active');
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+            checkLoginStatus();
+            showCustomAlert("⏳ ระบบได้ออกจากระบบอัตโนมัติ เนื่องจากไม่มีการใช้งานเกิน 1 ชั่วโมง", "🔒 หมดเวลาการเชื่อมต่อ");
+        }
+
+        // ฟังก์ชันรีเซ็ตเวลาเมื่อมีการแตะหน้าจอ คลิก หรือพิมพ์ข้อมูล
+        function resetInactivityTimer() {
+            if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+
+            const now = Date.now();
+            const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
+
+            // หากกลับมาเปิดแอปแล้วพบว่าเวลาผ่านไปเกิน 1 ชั่วโมงแล้ว ให้ตัดออกทันที
+            if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
+                triggerAutoLogout();
+                return;
+            }
+
+            // บันทึกเวลาล่าสุดลงเครื่อง (จำกัดการบันทึกทุกๆ 10 วินาทีเพื่อให้แอปทำงานลื่นไหล)
+            if (now - lastSavedActivityTime > 10000) {
+                localStorage.setItem('elec_app_last_active', now.toString());
+                lastSavedActivityTime = now;
+            }
+
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+            inactivityTimer = setTimeout(triggerAutoLogout, INACTIVITY_TIMEOUT_MS);
+        }
+
+        function checkLoginStatus() {
             const isLoggedIn = localStorage.getItem('elec_app_logged_in') === 'true';
             const loginScreen = document.getElementById('loginScreen');
             const mainContent = document.getElementById('mainAppContent');
 
             if (isLoggedIn) {
+                const now = Date.now();
+                const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
+
+                // เช็กว่าเกิน 1 ชั่วโมงหรือยังตอนเปิดหน้าเว็บใหม่
+                if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
+                    triggerAutoLogout();
+                    return;
+                }
+
+                if (!lastActive) {
+                    localStorage.setItem('elec_app_last_active', now.toString());
+                }
+
                 if (loginScreen) loginScreen.classList.add('hidden');
                 if (mainContent) {
                     mainContent.classList.remove('hidden');
                     mainContent.classList.add('grid');
                 }
+                resetInactivityTimer();
             } else {
+                if (inactivityTimer) clearTimeout(inactivityTimer);
                 if (loginScreen) loginScreen.classList.remove('hidden');
                 if (mainContent) {
                     mainContent.classList.remove('grid');
@@ -1246,8 +1395,20 @@
             }
         }
 
+        // ดักจับการเคลื่อนไหวและการใช้งานของผู้ใช้ทั้งบนมือถือและคอมพิวเตอร์
+        ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
+            window.addEventListener(evt, resetInactivityTimer, { passive: true });
+        });
+
+        // ตรวจสอบเวลาทันทีเมื่อผู้ใช้เปิดหน้าจอมือถือกลับมา หรือสลับกลับมาที่แท็บนี้
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                checkLoginStatus();
+            }
+        });
 
         window.addEventListener('DOMContentLoaded', checkLoginStatus);
+
 
         // ==========================================
         //  GLOBAL CHART INSTANCES & GLOBAL DATA FOR EXPORT
@@ -1859,12 +2020,13 @@ function getIssuePriority(issueText) {
             }
         }
 
-        function performAutoBackupSnapshot() {
+                function performAutoBackupSnapshot() {
             try {
                 const snapshot = {
                     timestamp: new Date().toISOString(),
                     fault_reports_all: localStorage.getItem('fault_reports_all') || '[]',
                     elecReportsComplete_all: localStorage.getItem('elecReportsComplete_all') || '[]',
+                    overdue_ca_list: localStorage.getItem('overdue_ca_list') || '[]',
                     stationList_custom: JSON.stringify((stationsList && stationsList.length > 0) ? stationsList : defaultStations),
                     tambonCoordinates_custom: JSON.stringify(targetTambonCoordinates),
                     issueList_custom: JSON.stringify((issueList && issueList.length > 0) ? issueList : defaultIssueTypes),
@@ -1894,6 +2056,7 @@ function getIssuePriority(issueText) {
                     data: {
                         fault_reports_all: JSON.parse(localStorage.getItem('fault_reports_all') || '[]'),
                         elecReportsComplete_all: JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]'),
+                        overdue_ca_list: JSON.parse(localStorage.getItem('overdue_ca_list') || '[]'),
                         stationList_custom: (stationsList && stationsList.length > 0) ? stationsList : defaultStations,
                         tambonCoordinates_custom: targetTambonCoordinates,
                         issueList_custom: (issueList && issueList.length > 0) ? issueList : defaultIssueTypes,
@@ -1937,6 +2100,9 @@ function getIssuePriority(issueText) {
                     if (confirm("⚠️ คำเตือน: การกู้คืนข้อมูลจะแทนที่ข้อมูลและประวัติทั้งหมดในเบราว์เซอร์ปัจจุบัน คุณต้องการดำเนินการต่อใช่หรือไม่?")) {
                         if (data.fault_reports_all) localStorage.setItem('fault_reports_all', JSON.stringify(data.fault_reports_all));
                         if (data.elecReportsComplete_all) localStorage.setItem('elecReportsComplete_all', JSON.stringify(data.elecReportsComplete_all));
+                        if (data.overdue_ca_list && Array.isArray(data.overdue_ca_list)) {
+                            localStorage.setItem('overdue_ca_list', JSON.stringify(data.overdue_ca_list));
+                        }
                         
                         if (data.stationList_custom && Array.isArray(data.stationList_custom)) {
                             localStorage.setItem('stationList_custom', JSON.stringify(data.stationList_custom));
@@ -1987,6 +2153,7 @@ function getIssuePriority(issueText) {
                 if (confirm(`⚠️ ยืนยันการกู้คืนข้อมูลจากตัวสำรองอัตโนมัติล่าสุด (${backupDate}) ใช่หรือไม่?`)) {
                     if (snapshot.fault_reports_all) localStorage.setItem('fault_reports_all', snapshot.fault_reports_all);
                     if (snapshot.elecReportsComplete_all) localStorage.setItem('elecReportsComplete_all', snapshot.elecReportsComplete_all);
+                    if (snapshot.overdue_ca_list) localStorage.setItem('overdue_ca_list', snapshot.overdue_ca_list);
                     
                     if (snapshot.stationList_custom) localStorage.setItem('stationList_custom', snapshot.stationList_custom);
                     if (snapshot.tambonCoordinates_custom) localStorage.setItem('tambonCoordinates_custom', snapshot.tambonCoordinates_custom);
@@ -2056,7 +2223,7 @@ function getIssuePriority(issueText) {
             }
         }
 
-        function resetOutageForm() {
+                function resetOutageForm() {
             document.getElementById('issueType').value = '';
             document.getElementById('workerName').value = '';
             document.getElementById('area').value = '';
@@ -2064,6 +2231,8 @@ function getIssuePriority(issueText) {
             document.getElementById('address').style.height = 'auto'; 
             document.getElementById('phone').value = '';
             document.getElementById('gps').value = '';
+            const caBanner = document.getElementById('caOverdueBanner');
+            if (caBanner) caBanner.classList.add('hidden');
             updateMapPreview(null);
             autoFillJobNo();
         }
@@ -3831,11 +4000,143 @@ function getIssuePriority(issueText) {
             const gpsInputEl = document.getElementById('gps');
             const addressInputEl = document.getElementById('address');
 
-            // 1. ตรวจหา "ชื่อผู้ใช้ไฟฟ้า", "เบอร์โทร", "พิกัด" และคำว่า "ที่อยู่ :" ในช่อง "ที่อยู่"
+                       // ==========================================
+            //  💳 ระบบฐานข้อมูลและตรวจจับเลข CA 12 หลัก (ค้างจ่าย)
+            // ==========================================
+            let overdueCaList = [];
+            let lastAlertedCa = "";
+
+            function initOverdueCaData() {
+                try {
+                    overdueCaList = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]');
+                } catch (e) {
+                    overdueCaList = [];
+                }
+                updateCaCountBadge();
+            }
+
+            function saveOverdueCaData() {
+                localStorage.setItem('overdue_ca_list', JSON.stringify(overdueCaList));
+                updateCaCountBadge();
+                if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
+            }
+
+            function updateCaCountBadge() {
+                const badge = document.getElementById('caCountBadge');
+                if (badge) badge.textContent = overdueCaList.length;
+            }
+
+            window.openCaManageModal = function() {
+                window.renderCaModalList();
+                document.getElementById('caModal').classList.remove('hidden');
+            };
+
+            window.closeCaManageModal = function() {
+                document.getElementById('caModal').classList.add('hidden');
+            };
+
+            window.addCaNumber = function() {
+                const input = document.getElementById('newCaInput');
+                const rawText = input.value.trim();
+                const matches = rawText.match(/\d{12}/g);
+
+                if (!matches) {
+                    showCustomAlert("⚠️ กรุณากรอกตัวเลข 0-9 ให้ครบ 12 หลัก", "💳 รูปแบบเลข CA ไม่ถูกต้อง");
+                    return;
+                }
+
+                let addedCount = 0;
+                matches.forEach(ca => {
+                    if (!overdueCaList.includes(ca)) {
+                        overdueCaList.unshift(ca);
+                        addedCount++;
+                    }
+                });
+
+                if (addedCount > 0) {
+                    saveOverdueCaData();
+                    window.renderCaModalList();
+                    input.value = '';
+                    showToast(`✅ เพิ่มเลข CA สำเร็จ (${addedCount} หมายเลข)`);
+                } else {
+                    showToast("⚠️ เลข CA นี้อยู่ในฐานข้อมูลแล้ว");
+                }
+            };
+
+            window.deleteCaNumber = function(ca) {
+                overdueCaList = overdueCaList.filter(item => item !== ca);
+                saveOverdueCaData();
+                window.renderCaModalList();
+                showToast(`🗑️ ลบ CA: ${ca} แล้ว`);
+            };
+
+            window.clearAllCaNumbers = function() {
+                showCustomConfirm("คุณต้องการลบฐานข้อมูลเลข CA ทั้งหมดใช่หรือไม่?", function() {
+                    overdueCaList = [];
+                    saveOverdueCaData();
+                    window.renderCaModalList();
+                    showToast("🗑️ ล้างฐานข้อมูล CA ทั้งหมดแล้ว");
+                }, "💳 ยืนยันการล้างข้อมูล");
+            };
+
+            window.renderCaModalList = function() {
+                const container = document.getElementById('caListContainer');
+                const searchQ = (document.getElementById('searchCaInput')?.value || '').trim();
+                if (!container) return;
+
+                const filtered = searchQ ? overdueCaList.filter(ca => ca.includes(searchQ)) : overdueCaList;
+
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="text-center text-slate-400 text-xs py-6">ยังไม่มีหมายเลข CA ในฐานข้อมูล</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                filtered.forEach(ca => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm text-xs';
+                    div.innerHTML = `
+                        <span class="font-mono font-bold text-slate-700 tracking-wider">💳 ${ca}</span>
+                        <button type="button" onclick="deleteCaNumber('${ca}')" class="text-rose-500 hover:bg-rose-50 px-2 py-1 rounded border border-rose-100 transition">🗑️ ลบ</button>
+                    `;
+                    container.appendChild(div);
+                });
+            };
+
+            initOverdueCaData();
+
+            // 1. ตรวจหา "CA : ************", "ชื่อผู้ใช้ไฟฟ้า", "เบอร์โทร", "พิกัด" และคำว่า "ที่อยู่ :" ในช่อง "ที่อยู่"
             if (addressInputEl && gpsInputEl) {
                 addressInputEl.addEventListener('input', function() {
                     let addrText = this.value;
                     let isModified = false;
+
+                    // 1.0 ตรวจจับรูปแบบ "CA : ************" (ตัวเลข 0-9 จำนวน 12 หลัก)
+                    const caRegex = /CA\s*[:：]?\s*(\d{12})/i;
+                    const matchCa = addrText.match(caRegex);
+                    const bannerEl = document.getElementById('caOverdueBanner');
+                    const bannerTextEl = document.getElementById('caOverdueText');
+
+                    if (matchCa) {
+                        const detectedCa = matchCa[1];
+                        if (overdueCaList.includes(detectedCa)) {
+                            if (bannerEl && bannerTextEl) {
+                                bannerTextEl.textContent = `🚨 มียอดค่าบริการค้างจ่าย (CA: ${detectedCa})`;
+                                bannerEl.classList.remove('hidden');
+                            }
+                            if (lastAlertedCa !== detectedCa) {
+                                lastAlertedCa = detectedCa;
+                                showCustomAlert(`หมายเลข CA : ${detectedCa}\nมียอดค่าบริการค้างจ่ายในระบบ`, "🚨 มียอดค่าบริการค้างจ่าย");
+                            }
+                        } else {
+                            if (bannerEl) bannerEl.classList.add('hidden');
+                            lastAlertedCa = "";
+                        }
+                    } else {
+                        if (bannerEl) bannerEl.classList.add('hidden');
+                        lastAlertedCa = "";
+                    }
+
 
                     // 1.1 ลบ "ชื่อผู้ใช้ไฟฟ้า : ชื่อ นามสกุล" หรือ "ชื่อ : ชื่อ นามสกุล" (ยกเว้นกรณีที่มีคำว่า "บริษัท" ตามหลัง)
                     const customerNameRegex = /(?:ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ชื่อ)\s*[:：]\s*(?:\r?\n\s*)?(?!บริษัท)(?:(?:นาย|นางสาว|นาง|น\.ส\.|คุณ|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙a-zA-Z.]+(?:[ \t]+ณ)?[ \t]+[ก-๙a-zA-Z.]+[ \t]*\r?\n?/gi;
