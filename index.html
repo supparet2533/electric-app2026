@@ -55,9 +55,8 @@
             transition: all 0.2s ease;
         }
 
-                /* Custom Inputs & Selects */
+        /* Custom Inputs & Selects */
         input[type="text"], input[type="password"], input[type="number"], input[type="tel"], input[type="date"], select, textarea {
-
             background-color: #f8fafc;
             border: 1.5px solid #e2e8f0;
             border-radius: 0.75rem;
@@ -99,7 +98,7 @@
 </head>
 <body class="bg-slate-100 min-h-screen py-6 px-4 lg:py-10 flex items-start justify-center">
 
-        <!-- ================= 🔐 หน้าล็อกอิน (Login Screen - โครงข่ายไฟฟ้าออกแบบใหม่) ================= -->
+    <!-- ================= 🔐 หน้าล็อกอิน (Login Screen - โครงข่ายไฟฟ้าออกแบบใหม่) ================= -->
     <div id="loginScreen" class="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
         
         <!-- ⚡ พื้นหลังกราฟิกโครงข่ายไฟฟ้าแรงสูง (Custom Smart Grid SVG + แอนิเมชันกระแสไฟ) -->
@@ -333,7 +332,7 @@
                     <rect x="65" y="395" width="20" height="20" rx="6" fill="#34d399" />
                     <rect x="95" y="400" width="70" height="5" rx="2.5" fill="#cbd5e1" />
                     <rect x="95" y="412" width="40" height="5" rx="2.5" fill="#94a3b8" />
-                                        <rect x="380" y="70" width="160" height="60" rx="12" fill="rgba(255,255,255,0.1)" />
+                    <rect x="380" y="70" width="160" height="60" rx="12" fill="rgba(255,255,255,0.1)" />
                     <rect x="395" y="85" width="20" height="20" rx="6" fill="#f472b6" />
                     <rect x="425" y="90" width="80" height="5" rx="2.5" fill="#cbd5e1" />
                     <rect x="425" y="102" width="50" height="5" rx="2.5" fill="#94a3b8" />
@@ -806,7 +805,7 @@
                     </div>
                 </div>
 
-                                <div data-id="address">
+                <div data-id="address">
                     <div class="flex items-center justify-between mb-1">
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
                             <span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 ที่อยู่ (บ้านเลขที่/หมู่):</span>
@@ -826,7 +825,6 @@
                     </div>
                 </div>
 
-
                 <div data-id="phone">
                     <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
                         <span class="text-slate-400 text-lg leading-none">≡</span> <span>📞 เบอร์โทรศัพท์:</span>
@@ -837,7 +835,7 @@
                     </div>
                 </div>
 
-                                <div data-id="gps2">
+                <div data-id="gps2">
                     <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
                         <span class="text-slate-400 text-lg leading-none">≡</span> <span>📌 พิกัด (GPS Link):</span>
                     </label>
@@ -849,7 +847,7 @@
                             <span id="mapCoordLabel" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span>
                             <a id="mapExternalLink" href="#" target="_blank" class="text-blue-300 hover:text-white underline whitespace-nowrap ml-2">เปิดแอป Maps ↗</a>
                         </div>
-                        <iframe id="googleMapIframe" class="w-full h-56 border-0"  allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+                        <iframe id="googleMapIframe" class="w-full h-56 border-0" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
                     </div>
                 </div>
             </div>
@@ -1201,6 +1199,7 @@
             </div>
         </div>
     </div>
+
     <!-- Modal จัดการฐานข้อมูล CA ค้างจ่าย (12 หลัก) -->
     <div id="caModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
@@ -1223,21 +1222,20 @@
         </div>
     </div>
 
-        <!-- Toast Notification Global -->
+    <!-- Toast Notification Global -->
     <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none text-sm z-[70]">
         แจ้งเตือนระบบ
     </div>
-
-    <script>
+        <script>
         // ==========================================
         //  🔐 LOGIN & AUTHENTICATION SYSTEM
         // ==========================================
-                const APP_PASSCODE = "1234"; // 👈 เปลี่ยนรหัสผ่านเข้าใช้งานได้ที่นี่
+        const APP_PASSCODE = "1234"; // 👈 เปลี่ยนรหัสผ่านเข้าใช้งานได้ที่นี่
         const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 ชั่วโมง (3,600,000 มิลลิวินาที)
         let inactivityTimer = null;
         let lastSavedActivityTime = 0;
 
-        // ฟังก์ชันสร้างกล่องแจ้งเตือนแบบกำหนดหัวข้อเองได้ (แทนที่ alert เดิม)
+        // ฟังก์ชันสร้างกล่องแจ้งเตือนแบบกำหนดหัวข้อเองได้ (แทนที่ alert เดิมทั้งระบบ)
         function showCustomAlert(message, title = "⚡ แจ้งเตือนระบบ") {
             let modal = document.getElementById('customAlertModal');
             if (!modal) {
@@ -1247,7 +1245,7 @@
                 modal.innerHTML = `
                     <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700 animate-[fadeIn_0.2s_ease-in-out]">
                         <h3 id="customAlertTitle" class="text-lg font-bold text-amber-400"></h3>
-                        <p id="customAlertMessage" class="text-sm text-slate-200 leading-relaxed"></p>
+                        <p id="customAlertMessage" class="text-sm text-slate-200 leading-relaxed whitespace-pre-line"></p>
                         <div class="flex justify-end pt-2">
                             <button type="button" onclick="document.getElementById('customAlertModal').classList.add('hidden')" class="text-blue-400 hover:text-blue-300 font-bold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
                                 ตกลง
@@ -1260,6 +1258,54 @@
             document.getElementById('customAlertTitle').textContent = title;
             document.getElementById('customAlertMessage').textContent = message;
             modal.classList.remove('hidden');
+        }
+
+        // ดักจับคำสั่ง alert() พื้นฐานทุกจุดในแอปให้แสดงเป็นกล่องสีเข้มของระบบอัตโนมัติ
+        window.alert = function(message) {
+            showCustomAlert(message, "⚡ แจ้งเตือนระบบ");
+        };
+
+        // ฟังก์ชันสร้างกล่องพิมพ์แก้ไขข้อความ (แทนที่ prompt เดิม)
+        function showCustomPrompt(message, defaultValue = "", onConfirm, title = "✏️ แก้ไขข้อมูล") {
+            let modal = document.getElementById('customPromptModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'customPromptModal';
+                modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+                modal.innerHTML = `
+                    <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700 animate-[fadeIn_0.2s_ease-in-out]">
+                        <h3 id="customPromptTitle" class="text-lg font-bold text-amber-400"></h3>
+                        <p id="customPromptMessage" class="text-sm text-slate-200 leading-relaxed"></p>
+                        <input type="text" id="customPromptInput" class="w-full px-3.5 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none">
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" onclick="document.getElementById('customPromptModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
+                                ยกเลิก
+                            </button>
+                            <button type="button" id="customPromptOkBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">
+                                บันทึก
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            document.getElementById('customPromptTitle').textContent = title;
+            document.getElementById('customPromptMessage').textContent = message;
+            const inputEl = document.getElementById('customPromptInput');
+            inputEl.value = defaultValue;
+
+            const okBtn = document.getElementById('customConfirmPromptOkBtn') || document.getElementById('customPromptOkBtn');
+            const submitPrompt = function() {
+                modal.classList.add('hidden');
+                if (typeof onConfirm === 'function') onConfirm(inputEl.value);
+            };
+            okBtn.onclick = submitPrompt;
+            inputEl.onkeypress = function(e) {
+                if (e.key === 'Enter') submitPrompt();
+            };
+
+            modal.classList.remove('hidden');
+            setTimeout(() => inputEl.focus(), 50);
         }
 
         function handleLogin() {
@@ -1281,7 +1327,7 @@
             }
         }
 
-                // ฟังก์ชันสร้างกล่องยืนยันออกจากระบบแบบกำหนดหัวข้อเองได้ (แทนที่ confirm เดิม)
+        // ฟังก์ชันสร้างกล่องยืนยันแบบกำหนดหัวข้อเองได้ (แทนที่ confirm เดิม)
         function showCustomConfirm(message, onConfirm, title = "⚡ ระบบจัดการงานไฟฟ้า") {
             let modal = document.getElementById('customConfirmModal');
             if (!modal) {
@@ -1317,7 +1363,6 @@
         }
 
         function handleLogout() {
-            // 👈 แก้ไขข้อความคำถาม หรือหัวข้อด้านหลังได้ตรงบรรทัดนี้เลยครับ
             showCustomConfirm("คุณต้องการออกจากระบบใช่หรือไม่?", function() {
                 localStorage.removeItem('elec_app_logged_in');
                 localStorage.removeItem('elec_app_last_active');
@@ -1326,7 +1371,6 @@
                 showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
             }, "🚪 ยืนยันการออกจากระบบ");
         }
-
 
         // ฟังก์ชันสั่งตัดออกจากระบบอัตโนมัติเมื่อครบ 1 ชั่วโมง
         function triggerAutoLogout() {
@@ -1344,13 +1388,11 @@
             const now = Date.now();
             const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
 
-            // หากกลับมาเปิดแอปแล้วพบว่าเวลาผ่านไปเกิน 1 ชั่วโมงแล้ว ให้ตัดออกทันที
             if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
                 triggerAutoLogout();
                 return;
             }
 
-            // บันทึกเวลาล่าสุดลงเครื่อง (จำกัดการบันทึกทุกๆ 10 วินาทีเพื่อให้แอปทำงานลื่นไหล)
             if (now - lastSavedActivityTime > 10000) {
                 localStorage.setItem('elec_app_last_active', now.toString());
                 lastSavedActivityTime = now;
@@ -1369,7 +1411,6 @@
                 const now = Date.now();
                 const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
 
-                // เช็กว่าเกิน 1 ชั่วโมงหรือยังตอนเปิดหน้าเว็บใหม่
                 if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
                     triggerAutoLogout();
                     return;
@@ -1395,12 +1436,10 @@
             }
         }
 
-        // ดักจับการเคลื่อนไหวและการใช้งานของผู้ใช้ทั้งบนมือถือและคอมพิวเตอร์
         ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
             window.addEventListener(evt, resetInactivityTimer, { passive: true });
         });
 
-        // ตรวจสอบเวลาทันทีเมื่อผู้ใช้เปิดหน้าจอมือถือกลับมา หรือสลับกลับมาที่แท็บนี้
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                 checkLoginStatus();
@@ -1419,10 +1458,8 @@
         let currentFilteredOutages = [];
         let weatherStreamInterval = null;
 
-        // ลิงก์เริ่มต้นใบแจ้งสับเปลี่ยนมิเตอร์
         const defaultMeterLink = "https://docs.google.com/forms/d/e/1FAIpQLSfBsBdIcZRKR5N9I4rCuBLEhIIWIuKCsiUbsa83DmKnNUPZZQ/viewform?pli=1&pli=1";
 
-        // ฐานข้อมูลพิกัดเริ่มต้น 3 ตำบลหลัก
         const defaultTambonCoordinates = {
             "ตำบลบึง": { lat: 13.1361, lon: 101.0322 },       
             "ตำบลบ่อวิน": { lat: 13.0645, lon: 101.1611 },    
@@ -1463,42 +1500,35 @@
             }
         }
 
-        // ฟังก์ชันคำนวณและแยกความเร่งด่วนอัตโนมัติ (Priority)
-function getIssuePriority(issueText) {
-    // ถ้าไม่ได้ป้อนข้อความ หรือเคาะเว้นวรรคมาอย่างเดียว ให้เป็นสีเขียว (ปกติ)
-    if (!issueText || !issueText.trim()) {
-        return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
-    }
-    
-    // แปลงตัวพิมพ์เล็ก + ตัดช่องว่าง + แปลงสระ "เเ" (เอสองตัว) ให้เป็นสระ "แ" อัตโนมัติ
-    const lower = issueText.toLowerCase().trim().replace(/เเ/g, 'แ');
-    
-    // 🔴 สีแดง: วิกฤต/อันตรายมาก
-    const criticalKeywords = [
-        'เสาหัก', 'เสาล้ม', 'ระเบิด', 'ช็อต', 'ประกายไฟ', 
-        'รถชน', 'รถชนเสา', 'สายขาด', 'ไหม้', 'หลายหลัง', 
-        'อันตราย', 'ไฟรั่ว', 'ฟิวส์แรงสูงขาด', 'ฟิวส์ไลน์', 
-        'ดร๊อปไลน์', 'ดร็อปไลน์', 'ดรอปไลน์', 
-        'สายไฟแรงสูงขาด', 'ต้นไม้ทับสายไฟแรงสูง', 'ต้นไม้ล้มทับสายไฟแรงสูง',
-        'ทับสายไฟ', 'ต้นไม้ล้ม', 'แรงสูง' // คำแกนหลักที่ช่วยดักจับประโยคใกล้เคียงได้ทั้งหมด
-    ];
-    
-    // 🟡 สีเหลือง: เร่งด่วน
-    const urgentKeywords = [
-        'ไฟดับ', 'ไฟตก', 'กระแสไฟตก', 'เสียงดัง', 
-        'กระพริบ', 'กะพริบ', 'สายหย่อน', 'หย่อน'
-    ];
+        function getIssuePriority(issueText) {
+            if (!issueText || !issueText.trim()) {
+                return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
+            }
+            
+            const lower = issueText.toLowerCase().trim().replace(/เเ/g, 'แ');
+            
+            const criticalKeywords = [
+                'เสาหัก', 'เสาล้ม', 'ระเบิด', 'ช็อต', 'ประกายไฟ', 
+                'รถชน', 'รถชนเสา', 'สายขาด', 'ไหม้', 'หลายหลัง', 
+                'อันตราย', 'ไฟรั่ว', 'ฟิวส์แรงสูงขาด', 'ฟิวส์ไลน์', 
+                'ดร๊อปไลน์', 'ดร็อปไลน์', 'ดรอปไลน์', 
+                'สายไฟแรงสูงขาด', 'ต้นไม้ทับสายไฟแรงสูง', 'ต้นไม้ล้มทับสายไฟแรงสูง',
+                'ทับสายไฟ', 'ต้นไม้ล้ม', 'แรงสูง'
+            ];
+            
+            const urgentKeywords = [
+                'ไฟดับ', 'ไฟตก', 'กระแสไฟตก', 'เสียงดัง', 
+                'กระพริบ', 'กะพริบ', 'สายหย่อน', 'หย่อน'
+            ];
 
-    if (criticalKeywords.some(kw => kw && lower.includes(kw))) {
-        return { level: 'critical', label: 'วิกฤต/อันตรายมาก', color: 'text-rose-600 bg-rose-50 border-rose-200', emoji: '🔴' };
-    } else if (urgentKeywords.some(kw => kw && lower.includes(kw))) {
-        return { level: 'urgent', label: 'เร่งด่วน', color: 'text-amber-600 bg-amber-50 border-amber-200', emoji: '🟡' };
-    } else {
-        return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
-    }
-}
-
-
+            if (criticalKeywords.some(kw => kw && lower.includes(kw))) {
+                return { level: 'critical', label: 'วิกฤต/อันตรายมาก', color: 'text-rose-600 bg-rose-50 border-rose-200', emoji: '🔴' };
+            } else if (urgentKeywords.some(kw => kw && lower.includes(kw))) {
+                return { level: 'urgent', label: 'เร่งด่วน', color: 'text-amber-600 bg-amber-50 border-amber-200', emoji: '🟡' };
+            } else {
+                return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
+            }
+        }
 
 
         // ==========================================
@@ -1662,12 +1692,12 @@ function getIssuePriority(issueText) {
             const lon = parseFloat(lonInput.value);
 
             if (!name) {
-                alert("กรุณากรอกชื่อตำบล");
+                showCustomAlert("กรุณากรอกชื่อตำบล", "⚙️ จัดการตำบล");
                 return;
             }
 
             if (targetTambonCoordinates[name]) {
-                alert("มีชื่อตำบลนี้อยู่ในระบบแล้ว");
+                showCustomAlert("มีชื่อตำบลนี้อยู่ในระบบแล้ว", "⚙️ จัดการตำบล");
                 return;
             }
 
@@ -1688,12 +1718,11 @@ function getIssuePriority(issueText) {
         }
 
         function editTambon(oldName) {
-            const newName = prompt("แก้ไขชื่อตำบล:", oldName);
-            if (newName !== null) {
+            showCustomPrompt("แก้ไขชื่อตำบล:", oldName, function(newName) {
                 const trimmed = newName.trim();
                 if (trimmed && trimmed !== oldName) {
                     if (targetTambonCoordinates[trimmed]) {
-                        alert("มีชื่อตำบลนี้อยู่แล้ว");
+                        showCustomAlert("มีชื่อตำบลนี้อยู่แล้ว", "⚙️ จัดการตำบล");
                         return;
                     }
                     targetTambonCoordinates[trimmed] = targetTambonCoordinates[oldName];
@@ -1705,18 +1734,18 @@ function getIssuePriority(issueText) {
                     renderTambonModalList();
                     showToast("✅ แก้ไขชื่อตำบลสำเร็จ");
                 }
-            }
+            }, "✏️ แก้ไขชื่อตำบล");
         }
 
         function deleteTambon(name) {
-            if (confirm(`คุณต้องการลบ "${name}" ใช่หรือไม่?`)) {
+            showCustomConfirm(`คุณต้องการลบ "${name}" ใช่หรือไม่?`, function() {
                 delete targetTambonCoordinates[name];
                 localStorage.setItem('tambonCoordinates_custom', JSON.stringify(targetTambonCoordinates));
                 performAutoBackupSnapshot();
                 renderTambonDropdown();
                 renderTambonModalList();
                 showToast("🗑️ ลบตำบลเรียบร้อยแล้ว");
-            }
+            }, "🗑️ ยืนยันการลบตำบล");
         }
 
         // ==========================================
@@ -1898,7 +1927,7 @@ function getIssuePriority(issueText) {
                         borderWidth: 2
                     }]
                 },
-                                options: {
+                options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: { 
@@ -1909,7 +1938,6 @@ function getIssuePriority(issueText) {
                 }
             });
         }
-
 
         function exportAnalyticsToExcel() {
             if (currentFilteredFaults.length === 0 && currentFilteredOutages.length === 0) {
@@ -2020,7 +2048,7 @@ function getIssuePriority(issueText) {
             }
         }
 
-                function performAutoBackupSnapshot() {
+        function performAutoBackupSnapshot() {
             try {
                 const snapshot = {
                     timestamp: new Date().toISOString(),
@@ -2083,7 +2111,7 @@ function getIssuePriority(issueText) {
                 showToast("📦 ดาวน์โหลดไฟล์สำรองสำเร็จ!");
             } catch (e) {
                 console.error(e);
-                alert("เกิดข้อผิดพลาดในการสำรองข้อมูล");
+                showCustomAlert("เกิดข้อผิดพลาดในการสำรองข้อมูล", "💾 ระบบสำรองข้อมูล");
             }
         }
 
@@ -2097,7 +2125,7 @@ function getIssuePriority(issueText) {
                     const parsed = JSON.parse(e.target.result);
                     const data = parsed.data || parsed;
 
-                    if (confirm("⚠️ คำเตือน: การกู้คืนข้อมูลจะแทนที่ข้อมูลและประวัติทั้งหมดในเบราว์เซอร์ปัจจุบัน คุณต้องการดำเนินการต่อใช่หรือไม่?")) {
+                    showCustomConfirm("⚠️ คำเตือน: การกู้คืนข้อมูลจะแทนที่ข้อมูลและประวัติทั้งหมดในเบราว์เซอร์ปัจจุบัน คุณต้องการดำเนินการต่อใช่หรือไม่?", function() {
                         if (data.fault_reports_all) localStorage.setItem('fault_reports_all', JSON.stringify(data.fault_reports_all));
                         if (data.elecReportsComplete_all) localStorage.setItem('elecReportsComplete_all', JSON.stringify(data.elecReportsComplete_all));
                         if (data.overdue_ca_list && Array.isArray(data.overdue_ca_list)) {
@@ -2131,11 +2159,12 @@ function getIssuePriority(issueText) {
 
                         showToast("✅ กู้คืนข้อมูลสำเร็จ กำลังโหลดใหม่...");
                         setTimeout(() => { location.reload(); }, 1200);
-                    }
+                    }, "📂 ยืนยันการกู้คืนข้อมูล");
                 } catch (err) {
                     console.error(err);
-                    alert("❌ ไฟล์สำรองข้อมูลไม่ถูกต้อง หรือรูปแบบไฟล์เสียหาย");
+                    showCustomAlert("❌ ไฟล์สำรองข้อมูลไม่ถูกต้อง หรือรูปแบบไฟล์เสียหาย", "💾 ระบบสำรองข้อมูล");
                 }
+                event.target.value = '';
             };
             reader.readAsText(file);
         }
@@ -2144,13 +2173,13 @@ function getIssuePriority(issueText) {
             try {
                 const snapshotStr = localStorage.getItem('elec_app_auto_backup_snapshot');
                 if (!snapshotStr) {
-                    alert("❌ ไม่พบข้อมูลสำรองอัตโนมัติในระบบ");
+                    showCustomAlert("❌ ไม่พบข้อมูลสำรองอัตโนมัติในระบบ", "🛡️ ระบบสำรองอัตโนมัติ");
                     return;
                 }
                 const snapshot = JSON.parse(snapshotStr);
                 const backupDate = new Date(snapshot.timestamp).toLocaleString('th-TH');
 
-                if (confirm(`⚠️ ยืนยันการกู้คืนข้อมูลจากตัวสำรองอัตโนมัติล่าสุด (${backupDate}) ใช่หรือไม่?`)) {
+                showCustomConfirm(`⚠️ ยืนยันการกู้คืนข้อมูลจากตัวสำรองอัตโนมัติล่าสุด (${backupDate}) ใช่หรือไม่?`, function() {
                     if (snapshot.fault_reports_all) localStorage.setItem('fault_reports_all', snapshot.fault_reports_all);
                     if (snapshot.elecReportsComplete_all) localStorage.setItem('elecReportsComplete_all', snapshot.elecReportsComplete_all);
                     if (snapshot.overdue_ca_list) localStorage.setItem('overdue_ca_list', snapshot.overdue_ca_list);
@@ -2174,10 +2203,10 @@ function getIssuePriority(issueText) {
 
                     showToast("✅ กู้คืนข้อมูลอัตโนมัติสำเร็จ กำลังโหลดใหม่...");
                     setTimeout(() => { location.reload(); }, 1200);
-                }
+                }, "🛡️ ยืนยันการกู้คืนอัตโนมัติ");
             } catch (e) {
                 console.error(e);
-                alert("❌ เกิดข้อผิดพลาดในการกู้คืนอัตโนมัติ");
+                showCustomAlert("❌ เกิดข้อผิดพลาดในการกู้คืนอัตโนมัติ", "🛡️ ระบบสำรองอัตโนมัติ");
             }
         }
 
@@ -2202,7 +2231,7 @@ function getIssuePriority(issueText) {
                 showToast("✅ บันทึกลิงก์ฟอร์มสำเร็จ");
                 closeMeterLinkModal();
             } else {
-                alert("กรุณากรอกลิงก์");
+                showCustomAlert("กรุณากรอกลิงก์", "📄 ตั้งค่าลิงก์มิเตอร์");
             }
         }
 
@@ -2210,20 +2239,20 @@ function getIssuePriority(issueText) {
         //  Functions ล้างข้อมูลในฟอร์ม
         // ==========================================
         function confirmResetFaultForm() {
-            if (confirm('ต้องการล้างข้อมูลที่กรอกไว้ในฟอร์มรายงานเหตุ (TR/TL) ทั้งหมดใช่หรือไม่?')) {
+            showCustomConfirm('ต้องการล้างข้อมูลที่กรอกไว้ในฟอร์มรายงานเหตุ (TR/TL) ทั้งหมดใช่หรือไม่?', function() {
                 resetFaultForm();
                 showToast("🗑️ ล้างข้อมูลเรียบร้อยแล้ว");
-            }
+            }, "🗑️ ยืนยันการล้างข้อมูล");
         }
 
         function confirmResetOutageForm() {
-            if (confirm('ต้องการล้างข้อมูลที่กรอกไว้ในฟอร์มรับแจ้งทั้งหมดใช่หรือไม่?')) {
+            showCustomConfirm('ต้องการล้างข้อมูลที่กรอกไว้ในฟอร์มรับแจ้งทั้งหมดใช่หรือไม่?', function() {
                 resetOutageForm();
                 showToast("🗑️ ล้างข้อมูลเรียบร้อยแล้ว");
-            }
+            }, "🗑️ ยืนยันการล้างข้อมูล");
         }
 
-                function resetOutageForm() {
+        function resetOutageForm() {
             document.getElementById('issueType').value = '';
             document.getElementById('workerName').value = '';
             document.getElementById('area').value = '';
@@ -2288,7 +2317,7 @@ function getIssuePriority(issueText) {
         // ==========================================
         //  AI CHATBOT (GEMINI 3.8 FLASH) SCRIPT
         // ==========================================
-        let chatContext = []; // เก็บประวัติสนทนา
+        let chatContext = [];
 
         function openApiKeyModal() {
             const savedKey = localStorage.getItem('gemini_api_key') || '';
@@ -2308,7 +2337,7 @@ function getIssuePriority(issueText) {
                 showToast("✅ บันทึก API Key สำเร็จ");
                 closeApiKeyModal();
             } else {
-                alert("กรุณากรอก API Key");
+                showCustomAlert("กรุณากรอก API Key", "🔑 ตั้งค่า Gemini API Key");
             }
         }
 
@@ -2403,7 +2432,6 @@ function getIssuePriority(issueText) {
                 }
             };
 
-            // 🟢 เรียกใช้โมเดล Gemini 3.8 Flash โดยตรงเท่านั้น
             const modelToUse = 'gemini-3.8-flash';
 
             let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`, {
@@ -2582,7 +2610,7 @@ function getIssuePriority(issueText) {
                 };
                 dropdown.appendChild(li);
             });
-            dropdown.classList.remove('hidden');
+                        dropdown.classList.remove('hidden');
         }
 
         // ==========================================
@@ -2733,8 +2761,7 @@ function getIssuePriority(issueText) {
         }
 
         function editStation(oldName) {
-            const newVal = prompt("แก้ไขชื่อสถานี:", oldName);
-            if (newVal !== null) {
+            showCustomPrompt("แก้ไขชื่อสถานี:", oldName, function(newVal) {
                 const trimmed = newVal.trim();
                 if (trimmed && trimmed !== oldName) {
                     if (stationsList.includes(trimmed)) {
@@ -2748,18 +2775,18 @@ function getIssuePriority(issueText) {
                         }
                     }
                 }
-            }
+            }, "✏️ แก้ไขชื่อสถานี");
         }
 
         function deleteStation(name) {
-            if (confirm(`คุณต้องการลบสถานี "${name}" ใช่หรือไม่?`)) {
+            showCustomConfirm(`คุณต้องการลบสถานี "${name}" ใช่หรือไม่?`, function() {
                 const index = stationsList.indexOf(name);
                 if(index > -1) {
                     stationsList.splice(index, 1);
                     saveStations();
                     showToast('ลบสถานีสำเร็จ');
                 }
-            }
+            }, "🗑️ ยืนยันการลบสถานี");
         }
 
         // ==========================================
@@ -2913,8 +2940,7 @@ function getIssuePriority(issueText) {
         }
 
         function editIssueItem(oldName) {
-            const newVal = prompt("แก้ไขลักษณะอาการ:", oldName);
-            if (newVal !== null) {
+            showCustomPrompt("แก้ไขลักษณะอาการ:", oldName, function(newVal) {
                 const trimmed = newVal.trim();
                 if (trimmed && trimmed !== oldName) {
                     if (issueList.includes(trimmed)) {
@@ -2928,18 +2954,18 @@ function getIssuePriority(issueText) {
                         }
                     }
                 }
-            }
+            }, "✏️ แก้ไขลักษณะอาการ");
         }
 
         function deleteIssueItem(name) {
-            if (confirm(`คุณต้องการลบอาการ "${name}" ใช่หรือไม่?`)) {
+            showCustomConfirm(`คุณต้องการลบอาการ "${name}" ใช่หรือไม่?`, function() {
                 const index = issueList.indexOf(name);
                 if(index > -1) {
                     issueList.splice(index, 1);
                     saveIssues();
                     showToast('ลบลักษณะอาการสำเร็จ');
                 }
-            }
+            }, "🗑️ ยืนยันการลบอาการ");
         }
 
         function autoAddIssueType(item) {
@@ -2983,7 +3009,6 @@ function getIssuePriority(issueText) {
             if (coordRegex.test(val)) {
                 let cleanCoords = val.replace(/\s+/g, '');
                 return `https://www.google.com/maps?q=${cleanCoords}`;
-
             }
 
             return val;
@@ -3214,7 +3239,7 @@ function getIssuePriority(issueText) {
             setTimeout(() => {
                 window.removeEventListener('blur', blurListener);
                 if (!hasBlurred) {
-                    alert("กรุณาติดตั้ง แอป. LINE");
+                    showCustomAlert("กรุณาติดตั้ง แอป. LINE", "💬 ระบบส่งข้อมูล LINE");
                 } else {
                     showToast("เปิดแอป LINE เรียบร้อย!");
                 }
@@ -3461,15 +3486,15 @@ function getIssuePriority(issueText) {
         }
 
         function deleteOutageItem(dateTimeSaved) {
-            if (confirm('คุณต้องการลบรายการประวัตินี้ใช่หรือไม่?')) {
+            showCustomConfirm('คุณต้องการลบรายการประวัตินี้ใช่หรือไม่?', function() {
                 let history = JSON.parse(localStorage.getItem('elecReportsComplete_all')) || [];
                 history = history.filter(h => h.dateTimeSaved !== dateTimeSaved);
                 localStorage.setItem('elecReportsComplete_all', JSON.stringify(history));
                 performAutoBackupSnapshot();
                 loadOutageHistory();
                 autoFillJobNo();
-                showToast("ลบรายการประวัติเรียบร้อยแล้ว");
-            }
+                showToast("🗑️ ลบรายการประวัติเรียบร้อยแล้ว");
+            }, "🗑️ ยืนยันการลบประวัติ");
         }
         
         function loadFaultHistory() {
@@ -3551,14 +3576,14 @@ function getIssuePriority(issueText) {
         }
 
         function deleteFaultItem(timestamp) {
-            if (confirm('คุณต้องการลบรายการนี้ใช่หรือไม่?')) {
+            showCustomConfirm('คุณต้องการลบรายการนี้ใช่หรือไม่?', function() {
                 let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
                 history = history.filter(h => h.timestamp !== timestamp);
                 localStorage.setItem('fault_reports_all', JSON.stringify(history));
                 performAutoBackupSnapshot();
                 loadFaultHistory();
-                showToast("ลบรายการเรียบร้อยแล้ว");
-            }
+                showToast("🗑️ ลบรายการเรียบร้อยแล้ว");
+            }, "🗑️ ยืนยันการลบประวัติ");
         }
 
         function exportData(type) {
@@ -3621,7 +3646,6 @@ function getIssuePriority(issueText) {
             
             let tableHtml = `
             <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-
             <head>
                 <meta charset="utf-8">
                 <style>
@@ -3689,7 +3713,7 @@ function getIssuePriority(issueText) {
             document.getElementById('transformer-list').appendChild(div);
         }
 
-                function calculateFuseCalc() {
+        function calculateFuseCalc() {
             const groups = document.querySelectorAll('#transformer-list .flex');
             let kva1Phase = 0;
             let kva3Phase = 0;
@@ -3710,7 +3734,6 @@ function getIssuePriority(issueText) {
                 if (isNaN(qty) || qty <= 0) qty = 1;
                 
                 if (!isNaN(kva) && kva > 0) {
-                    // ตรวจสอบว่าเป็นหม้อแปลง 1 เฟส (จากกลุ่ม optgroup หรือขนาด 30 kVA)
                     const selectedOpt = kvaInput.options[kvaInput.selectedIndex];
                     const isSinglePhase = (selectedOpt && selectedOpt.parentElement && selectedOpt.parentElement.label.includes('1 เฟส')) || kva === 30;
                     
@@ -3725,13 +3748,10 @@ function getIssuePriority(issueText) {
             const totalKva = kva1Phase + kva3Phase;
 
             if (totalKva === 0) {
-                alert('กรุณาเลือกขนาดหม้อแปลงอย่างน้อย 1 ลูก');
+                showCustomAlert('กรุณาเลือกขนาดหม้อแปลงอย่างน้อย 1 ลูก', '🧮 คำนวณขนาดฟิวส์ 22kV');
                 return;
             }
 
-            // คำนวณกระแสแยกตามระบบ:
-            // - ระบบ 1 เฟส (22kV Line-to-Line): I = kVA / 22
-            // - ระบบ 3 เฟส (22kV 3-Phase): I = kVA / (1.73205 * 22)
             const current1Phase = kva1Phase / 22;
             const current3Phase = kva3Phase / (1.73205 * 22);
             const totalCurrent = current1Phase + current3Phase;
@@ -3749,7 +3769,6 @@ function getIssuePriority(issueText) {
 
             const fmt = (num) => new Intl.NumberFormat('en-US').format(num);
 
-            // แสดงรายละเอียดแยก 1 เฟส และ 3 เฟส หากมีการเลือกผสมกัน
             let kvaDetail = `${fmt(totalKva)} kVA`;
             let ampDetail = `${totalCurrent.toFixed(2)} A`;
 
@@ -3785,7 +3804,6 @@ function getIssuePriority(issueText) {
                 toast.classList.add('opacity-0');
             }, 2500);
         }
-
 
         function copyTextToClipboard(text, successMsg) {
             if (navigator.clipboard && window.isSecureContext) {
@@ -3864,7 +3882,7 @@ function getIssuePriority(issueText) {
                 btnElement.classList.remove('text-rose-500', 'animate-pulse', 'bg-rose-50');
                 
                 if(event.error === 'not-allowed') {
-                    alert("⚠️ ไมโครโฟนถูกบล็อก!\n\nวิธีแก้:\n1. หากเปิดใน LINE ให้กดมุมขวาบน เลือก 'เปิดในเบราว์เซอร์'\n2. หากใช้ Chrome/Safari ให้กดรูปแม่กุญแจ 🔒 บนช่อง URL แล้วกด 'อนุญาตไมโครโฟน'");
+                    showCustomAlert("⚠️ ไมโครโฟนถูกบล็อก!\n\nวิธีแก้:\n1. หากเปิดใน LINE ให้กดมุมขวาบน เลือก 'เปิดในเบราว์เซอร์'\n2. หากใช้ Chrome/Safari ให้กดรูปแม่กุญแจ 🔒 บนช่อง URL แล้วกด 'อนุญาตไมโครโฟน'", "🎙️ การเข้าถึงไมโครโฟน");
                 } else {
                     showToast("❌ รับเสียงไม่สำเร็จ กรุณาลองใหม่");
                 }
@@ -3878,6 +3896,7 @@ function getIssuePriority(issueText) {
         }
 
 
+        // ==========================================
         //  GPS TO AREA (AUTO-FILL & APPEND)
         // ==========================================
         function extractCoordsFromInput(input) {
@@ -3964,7 +3983,6 @@ function getIssuePriority(issueText) {
             }
         }
 
-                        // 🟢 ฟังก์ชันควบคุมการแสดงผลและปักหมุดบนหน้าต่าง Google Maps (รองรับทั้งมือถือและ PC)
         function updateMapPreview(coords) {
             const container = document.getElementById('mapPreviewContainer');
             const iframe = document.getElementById('googleMapIframe');
@@ -3993,14 +4011,13 @@ function getIssuePriority(issueText) {
             }
         }
 
-        // 🟢 ดักจับการกรอกช่อง "พิกัด (GPS Link)" และช่อง "ที่อยู่" พร้อมตัวหน่วงเวลา (Debounce)
         document.addEventListener('DOMContentLoaded', () => {
             let gpsTimeout;
             
             const gpsInputEl = document.getElementById('gps');
             const addressInputEl = document.getElementById('address');
 
-                       // ==========================================
+            // ==========================================
             //  💳 ระบบฐานข้อมูลและตรวจจับเลข CA 12 หลัก (ค้างจ่าย)
             // ==========================================
             let overdueCaList = [];
@@ -4137,7 +4154,6 @@ function getIssuePriority(issueText) {
                         lastAlertedCa = "";
                     }
 
-
                     // 1.1 ลบ "ชื่อผู้ใช้ไฟฟ้า : ชื่อ นามสกุล" หรือ "ชื่อ : ชื่อ นามสกุล" (ยกเว้นกรณีที่มีคำว่า "บริษัท" ตามหลัง)
                     const customerNameRegex = /(?:ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ชื่อ)\s*[:：]\s*(?:\r?\n\s*)?(?!บริษัท)(?:(?:นาย|นางสาว|นาง|น\.ส\.|คุณ|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙a-zA-Z.]+(?:[ \t]+ณ)?[ \t]+[ก-๙a-zA-Z.]+[ \t]*\r?\n?/gi;
                     
@@ -4147,7 +4163,7 @@ function getIssuePriority(issueText) {
                         showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
                     }
 
-                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" (รองรับทุกรูปแบบการเว้นวรรคและการขึ้นบรรทัดใหม่)
+                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]"
                     const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)\s*[:：]\s*[\r?\n\s]*[\d\-\s\(\)]{8,20}/gi;
                     
                     if (phoneRegex.test(addrText)) {
@@ -4156,31 +4172,28 @@ function getIssuePriority(issueText) {
                         showToast("✂️ ลบเบอร์โทรออกจากช่องที่อยู่แล้ว");
                     }
 
-                    // 1.3 ตรวจจับรูปแบบ พิกัดLat: XX.XXXXXX Long: YY.YYYYYY หรือ Lat: ... Long: ...
+                    // 1.3 ตรวจจับรูปแบบ พิกัดLat: XX.XXXXXX Long: YY.YYYYYY
                     const latLongRegex = /(?:พิกัด\s*[:=]?\s*)?Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
                     const matchGps = addrText.match(latLongRegex);
 
                     if (matchGps) {
                         const extractedGps = `Lat: ${matchGps[1]} Long: ${matchGps[2]}`;
                         
-                        // นำพิกัดไปใส่ในช่อง GPS Link และสั่งโหลดแผนที่ + ชื่อบริเวณ
                         gpsInputEl.value = extractedGps;
                         gpsInputEl.dispatchEvent(new Event('input'));
                         
-                        // ลบข้อความพิกัดออกจากช่อง "ที่อยู่"
                         addrText = addrText.replace(matchGps[0], '');
                         isModified = true;
                         showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
                     }
 
-                    // 1.4 ลบเฉพาะคำว่า "ที่อยู่ :" หรือ "ที่อยู่:" ออก (แต่เก็บรายละเอียดที่อยู่ไว้)
+                    // 1.4 ลบเฉพาะคำว่า "ที่อยู่ :" หรือ "ที่อยู่:" ออก
                     const addressPrefixRegex = /ที่อยู่\s*[:：]\s*/gi;
                     if (addressPrefixRegex.test(addrText)) {
                         addrText = addrText.replace(addressPrefixRegex, '');
                         isModified = true;
                     }
 
-                    // อัปเดตค่าในช่อง "ที่อยู่" และจัดระเบียบช่องว่างใหม่หากมีการตัดข้อความ
                     if (isModified) {
                         this.value = addrText.replace(/[ \t]{2,}/g, ' ').replace(/\n\s*\n/g, '\n').trim();
                         this.style.height = 'auto';
@@ -4195,26 +4208,21 @@ function getIssuePriority(issueText) {
                     clearTimeout(gpsTimeout);
                     const inputValue = this.value.trim();
                     
-                    // หากผู้ใช้ลบข้อความในช่องออกหมด ให้ซ่อนแผนที่ทันที
                     if (!inputValue) {
                         updateMapPreview(null);
                         return;
                     }
                     
-                    // รอ 0.8 วินาที หลังจากพิมพ์หรือวางพิกัดเสร็จ
                     gpsTimeout = setTimeout(async () => {
                         const coords = extractCoordsFromInput(inputValue);
                         if (coords) {
-                            // แสดงจุดพิกัดบนหน้าต่างแผนที่ Google Maps ทันที
                             updateMapPreview(coords);
                             
-                            // ดึงชื่อสถานที่ไปเติมในช่อง "บริเวณ" อัตโนมัติ
                             const placeName = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
                             if (placeName) {
                                 handleAreaAutoFill(placeName);
                             }
                         } else {
-                            // หากข้อความที่กรอกไม่ใช่รูปแบบพิกัดที่อ่านค่าได้ ให้ซ่อนแผนที่
                             updateMapPreview(null);
                         }
                     }, 800); 
@@ -4224,4 +4232,3 @@ function getIssuePriority(issueText) {
     </script>
 </body>
 </html>
-
