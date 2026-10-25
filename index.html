@@ -1250,17 +1250,20 @@
         // ==========================================
                 // ==========================================
                 // ==========================================
-        //  🔐 LOGIN & CLOUD MULTI-USER AUTHENTICATION (GOOGLE SHEETS SYNC)
+                // ==========================================
+        //  🔐 LOGIN & CLOUD MULTI-USER AUTHENTICATION (SINGLE DEVICE / AUTO-KICK)
         // ==========================================
-        // 👇 นำลิงก์ Web App URL (ที่ลงท้ายด้วย /exec) จาก Google Apps Script มาวางในเครื่องหมายคำพูดด้านล่างนี้ครับ
-const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
+        const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
         const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 ชั่วโมง (3,600,000 มิลลิวินาที)
         let inactivityTimer = null;
         let lastSavedActivityTime = 0;
+        let lastSessionCheckTime = 0;
+        let isSavingUsersToCloud = false;
+        let lastCloudSaveTimestamp = 0;
 
         // บัญชีแอดมินเริ่มต้น (ใช้กรณีเปิดครั้งแรกก่อนซิงค์กับ Google Sheets)
         const DEFAULT_USER_ACCOUNTS = [
-            { username: "admin", password: "1234", role: "admin" }
+            { username: "admin", password: "1234", role: "admin", sessionToken: "" }
         ];
         let userAccountsList = [];
 
@@ -1271,13 +1274,25 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
             return '';
         }
 
+        // แยกค่า role และ sessionToken ออกจากกัน (เก็บในคอลัมน์ role ของชีตในรูปแบบ role::sessionToken)
+        function parseAccountRecord(rawAcc) {
+            const rawRole = String(rawAcc.role || 'user');
+            const parts = rawRole.split('::');
+            return {
+                username: String(rawAcc.username || '').trim(),
+                password: String(rawAcc.password || '').trim(),
+                role: parts[0] || 'user',
+                sessionToken: rawAcc.sessionToken !== undefined ? rawAcc.sessionToken : (parts[1] || '')
+            };
+        }
+
         function initUserAccounts() {
             const saved = localStorage.getItem('elec_user_accounts');
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
                     if (Array.isArray(parsed) && parsed.length > 0) {
-                        userAccountsList = parsed;
+                        userAccountsList = parsed.map(parseAccountRecord);
                     } else {
                         userAccountsList = [...DEFAULT_USER_ACCOUNTS];
                     }
@@ -1290,10 +1305,15 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
             }
         }
 
-        // ดึงข้อมูลบัญชีล่าสุดจาก Google Sheets ออนไลน์
-        async function fetchUserAccountsFromCloud(silent = true) {
+        // ดึงข้อมูลบัญชีและรหัสเครื่องล่าสุดจาก Google Sheets
+        async function fetchUserAccountsFromCloud(silent = true, forceFetch = false) {
             const apiUrl = getActiveCloudApiUrl();
             if (!apiUrl) return false;
+
+            // ป้องกันการดึงข้อมูลเก่ามาทับขณะที่เพิ่งบันทึกข้อมูลใหม่ขึ้น Cloud
+            if (!forceFetch && (isSavingUsersToCloud || (Date.now() - lastCloudSaveTimestamp < 6000))) {
+                return true;
+            }
 
             const statusEl = document.getElementById('cloudSyncStatusText');
             if (statusEl && !silent) statusEl.textContent = '⏳ กำลังดึงข้อมูลบัญชีจาก Google Sheets...';
@@ -1302,13 +1322,13 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 const res = await fetch(apiUrl + '?t=' + Date.now(), { method: 'GET', cache: 'no-store' });
                 const data = await res.json();
                 if (data && data.status === 'ok' && Array.isArray(data.users) && data.users.length > 0) {
-                    userAccountsList = data.users;
+                    userAccountsList = data.users.map(parseAccountRecord);
                     localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
                     if (statusEl) statusEl.textContent = `🟢 ซิงค์ออนไลน์กับ Google Sheets ล่าสุดแล้ว (${userAccountsList.length} บัญชี)`;
                     if (document.getElementById('userManageModal') && !document.getElementById('userManageModal').classList.contains('hidden')) {
                         renderUserAccountList();
                     }
-                    // ตรวจสอบสิทธิ์ซ้ำทันทีหลังดึงข้อมูลจาก Cloud
+                    // ตรวจสอบทันทีว่าบัญชีนี้ถูกล็อกอินซ้อนจากเครื่องอื่นหรือไม่
                     verifyActiveSessionRole();
                     return true;
                 }
@@ -1319,33 +1339,48 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
             return false;
         }
 
-        // บันทึกข้อมูลบัญชีที่แอดมินแก้ไขขึ้นไปเก็บที่ Google Sheets ทันที
+        // บันทึกข้อมูลบัญชีและรหัสเครื่อง (Session Token) ขึ้นไปเก็บที่ Google Sheets ทันที
         async function saveUserAccounts() {
             localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
             if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
 
             const apiUrl = getActiveCloudApiUrl();
-            if (!apiUrl) return;
+            if (!apiUrl) return false;
+
+            isSavingUsersToCloud = true;
+            lastCloudSaveTimestamp = Date.now();
 
             const statusEl = document.getElementById('cloudSyncStatusText');
             if (statusEl) statusEl.textContent = '⏳ กำลังบันทึกขึ้น Google Sheets ออนไลน์...';
 
             try {
+                const payloadUsers = userAccountsList.map(u => ({
+                    username: u.username,
+                    password: u.password,
+                    role: `${u.role || 'user'}::${u.sessionToken || ''}`
+                }));
+
                 const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'saveUsers', users: userAccountsList })
+                    body: JSON.stringify({ action: 'saveUsers', users: payloadUsers })
                 });
                 const data = await res.json();
+                isSavingUsersToCloud = false;
+                lastCloudSaveTimestamp = Date.now();
+
                 if (data && data.status === 'ok') {
                     if (statusEl) statusEl.textContent = '🟢 บันทึกขึ้น Google Sheets สำเร็จ (ทุกเครื่องอัปเดตแล้ว)';
+                    return true;
                 } else {
                     if (statusEl) statusEl.textContent = '⚠️ บันทึกขึ้น Cloud ไม่สำเร็จ';
                 }
             } catch (err) {
+                isSavingUsersToCloud = false;
                 console.error('Save to Cloud error:', err);
                 if (statusEl) statusEl.textContent = '⚠️ เกิดข้อผิดพลาดในการส่งข้อมูลขึ้น Google Sheets';
             }
+            return false;
         }
 
         initUserAccounts();
@@ -1436,7 +1471,6 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 return;
             }
 
-            // ดึงข้อมูลบัญชีล่าสุดจาก Google Sheets ก่อนตรวจรหัสผ่าน
             const loginBtn = document.querySelector('#loginScreen button[onclick="handleLogin()"]');
             const origBtnText = loginBtn ? loginBtn.textContent : 'เข้าสู่ระบบ';
             if (loginBtn) {
@@ -1444,29 +1478,43 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 loginBtn.textContent = '⏳ กำลังตรวจสอบบัญชี...';
             }
 
-            await fetchUserAccountsFromCloud(true);
+            await fetchUserAccountsFromCloud(true, true);
 
-            if (loginBtn) {
-                loginBtn.disabled = false;
-                loginBtn.textContent = origBtnText;
-            }
-            
-            const matchedAcc = userAccountsList.find(
+            const matchedIndex = userAccountsList.findIndex(
                 acc => acc.username.toLowerCase() === username.toLowerCase() && acc.password === pass
             );
 
-            if (matchedAcc) {
+            if (matchedIndex !== -1) {
+                const matchedAcc = userAccountsList[matchedIndex];
                 const now = Date.now();
+                // สร้างรหัสเซสชันใหม่สำหรับเครื่องนี้ เพื่อสั่งเตะเครื่องเก่าออกอัตโนมัติ
+                const newSessionToken = 'sess_' + now + '_' + Math.random().toString(36).substring(2, 8);
+                matchedAcc.sessionToken = newSessionToken;
+
                 localStorage.setItem('elec_app_logged_in', 'true');
                 localStorage.setItem('elec_app_current_user', matchedAcc.username);
                 localStorage.setItem('elec_app_current_role', matchedAcc.role || 'user');
+                localStorage.setItem('elec_app_session_token', newSessionToken);
                 localStorage.setItem('elec_app_last_active', now.toString());
                 lastSavedActivityTime = now;
+
+                if (loginBtn) loginBtn.textContent = '⏳ กำลังซิงค์รหัสเครื่อง...';
+                await saveUserAccounts();
+
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = origBtnText;
+                }
+
                 if (userInput) userInput.value = '';
                 if (passInput) passInput.value = '';
                 checkLoginStatus();
                 showToast(`🔓 ยินดีต้อนรับคุณ ${matchedAcc.username} (${matchedAcc.role === 'admin' ? 'Admin' : 'ผู้ใช้งาน'})`);
             } else {
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = origBtnText;
+                }
                 showCustomAlert("❌ ชื่อผู้ใช้งาน หรือ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง", "⚡ ระบบจัดการงานไฟฟ้า");
                 if (passInput) {
                     passInput.value = '';
@@ -1516,6 +1564,7 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 localStorage.removeItem('elec_app_logged_in');
                 localStorage.removeItem('elec_app_current_user');
                 localStorage.removeItem('elec_app_current_role');
+                localStorage.removeItem('elec_app_session_token');
                 localStorage.removeItem('elec_app_last_active');
                 if (inactivityTimer) clearTimeout(inactivityTimer);
                 checkLoginStatus();
@@ -1528,10 +1577,24 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
             localStorage.removeItem('elec_app_logged_in');
             localStorage.removeItem('elec_app_current_user');
             localStorage.removeItem('elec_app_current_role');
+            localStorage.removeItem('elec_app_session_token');
             localStorage.removeItem('elec_app_last_active');
             if (inactivityTimer) clearTimeout(inactivityTimer);
             checkLoginStatus();
             showCustomAlert("⏳ ระบบได้ออกจากระบบอัตโนมัติ เนื่องจากไม่มีการใช้งานเกิน 1 ชั่วโมง", "🔒 หมดเวลาการเชื่อมต่อ");
+        }
+
+        // ฟังก์ชันสั่งเตะเครื่องเก่าออกจากระบบทันที เมื่อตรวจพบการล็อกอินบัญชีเดียวกันจากเครื่องใหม่
+        function triggerDuplicateLoginKickOut() {
+            localStorage.removeItem('elec_app_logged_in');
+            localStorage.removeItem('elec_app_current_user');
+            localStorage.removeItem('elec_app_current_role');
+            localStorage.removeItem('elec_app_session_token');
+            localStorage.removeItem('elec_app_last_active');
+            if (inactivityTimer) clearTimeout(inactivityTimer);
+            closeUserManageModal();
+            checkLoginStatus();
+            showCustomAlert("🔒 บัญชีของคุณมีการเข้าสู่ระบบจากอุปกรณ์เครื่องอื่น ระบบจึงทำการออกจากระบบในเครื่องนี้อัตโนมัติ", "⚠️ มีการเข้าสู่ระบบซ้อนจากเครื่องอื่น");
         }
 
         // ฟังก์ชันรีเซ็ตเวลาเมื่อมีการแตะหน้าจอ คลิก หรือพิมพ์ข้อมูล
@@ -1551,23 +1614,36 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 lastSavedActivityTime = now;
             }
 
+            // เช็กสถานะเซสชันซ้อนกับ Cloud อัตโนมัติเมื่อมีการแตะใช้งาน (ทุกๆ 15 วินาที)
+            if (now - lastSessionCheckTime > 15000) {
+                lastSessionCheckTime = now;
+                fetchUserAccountsFromCloud(true);
+            }
+
             if (inactivityTimer) clearTimeout(inactivityTimer);
             inactivityTimer = setTimeout(triggerAutoLogout, INACTIVITY_TIMEOUT_MS);
         }
 
-        // ตรวจสอบว่าผู้ใช้ที่ล็อกอินค้างไว้ยังมีสิทธิ์ตรงตามฐานข้อมูลจริงหรือไม่ (ป้องกันเครื่องอื่นได้สิทธิ์แอดมิน)
+        // ตรวจสอบว่าผู้ใช้ที่ล็อกอินค้างไว้ยังมีสิทธิ์ตรงตามฐานข้อมูลจริง และไม่ได้ถูกล็อกอินแทรกจากเครื่องอื่น
         function verifyActiveSessionRole() {
             if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
             const loggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+            const localToken = localStorage.getItem('elec_app_session_token') || '';
             const verifiedAcc = userAccountsList.find(a => a.username.toLowerCase() === loggedUser);
             const adminBtn = document.getElementById('adminUserManageBtn');
 
             if (!verifiedAcc) {
-                // หากไม่มีชื่อบัญชีนี้ในระบบ (หรือเป็นเครื่องเก่าที่ไม่ได้ระบุชื่อผู้ใช้) ให้บังคับล็อกอินใหม่ทันที
                 localStorage.removeItem('elec_app_logged_in');
                 localStorage.removeItem('elec_app_current_user');
                 localStorage.removeItem('elec_app_current_role');
+                localStorage.removeItem('elec_app_session_token');
                 checkLoginStatus();
+                return;
+            }
+
+            // หากใน Cloud มีรหัสเครื่องใหม่ที่ไม่ตรงกับเครื่องนี้ ให้เตะเครื่องนี้ออกทันที
+            if (verifiedAcc.sessionToken && verifiedAcc.sessionToken !== localToken) {
+                triggerDuplicateLoginKickOut();
                 return;
             }
 
@@ -1603,18 +1679,24 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                     localStorage.setItem('elec_app_last_active', now.toString());
                 }
 
-                // ตรวจสอบชื่อผู้ใช้และสิทธิ์จริง (ไม่ให้สิทธิ์ admin อัตโนมัติแก่เครื่องที่ล็อกอินค้างไว้แบบเดิม)
                 const loggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+                const localToken = localStorage.getItem('elec_app_session_token') || '';
                 const verifiedAcc = userAccountsList.find(a => a.username.toLowerCase() === loggedUser);
                 if (!loggedUser || !verifiedAcc) {
                     localStorage.removeItem('elec_app_logged_in');
                     localStorage.removeItem('elec_app_current_user');
                     localStorage.removeItem('elec_app_current_role');
+                    localStorage.removeItem('elec_app_session_token');
                     if (loginScreen) loginScreen.classList.remove('hidden');
                     if (mainContent) {
                         mainContent.classList.remove('grid');
                         mainContent.classList.add('hidden');
                     }
+                    return;
+                }
+
+                if (verifiedAcc.sessionToken && verifiedAcc.sessionToken !== localToken) {
+                    triggerDuplicateLoginKickOut();
                     return;
                 }
 
@@ -1670,8 +1752,8 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
 
                     <!-- แถบสถานะการเชื่อมต่อ Google Sheets -->
                     <div class="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-2 text-[11px]">
-                        <span id="cloudSyncStatusText" class="text-amber-800 font-semibold truncate">☁️ สถานะซิงค์ข้อมูลออนไลน์</span>
-                        <button type="button" onclick="fetchUserAccountsFromCloud(false)" class="text-blue-600 hover:underline font-bold shrink-0">🔄 ซิงค์ล่าสุด</button>
+                        <span id="cloudSyncStatusText" class="text-amber-800 font-semibold truncate">☁️ สถานะซิงค์ข้อมูลออนไลน์ (จำกัด 1 เครื่อง/บัญชี)</span>
+                        <button type="button" onclick="fetchUserAccountsFromCloud(false, true)" class="text-blue-600 hover:underline font-bold shrink-0">🔄 ซิงค์ล่าสุด</button>
                     </div>
                     
                     <!-- ฟอร์มเพิ่มผู้ใช้ใหม่ -->
@@ -1694,7 +1776,7 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
 
                     <!-- รายการบัญชีทั้งหมด -->
                     <div class="px-4 pt-2.5 pb-1 bg-slate-50 text-[11px] font-bold text-slate-500 flex justify-between items-center">
-                        <span>รายชื่อบัญชีในระบบทั้งหมด</span>
+                        <span>รายชื่อบัญชีในระบบทั้งหมด (ล็อกอินซ้อนจะเตะเครื่องเก่าออก)</span>
                         <span id="userAccountCountBadge" class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">1 บัญชี</span>
                     </div>
                     <div class="p-4 pt-2 flex-1 overflow-y-auto space-y-2 bg-slate-50" id="userAccountListContainer"></div>
@@ -1720,7 +1802,7 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
 
             const statusEl = document.getElementById('cloudSyncStatusText');
             if (getActiveCloudApiUrl()) {
-                fetchUserAccountsFromCloud(false);
+                fetchUserAccountsFromCloud(false, true);
             } else if (statusEl) {
                 statusEl.textContent = '⚠️ ยังไม่ได้ใส่ลิงก์ CLOUD_USER_API_URL ในโค้ด';
             }
@@ -1761,12 +1843,12 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 div.className = 'flex items-center justify-between bg-white border border-slate-200 rounded-xl p-3 shadow-sm text-xs';
                 div.innerHTML = `
                     <div class="flex-1 pr-2 overflow-hidden space-y-0.5">
-                        <div class="flex items-center gap-1.5">
+                        <div class="flex items-center gap-1.5 flex-wrap">
                             <span class="font-bold text-slate-800 truncate text-sm">${isAdmin ? '👑' : '👷'} ${acc.username}</span>
                             <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold ${isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-50 text-blue-600'}">
                                 ${isAdmin ? 'แอดมิน' : 'ผู้ใช้ทั่วไป'}
                             </span>
-                            ${isMe ? '<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">กำลังใช้งาน</span>' : ''}
+                            ${isMe ? '<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">เครื่องนี้</span>' : ''}
                         </div>
                         <div class="text-[11px] text-slate-500 flex items-center gap-1.5">
                             <span>🔑 รหัสผ่าน: <strong id="pw-mask-${idx}" data-shown="false" class="font-mono text-slate-700">••••••</strong></span>
@@ -1802,7 +1884,7 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 return;
             }
 
-            userAccountsList.push({ username, password, role });
+            userAccountsList.push({ username, password, role, sessionToken: '' });
             saveUserAccounts();
             renderUserAccountList();
 
@@ -1887,7 +1969,17 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 const currentLoggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
                 const wasMe = targetAcc.username.toLowerCase() === currentLoggedUser;
 
-                userAccountsList[index] = { username: newU, password: newP, role: newR };
+                // หากแอดมินแก้รหัสผ่านให้คนอื่น จะรีเซ็ตเซสชันเพื่อบังคับให้เครื่องของคนนั้นล็อกอินใหม่ด้วยรหัสใหม่ทันที
+                const updatedSessionToken = wasMe
+                    ? (localStorage.getItem('elec_app_session_token') || targetAcc.sessionToken || '')
+                    : ('reset_' + Date.now());
+
+                userAccountsList[index] = {
+                    username: newU,
+                    password: newP,
+                    role: newR,
+                    sessionToken: updatedSessionToken
+                };
                 saveUserAccounts();
 
                 if (wasMe) {
@@ -1936,8 +2028,16 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
         document.addEventListener('visibilitychange', () => {
             if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                 checkLoginStatus();
+                fetchUserAccountsFromCloud(true);
             }
         });
+
+        // ตรวจสอบเซสชันซ้อนอัตโนมัติทุกๆ 15 วินาที ขณะเปิดหน้าแอปทิ้งไว้
+        setInterval(() => {
+            if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                fetchUserAccountsFromCloud(true);
+            }
+        }, 15000);
 
         checkLoginStatus();
         window.addEventListener('DOMContentLoaded', () => {
