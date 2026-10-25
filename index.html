@@ -369,8 +369,11 @@
                     </h1>
                     <p class="text-[11px] sm:text-xs text-blue-100 mt-0.5 truncate">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
                 </div>
-                <!-- ปุ่มสำรอง/กู้คืนข้อมูล และ ปุ่มออกจากระบบ -->
+                <!-- ปุ่มจัดการผู้ใช้ (เฉพาะ Admin), สำรองข้อมูล และ ปุ่มออกจากระบบ -->
                 <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" id="adminUserManageBtn" onclick="openUserManageModal()" class="hidden bg-amber-500/90 hover:bg-amber-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm items-center gap-1 font-semibold" title="จัดการบัญชีผู้ใช้ (เฉพาะแอดมิน)">
+                        👤 <span class="text-xs hidden sm:inline">ผู้ใช้</span>
+                    </button>
                     <button type="button" onclick="openBackupModal()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="สำรองและกู้คืนข้อมูล">
                         💾 <span class="text-xs hidden sm:inline">สำรอง</span>
                     </button>
@@ -378,6 +381,7 @@
                         🚪 <span class="text-xs hidden sm:inline">ออก</span>
                     </button>
                 </div>
+
             </div>
             
             <!-- Tab Buttons (4 ปุ่ม) -->
@@ -1245,12 +1249,44 @@
     </div>
         <script>
         // ==========================================
-        //  🔐 LOGIN & AUTHENTICATION SYSTEM
+                // ==========================================
+        //  🔐 LOGIN & MULTI-USER AUTHENTICATION SYSTEM (ADMIN CONTROL)
         // ==========================================
-        const APP_PASSCODE = "1234"; // 👈 เปลี่ยนรหัสผ่านเข้าใช้งานได้ที่นี่
         const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 ชั่วโมง (3,600,000 มิลลิวินาที)
         let inactivityTimer = null;
         let lastSavedActivityTime = 0;
+
+        // บัญชีแอดมินเริ่มต้น (กรณีเปิดใช้งานครั้งแรก)
+        const DEFAULT_USER_ACCOUNTS = [
+            { username: "admin", password: "1234", role: "admin" }
+        ];
+        let userAccountsList = [];
+
+        function initUserAccounts() {
+            const saved = localStorage.getItem('elec_user_accounts');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        userAccountsList = parsed;
+                    } else {
+                        userAccountsList = [...DEFAULT_USER_ACCOUNTS];
+                    }
+                } catch (e) {
+                    userAccountsList = [...DEFAULT_USER_ACCOUNTS];
+                }
+            } else {
+                userAccountsList = [...DEFAULT_USER_ACCOUNTS];
+                localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
+            }
+        }
+
+        function saveUserAccounts() {
+            localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
+            if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
+        }
+
+        initUserAccounts();
 
         // ฟังก์ชันสร้างกล่องแจ้งเตือนแบบกำหนดหัวข้อเองได้ (แทนที่ alert เดิมทั้งระบบ)
         function showCustomAlert(message, title = "⚡ แจ้งเตือนระบบ") {
@@ -1326,21 +1362,39 @@
         }
 
         function handleLogin() {
+            initUserAccounts();
+            const userInput = document.getElementById('loginUsername');
             const passInput = document.getElementById('loginPassword');
-            const pass = passInput.value.trim();
+            const username = (userInput?.value || '').trim();
+            const pass = (passInput?.value || '').trim();
+
+            if (!username) {
+                showCustomAlert("⚠️ กรุณากรอกชื่อผู้ใช้งาน หรือ รหัสพนักงาน", "⚡ ระบบจัดการงานไฟฟ้า");
+                if (userInput) userInput.focus();
+                return;
+            }
             
-            if (pass === APP_PASSCODE) {
+            const matchedAcc = userAccountsList.find(
+                acc => acc.username.toLowerCase() === username.toLowerCase() && acc.password === pass
+            );
+
+            if (matchedAcc) {
                 const now = Date.now();
                 localStorage.setItem('elec_app_logged_in', 'true');
+                localStorage.setItem('elec_app_current_user', matchedAcc.username);
+                localStorage.setItem('elec_app_current_role', matchedAcc.role || 'user');
                 localStorage.setItem('elec_app_last_active', now.toString());
                 lastSavedActivityTime = now;
-                passInput.value = '';
+                if (userInput) userInput.value = '';
+                if (passInput) passInput.value = '';
                 checkLoginStatus();
-                showToast("🔓 เข้าสู่ระบบสำเร็จ");
+                showToast(`🔓 ยินดีต้อนรับคุณ ${matchedAcc.username} (${matchedAcc.role === 'admin' ? 'Admin' : 'ผู้ใช้งาน'})`);
             } else {
-                showCustomAlert("❌ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง", "⚡ ระบบจัดการงานไฟฟ้า");
-                passInput.value = '';
-                passInput.focus();
+                showCustomAlert("❌ ชื่อผู้ใช้งาน หรือ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง", "⚡ ระบบจัดการงานไฟฟ้า");
+                if (passInput) {
+                    passInput.value = '';
+                    passInput.focus();
+                }
             }
         }
 
@@ -1380,8 +1434,11 @@
         }
 
         function handleLogout() {
-            showCustomConfirm("คุณต้องการออกจากระบบใช่หรือไม่?", function() {
+            const currentUser = localStorage.getItem('elec_app_current_user') || '';
+            showCustomConfirm(`คุณต้องการออกจากระบบบัญชี "${currentUser}" ใช่หรือไม่?`, function() {
                 localStorage.removeItem('elec_app_logged_in');
+                localStorage.removeItem('elec_app_current_user');
+                localStorage.removeItem('elec_app_current_role');
                 localStorage.removeItem('elec_app_last_active');
                 if (inactivityTimer) clearTimeout(inactivityTimer);
                 checkLoginStatus();
@@ -1392,6 +1449,8 @@
         // ฟังก์ชันสั่งตัดออกจากระบบอัตโนมัติเมื่อครบ 1 ชั่วโมง
         function triggerAutoLogout() {
             localStorage.removeItem('elec_app_logged_in');
+            localStorage.removeItem('elec_app_current_user');
+            localStorage.removeItem('elec_app_current_role');
             localStorage.removeItem('elec_app_last_active');
             if (inactivityTimer) clearTimeout(inactivityTimer);
             checkLoginStatus();
@@ -1423,6 +1482,7 @@
             const isLoggedIn = localStorage.getItem('elec_app_logged_in') === 'true';
             const loginScreen = document.getElementById('loginScreen');
             const mainContent = document.getElementById('mainAppContent');
+            const adminBtn = document.getElementById('adminUserManageBtn');
 
             if (isLoggedIn) {
                 const now = Date.now();
@@ -1437,6 +1497,23 @@
                     localStorage.setItem('elec_app_last_active', now.toString());
                 }
 
+                // กรณีอัปเดตระบบใหม่ขณะล็อกอินค้างไว้ ให้กำหนดสิทธิ์เริ่มต้นเป็น admin อัตโนมัติ
+                if (!localStorage.getItem('elec_app_current_role')) {
+                    localStorage.setItem('elec_app_current_user', 'admin');
+                    localStorage.setItem('elec_app_current_role', 'admin');
+                }
+
+                const currentRole = localStorage.getItem('elec_app_current_role');
+                if (adminBtn) {
+                    if (currentRole === 'admin') {
+                        adminBtn.classList.remove('hidden');
+                        adminBtn.classList.add('flex');
+                    } else {
+                        adminBtn.classList.add('hidden');
+                        adminBtn.classList.remove('flex');
+                    }
+                }
+
                 if (loginScreen) loginScreen.classList.add('hidden');
                 if (mainContent) {
                     mainContent.classList.remove('hidden');
@@ -1445,12 +1522,282 @@
                 resetInactivityTimer();
             } else {
                 if (inactivityTimer) clearTimeout(inactivityTimer);
+                if (adminBtn) {
+                    adminBtn.classList.add('hidden');
+                    adminBtn.classList.remove('flex');
+                }
                 if (loginScreen) loginScreen.classList.remove('hidden');
                 if (mainContent) {
                     mainContent.classList.remove('grid');
                     mainContent.classList.add('hidden');
                 }
             }
+        }
+
+        // ==========================================
+        //  👤 ADMIN USER MANAGEMENT MODAL
+        // ==========================================
+        function ensureUserManageModalExists() {
+            let modal = document.getElementById('userManageModal');
+            if (modal) return modal;
+
+            modal = document.createElement('div');
+            modal.id = 'userManageModal';
+            modal.className = 'fixed inset-0 bg-slate-900/50 hidden z-[65] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity';
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+                    <div class="px-4 py-3 border-b flex justify-between items-center bg-gradient-to-r from-amber-500 to-orange-600 text-white">
+                        <h3 class="font-bold text-sm flex items-center gap-2">👤 จัดการบัญชีผู้ใช้และรหัสผ่าน (Admin)</h3>
+                        <button type="button" onclick="closeUserManageModal()" class="text-amber-100 hover:text-white text-xl font-bold leading-none">&times;</button>
+                    </div>
+                    
+                    <!-- ฟอร์มเพิ่มผู้ใช้ใหม่ -->
+                    <div class="p-4 bg-white border-b space-y-2.5">
+                        <div class="text-xs font-bold text-slate-700">➕ เพิ่มบัญชีผู้ใช้งานใหม่</div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <input type="text" id="newAccountUsername" placeholder="ชื่อผู้ใช้ / รหัสพนักงาน" class="px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none">
+                            <input type="text" id="newAccountPassword" placeholder="ตั้งรหัสผ่าน" class="px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none">
+                        </div>
+                        <div class="flex gap-2">
+                            <select id="newAccountRole" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-slate-50 focus:outline-none">
+                                <option value="user">👷 สิทธิ์: ผู้ใช้งานทั่วไป</option>
+                                <option value="admin">👑 สิทธิ์: แอดมิน (ผู้ดูแลระบบ)</option>
+                            </select>
+                            <button type="button" onclick="addUserAccount()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm transition whitespace-nowrap">
+                                ➕ เพิ่มผู้ใช้
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- รายการบัญชีทั้งหมด -->
+                    <div class="px-4 pt-2.5 pb-1 bg-slate-50 text-[11px] font-bold text-slate-500 flex justify-between items-center">
+                        <span>รายชื่อบัญชีในระบบทั้งหมด</span>
+                        <span id="userAccountCountBadge" class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">1 บัญชี</span>
+                    </div>
+                    <div class="p-4 pt-2 flex-1 overflow-y-auto space-y-2 bg-slate-50" id="userAccountListContainer"></div>
+
+                    <div class="p-3 border-t bg-white flex justify-end">
+                        <button type="button" onclick="closeUserManageModal()" class="px-4 py-1.5 text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition">ปิดหน้าต่าง</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            return modal;
+        }
+
+        function openUserManageModal() {
+            if (localStorage.getItem('elec_app_current_role') !== 'admin') {
+                showCustomAlert("⛔ เฉพาะแอดมิน (ผู้ดูแลระบบ) เท่านั้นที่สามารถจัดการบัญชีผู้ใช้ได้", "🔒 จำกัดสิทธิ์การเข้าถึง");
+                return;
+            }
+            initUserAccounts();
+            const modal = ensureUserManageModalExists();
+            renderUserAccountList();
+            modal.classList.remove('hidden');
+        }
+
+        function closeUserManageModal() {
+            const modal = document.getElementById('userManageModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function togglePasswordMask(index) {
+            const span = document.getElementById(`pw-mask-${index}`);
+            if (!span) return;
+            const realPw = userAccountsList[index]?.password || '';
+            if (span.getAttribute('data-shown') === 'true') {
+                span.textContent = '••••••';
+                span.setAttribute('data-shown', 'false');
+            } else {
+                span.textContent = realPw;
+                span.setAttribute('data-shown', 'true');
+            }
+        }
+
+        function renderUserAccountList() {
+            const container = document.getElementById('userAccountListContainer');
+            const badge = document.getElementById('userAccountCountBadge');
+            if (!container) return;
+
+            if (badge) badge.textContent = `${userAccountsList.length} บัญชี`;
+            container.innerHTML = '';
+
+            const currentLoggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+
+            userAccountsList.forEach((acc, idx) => {
+                const isMe = acc.username.toLowerCase() === currentLoggedUser;
+                const isAdmin = acc.role === 'admin';
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between bg-white border border-slate-200 rounded-xl p-3 shadow-sm text-xs';
+                div.innerHTML = `
+                    <div class="flex-1 pr-2 overflow-hidden space-y-0.5">
+                        <div class="flex items-center gap-1.5">
+                            <span class="font-bold text-slate-800 truncate text-sm">${isAdmin ? '👑' : '👷'} ${acc.username}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold ${isAdmin ? 'bg-purple-100 text-purple-700' : 'bg-blue-50 text-blue-600'}">
+                                ${isAdmin ? 'แอดมิน' : 'ผู้ใช้ทั่วไป'}
+                            </span>
+                            ${isMe ? '<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">กำลังใช้งาน</span>' : ''}
+                        </div>
+                        <div class="text-[11px] text-slate-500 flex items-center gap-1.5">
+                            <span>🔑 รหัสผ่าน: <strong id="pw-mask-${idx}" data-shown="false" class="font-mono text-slate-700">••••••</strong></span>
+                            <button type="button" onclick="togglePasswordMask(${idx})" class="text-[10px] text-blue-600 hover:underline">👁️ ดู</button>
+                        </div>
+                    </div>
+                    <div class="flex gap-1 shrink-0">
+                        <button type="button" onclick="editUserAccount(${idx})" class="text-amber-600 hover:bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200 font-semibold transition">✏️ แก้ไข</button>
+                        <button type="button" onclick="deleteUserAccount(${idx})" class="text-rose-600 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-200 font-semibold transition">🗑️ ลบ</button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function addUserAccount() {
+            const userEl = document.getElementById('newAccountUsername');
+            const passEl = document.getElementById('newAccountPassword');
+            const roleEl = document.getElementById('newAccountRole');
+
+            const username = (userEl?.value || '').trim();
+            const password = (passEl?.value || '').trim();
+            const role = roleEl?.value || 'user';
+
+            if (!username || !password) {
+                showCustomAlert("⚠️ กรุณากรอกทั้งชื่อผู้ใช้งานและรหัสผ่านให้ครบถ้วน", "👤 จัดการบัญชีผู้ใช้");
+                return;
+            }
+
+            const exists = userAccountsList.some(a => a.username.toLowerCase() === username.toLowerCase());
+            if (exists) {
+                showCustomAlert("❌ มีชื่อผู้ใช้งานนี้อยู่ในระบบแล้ว", "👤 จัดการบัญชีผู้ใช้");
+                return;
+            }
+
+            userAccountsList.push({ username, password, role });
+            saveUserAccounts();
+            renderUserAccountList();
+
+            userEl.value = '';
+            passEl.value = '';
+            roleEl.value = 'user';
+            showToast(`✅ เพิ่มบัญชี "${username}" สำเร็จ`);
+        }
+
+        function editUserAccount(index) {
+            const targetAcc = userAccountsList[index];
+            if (!targetAcc) return;
+
+            let modal = document.getElementById('customUserEditModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'customUserEditModal';
+                modal.className = 'fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+                modal.innerHTML = `
+                    <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700 animate-[fadeIn_0.2s_ease-in-out]">
+                        <h3 class="text-lg font-bold text-amber-400">✏️ แก้ไขบัญชีและรหัสผ่าน</h3>
+                        <div class="space-y-3 text-xs">
+                            <div>
+                                <label class="block text-slate-300 mb-1 font-semibold">ชื่อผู้ใช้งาน / รหัสพนักงาน</label>
+                                <input type="text" id="editAccUsernameInput" class="w-full px-3.5 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-slate-300 mb-1 font-semibold">รหัสผ่านใหม่</label>
+                                <input type="text" id="editAccPasswordInput" class="w-full px-3.5 py-2 text-slate-800 font-mono font-bold rounded-xl text-sm focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-slate-300 mb-1 font-semibold">ระดับสิทธิ์การใช้งาน</label>
+                                <select id="editAccRoleSelect" class="w-full px-3.5 py-2 text-slate-800 font-semibold rounded-xl text-sm focus:outline-none">
+                                    <option value="user">👷 ผู้ใช้งานทั่วไป (User)</option>
+                                    <option value="admin">👑 แอดมิน (Admin)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" onclick="document.getElementById('customUserEditModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
+                                ยกเลิก
+                            </button>
+                            <button type="button" id="editAccSaveBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">
+                                บันทึก
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+
+            const uInput = document.getElementById('editAccUsernameInput');
+            const pInput = document.getElementById('editAccPasswordInput');
+            const rSelect = document.getElementById('editAccRoleSelect');
+
+            uInput.value = targetAcc.username;
+            pInput.value = targetAcc.password;
+            rSelect.value = targetAcc.role || 'user';
+
+            document.getElementById('editAccSaveBtn').onclick = function() {
+                const newU = uInput.value.trim();
+                const newP = pInput.value.trim();
+                const newR = rSelect.value;
+
+                if (!newU || !newP) {
+                    showCustomAlert("⚠️ กรุณากรอกชื่อผู้ใช้และรหัสผ่านให้ครบถ้วน", "✏️ แก้ไขบัญชี");
+                    return;
+                }
+
+                const duplicate = userAccountsList.some((a, i) => i !== index && a.username.toLowerCase() === newU.toLowerCase());
+                if (duplicate) {
+                    showCustomAlert("❌ ชื่อผู้ใช้งานนี้ซ้ำกับบัญชีอื่นในระบบ", "✏️ แก้ไขบัญชี");
+                    return;
+                }
+
+                // ป้องกันการเปลี่ยนแอดมินคนสุดท้ายให้เป็นผู้ใช้ทั่วไป
+                const adminCount = userAccountsList.filter((a, i) => (i === index ? newR === 'admin' : a.role === 'admin')).length;
+                if (adminCount === 0) {
+                    showCustomAlert("⚠️ ต้องมีบัญชีที่เป็นแอดมิน (Admin) อย่างน้อย 1 บัญชีในระบบ", "✏️ แก้ไขบัญชี");
+                    return;
+                }
+
+                const currentLoggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+                const wasMe = targetAcc.username.toLowerCase() === currentLoggedUser;
+
+                userAccountsList[index] = { username: newU, password: newP, role: newR };
+                saveUserAccounts();
+
+                if (wasMe) {
+                    localStorage.setItem('elec_app_current_user', newU);
+                    localStorage.setItem('elec_app_current_role', newR);
+                    checkLoginStatus();
+                }
+
+                renderUserAccountList();
+                modal.classList.add('hidden');
+                showToast(`✅ แก้ไขบัญชี "${newU}" สำเร็จ`);
+            };
+
+            modal.classList.remove('hidden');
+            setTimeout(() => pInput.focus(), 50);
+        }
+
+        function deleteUserAccount(index) {
+            const targetAcc = userAccountsList[index];
+            if (!targetAcc) return;
+
+            const remainingAdmins = userAccountsList.filter((a, i) => i !== index && a.role === 'admin').length;
+            if (remainingAdmins === 0) {
+                showCustomAlert("⚠️ ไม่สามารถลบบัญชีแอดมินคนสุดท้ายของระบบได้", "🗑️ ลบบัญชีผู้ใช้");
+                return;
+            }
+
+            const currentLoggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+            if (targetAcc.username.toLowerCase() === currentLoggedUser) {
+                showCustomAlert("⚠️ ไม่สามารถลบบัญชีที่คุณกำลังล็อกอินใช้งานอยู่ได้", "🗑️ ลบบัญชีผู้ใช้");
+                return;
+            }
+
+            showCustomConfirm(`คุณต้องการลบบัญชีผู้ใช้ "${targetAcc.username}" ใช่หรือไม่?`, function() {
+                userAccountsList.splice(index, 1);
+                saveUserAccounts();
+                renderUserAccountList();
+                showToast(`🗑️ ลบบัญชี "${targetAcc.username}" เรียบร้อยแล้ว`);
+            }, "🗑️ ยืนยันการลบบัญชีผู้ใช้");
         }
 
         ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
@@ -1463,8 +1810,17 @@
             }
         });
 
-                checkLoginStatus();
-        window.addEventListener('DOMContentLoaded', checkLoginStatus);
+        checkLoginStatus();
+        window.addEventListener('DOMContentLoaded', () => {
+            checkLoginStatus();
+            const loginUserEl = document.getElementById('loginUsername');
+            if (loginUserEl) {
+                loginUserEl.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') document.getElementById('loginPassword')?.focus();
+                });
+            }
+        });
+
 
 
         // ==========================================
