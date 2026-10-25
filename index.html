@@ -6,7 +6,7 @@
     <title>ระบบเครื่องมือจัดการงานไฟฟ้า (รวมระบบ)</title>
     
     <!-- ตั้งค่าโลโก้ Web App และการแสดงผลบนหน้าจอโฮม -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ระบบงานไฟฟ้า">
     <meta name="application-name" content="ระบบงานไฟฟ้า">
@@ -99,7 +99,7 @@
 <body class="bg-slate-100 min-h-screen py-6 px-4 lg:py-10 flex items-start justify-center">
 
     <!-- ================= 🔐 หน้าล็อกอิน (Login Screen - โครงข่ายไฟฟ้าออกแบบใหม่) ================= -->
-    <div id="loginScreen" class="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
+    <div id="loginScreen" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
         
         <!-- ⚡ พื้นหลังกราฟิกโครงข่ายไฟฟ้าแรงสูง (Custom Smart Grid SVG + แอนิเมชันกระแสไฟ) -->
         <svg class="absolute inset-0 w-full h-full object-cover pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
@@ -399,7 +399,7 @@
 
 
         <!-- ================= TAB 1: ระบบรายงานเหตุไฟฟ้าขัดข้อง ================= -->
-        <div id="tab1" class="tab-content active p-6 space-y-4">
+        <div id="tab1" class="tab-content p-6 space-y-4">
             <div class="flex justify-between items-center border-b pb-2">
                 <h2 class="text-base font-bold text-slate-800">⚡ ฟอร์มรายงานเหตุ (TR / TL)</h2>
                 <span class="text-[10px] text-slate-400">ลาก ≡ เพื่อสลับลำดับ</span>
@@ -1447,6 +1447,7 @@
             }
         });
 
+                checkLoginStatus();
         window.addEventListener('DOMContentLoaded', checkLoginStatus);
 
 
