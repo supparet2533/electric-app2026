@@ -653,16 +653,15 @@
                     </div>
                 </div>
 
-                <div data-id="reporter">
+                                <div data-id="reporter">
                     <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
-                        <span class="text-slate-400 text-lg leading-none">≡</span> <span>📞 เบื้องต้นมีรับแจ้งจาก</span>
+                        <span class="text-slate-400 text-lg leading-none">≡</span> <span>📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก</span>
                     </label>
                     <div class="relative">
-                        <input type="text" id="reporterInput" class="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:outline-none" placeholder="ระบุผู้แจ้ง">
+                        <input type="text" id="reporterInput" class="w-full px-4 py-2 pr-10 border border-slate-300 rounded-lg focus:outline-none" placeholder="ระบุสาเหตุ / ผู้แจ้ง">
                         <button type="button" onclick="startVoiceInput('reporterInput', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">🎙️</button>
                     </div>
                 </div>
-
                 <div data-id="gps">
                     <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
                         <span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 พิกัด GPS</span>
@@ -4056,13 +4055,12 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 causeStr += ` ${tlStatus}`;
             }
 
-            let textToCopy = '';
+                        let textToCopy = '';
             if (system === '115kV') {
-                textToCopy = `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n📍 ระยะทาง : ${distance}\n🎯 โซน : ${zone}\n📞 เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
+                textToCopy = `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n📍 ระยะทาง : ${distance}\n🎯 โซน : ${zone}\n📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
             } else {
-                textToCopy = `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n💥 กระแส : ${currentDisplay}\n🔄 ปัจจุบันกระแส : ${presentCurr}\n📟 อุปกรณ์เห็นฟอลต์ : ${device}\n🔌 ปัจจุบันปลดอุปกรณ์ : ${disconnectDevice}\n⚡ จ่ายไฟมาชนอุปกรณ์ : ${powerUpToDevice}\n📞 เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
+                textToCopy = `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n💥 กระแส : ${currentDisplay}\n🔄 ปัจจุบันกระแส : ${presentCurr}\n📟 อุปกรณ์เห็นฟอลต์ : ${device}\n🔌 ปัจจุบันปลดอุปกรณ์ : ${disconnectDevice}\n⚡ จ่ายไฟมาชนอุปกรณ์ : ${powerUpToDevice}\n📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
             }
-
             let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
             const isEditing = !!editingFaultId;
 
@@ -4499,10 +4497,47 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
             }, "🗑️ ยืนยันการลบประวัติ");
         }
 
-        function exportData(type) {
+                // โหลดไลบรารี SheetJS อัตโนมัติสำหรับสร้างไฟล์ Excel (.xlsx) แท้ที่เปิดบนมือถือและ Google Sheets ได้ 100%
+        function ensureXlsxLibraryLoaded() {
+            return new Promise((resolve) => {
+                if (typeof XLSX !== 'undefined') {
+                    resolve(true);
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                script.onload = () => resolve(true);
+                script.onerror = () => resolve(false);
+                document.head.appendChild(script);
+            });
+        }
+        ensureXlsxLibraryLoaded();
+
+        // ฟังก์ชันสำรองส่งออกเป็น CSV (UTF-8 BOM) กรณีไม่มีอินเทอร์เน็ตโหลดไลบรารี
+        function downloadCsvFallback(headers, rows, filename) {
+            const escapeCsv = (val) => {
+                const str = (val === undefined || val === null) ? '' : String(val);
+                return `"${str.replace(/"/g, '""')}"`;
+            };
+            const csvContent = '\uFEFF' + [
+                headers.map(escapeCsv).join(','),
+                ...rows.map(r => r.map(escapeCsv).join(','))
+            ].join('\r\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename.replace(/\.xlsx?$/i, '.csv');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function exportData(type) {
             let data = [];
             let headers = [];
             let filename = '';
+            let sheetName = '';
             let selectedDate = '';
             
             if (type === 'fault') {
@@ -4525,13 +4560,14 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                     return;
                 }
                 
-                headers = ['วันที่บันทึก', 'เวลา', 'ระบบ', 'วงจร', 'สถานี', 'สภาพอากาศ', 'เหตุ', 'จำนวนครั้ง', 'T/L', 'โชว์เฟส', 'กระแส A', 'กระแส B', 'กระแส C', 'กระแส G', 'ระยะทาง (115kV)', 'โซน (115kV)', 'ปัจจุบันกระแส', 'อุปกรณ์เห็นฟอลต์', 'ปัจจุบันปลดอุปกรณ์', 'จ่ายไฟมาชนอุปกรณ์', 'ผู้แจ้ง', 'GPS'];
+                headers = ['วันที่บันทึก', 'เวลา', 'ระบบ', 'วงจร', 'สถานี', 'สภาพอากาศ', 'เหตุ', 'จำนวนครั้ง', 'T/L', 'โชว์เฟส', 'กระแส A', 'กระแส B', 'กระแส C', 'กระแส G', 'ระยะทาง (115kV)', 'โซน (115kV)', 'ปัจจุบันกระแส', 'อุปกรณ์เห็นฟอลต์', 'ปัจจุบันปลดอุปกรณ์', 'จ่ายไฟมาชนอุปกรณ์', 'สาเหตุ/เบื้องต้นมีรับแจ้งจาก', 'GPS'];
                 data = history.map(item => [
                     new Date(item.timestamp).toLocaleDateString('th-TH'), 
                     item.time, item.system, item.circuit, item.station, item.weather, item.cause, item.count, item.tlStatus, item.phase,
                     item.currA, item.currB, item.currC, item.currG, item.distance, item.zone, item.presentCurr, item.device, item.disconnectDevice, item.powerUpToDevice, item.reporter, item.gps
                 ]);
-                filename = `Fault_Report_${selectedDate || 'All'}.xls`;
+                filename = `Fault_Report_${selectedDate || 'All'}.xlsx`;
+                sheetName = 'รายงานเหตุ_TR_TL';
                 
             } else if (type === 'outage') {
                 selectedDate = document.getElementById('exportDateTab2').value; 
@@ -4551,45 +4587,76 @@ const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9
                 
                 headers = ['วันที่บันทึก', 'วันที่แจ้ง', 'งานที่', 'กะ', 'ลักษณะอาการ', 'ผู้ปฏิบัติงาน', 'บริเวณ', 'ที่อยู่', 'เบอร์โทรศัพท์', 'พิกัด GPS'];
                 data = history.map(item => [
-                    item.dateTimeSaved.split(' ')[0], 
+                    item.dateTimeSaved ? item.dateTimeSaved.split(' ')[0] : '', 
                     item.reportDate, item.jobNo, item.shift, item.issueType, item.workerName, item.area, item.address, item.phone, item.gps
                 ]);
-                filename = `Outage_Report_${selectedDate || 'All'}.xls`;
+                filename = `Outage_Report_${selectedDate || 'All'}.xlsx`;
+                sheetName = 'ประวัติรับแจ้ง';
             }
-            
-            let tableHtml = `
-            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-            <head>
-                <meta charset="utf-8">
-                <style>
-                    table { border-collapse: collapse; }
-                    th, td { border: 1px solid #000000; text-align: center; white-space: nowrap; padding: 6px 10px; mso-number-format:"\\@"; }
-                    th { background-color: #d9e1f2; font-weight: bold; }
-                </style>
-            </head>
-            <body>
-                <table>
-                    <thead>
-                        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
-                    </thead>
-                    <tbody>
-                        ${data.map(row => `<tr>${row.map(cell => `<td>${(cell === undefined || cell === null) ? "" : cell}</td>`).join('')}</tr>`).join('')}
-                    </tbody>
-                </table>
-            </body>
-            </html>`;
-            
-            const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", filename);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast("ส่งออกข้อมูล (Excel) เรียบร้อยแล้ว!");
+
+            // แปลงทุกเซลล์เป็นข้อความเพื่อรักษาเลข 0 นำหน้า (เช่น เบอร์โทร 08... และเลข CA)
+            const cleanRows = data.map(row => row.map(cell => (cell === undefined || cell === null) ? "" : String(cell)));
+
+            const isLoaded = await ensureXlsxLibraryLoaded();
+            if (isLoaded && typeof XLSX !== 'undefined') {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet([headers, ...cleanRows]);
+                ws['!cols'] = headers.map((h, i) => ({ wch: Math.max(h.length + 6, i >= 7 ? 24 : 15) }));
+                XLSX.utils.book_append_sheet(wb, ws, sheetName);
+                XLSX.writeFile(wb, filename);
+                showToast("📊 ส่งออกไฟล์ Excel (.xlsx) เรียบร้อยแล้ว!");
+            } else {
+                downloadCsvFallback(headers, cleanRows, filename);
+                showToast("📊 ส่งออกไฟล์ตาราง (.csv) เรียบร้อยแล้ว!");
+            }
         }
+
+        // อัปเกรดปุ่มส่งออกสถิติในแท็บ 4 ให้เป็นไฟล์ .xlsx แท้ด้วยเช่นกัน
+        async function exportAnalyticsToExcel() {
+            if (currentFilteredFaults.length === 0 && currentFilteredOutages.length === 0) {
+                showToast("⚠️ ไม่มีข้อมูลสถิติสำหรับส่งออก (ลองปรับตัวกรอง)");
+                return;
+            }
+
+            let issueCounts = {};
+            currentFilteredOutages.forEach(item => {
+                let issue = item.issueType || 'อื่นๆ';
+                issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+            });
+            let sortedIssues = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]);
+
+            let count22kV = currentFilteredFaults.filter(i => i.system === '22kV').length;
+            let count115kV = currentFilteredFaults.filter(i => i.system === '115kV').length;
+            let dateStr = new Date().toISOString().split('T')[0];
+            let filename = `Analytics_Summary_${dateStr}.xlsx`;
+
+            const sheetData = [
+                ['รายงานสรุปสถิติงานไฟฟ้าขัดข้อง', `วันที่พิมพ์: ${new Date().toLocaleDateString('th-TH')}`, ''],
+                [],
+                ['หัวข้อสถิติ', 'จำนวนรวม (รายการ)', ''],
+                ['รายงานเหตุ (TR/TL) ที่ผ่านตัวกรอง', String(currentFilteredFaults.length), ''],
+                ['รับแจ้งไฟฟ้าขัดข้อง ที่ผ่านตัวกรอง', String(currentFilteredOutages.length), ''],
+                ['ระบบ 22kV (รายงานเหตุ)', String(count22kV), ''],
+                ['ระบบ 115kV (รายงานเหตุ)', String(count115kV), ''],
+                [],
+                ['ลำดับ', 'ลักษณะอาการขัดข้อง', 'จำนวนครั้งที่แจ้ง'],
+                ...sortedIssues.map((item, idx) => [String(idx + 1), String(item[0]), String(item[1])])
+            ];
+
+            const isLoaded = await ensureXlsxLibraryLoaded();
+            if (isLoaded && typeof XLSX !== 'undefined') {
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(sheetData);
+                ws['!cols'] = [{ wch: 32 }, { wch: 35 }, { wch: 18 }];
+                XLSX.utils.book_append_sheet(wb, ws, 'สรุปสถิติ');
+                XLSX.writeFile(wb, filename);
+                showToast("📊 ส่งออกสรุปสถิติ (.xlsx) เรียบร้อยแล้ว!");
+            } else {
+                downloadCsvFallback(['หัวข้อ/ลำดับ', 'รายการ', 'จำนวน'], sheetData.slice(2), filename);
+                showToast("📊 ส่งออกสรุปสถิติ (.csv) เรียบร้อยแล้ว!");
+            }
+        }
+
 
         function addTxRow() {
             const div = document.createElement('div');
