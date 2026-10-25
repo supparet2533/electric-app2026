@@ -1250,17 +1250,27 @@
         <script>
         // ==========================================
                 // ==========================================
-        //  🔐 LOGIN & MULTI-USER AUTHENTICATION SYSTEM (ADMIN CONTROL)
+                // ==========================================
+        //  🔐 LOGIN & CLOUD MULTI-USER AUTHENTICATION (GOOGLE SHEETS SYNC)
         // ==========================================
+        // 👇 นำลิงก์ Web App URL (ที่ลงท้ายด้วย /exec) จาก Google Apps Script มาวางในเครื่องหมายคำพูดด้านล่างนี้ครับ
+const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
         const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 ชั่วโมง (3,600,000 มิลลิวินาที)
         let inactivityTimer = null;
         let lastSavedActivityTime = 0;
 
-        // บัญชีแอดมินเริ่มต้น (กรณีเปิดใช้งานครั้งแรก)
+        // บัญชีแอดมินเริ่มต้น (ใช้กรณีเปิดครั้งแรกก่อนซิงค์กับ Google Sheets)
         const DEFAULT_USER_ACCOUNTS = [
             { username: "admin", password: "1234", role: "admin" }
         ];
         let userAccountsList = [];
+
+        function getActiveCloudApiUrl() {
+            const customUrl = (localStorage.getItem('elec_cloud_user_api_url') || '').trim();
+            if (customUrl && customUrl.startsWith('https://script.google.com/')) return customUrl;
+            if (CLOUD_USER_API_URL && CLOUD_USER_API_URL.startsWith('https://script.google.com/')) return CLOUD_USER_API_URL.trim();
+            return '';
+        }
 
         function initUserAccounts() {
             const saved = localStorage.getItem('elec_user_accounts');
@@ -1281,9 +1291,62 @@
             }
         }
 
-        function saveUserAccounts() {
+        // ดึงข้อมูลบัญชีล่าสุดจาก Google Sheets ออนไลน์
+        async function fetchUserAccountsFromCloud(silent = true) {
+            const apiUrl = getActiveCloudApiUrl();
+            if (!apiUrl) return false;
+
+            const statusEl = document.getElementById('cloudSyncStatusText');
+            if (statusEl && !silent) statusEl.textContent = '⏳ กำลังดึงข้อมูลบัญชีจาก Google Sheets...';
+
+            try {
+                const res = await fetch(apiUrl + '?t=' + Date.now(), { method: 'GET', cache: 'no-store' });
+                const data = await res.json();
+                if (data && data.status === 'ok' && Array.isArray(data.users) && data.users.length > 0) {
+                    userAccountsList = data.users;
+                    localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
+                    if (statusEl) statusEl.textContent = `🟢 ซิงค์ออนไลน์กับ Google Sheets ล่าสุดแล้ว (${userAccountsList.length} บัญชี)`;
+                    if (document.getElementById('userManageModal') && !document.getElementById('userManageModal').classList.contains('hidden')) {
+                        renderUserAccountList();
+                    }
+                    // ตรวจสอบสิทธิ์ซ้ำทันทีหลังดึงข้อมูลจาก Cloud
+                    verifyActiveSessionRole();
+                    return true;
+                }
+            } catch (err) {
+                console.warn('Cloud user sync error:', err);
+                if (statusEl) statusEl.textContent = '⚠️ ไม่สามารถเชื่อมต่อ Google Sheets (ใช้ข้อมูลสำรองในเครื่อง)';
+            }
+            return false;
+        }
+
+        // บันทึกข้อมูลบัญชีที่แอดมินแก้ไขขึ้นไปเก็บที่ Google Sheets ทันที
+        async function saveUserAccounts() {
             localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
             if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
+
+            const apiUrl = getActiveCloudApiUrl();
+            if (!apiUrl) return;
+
+            const statusEl = document.getElementById('cloudSyncStatusText');
+            if (statusEl) statusEl.textContent = '⏳ กำลังบันทึกขึ้น Google Sheets ออนไลน์...';
+
+            try {
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'saveUsers', users: userAccountsList })
+                });
+                const data = await res.json();
+                if (data && data.status === 'ok') {
+                    if (statusEl) statusEl.textContent = '🟢 บันทึกขึ้น Google Sheets สำเร็จ (ทุกเครื่องอัปเดตแล้ว)';
+                } else {
+                    if (statusEl) statusEl.textContent = '⚠️ บันทึกขึ้น Cloud ไม่สำเร็จ';
+                }
+            } catch (err) {
+                console.error('Save to Cloud error:', err);
+                if (statusEl) statusEl.textContent = '⚠️ เกิดข้อผิดพลาดในการส่งข้อมูลขึ้น Google Sheets';
+            }
         }
 
         initUserAccounts();
@@ -1361,7 +1424,7 @@
             setTimeout(() => inputEl.focus(), 50);
         }
 
-        function handleLogin() {
+        async function handleLogin() {
             initUserAccounts();
             const userInput = document.getElementById('loginUsername');
             const passInput = document.getElementById('loginPassword');
@@ -1372,6 +1435,21 @@
                 showCustomAlert("⚠️ กรุณากรอกชื่อผู้ใช้งาน หรือ รหัสพนักงาน", "⚡ ระบบจัดการงานไฟฟ้า");
                 if (userInput) userInput.focus();
                 return;
+            }
+
+            // ดึงข้อมูลบัญชีล่าสุดจาก Google Sheets ก่อนตรวจรหัสผ่าน
+            const loginBtn = document.querySelector('#loginScreen button[onclick="handleLogin()"]');
+            const origBtnText = loginBtn ? loginBtn.textContent : 'เข้าสู่ระบบ';
+            if (loginBtn) {
+                loginBtn.disabled = true;
+                loginBtn.textContent = '⏳ กำลังตรวจสอบบัญชี...';
+            }
+
+            await fetchUserAccountsFromCloud(true);
+
+            if (loginBtn) {
+                loginBtn.disabled = false;
+                loginBtn.textContent = origBtnText;
             }
             
             const matchedAcc = userAccountsList.find(
@@ -1478,6 +1556,35 @@
             inactivityTimer = setTimeout(triggerAutoLogout, INACTIVITY_TIMEOUT_MS);
         }
 
+        // ตรวจสอบว่าผู้ใช้ที่ล็อกอินค้างไว้ยังมีสิทธิ์ตรงตามฐานข้อมูลจริงหรือไม่ (ป้องกันเครื่องอื่นได้สิทธิ์แอดมิน)
+        function verifyActiveSessionRole() {
+            if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            const loggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+            const verifiedAcc = userAccountsList.find(a => a.username.toLowerCase() === loggedUser);
+            const adminBtn = document.getElementById('adminUserManageBtn');
+
+            if (!verifiedAcc) {
+                // หากไม่มีชื่อบัญชีนี้ในระบบ (หรือเป็นเครื่องเก่าที่ไม่ได้ระบุชื่อผู้ใช้) ให้บังคับล็อกอินใหม่ทันที
+                localStorage.removeItem('elec_app_logged_in');
+                localStorage.removeItem('elec_app_current_user');
+                localStorage.removeItem('elec_app_current_role');
+                checkLoginStatus();
+                return;
+            }
+
+            const realRole = verifiedAcc.role || 'user';
+            localStorage.setItem('elec_app_current_role', realRole);
+            if (adminBtn) {
+                if (realRole === 'admin') {
+                    adminBtn.classList.remove('hidden');
+                    adminBtn.classList.add('flex');
+                } else {
+                    adminBtn.classList.add('hidden');
+                    adminBtn.classList.remove('flex');
+                }
+            }
+        }
+
         function checkLoginStatus() {
             const isLoggedIn = localStorage.getItem('elec_app_logged_in') === 'true';
             const loginScreen = document.getElementById('loginScreen');
@@ -1497,13 +1604,24 @@
                     localStorage.setItem('elec_app_last_active', now.toString());
                 }
 
-                // กรณีอัปเดตระบบใหม่ขณะล็อกอินค้างไว้ ให้กำหนดสิทธิ์เริ่มต้นเป็น admin อัตโนมัติ
-                if (!localStorage.getItem('elec_app_current_role')) {
-                    localStorage.setItem('elec_app_current_user', 'admin');
-                    localStorage.setItem('elec_app_current_role', 'admin');
+                // ตรวจสอบชื่อผู้ใช้และสิทธิ์จริง (ไม่ให้สิทธิ์ admin อัตโนมัติแก่เครื่องที่ล็อกอินค้างไว้แบบเดิม)
+                const loggedUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+                const verifiedAcc = userAccountsList.find(a => a.username.toLowerCase() === loggedUser);
+                if (!loggedUser || !verifiedAcc) {
+                    localStorage.removeItem('elec_app_logged_in');
+                    localStorage.removeItem('elec_app_current_user');
+                    localStorage.removeItem('elec_app_current_role');
+                    if (loginScreen) loginScreen.classList.remove('hidden');
+                    if (mainContent) {
+                        mainContent.classList.remove('grid');
+                        mainContent.classList.add('hidden');
+                    }
+                    return;
                 }
 
-                const currentRole = localStorage.getItem('elec_app_current_role');
+                const currentRole = verifiedAcc.role || 'user';
+                localStorage.setItem('elec_app_current_role', currentRole);
+
                 if (adminBtn) {
                     if (currentRole === 'admin') {
                         adminBtn.classList.remove('hidden');
@@ -1550,6 +1668,12 @@
                         <h3 class="font-bold text-sm flex items-center gap-2">👤 จัดการบัญชีผู้ใช้และรหัสผ่าน (Admin)</h3>
                         <button type="button" onclick="closeUserManageModal()" class="text-amber-100 hover:text-white text-xl font-bold leading-none">&times;</button>
                     </div>
+
+                    <!-- แถบสถานะการเชื่อมต่อ Google Sheets -->
+                    <div class="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-2 text-[11px]">
+                        <span id="cloudSyncStatusText" class="text-amber-800 font-semibold truncate">☁️ สถานะซิงค์ข้อมูลออนไลน์</span>
+                        <button type="button" onclick="fetchUserAccountsFromCloud(false)" class="text-blue-600 hover:underline font-bold shrink-0">🔄 ซิงค์ล่าสุด</button>
+                    </div>
                     
                     <!-- ฟอร์มเพิ่มผู้ใช้ใหม่ -->
                     <div class="p-4 bg-white border-b space-y-2.5">
@@ -1594,6 +1718,13 @@
             const modal = ensureUserManageModalExists();
             renderUserAccountList();
             modal.classList.remove('hidden');
+
+            const statusEl = document.getElementById('cloudSyncStatusText');
+            if (getActiveCloudApiUrl()) {
+                fetchUserAccountsFromCloud(false);
+            } else if (statusEl) {
+                statusEl.textContent = '⚠️ ยังไม่ได้ใส่ลิงก์ CLOUD_USER_API_URL ในโค้ด';
+            }
         }
 
         function closeUserManageModal() {
@@ -1679,7 +1810,7 @@
             userEl.value = '';
             passEl.value = '';
             roleEl.value = 'user';
-            showToast(`✅ เพิ่มบัญชี "${username}" สำเร็จ`);
+            showToast(`✅ เพิ่มบัญชี "${username}" และซิงค์ออนไลน์สำเร็จ`);
         }
 
         function editUserAccount(index) {
@@ -1748,7 +1879,6 @@
                     return;
                 }
 
-                // ป้องกันการเปลี่ยนแอดมินคนสุดท้ายให้เป็นผู้ใช้ทั่วไป
                 const adminCount = userAccountsList.filter((a, i) => (i === index ? newR === 'admin' : a.role === 'admin')).length;
                 if (adminCount === 0) {
                     showCustomAlert("⚠️ ต้องมีบัญชีที่เป็นแอดมิน (Admin) อย่างน้อย 1 บัญชีในระบบ", "✏️ แก้ไขบัญชี");
@@ -1769,7 +1899,7 @@
 
                 renderUserAccountList();
                 modal.classList.add('hidden');
-                showToast(`✅ แก้ไขบัญชี "${newU}" สำเร็จ`);
+                showToast(`✅ แก้ไขบัญชี "${newU}" และซิงค์ออนไลน์สำเร็จ`);
             };
 
             modal.classList.remove('hidden');
@@ -1813,6 +1943,7 @@
         checkLoginStatus();
         window.addEventListener('DOMContentLoaded', () => {
             checkLoginStatus();
+            fetchUserAccountsFromCloud(true);
             const loginUserEl = document.getElementById('loginUsername');
             if (loginUserEl) {
                 loginUserEl.addEventListener('keypress', function(e) {
@@ -1820,8 +1951,6 @@
                 });
             }
         });
-
-
 
         // ==========================================
         //  GLOBAL CHART INSTANCES & GLOBAL DATA FOR EXPORT
