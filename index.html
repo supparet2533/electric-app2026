@@ -4227,10 +4227,186 @@
                         } else {
                             updateMapPreview(null);
                         }
-                    }, 800); 
-                });
-            }
-        });
-    </script>
+                    }, 800);
+                    });
+                    }
+                    });
+                    
+                    // ==========================================
+                    // 💾 ระบบจำค่าในฟอร์มอัตโนมัติ (AUTO-SAVE DRAFT)
+                    // ป้องกันข้อมูลหายเมื่อปัดแอปออกหรือสลับหน้าจอบนมือถือ
+                    // ==========================================
+                    const DRAFT_KEY_TAB1 = 'elec_draft_tab1_fault';
+                    const DRAFT_KEY_TAB2 = 'elec_draft_tab2_outage';
+                    
+                    function saveFaultDraft() {
+                    const draft = {
+                    timeInput: document.getElementById('timeInput')?.value || '',
+                    systemSelect: document.getElementById('systemSelect')?.value || '',
+                    circuitSelect: document.getElementById('circuitSelect')?.value || '',
+                    stationValue: document.getElementById('stationValue')?.value || '',
+                    causeSelect: document.getElementById('causeSelect')?.value || '',
+                    countSelect: document.getElementById('countSelect')?.value || '',
+                    tlSelect: document.getElementById('tlSelect')?.value || '',
+                    phaseSelect: document.getElementById('phaseSelect')?.value || '',
+                    currA: document.getElementById('currA')?.value || '',
+                    currB: document.getElementById('currB')?.value || '',
+                    currC: document.getElementById('currC')?.value || '',
+                    currG: document.getElementById('currG')?.value || '',
+                    distanceInput: document.getElementById('distanceInput')?.value || '',
+                    zoneInput: document.getElementById('zoneInput')?.value || '',
+                    tambonSelect: document.getElementById('tambonSelect')?.value || '',
+                    weatherSelect: document.getElementById('weatherSelect')?.value || '',
+                    presentCurrInput: document.getElementById('presentCurrInput')?.value || '',
+                    deviceInput: document.getElementById('deviceInput')?.value || '',
+                    disconnectDeviceInput: document.getElementById('disconnectDeviceInput')?.value || '',
+                    powerUpToDeviceInput: document.getElementById('powerUpToDeviceInput')?.value || '',
+                    powerUpTimeInput: document.getElementById('powerUpTimeInput')?.value || '',
+                    reporterInput: document.getElementById('reporterInput')?.value || '',
+                    gpsInput: document.getElementById('gpsInput')?.value || ''
+                    };
+                    localStorage.setItem(DRAFT_KEY_TAB1, JSON.stringify(draft));
+                    }
+                    
+                    function restoreFaultDraft() {
+                    const saved = localStorage.getItem(DRAFT_KEY_TAB1);
+                    if (!saved) return;
+                    try {
+                    const draft = JSON.parse(saved);
+                    if (draft.timeInput) document.getElementById('timeInput').value = draft.timeInput;
+                    if (draft.systemSelect) {
+                    document.getElementById('systemSelect').value = draft.systemSelect;
+                    updateCircuitDropdown();
+                    }
+                    if (draft.circuitSelect) document.getElementById('circuitSelect').value = draft.circuitSelect;
+                    if (draft.stationValue) {
+                    document.getElementById('stationValue').value = draft.stationValue;
+                    const stDisplay = document.getElementById('stationTypeDisplay');
+                    if (stDisplay) {
+                    stDisplay.textContent = draft.stationValue;
+                    stDisplay.classList.remove('text-slate-400');
+                    stDisplay.classList.add('text-slate-800');
+                    }
+                    }
+                    if (draft.causeSelect) document.getElementById('causeSelect').value = draft.causeSelect;
+                    if (draft.countSelect) document.getElementById('countSelect').value = draft.countSelect;
+                    if (draft.tlSelect !== undefined) document.getElementById('tlSelect').value = draft.tlSelect;
+                    if (draft.phaseSelect) document.getElementById('phaseSelect').value = draft.phaseSelect;
+                    if (draft.currA !== undefined) document.getElementById('currA').value = draft.currA;
+                    if (draft.currB !== undefined) document.getElementById('currB').value = draft.currB;
+                    if (draft.currC !== undefined) document.getElementById('currC').value = draft.currC;
+                    if (draft.currG !== undefined) document.getElementById('currG').value = draft.currG;
+                    if (draft.distanceInput !== undefined) document.getElementById('distanceInput').value = draft.distanceInput;
+                    if (draft.zoneInput !== undefined) document.getElementById('zoneInput').value = draft.zoneInput;
+                    if (draft.tambonSelect) document.getElementById('tambonSelect').value = draft.tambonSelect;
+                    if (draft.weatherSelect) document.getElementById('weatherSelect').value = draft.weatherSelect;
+                    if (draft.presentCurrInput) document.getElementById('presentCurrInput').value = draft.presentCurrInput;
+                    if (draft.deviceInput !== undefined) document.getElementById('deviceInput').value = draft.deviceInput;
+                    if (draft.disconnectDeviceInput !== undefined) document.getElementById('disconnectDeviceInput').value = draft.disconnectDeviceInput;
+                    if (draft.powerUpToDeviceInput !== undefined) document.getElementById('powerUpToDeviceInput').value = draft.powerUpToDeviceInput;
+                    if (draft.powerUpTimeInput !== undefined) document.getElementById('powerUpTimeInput').value = draft.powerUpTimeInput;
+                    if (draft.reporterInput !== undefined) document.getElementById('reporterInput').value = draft.reporterInput;
+                    if (draft.gpsInput !== undefined) document.getElementById('gpsInput').value = draft.gpsInput;
+                    } catch (e) {
+                    console.error("Restore Tab 1 draft error:", e);
+                    }
+                    }
+                    
+                    function saveOutageDraft() {
+                    const draft = {
+                    reportDate: document.getElementById('reportDate')?.value || '',
+                    jobNo: document.getElementById('jobNo')?.value || '',
+                    shift: document.getElementById('shift')?.value || '',
+                    issueType: document.getElementById('issueType')?.value || '',
+                    workerName: document.getElementById('workerName')?.value || '',
+                    area: document.getElementById('area')?.value || '',
+                    address: document.getElementById('address')?.value || '',
+                    phone: document.getElementById('phone')?.value || '',
+                    gps: document.getElementById('gps')?.value || ''
+                    };
+                    localStorage.setItem(DRAFT_KEY_TAB2, JSON.stringify(draft));
+                    }
+                    
+                    function restoreOutageDraft() {
+                    const saved = localStorage.getItem(DRAFT_KEY_TAB2);
+                    if (!saved) return;
+                    try {
+                    const draft = JSON.parse(saved);
+                    if (draft.reportDate) document.getElementById('reportDate').value = draft.reportDate;
+                    if (draft.jobNo) document.getElementById('jobNo').value = draft.jobNo;
+                    if (draft.shift) document.getElementById('shift').value = draft.shift;
+                    if (draft.issueType !== undefined) document.getElementById('issueType').value = draft.issueType;
+                    if (draft.workerName !== undefined) document.getElementById('workerName').value = draft.workerName;
+                    if (draft.area !== undefined) document.getElementById('area').value = draft.area;
+                    if (draft.address !== undefined) {
+                    const addrEl = document.getElementById('address');
+                    addrEl.value = draft.address;
+                    setTimeout(() => {
+                    addrEl.style.height = 'auto';
+                    addrEl.style.height = addrEl.scrollHeight + 'px';
+                    }, 50);
+                    }
+                    if (draft.phone !== undefined) document.getElementById('phone').value = draft.phone;
+                    if (draft.gps !== undefined) {
+                    const gpsEl = document.getElementById('gps');
+                    gpsEl.value = draft.gps;
+                    const coords = extractCoordsFromInput(draft.gps);
+                    if (coords) updateMapPreview(coords);
+                    }
+                    } catch (e) {
+                    console.error("Restore Tab 2 draft error:", e);
+                    }
+                    }
+                    
+                    // เชื่อมระบบจำค่าเข้ากับฟังก์ชันเลือกสถานี, เลือกอาการ, AI และการล้างฟอร์ม
+                    const _origSelectStation = selectStation;
+                    selectStation = function(value) {
+                    _origSelectStation(value);
+                    saveFaultDraft();
+                    };
+                    
+                    const _origSelectIssueType = selectIssueType;
+                    selectIssueType = function(value) {
+                    _origSelectIssueType(value);
+                    saveOutageDraft();
+                    };
+                    
+                    const _origFillFormWithData = fillFormWithData;
+                    fillFormWithData = function(data) {
+                    _origFillFormWithData(data);
+                    saveOutageDraft();
+                    };
+                    
+                    const _origResetFaultForm = resetFaultForm;
+                    resetFaultForm = function() {
+                    localStorage.removeItem(DRAFT_KEY_TAB1);
+                    _origResetFaultForm();
+                    };
+                    
+                    const _origResetOutageForm = resetOutageForm;
+                    resetOutageForm = function() {
+                    localStorage.removeItem(DRAFT_KEY_TAB2);
+                    _origResetOutageForm();
+                    };
+                    
+                    window.addEventListener('DOMContentLoaded', () => {
+                    // ดึงข้อมูลที่กรอกค้างไว้กลับมาแสดงผลทันทีที่เปิดแอป
+                    restoreFaultDraft();
+                    restoreOutageDraft();
+                    
+                    // ดักจับการพิมพ์และการเลือกค่าทุกช่องในแท็บ 1 และแท็บ 2
+                    const tab1El = document.getElementById('sortable-tab1');
+                    if (tab1El) {
+                    tab1El.addEventListener('input', saveFaultDraft);
+                    tab1El.addEventListener('change', saveFaultDraft);
+                    }
+                    
+                    const tab2El = document.getElementById('sortable-tab2');
+                    if (tab2El) {
+                    tab2El.addEventListener('input', saveOutageDraft);
+                    tab2El.addEventListener('change', saveOutageDraft);
+                }
+            });
+        </script>
 </body>
 </html>
