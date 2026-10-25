@@ -547,35 +547,51 @@
                     </div>
                 </div>
 
-                <!-- ฟิลด์พื้นที่ & สภาพอากาศ -->
-                <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100">
+                               <!-- ฟิลด์พื้นที่ & สภาพอากาศ -->
+                <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100 relative z-20">
                     <div class="drag-handle flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move w-max">
                         <div class="flex items-center gap-2">
                             <span class="text-slate-400 text-lg leading-none">≡</span> <span>🌤️ พื้นที่ & สภาพอากาศ (Rain Alarm Stream)</span>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-2 px-2 pb-1">
-                        <div>
+                        <div class="relative">
                             <div class="flex items-center justify-between h-6 mb-1">
                                 <label class="text-xs font-semibold text-slate-600">ตำบล</label>
                                 <button type="button" onclick="openTambonManageModal()" class="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded font-semibold transition">⚙️ จัดการ</button>
                             </div>
-                            <select id="tambonSelect" onchange="onTambonChanged()" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm">
-                                <option value="" disabled selected hidden>-- เลือกตำบล --</option>
-                            </select>
+                            
+                            <input type="hidden" id="tambonSelect" value="">
+                            
+                            <button type="button" id="tambonTypeBtn" onclick="toggleTambonDropdown()" class="w-full px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-sm text-left flex justify-between items-center focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm">
+                                <span id="tambonTypeDisplay" class="text-slate-400 truncate">-- เลือกตำบล --</span>
+                                <span class="text-slate-500 text-xs ml-1 shrink-0">▼</span>
+                            </button>
+                            
+                            <div id="tambonDropdownMenu" class="hidden absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto z-50 min-w-[190px]">
+                                <div class="sticky top-0 bg-slate-50 px-2 py-1.5 border-b text-[10px] text-slate-500 text-center font-bold z-10 shadow-sm">
+                                    จับที่ ≡ ลากสลับตำแหน่งได้
+                                </div>
+                                <ul id="tambonSortableList" class="py-1"></ul>
+                            </div>
+
                         </div>
                         <div>
                             <div class="flex items-center h-6 mb-1">
                                 <label class="text-xs font-semibold text-slate-600">สภาพอากาศ (อัปเดตอัตโนมัติ)</label>
                             </div>
-                            <select id="weatherSelect" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm font-semibold text-blue-800 transition-colors">
+                                                        <select id="weatherSelect" onchange="onWeatherManualChange()" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm font-semibold text-blue-800 transition-colors">
                                 <option value="" disabled selected hidden>-- เลือกอากาศ --</option>
                                 <option value="ปกติ">ปกติ</option>
+                                <option value="ครึ้มฟ้าครึ้มฝน">ครึ้มฟ้าครึ้มฝน</option>
+                                <option value="ลมกระโชกแรง">ลมกระโชกแรง</option>
                                 <option value="ฝนตกเล็กน้อย">ฝนตกเล็กน้อย</option>
                                 <option value="ฝนตกปานกลาง">ฝนตกปานกลาง</option>
                                 <option value="ฝนตกหนัก">ฝนตกหนัก</option>
                                 <option value="ฝนตกฟ้าคะนองรุนแรง">ฝนตกฟ้าคะนองรุนแรง</option>
+                                <option value="ฝนเพิ่งหยุดตก">ฝนเพิ่งหยุดตก</option>
                             </select>
+
                         </div>
                     </div>
                     <div class="px-2 mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
@@ -651,9 +667,9 @@
                 </div>
             </div>
 
-            <div class="flex gap-2 mt-6">
-                <button onclick="saveAndCopyFault(false)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-1.5 text-sm sm:text-base">
-                    📋 คัดลอก
+                        <div class="flex gap-2 mt-6">
+                <button onclick="saveAndCopyFault(false)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-1.5 text-xs sm:text-base whitespace-nowrap">
+                    📋 บันทึก / คัดลอก
                 </button>
                 <button onclick="saveAndCopyFault(true)" class="flex-1 bg-[#00B900] hover:bg-[#009900] text-white font-semibold py-3 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-1.5 text-sm sm:text-base">
                     💬 ส่ง LINE
@@ -853,9 +869,9 @@
                 </div>
             </div>
 
-            <div class="flex gap-2 mt-2">
-                <button type="button" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow transition flex items-center justify-center gap-1.5 text-sm sm:text-base" onclick="generateOutageMessage(false)">
-                    📋 คัดลอก
+                                    <div class="flex gap-2 mt-2">
+                <button type="button" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow transition flex items-center justify-center gap-1.5 text-xs sm:text-base whitespace-nowrap" onclick="generateOutageMessage(false)">
+                    📋 บันทึก / คัดลอก
                 </button>
                 <button type="button" class="flex-1 bg-[#00B900] hover:bg-[#009900] text-white font-semibold py-3 rounded-xl shadow transition flex items-center justify-center gap-1.5 text-sm sm:text-base" onclick="generateOutageMessage(true)">
                     💬 ส่ง LINE
@@ -1470,7 +1486,35 @@
 
         let targetTambonCoordinates = {};
 
+                function setupTambonInputSync() {
+            const hiddenInput = document.getElementById('tambonSelect');
+            if (!hiddenInput || hiddenInput._isSynced) return;
+            const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+            Object.defineProperty(hiddenInput, 'value', {
+                get: function() {
+                    return desc.get.call(this);
+                },
+                set: function(val) {
+                    desc.set.call(this, val);
+                    const display = document.getElementById('tambonTypeDisplay');
+                    if (display) {
+                        if (val && targetTambonCoordinates[val]) {
+                            display.textContent = val;
+                            display.classList.remove('text-slate-400');
+                            display.classList.add('text-slate-800');
+                        } else {
+                            display.textContent = '-- เลือกตำบล --';
+                            display.classList.add('text-slate-400');
+                            display.classList.remove('text-slate-800');
+                        }
+                    }
+                }
+            });
+            hiddenInput._isSynced = true;
+        }
+
         function initTambonData() {
+            setupTambonInputSync();
             const savedTambon = localStorage.getItem('tambonCoordinates_custom');
             if (savedTambon) {
                 try {
@@ -1484,23 +1528,80 @@
             renderTambonDropdown();
         }
 
+        function toggleTambonDropdown() {
+            const menu = document.getElementById('tambonDropdownMenu');
+            if (menu) menu.classList.toggle('hidden');
+        }
+
+        function selectTambon(tName) {
+            const hiddenInput = document.getElementById('tambonSelect');
+            if (hiddenInput) hiddenInput.value = tName;
+            const menu = document.getElementById('tambonDropdownMenu');
+            if (menu) menu.classList.add('hidden');
+            onTambonChanged();
+            if (typeof saveFaultDraft === 'function') saveFaultDraft();
+        }
+
+        function reorderTambonKeys(orderedKeys) {
+            const newObj = {};
+            orderedKeys.forEach(k => {
+                if (targetTambonCoordinates[k]) {
+                    newObj[k] = targetTambonCoordinates[k];
+                }
+            });
+            targetTambonCoordinates = newObj;
+            localStorage.setItem('tambonCoordinates_custom', JSON.stringify(targetTambonCoordinates));
+            performAutoBackupSnapshot();
+        }
+
         function renderTambonDropdown() {
-            const select = document.getElementById('tambonSelect');
-            if (!select) return;
-            const currentVal = select.value;
+            const ul = document.getElementById('tambonSortableList');
+            const hiddenInput = document.getElementById('tambonSelect');
+            if (!ul || !hiddenInput) return;
+            const currentVal = hiddenInput.value;
             
-            select.innerHTML = '<option value="" disabled selected hidden>-- เลือกตำบล --</option>';
+            ul.innerHTML = '';
             Object.keys(targetTambonCoordinates).forEach(tName => {
-                const opt = document.createElement('option');
-                opt.value = tName;
-                opt.textContent = tName;
-                select.appendChild(opt);
+                const li = document.createElement('li');
+                li.className = "flex items-center gap-2.5 px-3 py-2.5 hover:bg-blue-50 cursor-pointer text-sm text-slate-700 bg-white border-b border-slate-100 last:border-0 transition-colors";
+                li.setAttribute('data-value', tName);
+                li.innerHTML = `
+                    <span class="tambon-dd-drag-handle text-slate-400 hover:text-blue-500 cursor-move text-lg px-1.5 -ml-1 rounded flex-shrink-0" onclick="event.stopPropagation()">≡</span>
+                    <span class="flex-1 truncate" onclick="selectTambon('${tName}')">${tName}</span>
+                `;
+                ul.appendChild(li);
             });
 
+            if (!ul.sortableInstance && typeof Sortable !== 'undefined') {
+                ul.sortableInstance = new Sortable(ul, {
+                    handle: '.tambon-dd-drag-handle',
+                    animation: 150,
+                    ghostClass: 'issue-ghost',
+                    onEnd: function () {
+                        const currentItems = Array.from(ul.children).map(li => li.getAttribute('data-value'));
+                        reorderTambonKeys(currentItems);
+                        renderTambonModalList();
+                    }
+                });
+            }
+
             if (currentVal && targetTambonCoordinates[currentVal]) {
-                select.value = currentVal;
+                hiddenInput.value = currentVal;
+            } else {
+                hiddenInput.value = '';
             }
         }
+
+        document.addEventListener('click', function(event) {
+            const tambonMenu = document.getElementById('tambonDropdownMenu');
+            const tambonBtn = document.getElementById('tambonTypeBtn');
+            if (tambonMenu && !tambonMenu.classList.contains('hidden')) {
+                if (!tambonMenu.contains(event.target) && (!tambonBtn || !tambonBtn.contains(event.target))) {
+                    tambonMenu.classList.add('hidden');
+                }
+            }
+        });
+
 
         function getIssuePriority(issueText) {
             if (!issueText || !issueText.trim()) {
@@ -1534,110 +1635,141 @@
 
 
         // ==========================================
-        //  REAL-TIME WEATHER STREAM VIA RAIN ALARM & OPEN-METEO
+                //  REAL-TIME WEATHER STREAM (HIGH-ACCURACY PRECIPITATION + MANUAL LOCK)
         // ==========================================
+        let isWeatherLockedByUser = false;
+        
+        function applyWeatherSelectColor(weatherStr) {
+            const weatherSelect = document.getElementById('weatherSelect');
+            if (!weatherSelect) return;
+            weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold transition-colors ";
+            if (weatherStr === "ปกติ") weatherSelect.classList.add("text-emerald-600");
+            else if (weatherStr === "ครึ้มฟ้าครึ้มฝน" || weatherStr === "ฝนเพิ่งหยุดตก") weatherSelect.classList.add("text-slate-600");
+            else if (weatherStr === "ฝนตกเล็กน้อย") weatherSelect.classList.add("text-blue-500");
+            else if (weatherStr === "ฝนตกปานกลาง" || weatherStr === "ลมกระโชกแรง") weatherSelect.classList.add("text-amber-500");
+            else if (weatherStr === "ฝนตกหนัก" || weatherStr === "ฝนตกฟ้าคะนองรุนแรง") weatherSelect.classList.add("text-rose-600");
+        }
+        
+        // เมื่อผู้ใช้เลือกสภาพอากาศเองตามหน้างานจริง ให้ล็อกค่าไว้ไม่ให้ระบบอัตโนมัติเขียนทับ
+        function onWeatherManualChange() {
+            isWeatherLockedByUser = true;
+            const weatherSelect = document.getElementById('weatherSelect');
+            const statusEl = document.getElementById('liveWeatherStatus');
+            applyWeatherSelectColor(weatherSelect.value);
+            if (statusEl) {
+                statusEl.innerHTML = `🔒 ล็อกสภาพอากาศตามหน้างานจริง (${weatherSelect.value})`;
+                statusEl.className = "flex items-center gap-1 font-medium text-amber-700";
+            }
+            if (typeof saveFaultDraft === 'function') saveFaultDraft();
+        }
+        
         async function fetchLiveWeatherForTambon(tambonName, isSilent = true) {
+            if (isSilent && isWeatherLockedByUser) return;
+            
             if (!tambonName || !targetTambonCoordinates[tambonName]) return;
-            const coord = targetTambonCoordinates[tambonName];
+            
+            // หากมีการใส่พิกัด GPS จุดเกิดเหตุในแท็บ 1 ให้ใช้พิกัดจุดเกิดเหตุจริงแทนพิกัดกลางตำบล
+            let coord = targetTambonCoordinates[tambonName];
+            let locationLabel = tambonName;
+            const gpsVal = document.getElementById('gpsInput')?.value || '';
+            const exactCoords = (typeof extractCoordsFromInput === 'function') ? extractCoordsFromInput(gpsVal) : null;
+            if (exactCoords && exactCoords.lat && exactCoords.lon) {
+                coord = { lat: exactCoords.lat, lon: exactCoords.lon };
+                locationLabel = `${tambonName} (พิกัด GPS จริง)`;
+            }
+            
             const weatherSelect = document.getElementById('weatherSelect');
             const statusEl = document.getElementById('liveWeatherStatus');
             
             if (!isSilent) {
                 weatherSelect.disabled = true;
-                statusEl.innerHTML = `<span class="animate-pulse">⏳ กำลังดึงข้อมูลสภาพอากาศ (${tambonName})...</span>`;
+                statusEl.innerHTML = `<span class="animate-pulse">⏳ กำลังวัดปริมาณน้ำฝนจริง (${locationLabel})...</span>`;
             }
-
+            
             try {
                 let weatherStr = "ปกติ";
-
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 4000);
+                let precipMm = 0;
+                
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${coord.lat}&longitude=${coord.lon}&current=precipitation,rain,showers,weather_code,cloud_cover,wind_gusts_10m&timezone=Asia%2FBangkok`;
+                const res = await fetch(url);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    const cur = data.current || {};
+                    const wmo = cur.weather_code ?? 0;
+                    const rain = (cur.rain || 0) + (cur.showers || 0);
+                    precipMm = Math.max(cur.precipitation || 0, rain);
+                    const gusts = cur.wind_gusts_10m || 0;
+                    const clouds = cur.cloud_cover || 0;
                     
-                    const url = `https://app.rain-alarm.com/api/v1/rain?latitude=${coord.lat}&longitude=${coord.lon}`;
-                    const response = await fetch(url, { signal: controller.signal });
-                    clearTimeout(timeoutId);
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        const coverage = data.coverage !== undefined ? data.coverage : 0;
-                        const intensity = data.intensity !== undefined ? data.intensity : 0;
-
-                        if (coverage > 0 && intensity > 0) {
-                            if (intensity <= 2) weatherStr = "ฝนตกเล็กน้อย";
-                            else if (intensity <= 5) weatherStr = "ฝนตกปานกลาง";
-                            else if (intensity <= 8) weatherStr = "ฝนตกหนัก";
-                            else weatherStr = "ฝนตกฟ้าคะนองรุนแรง";
-                        }
+                    if (precipMm >= 5.0) {
+                        weatherStr = [95, 96, 99].includes(wmo) ? "ฝนตกฟ้าคะนองรุนแรง" : "ฝนตกหนัก";
+                    } else if (precipMm >= 1.2) {
+                        weatherStr = [95, 96, 99].includes(wmo) ? "ฝนตกฟ้าคะนองรุนแรง" : "ฝนตกปานกลาง";
+                    } else if (precipMm >= 0.1) {
+                        weatherStr = "ฝนตกเล็กน้อย";
                     } else {
-                        throw new Error("Rain Alarm API ไม่ตอบสนอง");
+                        if (gusts >= 38) {
+                            weatherStr = "ลมกระโชกแรง";
+                        } else if ([95, 96, 99, 80, 81, 82, 61, 63, 65].includes(wmo) || clouds >= 85) {
+                            weatherStr = "ครึ้มฟ้าครึ้มฝน";
+                        } else {
+                            weatherStr = "ปกติ";
+                        }
                     }
-                } catch (rainError) {
-                    const fallbackUrl = `https://api.open-meteo.com/v1/forecast?latitude=${coord.lat}&longitude=${coord.lon}&current_weather=true`;
-                    const fbRes = await fetch(fallbackUrl);
-                    if (fbRes.ok) {
-                        const fbData = await fbRes.json();
-                        const wmo = fbData.current_weather.weathercode;
-                        
-                        if ([51, 53, 61].includes(wmo)) weatherStr = "ฝนตกเล็กน้อย";
-                        else if ([55, 63].includes(wmo)) weatherStr = "ฝนตกปานกลาง";
-                        else if ([65, 80, 81].includes(wmo)) weatherStr = "ฝนตกหนัก";
-                        else if ([82, 95, 96, 99].includes(wmo)) weatherStr = "ฝนตกฟ้าคะนองรุนแรง";
-                        else weatherStr = "ปกติ";
-                    }
+                } else {
+                    throw new Error("Weather API Error");
                 }
-
+                
                 weatherSelect.value = weatherStr;
                 weatherSelect.disabled = false;
-                
-                weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold transition-colors ";
-                if (weatherStr === "ปกติ") weatherSelect.classList.add("text-emerald-600");
-                else if (weatherStr === "ฝนตกเล็กน้อย") weatherSelect.classList.add("text-blue-500");
-                else if (weatherStr === "ฝนตกปานกลาง") weatherSelect.classList.add("text-amber-500");
-                else if (weatherStr === "ฝนตกหนัก" || weatherStr === "ฝนตกฟ้าคะนองรุนแรง") weatherSelect.classList.add("text-rose-600");
+                applyWeatherSelectColor(weatherStr);
+                if (typeof saveFaultDraft === 'function') saveFaultDraft();
                 
                 if (statusEl) {
-                    const timeStr = new Date().toLocaleTimeString('th-TH');
-                    statusEl.innerHTML = `🟢 โหลดสภาพอากาศ ${tambonName} สำเร็จ (${timeStr})`;
+                    const timeStr = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+                    statusEl.innerHTML = `🟢 ${locationLabel}: ฝน ${precipMm.toFixed(1)} มม. (${timeStr} น.)`;
                     statusEl.className = "flex items-center gap-1 font-medium text-emerald-700";
                 }
-
+                
                 if (!isSilent) {
-                    showToast(`🌤️ พื้นที่ ${tambonName}: ${weatherStr}`);
+                    showToast(`🌤️ ${locationLabel}: ${weatherStr} (ฝน ${precipMm.toFixed(1)} มม.)`);
                 }
             } catch (error) {
-                console.error("Rain Alarm stream error:", error);
+                console.error("Weather fetch error:", error);
                 weatherSelect.disabled = false;
                 if (statusEl) {
-                    statusEl.innerHTML = `🔴 เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์สภาพอากาศ`;
+                    statusEl.innerHTML = `🔴 ดึงข้อมูลอากาศไม่สำเร็จ (เลือกเองได้ตามหน้างาน)`;
                     statusEl.className = "flex items-center gap-1 font-medium text-rose-600";
                 }
                 if (!isSilent) showToast("❌ ไม่สามารถอัปเดตสภาพอากาศได้");
             }
         }
-
+        
         function onTambonChanged() {
+            isWeatherLockedByUser = false;
             const tambonVal = document.getElementById('tambonSelect').value;
             if (tambonVal) {
                 fetchLiveWeatherForTambon(tambonVal, false);
             }
         }
-
+        
         function manualRefreshWeather() {
             const tambonVal = document.getElementById('tambonSelect').value;
             if (!tambonVal) {
                 showToast("⚠️ กรุณาเลือกตำบลก่อนรีเฟรชสภาพอากาศ");
                 return;
             }
+            isWeatherLockedByUser = false;
             fetchLiveWeatherForTambon(tambonVal, false);
         }
-
+        
         function startRealtimeWeatherStream() {
             if (weatherStreamInterval) clearInterval(weatherStreamInterval);
             
             weatherStreamInterval = setInterval(() => {
                 const tambonVal = document.getElementById('tambonSelect').value;
-                if (tambonVal) {
+                if (tambonVal && !isWeatherLockedByUser) {
                     fetchLiveWeatherForTambon(tambonVal, true);
                 }
             }, 300000);
@@ -1646,18 +1778,33 @@
         // ==========================================
         //  TAMBON MANAGEMENT MODAL SYSTEM
         // ==========================================
-        function openTambonManageModal() {
+                function openTambonManageModal() {
             renderTambonModalList();
             document.getElementById('tambonModal').classList.remove('hidden');
+            
+            const container = document.getElementById('tambonListContainer');
+            if (container && !container.sortableInstance && typeof Sortable !== 'undefined') {
+                container.sortableInstance = new Sortable(container, {
+                    handle: '.tambon-modal-drag-handle',
+                    animation: 150,
+                    onEnd: function() {
+                        const orderedKeys = Array.from(container.children)
+                            .map(el => el.getAttribute('data-value'))
+                            .filter(Boolean);
+                        reorderTambonKeys(orderedKeys);
+                        renderTambonDropdown();
+                    }
+                });
+            }
         }
-
+        
         function closeTambonManageModal() {
             document.getElementById('tambonModal').classList.add('hidden');
         }
-
+        
         function renderTambonModalList() {
             const container = document.getElementById('tambonListContainer');
-            if(!container) return;
+            if (!container) return;
             container.innerHTML = '';
             
             const keys = Object.keys(targetTambonCoordinates);
@@ -1665,15 +1812,19 @@
                 container.innerHTML = '<div class="text-center text-slate-500 text-sm py-4">ไม่มีข้อมูลตำบล</div>';
                 return;
             }
-
+            
             keys.forEach((tName) => {
                 const coord = targetTambonCoordinates[tName];
                 const div = document.createElement('div');
                 div.className = 'flex items-center justify-between bg-white border border-slate-200 rounded-lg p-2.5 shadow-sm text-xs';
+                div.setAttribute('data-value', tName);
                 div.innerHTML = `
-                    <div class="flex-1 pr-2">
-                        <div class="font-bold text-slate-800">${tName}</div>
-                        <div class="text-[10px] text-slate-400">Lat: ${coord.lat}, Lon: ${coord.lon}</div>
+                    <div class="flex items-center flex-1 pr-2 overflow-hidden">
+                        <span class="tambon-modal-drag-handle text-slate-400 hover:text-emerald-600 cursor-move text-lg px-2 -ml-1 rounded flex-shrink-0">≡</span>
+                        <div class="truncate pl-1">
+                            <div class="font-bold text-slate-800 truncate">${tName}</div>
+                            <div class="text-[10px] text-slate-400">Lat: ${coord.lat}, Lon: ${coord.lon}</div>
+                        </div>
                     </div>
                     <div class="flex gap-1 shrink-0">
                         <button type="button" onclick="editTambon('${tName}')" class="text-amber-600 hover:bg-amber-50 px-2 py-1 rounded border border-amber-100 transition">✏️ แก้ไข</button>
@@ -1683,7 +1834,7 @@
                 container.appendChild(div);
             });
         }
-
+        
         function addTambon() {
             const nameInput = document.getElementById('newTambonNameInput');
             const latInput = document.getElementById('newTambonLatInput');
@@ -1692,22 +1843,22 @@
             const name = nameInput.value.trim();
             const lat = parseFloat(latInput.value);
             const lon = parseFloat(lonInput.value);
-
+            
             if (!name) {
                 showCustomAlert("กรุณากรอกชื่อตำบล", "⚙️ จัดการตำบล");
                 return;
             }
-
+            
             if (targetTambonCoordinates[name]) {
                 showCustomAlert("มีชื่อตำบลนี้อยู่ในระบบแล้ว", "⚙️ จัดการตำบล");
                 return;
             }
-
+            
             targetTambonCoordinates[name] = {
                 lat: !isNaN(lat) ? lat : 13.1361,
                 lon: !isNaN(lon) ? lon : 101.0322
             };
-
+            
             localStorage.setItem('tambonCoordinates_custom', JSON.stringify(targetTambonCoordinates));
             performAutoBackupSnapshot();
             renderTambonDropdown();
@@ -1718,25 +1869,104 @@
             lonInput.value = '';
             showToast("✅ เพิ่มตำบลสำเร็จ");
         }
-
+        
         function editTambon(oldName) {
-            showCustomPrompt("แก้ไขชื่อตำบล:", oldName, function(newName) {
-                const trimmed = newName.trim();
-                if (trimmed && trimmed !== oldName) {
-                    if (targetTambonCoordinates[trimmed]) {
-                        showCustomAlert("มีชื่อตำบลนี้อยู่แล้ว", "⚙️ จัดการตำบล");
-                        return;
-                    }
-                    targetTambonCoordinates[trimmed] = targetTambonCoordinates[oldName];
-                    delete targetTambonCoordinates[oldName];
-                    
-                    localStorage.setItem('tambonCoordinates_custom', JSON.stringify(targetTambonCoordinates));
-                    performAutoBackupSnapshot();
-                    renderTambonDropdown();
-                    renderTambonModalList();
-                    showToast("✅ แก้ไขชื่อตำบลสำเร็จ");
+            const currentCoord = targetTambonCoordinates[oldName];
+            if (!currentCoord) return;
+            
+            let modal = document.getElementById('customTambonEditModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'customTambonEditModal';
+                modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+                modal.innerHTML = `
+                    <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700 animate-[fadeIn_0.2s_ease-in-out]">
+                        <h3 class="text-lg font-bold text-amber-400">✏️ แก้ไขชื่อตำบลและพิกัด</h3>
+                        <div class="space-y-3 text-xs">
+                            <div>
+                                <label class="block text-slate-300 mb-1 font-semibold">ชื่อตำบล</label>
+                                <input type="text" id="editTambonNameInput" class="w-full px-3.5 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none">
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-slate-300 mb-1 font-semibold">ละติจูด (Lat)</label>
+                                    <input type="number" step="0.0001" id="editTambonLatInput" class="w-full px-3 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none">
+                                </div>
+                                <div>
+                                    <label class="block text-slate-300 mb-1 font-semibold">ลองจิจูด (Lon)</label>
+                                    <input type="number" step="0.0001" id="editTambonLonInput" class="w-full px-3 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" onclick="document.getElementById('customTambonEditModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
+                                ยกเลิก
+                            </button>
+                            <button type="button" id="editTambonSaveBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">
+                                บันทึก
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            
+            const nameEl = document.getElementById('editTambonNameInput');
+            const latEl = document.getElementById('editTambonLatInput');
+            const lonEl = document.getElementById('editTambonLonInput');
+            
+            nameEl.value = oldName;
+            latEl.value = currentCoord.lat;
+            lonEl.value = currentCoord.lon;
+            
+            const saveBtn = document.getElementById('editTambonSaveBtn');
+            const submitEdit = function() {
+                const newName = nameEl.value.trim();
+                const newLat = parseFloat(latEl.value);
+                const newLon = parseFloat(lonEl.value);
+                
+                if (!newName) {
+                    showCustomAlert("กรุณากรอกชื่อตำบล", "⚙️ จัดการตำบล");
+                    return;
                 }
-            }, "✏️ แก้ไขชื่อตำบล");
+                if (newName !== oldName && targetTambonCoordinates[newName]) {
+                    showCustomAlert("มีชื่อตำบลนี้อยู่แล้ว", "⚙️ จัดการตำบล");
+                    return;
+                }
+                
+                const newObj = {};
+                Object.keys(targetTambonCoordinates).forEach(k => {
+                    if (k === oldName) {
+                        newObj[newName] = {
+                            lat: !isNaN(newLat) ? newLat : currentCoord.lat,
+                            lon: !isNaN(newLon) ? newLon : currentCoord.lon
+                        };
+                    } else {
+                        newObj[k] = targetTambonCoordinates[k];
+                    }
+                });
+                targetTambonCoordinates = newObj;
+                
+                localStorage.setItem('tambonCoordinates_custom', JSON.stringify(targetTambonCoordinates));
+                performAutoBackupSnapshot();
+                
+                const hiddenSelect = document.getElementById('tambonSelect');
+                const wasSelected = (hiddenSelect && hiddenSelect.value === oldName);
+                renderTambonDropdown();
+                renderTambonModalList();
+                
+                if (wasSelected) {
+                    hiddenSelect.value = newName;
+                    fetchLiveWeatherForTambon(newName, false);
+                }
+                
+                modal.classList.add('hidden');
+                showToast("✅ แก้ไขข้อมูลตำบลและพิกัดสำเร็จ");
+            };
+            
+            saveBtn.onclick = submitEdit;
+            modal.classList.remove('hidden');
+            setTimeout(() => nameEl.focus(), 50);
         }
 
         function deleteTambon(name) {
@@ -3248,6 +3478,41 @@
             }, 1500);
         }
 
+                // ตัวแปรจำสถานะรายการที่กำลังแก้ไข (เพื่อบันทึกทับรายการเดิม)
+        let editingFaultId = localStorage.getItem('elec_editing_fault_id') || null;
+        let editingOutageId = localStorage.getItem('elec_editing_outage_id') || null;
+
+        function setEditingFaultId(val) {
+            editingFaultId = val;
+            if (val) localStorage.setItem('elec_editing_fault_id', val);
+            else localStorage.removeItem('elec_editing_fault_id');
+        }
+
+        function setEditingOutageId(val) {
+            editingOutageId = val;
+            if (val) localStorage.setItem('elec_editing_outage_id', val);
+            else localStorage.removeItem('elec_editing_outage_id');
+        }
+
+        // ป้องกันเลขงานเปลี่ยนเองขณะกำลังแก้ไขรายการเดิม และล้างสถานะเมื่อกดรีเซ็ตฟอร์ม
+        const _baseAutoFillJobNo = autoFillJobNo;
+        autoFillJobNo = function() {
+            if (editingOutageId) return;
+            _baseAutoFillJobNo();
+        };
+
+        const _baseResetFaultForm = resetFaultForm;
+        resetFaultForm = function() {
+            setEditingFaultId(null);
+            _baseResetFaultForm();
+        };
+
+        const _baseResetOutageForm = resetOutageForm;
+        resetOutageForm = function() {
+            setEditingOutageId(null);
+            _baseResetOutageForm();
+        };
+
         function saveAndCopyFault(sendToLine = false) {
             const time = document.getElementById('timeInput').value || '-';
             const system = document.getElementById('systemSelect').value || '-';
@@ -3313,22 +3578,47 @@
                 textToCopy = `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n💥 กระแส : ${currentDisplay}\n🔄 ปัจจุบันกระแส : ${presentCurr}\n📟 อุปกรณ์เห็นฟอลต์ : ${device}\n🔌 ปัจจุบันปลดอุปกรณ์ : ${disconnectDevice}\n⚡ จ่ายไฟมาชนอุปกรณ์ : ${powerUpToDevice}\n📞 เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
             }
 
+            let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+            const isEditing = !!editingFaultId;
+
+            if (editingFaultId) {
+                const idx = history.findIndex(h => h.timestamp === editingFaultId);
+                if (idx !== -1) {
+                    // บันทึกทับในรายการเดิม โดยคงเวลาบันทึก (timestamp) และลำดับเดิมไว้
+                    history[idx] = {
+                        ...history[idx],
+                        time, system, circuit, station, cause, count, tlStatus, phase,
+                        currA, currB, currC, currG, distance, zone, weather, presentCurr,
+                        device, disconnectDevice, powerUpToDevice, reporter, gps,
+                        formattedText: textToCopy
+                    };
+                } else {
+                    history.unshift({
+                        time, system, circuit, station, cause, count, tlStatus, phase,
+                        currA, currB, currC, currG, distance, zone, weather, presentCurr,
+                        device, disconnectDevice, powerUpToDevice, reporter, gps,
+                        formattedText: textToCopy,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+                setEditingFaultId(null);
+            } else {
+                history.unshift({
+                    time, system, circuit, station, cause, count, tlStatus, phase,
+                    currA, currB, currC, currG, distance, zone, weather, presentCurr,
+                    device, disconnectDevice, powerUpToDevice, reporter, gps,
+                    formattedText: textToCopy,
+                    timestamp: new Date().toISOString()
+                });
+            }
+
+            localStorage.setItem('fault_reports_all', JSON.stringify(history));
+
             if (sendToLine) {
                 openLineAppWithFallback(textToCopy);
             } else {
-                copyTextToClipboard(textToCopy, "คัดลอกข้อความและบันทึกสำเร็จ!");
+                copyTextToClipboard(textToCopy, isEditing ? "✅ อัปเดตทับรายการเดิมและคัดลอกสำเร็จ!" : "คัดลอกข้อความและบันทึกสำเร็จ!");
             }
-
-            const record = {
-                time, system, circuit, station, cause, count, tlStatus, phase,
-                currA, currB, currC, currG, distance, zone, weather, presentCurr, device, disconnectDevice, powerUpToDevice, reporter, gps,
-                formattedText: textToCopy,
-                timestamp: new Date().toISOString()
-            };
-
-            let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
-            history.unshift(record);
-            localStorage.setItem('fault_reports_all', JSON.stringify(history));
 
             performAutoBackupSnapshot();
             loadFaultHistory();
@@ -3368,10 +3658,12 @@
                 message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${currentMeterLink}`;
             }
 
+            const isEditing = !!editingOutageId;
+
             if (sendToLine) {
                 openLineAppWithFallback(message);
             } else {
-                copyTextToClipboard(message, "บันทึกและคัดลอกข้อความสำเร็จ!");
+                copyTextToClipboard(message, isEditing ? "✅ อัปเดตทับรายการเดิมและคัดลอกสำเร็จ!" : "บันทึกและคัดลอกข้อความสำเร็จ!");
             }
 
             saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, priorityInfo.level);
@@ -3384,7 +3676,33 @@
             autoAddIssueType(issueType); 
             
             let history = JSON.parse(localStorage.getItem('elecReportsComplete_all')) || [];
-            history.unshift({ dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel }); 
+
+            if (editingOutageId) {
+                const idx = history.findIndex(h => h.dateTimeSaved === editingOutageId);
+                if (idx !== -1) {
+                    // บันทึกทับในรายการเดิม โดยคงเวลาบันทึกเดิม (dateTimeSaved) และลำดับเดิมไว้ทุกประการ
+                    history[idx] = {
+                        ...history[idx],
+                        reportDate,
+                        jobNo,
+                        shift,
+                        issueType,
+                        workerName,
+                        area,
+                        address,
+                        phone,
+                        gps,
+                        formattedText,
+                        priorityLevel
+                    };
+                } else {
+                    history.unshift({ dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel });
+                }
+                setEditingOutageId(null);
+            } else {
+                history.unshift({ dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel }); 
+            }
+
             localStorage.setItem('elecReportsComplete_all', JSON.stringify(history));
             performAutoBackupSnapshot();
             loadOutageHistory();
@@ -3467,16 +3785,50 @@
                         <span class="text-slate-400">📅 ${item.reportDate}</span>
                     </div>
                     <div class="text-slate-600 whitespace-pre-line font-mono bg-slate-50 p-2 rounded">${highlightedText}</div>
-                    <div class="flex justify-between items-center pt-2">
-                        <span class="text-[10px] text-slate-400">บันทึกเมื่อ: ${item.dateTimeSaved}</span>
-                        <div class="flex gap-1">
-                            <button type="button" onclick="copyOutageAgain('${item.dateTimeSaved}')" class="bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button>
-                            <button type="button" onclick="deleteOutageItem('${item.dateTimeSaved}')" class="bg-rose-50 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button>
+                    <div class="flex justify-between items-center pt-2 gap-1">
+                        <span class="text-[10px] text-slate-400 truncate">บันทึกเมื่อ: ${item.dateTimeSaved}</span>
+                        <div class="flex gap-1 shrink-0">
+                            <button type="button" onclick="editOutageItem('${item.dateTimeSaved}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📝 แก้ไข</button>
+                            <button type="button" onclick="copyOutageAgain('${item.dateTimeSaved}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📋 คัดลอก</button>
+                            <button type="button" onclick="deleteOutageItem('${item.dateTimeSaved}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">🗑️ ลบ</button>
                         </div>
                     </div>
                 `;
                 historyList.appendChild(div);
             });
+        }
+
+        function editOutageItem(dateTimeSaved) {
+            let history = JSON.parse(localStorage.getItem('elecReportsComplete_all')) || [];
+            let item = history.find(h => h.dateTimeSaved === dateTimeSaved);
+            if (!item) return;
+
+            setEditingOutageId(dateTimeSaved);
+            const cleanVal = (v) => (v && v !== '-') ? v : '';
+
+            document.getElementById('reportDate').value = cleanVal(item.reportDate);
+            document.getElementById('jobNo').value = cleanVal(item.jobNo);
+            document.getElementById('shift').value = cleanVal(item.shift);
+            document.getElementById('issueType').value = cleanVal(item.issueType);
+            document.getElementById('workerName').value = cleanVal(item.workerName);
+            document.getElementById('area').value = cleanVal(item.area);
+            
+            const addrEl = document.getElementById('address');
+            addrEl.value = cleanVal(item.address);
+            addrEl.style.height = 'auto';
+            addrEl.style.height = addrEl.scrollHeight + 'px';
+            addrEl.dispatchEvent(new Event('input'));
+
+            document.getElementById('phone').value = cleanVal(item.phone);
+            
+            const gpsEl = document.getElementById('gps');
+            gpsEl.value = cleanVal(item.gps);
+            const coords = extractCoordsFromInput(gpsEl.value);
+            updateMapPreview(coords);
+
+            if (typeof saveOutageDraft === 'function') saveOutageDraft();
+            document.getElementById('sortable-tab2')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showToast("📝 โหมดแก้ไข: เมื่อบันทึกจะทับลงในรายการเดิมทันที");
         }
 
         function copyOutageAgain(dateTimeSaved) {
@@ -3489,6 +3841,7 @@
 
         function deleteOutageItem(dateTimeSaved) {
             showCustomConfirm('คุณต้องการลบรายการประวัตินี้ใช่หรือไม่?', function() {
+                if (editingOutageId === dateTimeSaved) setEditingOutageId(null);
                 let history = JSON.parse(localStorage.getItem('elecReportsComplete_all')) || [];
                 history = history.filter(h => h.dateTimeSaved !== dateTimeSaved);
                 localStorage.setItem('elecReportsComplete_all', JSON.stringify(history));
@@ -3557,11 +3910,12 @@
                         <span class="text-slate-400">⏰ ${item.time}</span>
                     </div>
                     <div class="text-slate-600 whitespace-pre-line font-mono bg-slate-50 p-2 rounded">${highlightedText}</div>
-                    <div class="flex justify-between items-center pt-2">
-                        <span class="text-[10px] text-slate-400">${new Date(item.timestamp).toLocaleString('th-TH')}</span>
-                        <div class="flex gap-1">
-                            <button type="button" onclick="copyFaultAgain('${item.timestamp}')" class="bg-blue-50 text-blue-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button>
-                            <button type="button" onclick="deleteFaultItem('${item.timestamp}')" class="bg-rose-50 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button>
+                    <div class="flex justify-between items-center pt-2 gap-1">
+                        <span class="text-[10px] text-slate-400 truncate">${new Date(item.timestamp).toLocaleString('th-TH')}</span>
+                        <div class="flex gap-1 shrink-0">
+                            <button type="button" onclick="editFaultItem('${item.timestamp}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📝 แก้ไข</button>
+                            <button type="button" onclick="copyFaultAgain('${item.timestamp}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📋 คัดลอก</button>
+                            <button type="button" onclick="deleteFaultItem('${item.timestamp}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">🗑️ ลบ</button>
                         </div>
                     </div>
                 `;
@@ -3569,6 +3923,78 @@
             });
         }
 
+        function editFaultItem(timestamp) {
+            let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+            let item = history.find(h => h.timestamp === timestamp);
+            if (!item) return;
+
+            setEditingFaultId(timestamp);
+            const cleanVal = (v) => (v && v !== '-') ? v : '';
+
+            document.getElementById('timeInput').value = cleanVal(item.time);
+            document.getElementById('systemSelect').value = cleanVal(item.system);
+            updateCircuitDropdown();
+            document.getElementById('circuitSelect').value = cleanVal(item.circuit);
+
+            const stVal = cleanVal(item.station);
+            document.getElementById('stationValue').value = stVal;
+            const stDisplay = document.getElementById('stationTypeDisplay');
+            if (stDisplay) {
+                stDisplay.textContent = stVal || '-- กรุณาเลือกสถานี --';
+                stDisplay.classList.toggle('text-slate-400', !stVal);
+                stDisplay.classList.toggle('text-slate-800', !!stVal);
+            }
+
+            document.getElementById('causeSelect').value = cleanVal(item.cause);
+            document.getElementById('countSelect').value = cleanVal(item.count);
+            document.getElementById('tlSelect').value = item.tlStatus || '';
+            document.getElementById('phaseSelect').value = cleanVal(item.phase);
+
+            document.getElementById('currA').value = item.currA || '';
+            document.getElementById('currB').value = item.currB || '';
+            document.getElementById('currC').value = item.currC || '';
+            document.getElementById('currG').value = item.currG || '';
+
+            document.getElementById('distanceInput').value = cleanVal(item.distance);
+            document.getElementById('zoneInput').value = cleanVal(item.zone);
+
+            let loadedTambon = '';
+            let loadedWeather = cleanVal(item.weather);
+            Object.keys(targetTambonCoordinates).forEach(tName => {
+                if (loadedWeather.startsWith(tName)) {
+                    loadedTambon = tName;
+                    loadedWeather = loadedWeather.replace(tName, '').trim();
+                }
+            });
+            document.getElementById('tambonSelect').value = loadedTambon;
+            document.getElementById('weatherSelect').value = loadedWeather;
+            if (loadedWeather) {
+                isWeatherLockedByUser = true;
+                applyWeatherSelectColor(loadedWeather);
+            }
+
+            document.getElementById('presentCurrInput').value = cleanVal(item.presentCurr);
+            document.getElementById('deviceInput').value = cleanVal(item.device);
+            document.getElementById('disconnectDeviceInput').value = cleanVal(item.disconnectDevice);
+
+            let rawPowerUp = cleanVal(item.powerUpToDevice);
+            let pDevice = rawPowerUp;
+            let pTime = '';
+            if (rawPowerUp.includes(' เวลา ')) {
+                const parts = rawPowerUp.split(' เวลา ');
+                pDevice = parts[0].trim();
+                pTime = parts.slice(1).join(' เวลา ').trim();
+            }
+            document.getElementById('powerUpToDeviceInput').value = pDevice;
+            document.getElementById('powerUpTimeInput').value = pTime;
+
+            document.getElementById('reporterInput').value = cleanVal(item.reporter);
+            document.getElementById('gpsInput').value = cleanVal(item.gps);
+
+            if (typeof saveFaultDraft === 'function') saveFaultDraft();
+            document.getElementById('sortable-tab1')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            showToast("📝 โหมดแก้ไข: เมื่อบันทึกจะทับลงในรายการเดิมทันที");
+        }
         function copyFaultAgain(timestamp) {
             let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
             let item = history.find(h => h.timestamp === timestamp);
