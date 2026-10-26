@@ -5498,129 +5498,349 @@
                 // ==========================================
         // 🔄 ระบบซิงค์ใบงานเชื่อมหน้า 1 <-> หน้า 2 (พร้อมล้างงานที่เสร็จแล้วออกจาก Google Sheets อัตโนมัติ)
             // ==========================================
-                        function isJobFinishedAndRestored(job) {
-            return job && job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น');
+                                    // ==========================================
+            // 🏢 ระบบแบ่งกลุ่มผู้ใช้งาน (Group Filtering & Multi-Group Cloud Sync)
+            // ==========================================
+                        // ==========================================
+            // ⚡ ระบบแบ่งกลุ่มผู้ใช้งาน & ซิงค์ความเร็วสูง (Fast Cloud Sync Every 5s)
+            // ==========================================
+            let cachedCloudJobs = [];
+
+            function getUserGroupName(username) {
+                if (!username) return '';
+                const s = String(username).trim();
+                const parts = s.split(/\s+/);
+                if (parts.length > 1) return parts.slice(1).join(' ').trim();
+                const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
+                if (peaMatch && peaMatch[1] !== s) return peaMatch[1].trim();
+                return '';
+            }
+
+            function getUserBaseId(username) {
+                if (!username) return '';
+                return String(username).trim().split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim().toLowerCase();
+            }
+
+            function getCurrentUserGroup() {
+                const curUser = localStorage.getItem('elec_app_current_user') || '';
+                const directGroup = getUserGroupName(curUser);
+                if (directGroup) return directGroup;
+                // ค้นหาชื่อกลุ่มจากตารางบัญชีผู้ใช้ล่าสุด (กรณีล็อกอินด้วยรหัสตัวเลขเฉยๆ แต่แอดมินตั้งกลุ่มให้แล้ว)
+                const baseId = getUserBaseId(curUser);
+                const matchedAcc = (userAccountsList || []).find(a => getUserBaseId(a.username) === baseId);
+                return matchedAcc ? getUserGroupName(matchedAcc.username) : '';
+            }
+
+            function getJobGroupName(job) {
+                if (!job) return '';
+                if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
+                    return String(job.ownerGroup).trim();
+                }
+                const candidates = [job.ownerUser, job.workerName, job.techReport?.inspector].filter(Boolean);
+                for (const c of candidates) {
+                    const g = getUserGroupName(c);
+                    if (g) return g;
+                    const cBase = getUserBaseId(c);
+                    if (cBase) {
+                        const acc = (userAccountsList || []).find(a => getUserBaseId(a.username) === cBase);
+                        if (acc) {
+                            const accGroup = getUserGroupName(acc.username);
+                            if (accGroup) return accGroup;
+                        }
+                    }
+                }
+                return '';
+            }
+
+            function canCurrentUserSeeJob(job) {
+                const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+                if (currentRole === 'admin') return true; // Admin เห็นทั้งหมดทุกกลุ่ม
+                const myGroup = getCurrentUserGroup();
+                const jobGroup = getJobGroupName(job);
+                // หากใบงานไม่ได้ระบุกลุ่ม (เช่น งานส่วนกลางที่ Admin สร้าง หรืองานเก่าก่อนตั้งกลุ่ม) ให้แสดงให้เห็นด้วย
+                if (!jobGroup || !myGroup) return true;
+                return myGroup === jobGroup;
+            }
+
+            function tagUntaggedLocalJobsWithCurrentGroup() {
+                const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                const myGroup = getCurrentUserGroup();
+                if (!curUser || currentRole === 'admin' || !myGroup) return;
+
+                ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
+                    let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, storageKey) || '[]');
+                    let updated = false;
+                    list.forEach(item => {
+                        if (!item.ownerGroup) {
+                            item.ownerUser = item.ownerUser || curUser;
+                            item.ownerGroup = myGroup;
+                            updated = true;
+                        }
+                    });
+                    if (updated) {
+                        localStorage.setItem(storageKey, JSON.stringify(list));
+                    }
+                });
+            }
+
+            let isFilteringStorageForView = false;
+            const _origLocalStorageGetItem = Storage.prototype.getItem;
+            Storage.prototype.getItem = function(key) {
+                const raw = _origLocalStorageGetItem.call(this, key);
+                if (isFilteringStorageForView && (key === 'elecReportsComplete_all' || key === 'fault_reports_all')) {
+                    const role = _origLocalStorageGetItem.call(this, 'elec_app_current_role') || 'user';
+                    if (role === 'admin') return raw;
+                    try {
+                        const arr = JSON.parse(raw || '[]');
+                        return JSON.stringify(arr.filter(item => canCurrentUserSeeJob(item)));
+                    } catch (e) {
+                        return raw;
+                    }
+                }
+                return raw;
+            };
+
+            function runWithGroupViewFilter(fn, context, args) {
+                tagUntaggedLocalJobsWithCurrentGroup();
+                isFilteringStorageForView = true;
+                try {
+                    return fn.apply(context, args);
+                } finally {
+                    isFilteringStorageForView = false;
+                }
+            }
+
+            const _origLoadOutageHistory = loadOutageHistory;
+            loadOutageHistory = function(...args) { return runWithGroupViewFilter(_origLoadOutageHistory, this, args); };
+
+            const _origLoadFaultHistory = loadFaultHistory;
+            loadFaultHistory = function(...args) { return runWithGroupViewFilter(_origLoadFaultHistory, this, args); };
+
+            const _origLoadAnalyticsData = loadAnalyticsData;
+            loadAnalyticsData = function(...args) { return runWithGroupViewFilter(_origLoadAnalyticsData, this, args); };
+
+            const _origAutoFillJobNoGroup = autoFillJobNo;
+            autoFillJobNo = function(...args) { return runWithGroupViewFilter(_origAutoFillJobNoGroup, this, args); };
+
+            const _origExportData = exportData;
+            exportData = function(...args) { return runWithGroupViewFilter(_origExportData, this, args); };
+
+            function isJobFinishedAndRestored(job) {
+                return job && job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น');
             }
             
-            // ส่งเฉพาะ "งานที่ยังไม่เสร็จ (รอดำเนินการ)" ขึ้น Google Sheets เท่านั้น (งานที่เสร็จแล้วจะถูกล้างออกจากชีต)
-            async function syncJobsWithFieldPage() {
-            if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
-            const apiUrl = getActiveCloudApiUrl();
-            if (!apiUrl) return;
-            try {
-            const outages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
-            .filter(i => !isJobFinishedAndRestored(i))
-            .map(i => ({ ...i, jobType: 'outage' }));
-            
-            const faults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]')
-            .filter(i => !isJobFinishedAndRestored(i))
-            .map(i => ({ ...i, jobType: 'fault' }));
-            
-            await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ action: 'saveJobs', jobs: [...outages.slice(0, 80), ...faults.slice(0, 50)] })
-            });
-            } catch (e) {}
+            // ส่งใบงานขึ้น Google Sheets ทันทีรวดเดียว (ใช้ Cache ลดเวลาโหลดลงครึ่งหนึ่ง)
+            async function syncJobsWithFieldPage(cloudJobsSnapshot = null) {
+                if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
+                const apiUrl = getActiveCloudApiUrl();
+                if (!apiUrl) return;
+                try {
+                    tagUntaggedLocalJobsWithCurrentGroup();
+                    const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+                    const myGroup = getCurrentUserGroup();
+
+                    const baseCloudJobs = Array.isArray(cloudJobsSnapshot) ? cloudJobsSnapshot : cachedCloudJobs;
+
+                    const otherGroupsCloudJobs = (baseCloudJobs || []).filter(cJob => {
+                        if (currentRole === 'admin') {
+                            if (isJobFinishedAndRestored(cJob) && cJob.techReport && cJob.techReport.needsMainSync && getJobGroupName(cJob) !== '') {
+                                return true;
+                            }
+                            return false;
+                        }
+                        const jGroup = getJobGroupName(cJob);
+                        return jGroup !== '' && jGroup !== myGroup;
+                    });
+
+                    const myActiveOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]')
+                        .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
+                        .map(i => ({ ...i, jobType: 'outage', ownerGroup: getJobGroupName(i) || myGroup }));
+                    
+                    const myActiveFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]')
+                        .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
+                        .map(i => ({ ...i, jobType: 'fault', ownerGroup: getJobGroupName(i) || myGroup }));
+
+                    const combinedMap = new Map();
+                    otherGroupsCloudJobs.forEach(j => {
+                        const k = (j.jobType === 'fault' ? 'F_' + j.timestamp : 'O_' + j.dateTimeSaved);
+                        combinedMap.set(k, j);
+                    });
+                    [...myActiveOutages.slice(0, 80), ...myActiveFaults.slice(0, 50)].forEach(j => {
+                        const k = (j.jobType === 'fault' ? 'F_' + j.timestamp : 'O_' + j.dateTimeSaved);
+                        combinedMap.set(k, j);
+                    });
+
+                    const finalJobs = Array.from(combinedMap.values());
+                    cachedCloudJobs = finalJobs;
+                    
+                    await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'saveJobs', jobs: finalJobs })
+                    });
+                } catch (e) {}
             }
             
-            // ดึงผลตรวจสอบของช่างจาก Google Sheets ลงเครื่องผู้ใช้ทั่วไป แล้วสั่งล้างงานที่เสร็จแล้วออกจากชีตทันที
+            // ดึงข้อมูลทุกๆ 5 วินาที พร้อมดันงานที่ค้างในเครื่องขึ้น Google Sheets ทันที
             async function pullFieldReportsFromCloud() {
-            if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
-            const apiUrl = getActiveCloudApiUrl();
-            if (!apiUrl) return;
-            try {
-            const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
-            const data = await res.json();
-            if (data && Array.isArray(data.jobs)) {
-            let outages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
-            let faults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
-            let changed = false;
-            let hasCompletedJobInCloud = false;
-            
-            data.jobs.forEach(cJob => {
-            if (isJobFinishedAndRestored(cJob)) {
-            hasCompletedJobInCloud = true;
-            }
-            if (cJob.techReport) {
-            const cleanReport = { ...cJob.techReport };
-            delete cleanReport.needsMainSync;
-            
-            if (cJob.jobType !== 'fault') {
-            const idx = outages.findIndex(o => o.dateTimeSaved === cJob.dateTimeSaved);
-            if (idx !== -1) {
-            if (JSON.stringify(outages[idx].techReport) !== JSON.stringify(cleanReport)) {
-            outages[idx].techReport = cleanReport;
-            outages[idx].formattedText = cJob.formattedText;
-            changed = true;
-            }
-            } else {
-            outages.unshift({ ...cJob, techReport: cleanReport });
-            changed = true;
-            }
-            } else {
-            const idx = faults.findIndex(f => f.timestamp === cJob.timestamp);
-            if (idx !== -1) {
-            if (JSON.stringify(faults[idx].techReport) !== JSON.stringify(cleanReport)) {
-            faults[idx].techReport = cleanReport;
-            faults[idx].formattedText = cJob.formattedText;
-            changed = true;
-            }
-            } else {
-            faults.unshift({ ...cJob, techReport: cleanReport });
-            changed = true;
-            }
-            }
-            }
-            });
-            
-            // บันทึกผลตรวจสอบลงในความจำเครื่องผู้ใช้ทั่วไปถาวร
-            if (changed) {
-            localStorage.setItem('elecReportsComplete_all', JSON.stringify(outages));
-            localStorage.setItem('fault_reports_all', JSON.stringify(faults));
-            if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
-            loadOutageHistory();
-            loadFaultHistory();
-            showToast("✅ รับผลตรวจสอบหน้างานลงเครื่องและล้างชีตออนไลน์แล้ว");
-            }
-            
-            // หากพบว่าใน Google Sheets มีงานที่ "แก้ไขเสร็จสิ้น" ค้างอยู่ ให้สั่งล้างออกจากชีตทันทีหลังดูดข้อมูลลงเครื่องแล้ว
-            if (changed || hasCompletedJobInCloud) {
-            await syncJobsWithFieldPage();
-            }
-            }
-            } catch (e) {}
+                if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
+                const apiUrl = getActiveCloudApiUrl();
+                if (!apiUrl) return;
+                try {
+                    tagUntaggedLocalJobsWithCurrentGroup();
+                    const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+                    const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
+                    const data = await res.json();
+                    if (data && Array.isArray(data.jobs)) {
+                        cachedCloudJobs = data.jobs;
+                        let outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
+                        let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
+                        let changed = false;
+                        let hasCompletedGroupJobInCloud = false;
+                        
+                        const cloudOutageKeys = new Set();
+                        const cloudFaultKeys = new Set();
+
+                        data.jobs.forEach(cJob => {
+                            if (!canCurrentUserSeeJob(cJob)) return;
+
+                            const jobGroup = getJobGroupName(cJob);
+                            if (isJobFinishedAndRestored(cJob)) {
+                                if (currentRole !== 'admin' || jobGroup === '') {
+                                    hasCompletedGroupJobInCloud = true;
+                                }
+                            }
+
+                            const cleanReport = cJob.techReport ? { ...cJob.techReport } : undefined;
+                            if (cleanReport && (currentRole !== 'admin' || jobGroup === '')) {
+                                delete cleanReport.needsMainSync;
+                            }
+
+                            if (cJob.jobType !== 'fault' && cJob.dateTimeSaved) {
+                                cloudOutageKeys.add(cJob.dateTimeSaved);
+                                const idx = outages.findIndex(o => o.dateTimeSaved === cJob.dateTimeSaved);
+                                if (idx !== -1) {
+                                    if (jobGroup && !outages[idx].ownerGroup) {
+                                        outages[idx].ownerGroup = jobGroup;
+                                        changed = true;
+                                    }
+                                    if (cleanReport && JSON.stringify(outages[idx].techReport) !== JSON.stringify(cleanReport)) {
+                                        outages[idx].techReport = cleanReport;
+                                        outages[idx].formattedText = cJob.formattedText;
+                                        changed = true;
+                                    } else if (!outages[idx].techReport && cJob.formattedText && outages[idx].formattedText !== cJob.formattedText) {
+                                        outages[idx] = { ...cJob, ownerGroup: jobGroup };
+                                        changed = true;
+                                    }
+                                } else {
+                                    const newJob = { ...cJob, ownerGroup: jobGroup };
+                                    if (cleanReport) newJob.techReport = cleanReport;
+                                    outages.unshift(newJob);
+                                    changed = true;
+                                }
+                            } else if (cJob.jobType === 'fault' && cJob.timestamp) {
+                                cloudFaultKeys.add(cJob.timestamp);
+                                const idx = faults.findIndex(f => f.timestamp === cJob.timestamp);
+                                if (idx !== -1) {
+                                    if (jobGroup && !faults[idx].ownerGroup) {
+                                        faults[idx].ownerGroup = jobGroup;
+                                        changed = true;
+                                    }
+                                    if (cleanReport && JSON.stringify(faults[idx].techReport) !== JSON.stringify(cleanReport)) {
+                                        faults[idx].techReport = cleanReport;
+                                        faults[idx].formattedText = cJob.formattedText;
+                                        changed = true;
+                                    } else if (!faults[idx].techReport && cJob.formattedText && faults[idx].formattedText !== cJob.formattedText) {
+                                        faults[idx] = { ...cJob, ownerGroup: jobGroup };
+                                        changed = true;
+                                    }
+                                } else {
+                                    const newFault = { ...cJob, ownerGroup: jobGroup };
+                                    if (cleanReport) newFault.techReport = cleanReport;
+                                    faults.unshift(newFault);
+                                    changed = true;
+                                }
+                            }
+                        });
+                        
+                        if (changed) {
+                            localStorage.setItem('elecReportsComplete_all', JSON.stringify(outages));
+                            localStorage.setItem('fault_reports_all', JSON.stringify(faults));
+                            if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
+                            loadOutageHistory();
+                            loadFaultHistory();
+                            autoFillJobNo();
+                            showToast("⚡ ซิงค์ใบงานใหม่เข้าเครื่องแล้ว!");
+                        }
+
+                        const hasUnsyncedLocalOutage = outages.some(o => canCurrentUserSeeJob(o) && !isJobFinishedAndRestored(o) && !cloudOutageKeys.has(o.dateTimeSaved));
+                        const hasUnsyncedLocalFault = faults.some(f => canCurrentUserSeeJob(f) && !isJobFinishedAndRestored(f) && !cloudFaultKeys.has(f.timestamp));
+                        
+                        if (changed || hasCompletedGroupJobInCloud || hasUnsyncedLocalOutage || hasUnsyncedLocalFault) {
+                            await syncJobsWithFieldPage(data.jobs);
+                        }
+                    }
+                } catch (e) {}
             }
             
             const _origSaveOutage = saveOutageData;
             saveOutageData = function(...args) {
-            _origSaveOutage.apply(this, args);
-            syncJobsWithFieldPage();
+                _origSaveOutage.apply(this, args);
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                const curGroup = getCurrentUserGroup();
+                let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
+                const savedKey = args[0];
+                const idx = list.findIndex(i => i.dateTimeSaved === savedKey);
+                const target = idx !== -1 ? list[idx] : list[0];
+                if (target) {
+                    target.ownerUser = curUser;
+                    target.ownerGroup = curGroup || getUserGroupName(target.workerName);
+                    localStorage.setItem('elecReportsComplete_all', JSON.stringify(list));
+                }
+                loadOutageHistory();
+                syncJobsWithFieldPage();
             };
             
             const _origSaveFault = saveAndCopyFault;
             saveAndCopyFault = function(...args) {
-            _origSaveFault.apply(this, args);
-            syncJobsWithFieldPage();
+                _origSaveFault.apply(this, args);
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                const curGroup = getCurrentUserGroup();
+                let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
+                if (list.length > 0) {
+                    list[0].ownerUser = curUser;
+                    list[0].ownerGroup = curGroup;
+                    localStorage.setItem('fault_reports_all', JSON.stringify(list));
+                }
+                loadFaultHistory();
+                syncJobsWithFieldPage();
             };
             
             const _origDeleteOutage = deleteOutageItem;
             deleteOutageItem = function(...args) {
-            _origDeleteOutage.apply(this, args);
-            setTimeout(syncJobsWithFieldPage, 500);
+                _origDeleteOutage.apply(this, args);
+                setTimeout(syncJobsWithFieldPage, 300);
             };
             
             const _origDeleteFault = deleteFaultItem;
             deleteFaultItem = function(...args) {
-            _origDeleteFault.apply(this, args);
-            setTimeout(syncJobsWithFieldPage, 500);
+                _origDeleteFault.apply(this, args);
+                setTimeout(syncJobsWithFieldPage, 300);
             };
             
             window.addEventListener('DOMContentLoaded', () => {
-            pullFieldReportsFromCloud();
-            setInterval(pullFieldReportsFromCloud, 20000);
+                tagUntaggedLocalJobsWithCurrentGroup();
+                loadOutageHistory();
+                loadFaultHistory();
+                pullFieldReportsFromCloud();
+                // ซิงค์อัตโนมัติความเร็วสูงทุกๆ 5 วินาที
+                setInterval(() => {
+                    if (!document.hidden) pullFieldReportsFromCloud();
+                }, 5000);
             });
-            </script>
-            </body>
-            
-            </html>
+
+            window.addEventListener('focus', pullFieldReportsFromCloud);
+        </script>
+</body>
+</html>
