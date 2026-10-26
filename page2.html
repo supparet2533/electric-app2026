@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบช่างตรวจสอบหน้างาน - PEA MWM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; background: #f1f5f9; color: #1e293b; }
+        input, select, textarea { background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 0.75rem; }
+        input:focus, select:focus, textarea:focus { background-color: #fff; border-color: #2563eb !important; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+    </style>
+</head>
+<body class="min-h-screen py-4 px-3 sm:py-8 flex justify-center items-start">
+
+    <!-- ================= 🔐 หน้าล็อกอิน (ใช้หน้าเดียวกับระบบหลัก Smart Grid SVG) ================= -->
+    <div id="techLoginScreen" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
+        
+        <!-- ⚡ พื้นหลังกราฟิกโครงข่ายไฟฟ้าแรงสูง (Custom Smart Grid SVG + แอนิเมชันกระแสไฟ) -->
+        <svg class="absolute inset-0 w-full h-full object-cover pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+            <defs>
+                <linearGradient id="gridSky" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#060913" />
+                    <stop offset="45%" stop-color="#0f172a" />
+                    <stop offset="80%" stop-color="#1e1b4b" />
+                    <stop offset="100%" stop-color="#3b1d5e" />
+                </linearGradient>
+                <radialGradient id="horizonGlow" cx="50%" cy="85%" r="60%">
+                    <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.22" />
+                    <stop offset="45%" stop-color="#8b5cf6" stop-opacity="0.15" />
+                    <stop offset="100%" stop-color="#0f172a" stop-opacity="0" />
+                </radialGradient>
+                <linearGradient id="powerLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.2" />
+                    <stop offset="50%" stop-color="#60a5fa" stop-opacity="0.6" />
+                    <stop offset="100%" stop-color="#c084fc" stop-opacity="0.2" />
+                </linearGradient>
+                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="4" result="blur" />
+                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+            </defs>
+
+            <rect width="1440" height="900" fill="url(#gridSky)" />
+            <rect width="1440" height="900" fill="url(#horizonGlow)" />
+
+            <g stroke="rgba(139, 92, 246, 0.15)" stroke-width="1">
+                <line x1="0" y1="680" x2="1440" y2="680" />
+                <line x1="0" y1="720" x2="1440" y2="720" />
+                <line x1="0" y1="770" x2="1440" y2="770" />
+                <line x1="0" y1="830" x2="1440" y2="830" />
+                <line x1="0" y1="895" x2="1440" y2="895" />
+                <line x1="720" y1="650" x2="-200" y2="900" />
+                <line x1="720" y1="650" x2="150" y2="900" />
+                <line x1="720" y1="650" x2="450" y2="900" />
+                <line x1="720" y1="650" x2="720" y2="900" />
+                <line x1="720" y1="650" x2="990" y2="900" />
+                <line x1="720" y1="650" x2="1290" y2="900" />
+                <line x1="720" y1="650" x2="1640" y2="900" />
+            </g>
+
+            <g stroke="rgba(56, 189, 248, 0.18)" stroke-width="1.2" stroke-dasharray="4 4">
+                <line x1="250" y1="160" x2="480" y2="110" />
+                <line x1="480" y1="110" x2="720" y2="180" />
+                <line x1="720" y1="180" x2="960" y2="100" />
+                <line x1="960" y1="100" x2="1200" y2="170" />
+                <line x1="480" y1="110" x2="520" y2="290" />
+                <line x1="720" y1="180" x2="720" y2="320" />
+                <line x1="960" y1="100" x2="920" y2="290" />
+            </g>
+            <g fill="#38bdf8" filter="url(#glow)">
+                <circle cx="250" cy="160" r="4" opacity="0.7" />
+                <circle cx="480" cy="110" r="5" opacity="0.9">
+                    <animate attributeName="opacity" values="0.3;1;0.3" dur="3s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="720" cy="180" r="6" fill="#f59e0b">
+                    <animate attributeName="r" values="5;8;5" dur="2.5s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="960" cy="100" r="5" opacity="0.9">
+                    <animate attributeName="opacity" values="1;0.3;1" dur="3.5s" repeatCount="indefinite" />
+                </circle>
+                <circle cx="1200" cy="170" r="4" opacity="0.7" />
+            </g>
+
+            <!-- 🗼 เสาส่งไฟฟ้าแรงสูง -->
+            <g stroke="rgba(148, 163, 184, 0.35)" stroke-width="2" fill="none">
+                <path d="M360,820 L395,360 L415,360 L450,820" />
+                <line x1="340" y1="420" x2="470" y2="420" stroke-width="2.5" />
+                <line x1="325" y1="490" x2="485" y2="490" stroke-width="2.5" />
+                <line x1="350" y1="560" x2="460" y2="560" stroke-width="2" />
+                <path d="M395,360 L420,420 L388,490 L425,560 L375,660 L438,750" stroke-width="1.2" />
+                <path d="M415,360 L390,420 L422,490 L385,560 L435,660 L372,750" stroke-width="1.2" />
+            </g>
+            <g stroke="rgba(203, 213, 225, 0.45)" stroke-width="2.2" fill="none">
+                <path d="M670,850 L708,300 L732,300 L770,850" />
+                <path d="M708,300 L720,250 L732,300" />
+                <line x1="635" y1="370" x2="805" y2="370" stroke-width="3" />
+                <line x1="615" y1="450" x2="825" y2="450" stroke-width="3" />
+                <line x1="640" y1="530" x2="800" y2="530" stroke-width="2.5" />
+                <path d="M708,300 L736,370 L700,450 L742,530 L688,640 L755,750" stroke-width="1.4" />
+                <path d="M732,300 L704,370 L740,450 L698,530 L752,640 L685,750" stroke-width="1.4" />
+                <circle cx="635" cy="378" r="3.5" fill="#38bdf8" filter="url(#glow)" />
+                <circle cx="805" cy="378" r="3.5" fill="#38bdf8" filter="url(#glow)" />
+                <circle cx="615" cy="458" r="3.5" fill="#f59e0b" filter="url(#glow)" />
+                <circle cx="825" cy="458" r="3.5" fill="#f59e0b" filter="url(#glow)" />
+            </g>
+            <g stroke="rgba(148, 163, 184, 0.35)" stroke-width="2" fill="none">
+                <path d="M990,820 L1025,360 L1045,360 L1080,820" />
+                <line x1="970" y1="420" x2="1100" y2="420" stroke-width="2.5" />
+                <line x1="955" y1="490" x2="1115" y2="490" stroke-width="2.5" />
+                <line x1="980" y1="560" x2="1090" y2="560" stroke-width="2" />
+                <path d="M1025,360 L1050,420 L1018,490 L1055,560 L1005,660 L1068,750" stroke-width="1.2" />
+                <path d="M1045,360 L1020,420 L1052,490 L1015,560 L1065,660 L1002,750" stroke-width="1.2" />
+            </g>
+
+            <!-- ⚡ สายส่งไฟฟ้าหลัก & กระแสไฟวิ่ง -->
+            <g fill="none" stroke="url(#powerLineGrad)" stroke-width="1.8">
+                <path d="M-50,460 Q150,530 340,420 Q500,510 635,378" />
+                <path d="M805,378 Q900,510 970,420 Q1200,530 1500,450" />
+                <path d="M-50,530 Q150,600 325,490 Q480,580 615,458" />
+                <path d="M825,458 Q920,580 955,490 Q1200,600 1500,520" />
+            </g>
+            <g fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="18 220" filter="url(#glow)">
+                <path d="M-50,460 Q150,530 340,420 Q500,510 635,378">
+                    <animate attributeName="stroke-dashoffset" from="238" to="0" dur="3s" repeatCount="indefinite" />
+                </path>
+                <path d="M805,378 Q900,510 970,420 Q1200,530 1500,450">
+                    <animate attributeName="stroke-dashoffset" from="238" to="0" dur="3s" repeatCount="indefinite" />
+                </path>
+            </g>
+            <g fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="14 260" filter="url(#glow)">
+                <path d="M-50,530 Q150,600 325,490 Q480,580 615,458">
+                    <animate attributeName="stroke-dashoffset" from="0" to="274" dur="3.5s" repeatCount="indefinite" />
+                </path>
+                <path d="M825,458 Q920,580 955,490 Q1200,600 1500,520">
+                    <animate attributeName="stroke-dashoffset" from="0" to="274" dur="3.5s" repeatCount="indefinite" />
+                </path>
+            </g>
+        </svg>
+
+        <div class="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px] pointer-events-none"></div>
+
+        <!-- เนื้อหาหน้าล็อกอิน (เหมือนหน้าแรก 100%) -->
+        <div class="relative z-10 w-full max-w-6xl mx-6 flex flex-col md:flex-row items-center justify-between gap-10">
+            <div class="text-white space-y-2 text-center md:text-left">
+                <div class="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-semibold px-3 py-1 rounded-full mb-1 backdrop-blur-sm">
+                    ⚡ SMART GRID & FAULT MANAGEMENT
+                </div>
+                <h1 class="text-2xl md:text-4xl font-bold tracking-wide drop-shadow-md">
+                    Mobile Workforce Management
+                </h1>
+                <h2 class="text-xl md:text-3xl font-semibold text-slate-100 drop-shadow">
+                    สำหรับรับแจ้งเหตุไฟฟ้าขัดข้อง
+                </h2>
+                <p class="text-amber-400 font-semibold text-base md:text-xl pt-1 tracking-wide">
+                    Provincial Electricity Authority
+                </p>
+            </div>
+
+            <div class="bg-white/95 backdrop-blur-md p-7 rounded-2xl shadow-2xl w-full max-w-sm space-y-5 border border-white/40">
+                <h3 class="text-2xl font-normal text-slate-600">เข้าสู่ระบบ</h3>
+                
+                <div class="space-y-3">
+                    <input type="text" id="techUsername" placeholder="ชื่อผู้ใช้งาน หรือ รหัสพนักงาน " class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key==='Enter') document.getElementById('techPassword').focus()">
+                    <input type="password" id="techPassword" placeholder="รหัสผ่านเข้าใช้งาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key==='Enter') handleTechLogin()">
+                    
+                    <button type="button" id="techLoginBtn" onclick="handleTechLogin()" class="w-full bg-[#9b4dca] hover:bg-[#833ab4] text-white font-semibold py-2.5 rounded-xl shadow-md transition duration-200 text-sm">
+                        เข้าสู่ระบบ
+                    </button>
+                </div>
+
+                <div class="pt-3 border-t border-slate-200 text-[11px] text-slate-500 space-y-1">
+                    <div class="font-semibold text-slate-600">เข้าสู่ระบบ Admin / ผู้ใช้งาน / ช่างหน้างาน</div>
+                    <div>พบปัญหาติดต่อผู้ดูแลระบบ</div>
+                    <div>Developed by SamSrikacha</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="absolute bottom-4 left-0 right-0 z-10 text-center text-[11px] text-white/75 px-4">
+            © Provincial Electricity Authority All Rights Reserved.
+        </div>
+    </div>
+
+    <!-- 🛠️ หน้าต่างหลักสำหรับช่างตรวจสอบหน้างาน -->
+    <div id="techMainApp" class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-teal-700 to-emerald-600 px-4 py-4 text-white">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+                <div class="min-w-0">
+                    <h1 class="text-base sm:text-lg font-bold flex items-center gap-1.5">🛠️ ระบบช่างรายงานผลหน้างาน</h1>
+                    <p id="cloudStatusText" class="text-[11px] text-emerald-100 mt-0.5">🟢 พร้อมรับ-ส่งข้อมูลใบงาน</p>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 ml-auto">
+                    <!-- ปุ่มกลับหน้าหลักรับแจ้ง (ซ่อนอัตโนมัติสำหรับสิทธิ์ "ผู้ใช้งานช่าง") -->
+                    <button type="button" id="backToMainBtn" onclick="goBackToMainPage()" class="hidden bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition items-center gap-1 shadow-sm">
+                        ⬅️ <span>หน้าหลัก</span>
+                    </button>
+                    <button type="button" onclick="syncJobsFromCloud(false)" class="bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="ดึงงานล่าสุด">
+                        🔄 ซิงค์งาน
+                    </button>
+                    <button type="button" onclick="handleTechLogout()" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="ออกจากระบบ">
+                        🚪 ออก
+                    </button>
+                </div>
+            </div>
+
+            <!-- ปุ่มกล่องสรุปจำนวนงาน (กดเพื่อสลับฝั่ง รอดำเนินการ <-> แก้ไขเสร็จสิ้น ได้ทันที) -->
+            <div class="grid grid-cols-3 gap-2 mt-4 text-center">
+                <button type="button" id="tabBox-all" onclick="switchStatusTab('all')" class="bg-white/15 hover:bg-white/25 backdrop-blur-sm rounded-xl p-2 transition border-2 border-transparent">
+                    <div class="text-[10px] text-emerald-100">งานทั้งหมด</div>
+                    <div id="countAllJobs" class="text-base font-bold">0</div>
+                </button>
+                <button type="button" id="tabBox-pending" onclick="switchStatusTab('pending')" class="bg-rose-500/40 hover:bg-rose-500/50 rounded-xl p-2 transition border-2 border-amber-300 shadow-md ring-2 ring-amber-300/40">
+                    <div class="text-[10px] text-rose-100 font-semibold">⏳ รอดำเนินการ</div>
+                    <div id="countPendingJobs" class="text-base font-bold text-amber-200">0</div>
+                </button>
+                <button type="button" id="tabBox-done" onclick="switchStatusTab('done')" class="bg-emerald-900/30 hover:bg-emerald-900/50 rounded-xl p-2 transition border-2 border-transparent">
+                    <div class="text-[10px] text-emerald-100 font-semibold">✅ แก้ไขเสร็จสิ้น</div>
+                    <div id="countDoneJobs" class="text-base font-bold text-emerald-200">0</div>
+                </button>
+            </div>
+        </div>
+
+        <!-- แถบตัวกรองประเภทงานและสถานะ -->
+        <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-2.5">
+            <div class="grid grid-cols-2 gap-2">
+                <select id="filterJobType" onchange="renderJobCards()" class="px-3 py-2 text-xs font-bold text-slate-700 bg-white">
+                    <option value="outage">📞 งานรับแจ้งไฟขัดข้อง (แท็บ 2)</option>
+                    <option value="fault">🚨 งานเหตุสถานี TR/TL (แท็บ 1)</option>
+                </select>
+                <select id="filterJobStatus" onchange="switchStatusTab(this.value)" class="px-3 py-2 text-xs font-bold text-slate-700 bg-white">
+                    <option value="pending" selected>⏳ ฝั่ง: รอดำเนินการ</option>
+                    <option value="done">✅ ฝั่ง: แก้ไขเสร็จสิ้นแล้ว</option>
+                    <option value="all">📋 แสดงรวมทั้งหมด</option>
+                </select>
+            </div>
+            <input type="text" id="searchJobKeyword" oninput="renderJobCards()" placeholder="🔍 ค้นหาเลขงาน, บริเวณ, อาการ, ชื่อช่าง..." class="w-full px-3.5 py-2 text-xs bg-white">
+        </div>
+
+        <!-- ป้ายบอกฝั่งที่กำลังเปิดดูอยู่ และชื่อผู้ใช้งานปัจจุบัน -->
+        <div class="px-4 pt-3 pb-1 flex items-center justify-between gap-2">
+            <span id="currentViewBadge" class="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                ⏳ กำลังแสดง: งานรอดำเนินการ
+            </span>
+            <span id="loggedUserDisplayBadge" class="text-[11px] font-semibold text-slate-500 truncate"></span>
+        </div>
+
+        <!-- รายการการ์ดใบงาน -->
+        <div id="jobCardsContainer" class="p-4 pt-2 space-y-3 max-h-[68vh] overflow-y-auto">
+            <p class="text-center text-sm text-slate-400 py-8">กำลังโหลดรายการงาน...</p>
+        </div>
+
+        <!-- Signature Footer -->
+        <div class="bg-slate-50 px-6 py-3 border-t border-slate-200 text-center text-xs text-slate-500 font-medium">
+            Developed by SamSrikacha
+        </div>
+    </div>
+
+    <!-- 📝 Modal ฟอร์มสำหรับช่างกรอกผลตรวจสอบหน้างาน -->
+    <div id="inspectModal" class="fixed inset-0 bg-slate-900/60 hidden z-[80] flex items-center justify-center p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center">
+                <h3 class="font-bold text-sm flex items-center gap-1.5">📝 บันทึกผลการตรวจสอบหน้างาน</h3>
+                <button type="button" onclick="closeInspectModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+            </div>
+
+            <div class="p-4 overflow-y-auto space-y-3.5 text-xs flex-1">
+                <div id="modalJobSummary" class="p-3 bg-slate-100 rounded-xl border border-slate-200 text-slate-700 space-y-1 font-medium"></div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">🚦 สถานะการปฏิบัติงาน</label>
+                    <select id="techStatusInput" class="w-full px-3 py-2 text-sm font-bold text-slate-800">
+                        <option value="แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)">✅ แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)</option>
+                        <option value="กำลังดำเนินการ">🔧 กำลังดำเนินการหน้างาน</option>
+                        <option value="ส่งต่อแผนกอื่น / รอพัสดุ">⚠️ ส่งต่อแผนกอื่น / รอพัสดุ</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">🔍 สาเหตุที่ตรวจพบจริง (เลือกหรือพิมพ์เพิ่ม)</label>
+                    <select onchange="if(this.value) document.getElementById('techCauseInput').value = this.value; this.selectedIndex=0;" class="w-full px-3 py-1.5 mb-1.5 text-xs text-blue-700 font-semibold bg-blue-50 border-blue-200">
+                        <option value="">-- จิ้มเลือกสาเหตุยอดฮิตด่วน --</option>
+                        <option value="ฟิวส์แรงต่ำขาด">ฟิวส์แรงต่ำขาด</option>
+                        <option value="ฟิวส์แรงสูงขาด (Drop Out Fuse)">ฟิวส์แรงสูงขาด (Drop Out Fuse)</option>
+                        <option value="กิ่งไม้แตะสายไฟ / ต้นไม้ล้มทับสาย">กิ่งไม้แตะสายไฟ / ต้นไม้ล้มทับสาย</option>
+                        <option value="สัตว์เลื้อยคลาน / นก / กระรอก">สัตว์เลื้อยคลาน / นก / กระรอก</option>
+                        <option value="สายเมนเข้าบ้านหลวม / ช็อตที่จุดต่อ">สายเมนเข้าบ้านหลวม / ช็อตที่จุดต่อ</option>
+                        <option value="มิเตอร์ชำรุด / ขั้วมิเตอร์ไหม้">มิเตอร์ชำรุด / ขั้วมิเตอร์ไหม้</option>
+                        <option value="เบรกเกอร์/อุปกรณ์ภายในบ้านผู้ใช้ไฟชำรุด">เบรกเกอร์/อุปกรณ์ภายในบ้านผู้ใช้ไฟชำรุด</option>
+                        <option value="ตรวจสอบแล้วกระแสไฟปกติ">ตรวจสอบแล้วกระแสไฟปกติ</option>
+                    </select>
+                    <div class="relative">
+                        <input type="text" id="techCauseInput" placeholder="ระบุสาเหตุที่พบหน้างาน..." class="w-full px-3.5 py-2 pr-9 text-sm">
+                        <button type="button" onclick="startVoice('techCauseInput')" class="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-blue-600">🎙️</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">🛠️ การดำเนินการแก้ไข / อุปกรณ์ที่ใช้</label>
+                    <div class="relative">
+                        <textarea id="techActionInput" rows="2" placeholder="เช่น เปลี่ยนฟิวส์แรงต่ำ 30A จำนวน 1 เส้น จ่ายไฟคืนปกติ" class="w-full px-3.5 py-2 pr-9 text-sm"></textarea>
+                        <button type="button" onclick="startVoice('techActionInput')" class="absolute right-1.5 top-2 p-1.5 text-slate-400 hover:text-blue-600">🎙️</button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">⏰ เวลาแก้ไขเสร็จ</label>
+                        <input type="text" id="techFinishTimeInput" placeholder="เช่น 14.30 น." class="w-full px-3 py-2 text-sm text-center">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">👷 ช่างผู้ตรวจสอบ</label>
+                        <input type="text" id="techInspectorInput" placeholder="ระบุชื่อช่าง" class="w-full px-3 py-2 text-sm">
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-3 bg-slate-50 border-t flex gap-2">
+                <button type="button" onclick="submitTechReport(false)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl shadow text-xs sm:text-sm transition">
+                    📋 บันทึกอัปเดตงาน & คัดลอก
+                </button>
+                <button type="button" onclick="submitTechReport(true)" class="flex-1 bg-[#00B900] hover:bg-[#009900] text-white font-bold py-2.5 rounded-xl shadow text-xs sm:text-sm transition">
+                    💬 บันทึก & ส่ง LINE
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[150]"></div>
+
+    <script>
+        const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
+        let currentEditingJobKey = null;
+        let currentEditingJobType = 'outage';
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.remove('opacity-0');
+            setTimeout(() => t.classList.add('opacity-0'), 2500);
+        }
+
+        function parseAccountRecord(rawAcc) {
+            const rawRole = String(rawAcc.role || 'user');
+            const parts = rawRole.split('::');
+            return {
+                username: String(rawAcc.username || '').trim(),
+                password: String(rawAcc.password || '').trim(),
+                role: parts[0] || 'user',
+                sessionToken: rawAcc.sessionToken !== undefined ? rawAcc.sessionToken : (parts[1] || '')
+            };
+        }
+
+        function goBackToMainPage() {
+            const role = localStorage.getItem('elec_app_current_role') || 'user';
+            if (role === 'tech') {
+                showToast("⛔ บัญชีผู้ใช้งานช่าง เข้าใช้งานได้เฉพาะหน้านี้เท่านั้น");
+                return;
+            }
+            if (document.referrer || window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.location.href = 'index.html';
+            }
+        }
+
+        function updateRoleNavigationUI() {
+            const currentUser = localStorage.getItem('elec_app_current_user') || '';
+            const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            const backBtn = document.getElementById('backToMainBtn');
+            const userBadge = document.getElementById('loggedUserDisplayBadge');
+
+            if (backBtn) {
+                if (currentRole === 'tech') {
+                    backBtn.classList.add('hidden');
+                    backBtn.classList.remove('flex');
+                } else {
+                    backBtn.classList.remove('hidden');
+                    backBtn.classList.add('flex');
+                }
+            }
+
+            if (userBadge) {
+                const roleName = currentRole === 'admin' ? '👑 แอดมิน' : (currentRole === 'tech' ? '🛠️ ช่างหน้างาน' : '👷 ผู้ใช้ทั่วไป');
+                userBadge.textContent = currentUser ? `${roleName}: ${currentUser}` : '';
+            }
+        }
+
+        function switchStatusTab(tabValue) {
+            const selectEl = document.getElementById('filterJobStatus');
+            if (selectEl) selectEl.value = tabValue;
+
+            const tabs = ['all', 'pending', 'done'];
+            tabs.forEach(t => {
+                const btn = document.getElementById('tabBox-' + t);
+                if (!btn) return;
+                if (t === tabValue) {
+                    btn.classList.add('border-amber-300', 'shadow-md', 'ring-2', 'ring-amber-300/40');
+                    btn.classList.remove('border-transparent');
+                } else {
+                    btn.classList.remove('border-amber-300', 'shadow-md', 'ring-2', 'ring-amber-300/40');
+                    btn.classList.add('border-transparent');
+                }
+            });
+
+            const badge = document.getElementById('currentViewBadge');
+            if (badge) {
+                if (tabValue === 'pending') {
+                    badge.textContent = '⏳ กำลังแสดง: งานรอดำเนินการ';
+                    badge.className = 'text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full';
+                } else if (tabValue === 'done') {
+                    badge.textContent = '✅ กำลังแสดง: งานแก้ไขเสร็จสิ้นแล้ว';
+                    badge.className = 'text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full';
+                } else {
+                    badge.textContent = '📋 กำลังแสดง: งานทั้งหมด';
+                    badge.className = 'text-xs font-bold text-slate-700 bg-slate-100 border border-slate-300 px-3 py-1 rounded-full';
+                }
+            }
+
+            renderJobCards();
+        }
+
+        function checkTechAuth() {
+            const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+            document.getElementById('techLoginScreen').classList.toggle('hidden', isLogged);
+            updateRoleNavigationUI();
+        }
+
+        function handleTechLogout() {
+            localStorage.removeItem('elec_app_logged_in');
+            localStorage.removeItem('elec_app_current_user');
+            localStorage.removeItem('elec_app_current_role');
+            localStorage.removeItem('elec_app_session_token');
+            localStorage.removeItem('elec_app_last_active');
+            checkTechAuth();
+            showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
+        }
+
+        async function handleTechLogin() {
+            const u = document.getElementById('techUsername').value.trim();
+            const p = document.getElementById('techPassword').value.trim();
+            const btn = document.getElementById('techLoginBtn');
+            if (!u || !p) { showToast("⚠️ กรุณากรอกชื่อและรหัสผ่าน"); return; }
+
+            btn.disabled = true;
+            btn.textContent = "⏳ กำลังตรวจสอบบัญชี...";
+            await syncJobsFromCloud(true);
+
+            const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[{"username":"admin","password":"1234","role":"admin"}]');
+            const accounts = rawAccounts.map(parseAccountRecord);
+            const foundIdx = accounts.findIndex(a => a.username.toLowerCase() === u.toLowerCase() && a.password === p);
+
+            if (foundIdx !== -1) {
+                const found = accounts[foundIdx];
+                const now = Date.now();
+                const newSessionToken = 'sess_' + now + '_' + Math.random().toString(36).substring(2, 8);
+                found.sessionToken = newSessionToken;
+
+                localStorage.setItem('elec_app_logged_in', 'true');
+                localStorage.setItem('elec_app_current_user', found.username);
+                localStorage.setItem('elec_app_current_role', found.role || 'user');
+                localStorage.setItem('elec_app_session_token', newSessionToken);
+                localStorage.setItem('elec_app_last_active', now.toString());
+                localStorage.setItem('elec_user_accounts', JSON.stringify(accounts));
+
+                try {
+                    const payloadUsers = accounts.map(acc => ({
+                        username: acc.username,
+                        password: acc.password,
+                        role: `${acc.role || 'user'}::${acc.sessionToken || ''}`
+                    }));
+                    await fetch(CLOUD_USER_API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'saveUsers', users: payloadUsers })
+                    });
+                } catch (e) {}
+
+                btn.disabled = false;
+                btn.textContent = "เข้าสู่ระบบ";
+                document.getElementById('techUsername').value = '';
+                document.getElementById('techPassword').value = '';
+                checkTechAuth();
+                renderJobCards();
+                showToast(`🔓 ยินดีต้อนรับคุณ ${found.username}`);
+            } else {
+                btn.disabled = false;
+                btn.textContent = "เข้าสู่ระบบ";
+                showToast("❌ ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+            }
+        }
+
+        async function syncJobsFromCloud(silent = false) {
+            const statusEl = document.getElementById('cloudStatusText');
+            if (!silent && statusEl) statusEl.textContent = "⏳ กำลังซิงค์ใบงานจาก Google Sheets...";
+            try {
+                const res = await fetch(CLOUD_USER_API_URL + '?t=' + Date.now(), { cache: 'no-store' });
+                const data = await res.json();
+                if (data && data.status === 'ok') {
+                    if (Array.isArray(data.users) && data.users.length > 0) {
+                        const parsedUsers = data.users.map(parseAccountRecord);
+                        localStorage.setItem('elec_user_accounts', JSON.stringify(parsedUsers));
+
+                        if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                            const curUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+                            const localToken = localStorage.getItem('elec_app_session_token') || '';
+                            const matched = parsedUsers.find(u => u.username.toLowerCase() === curUser);
+                            if (!matched || (matched.sessionToken && matched.sessionToken !== localToken)) {
+                                handleTechLogout();
+                                alert("🔒 บัญชีของคุณมีการเข้าสู่ระบบจากอุปกรณ์เครื่องอื่น หรือมีการเปลี่ยนรหัสผ่าน");
+                                return;
+                            }
+                            localStorage.setItem('elec_app_current_role', matched.role || 'user');
+                            updateRoleNavigationUI();
+                        }
+                    }
+                    if (Array.isArray(data.jobs)) {
+                        mergeCloudJobsToLocal(data.jobs);
+                    }
+                    if (statusEl) statusEl.textContent = `🟢 ซิงค์ข้อมูลล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'})} น.)`;
+                    renderJobCards();
+                    if (!silent) showToast("🔄 อัปเดตใบงานล่าสุดเรียบร้อย");
+                }
+            } catch (e) {
+                if (statusEl) statusEl.textContent = "⚠️ โหมดออฟไลน์ (แสดงข้อมูลในเครื่อง)";
+                renderJobCards();
+            }
+        }
+
+                function mergeCloudJobsToLocal(cloudJobs) {
+            let localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+            let localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+
+            const cloudOutageKeys = new Set(cloudJobs.filter(j => j.jobType !== 'fault').map(j => j.dateTimeSaved));
+            const cloudFaultKeys = new Set(cloudJobs.filter(j => j.jobType === 'fault').map(j => j.timestamp));
+
+            // งานที่เครื่องหลักดูดข้อมูลและลบออกจากชีตไปแล้ว ให้ปลดป้าย needsMainSync เพื่อไม่ส่งขึ้นชีตซ้ำอีก
+            localOutages.forEach(item => {
+                if (item.techReport && item.techReport.needsMainSync && !cloudOutageKeys.has(item.dateTimeSaved)) {
+                    delete item.techReport.needsMainSync;
+                }
+            });
+            localFaults.forEach(item => {
+                if (item.techReport && item.techReport.needsMainSync && !cloudFaultKeys.has(item.timestamp)) {
+                    delete item.techReport.needsMainSync;
+                }
+            });
+
+            const outageMap = new Map();
+            localOutages.forEach(item => outageMap.set(item.dateTimeSaved, item));
+            cloudJobs.filter(j => j.jobType !== 'fault' && j.dateTimeSaved).forEach(cJob => {
+                const existing = outageMap.get(cJob.dateTimeSaved);
+                if (!existing || (cJob.techReport && (!existing.techReport || cJob.techReport.updatedAt >= existing.techReport.updatedAt))) {
+                    outageMap.set(cJob.dateTimeSaved, cJob);
+                }
+            });
+
+            const faultMap = new Map();
+            localFaults.forEach(item => faultMap.set(item.timestamp, item));
+            cloudJobs.filter(j => j.jobType === 'fault' && j.timestamp).forEach(cJob => {
+                const existing = faultMap.get(cJob.timestamp);
+                if (!existing || (cJob.techReport && (!existing.techReport || cJob.techReport.updatedAt >= existing.techReport.updatedAt))) {
+                    faultMap.set(cJob.timestamp, cJob);
+                }
+            });
+
+            localStorage.setItem('elecReportsComplete_all', JSON.stringify(Array.from(outageMap.values())));
+            localStorage.setItem('fault_reports_all', JSON.stringify(Array.from(faultMap.values())));
+        }
+
+        async function pushAllJobsToCloud() {
+            const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            let localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+            let localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+
+            // กรองเฉพาะงานที่ "ยังไม่เสร็จ" หรือ "งานที่ช่างเพิ่งกดเสร็จและรอส่งเข้าเครื่องผู้ใช้ทั่วไป"
+            const shouldKeepInCloud = (item) => {
+                const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
+                if (!isDone) return true; // งานยังไม่เสร็จ ให้ค้างไว้ใน Google Sheets
+                if (currentRole === 'tech' && item.techReport.needsMainSync) return true; // รอเครื่องหลักดึงข้อมูลก่อนลบ
+                return false; // ถ้าทำบนเครื่องผู้ใช้ทั่วไป/แอดมิน หรือซิงค์เสร็จแล้ว ให้ลบออกจาก Google Sheets ทันที!
+            };
+
+            const activeOutages = localOutages.filter(shouldKeepInCloud).map(i => ({ ...i, jobType: 'outage' }));
+            const activeFaults = localFaults.filter(shouldKeepInCloud).map(i => ({ ...i, jobType: 'fault' }));
+            const combined = [...activeOutages.slice(0, 80), ...activeFaults.slice(0, 50)];
+
+            try {
+                await fetch(CLOUD_USER_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'saveJobs', jobs: combined })
+                });
+            } catch (e) {
+                console.warn("Cloud push error:", e);
+            }
+        }
+
+
+        function renderJobCards() {
+            const jobType = document.getElementById('filterJobType').value;
+            const statusFilter = document.getElementById('filterJobStatus').value;
+            const keyword = document.getElementById('searchJobKeyword').value.toLowerCase().trim();
+            const container = document.getElementById('jobCardsContainer');
+
+            const rawList = jobType === 'outage'
+                ? JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
+                : JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+
+            let pendingCount = 0;
+            let doneCount = 0;
+            rawList.forEach(item => {
+                if (item.techReport && item.techReport.status.includes('เสร็จสิ้น')) doneCount++;
+                else pendingCount++;
+            });
+
+            document.getElementById('countAllJobs').textContent = rawList.length;
+            document.getElementById('countPendingJobs').textContent = pendingCount;
+            document.getElementById('countDoneJobs').textContent = doneCount;
+
+            const filtered = rawList.filter(item => {
+                const isDone = item.techReport && item.techReport.status.includes('เสร็จสิ้น');
+                if (statusFilter === 'pending' && isDone) return false;
+                if (statusFilter === 'done' && !isDone) return false;
+                if (keyword) {
+                    const textBlob = JSON.stringify(item).toLowerCase();
+                    return textBlob.includes(keyword);
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                const emptyMsg = statusFilter === 'pending'
+                    ? '🎉 ไม่มีงานค้างในฝั่งรอดำเนินการ (ดูงานที่เสร็จแล้วได้ที่ช่อง "✅ แก้ไขเสร็จสิ้น")'
+                    : (statusFilter === 'done' ? 'ยังไม่มีรายการงานที่แก้ไขเสร็จสิ้น' : 'ไม่พบรายการใบงานในหมวดนี้');
+                container.innerHTML = `<div class="text-center text-slate-400 text-xs py-10 px-4">${emptyMsg}</div>`;
+                return;
+            }
+
+            container.innerHTML = '';
+            filtered.forEach(item => {
+                const key = jobType === 'outage' ? item.dateTimeSaved : item.timestamp;
+                const tr = item.techReport;
+                const isDone = tr && tr.status.includes('เสร็จสิ้น');
+                const badgeClass = isDone
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                    : (tr ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-rose-100 text-rose-700 border-rose-300');
+                const badgeLabel = tr ? tr.status : '⏳ รอตรวจสอบหน้างาน';
+
+                const titleHtml = jobType === 'outage'
+                    ? `งานที่ ${item.jobNo || '-'} (กะ ${item.shift || '-'}) • ${item.issueType || '-'}`
+                    : `⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+
+                const subHtml = jobType === 'outage'
+                    ? `📍 บริเวณ: ${item.area || '-'} | 🏠 ที่อยู่: ${item.address || '-'}`
+                    : `🚨 เหตุ: ${item.cause || '-'} (${item.phase || '-'}) | 📞 แจ้งจาก: ${item.reporter || '-'}`;
+
+                const gpsLink = (item.gps && item.gps.startsWith('http')) ? item.gps : null;
+                const phoneNum = (item.phone && item.phone !== '-') ? item.phone : null;
+
+                const card = document.createElement('div');
+                card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 border-l-4 ${isDone ? 'border-l-emerald-500' : 'border-l-amber-500'}`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm">${titleHtml}</div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${badgeClass}">${badgeLabel}</span>
+                    </div>
+                    <div class="text-xs text-slate-600">${subHtml}</div>
+                    ${tr ? `
+                        <div class="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-950 space-y-0.5">
+                            <div><strong>🔍 สาเหตุจริง:</strong> ${tr.realCause || '-'}</div>
+                            <div><strong>🛠️ การแก้ไข:</strong> ${tr.actionTaken || '-'}</div>
+                            <div class="text-[10px] text-emerald-700 pt-0.5">⏰ เสร็จเวลา: ${tr.finishTime || '-'} | 👷 ช่าง: ${tr.inspector || '-'}</div>
+                        </div>
+                    ` : ''}
+                    <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
+                        <div class="flex gap-1.5">
+                            ${phoneNum ? `<a href="tel:${phoneNum}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold">📞 โทร ${phoneNum}</a>` : ''}
+                            ${gpsLink ? `<a href="${gpsLink}" target="_blank" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold">🗺️ นำทาง Maps</a>` : ''}
+                        </div>
+                        <button type="button" onclick="openInspectModal('${key}', '${jobType}')" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition">
+                            ${tr ? '✏️ แก้ไขผลหน้างาน' : '🛠️ แจ้งผลตรวจสอบ'}
+                        </button>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function openInspectModal(key, jobType) {
+            currentEditingJobKey = key;
+            currentEditingJobType = jobType;
+
+            const list = jobType === 'outage'
+                ? JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
+                : JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+
+            const item = list.find(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
+            if (!item) return;
+
+            document.getElementById('modalJobSummary').innerHTML = jobType === 'outage'
+                ? `<div>📌 <strong>งานที่ ${item.jobNo} (กะ ${item.shift})</strong> วันที่ ${item.reportDate}</div>
+                   <div>⚡ อาการรับแจ้ง: ${item.issueType}</div>
+                   <div>🏠 บริเวณ/ที่อยู่: ${item.area} (${item.address})</div>`
+                : `<div>📌 <strong>วงจร ${item.circuit} สถานี${item.station}</strong> เวลา ${item.time}</div>
+                   <div>🚨 เหตุ: ${item.cause} เฟส ${item.phase}</div>`;
+
+            const now = new Date();
+            const defaultTime = `${String(now.getHours()).padStart(2,'0')}.${String(now.getMinutes()).padStart(2,'0')} น.`;
+            const tr = item.techReport || {};
+
+            const loggedInUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+
+            document.getElementById('techStatusInput').value = tr.status || 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
+            document.getElementById('techCauseInput').value = tr.realCause || '';
+            document.getElementById('techActionInput').value = tr.actionTaken || '';
+            document.getElementById('techFinishTimeInput').value = tr.finishTime || defaultTime;
+            document.getElementById('techInspectorInput').value = loggedInUser || tr.inspector || '';
+
+            document.getElementById('inspectModal').classList.remove('hidden');
+        }
+
+        function closeInspectModal() {
+            document.getElementById('inspectModal').classList.add('hidden');
+        }
+
+        function copyTechText(text, successMsg) {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast(successMsg);
+                }).catch(() => {
+                    fallbackCopyTechText(text, successMsg);
+                });
+            } else {
+                fallbackCopyTechText(text, successMsg);
+            }
+        }
+
+        function fallbackCopyTechText(text, successMsg) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.top = '-9999px';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand('copy');
+                showToast(successMsg);
+            } catch (e) {
+                showToast("⚠️ คัดลอกไม่สำเร็จ");
+            }
+            document.body.removeChild(ta);
+        }
+
+        async function submitTechReport(sendLine = false) {
+            const storageKey = currentEditingJobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
+            let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            const idx = list.findIndex(i => (currentEditingJobType === 'outage' ? i.dateTimeSaved : i.timestamp) === currentEditingJobKey);
+            if (idx === -1) return;
+
+            const item = list[idx];
+            const loggedInUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            const status = document.getElementById('techStatusInput').value;
+            const realCause = document.getElementById('techCauseInput').value.trim() || '-';
+            const actionTaken = document.getElementById('techActionInput').value.trim() || '-';
+            const finishTime = document.getElementById('techFinishTimeInput').value.trim() || '-';
+            const inspector = loggedInUser || document.getElementById('techInspectorInput').value.trim() || '-';
+            document.getElementById('techInspectorInput').value = inspector;
+
+                        item.techReport = {
+                status,
+                realCause,
+                actionTaken,
+                finishTime,
+                inspector,
+                updatedAt: new Date().toISOString(),
+                needsMainSync: true
+            };
+
+            const jobHeaderLine = currentEditingJobType === 'outage'
+                ? `📋 งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'}`
+                : `📋 วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+
+            const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${jobHeaderLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}`;
+
+            const baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+            item.formattedText = `${baseText}\n\n${techOnlyText}`;
+
+            localStorage.setItem(storageKey, JSON.stringify(list));
+            closeInspectModal();
+            renderJobCards();
+
+            if (sendLine) {
+                copyTechText(techOnlyText, `✅ บันทึกและกำลังเปิดแอป LINE...`);
+                window.open('https://line.me/R/share?text=' + encodeURIComponent(techOnlyText), '_blank');
+            } else {
+                copyTechText(techOnlyText, `✅ บันทึกและคัดลอกผลตรวจสอบ (${jobHeaderLine.replace('📋 ', '')}) แล้ว!`);
+            }
+
+            await pushAllJobsToCloud();
+        }
+
+        function startVoice(inputId) {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) { showToast("เบราว์เซอร์ไม่รองรับสั่งงานด้วยเสียง"); return; }
+            const rec = new SR();
+            rec.lang = 'th-TH';
+            rec.onstart = () => showToast("🎙️ กำลังฟัง... พูดได้เลยครับ");
+            rec.onresult = (e) => {
+                const el = document.getElementById(inputId);
+                el.value = (el.value ? el.value + ' ' : '') + e.results[0][0].transcript;
+            };
+            rec.start();
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            checkTechAuth();
+            switchStatusTab('pending');
+            syncJobsFromCloud(true);
+            setInterval(() => {
+                if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                    syncJobsFromCloud(true);
+                }
+            }, 20000);
+        });
+    </script>
+</body>
+</html>
