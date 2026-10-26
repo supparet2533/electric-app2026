@@ -355,22 +355,82 @@
             };
         }
 
+                // ==========================================
+        // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน (Group Filtering)
+        // ==========================================
+                let cachedCloudJobs = [];
+        let isSyncingNow = false;
+
+        function getUserGroupName(username) {
+            if (!username) return '';
+            const s = String(username).trim();
+            const parts = s.split(/\s+/);
+            if (parts.length > 1) return parts.slice(1).join(' ').trim();
+            const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
+            if (peaMatch && peaMatch[1] !== s) return peaMatch[1].trim();
+            return '';
+        }
+
+        function getUserBaseId(username) {
+            if (!username) return '';
+            return String(username).trim().split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim().toLowerCase();
+        }
+
+        function getCurrentUserGroup() {
+            const curUser = localStorage.getItem('elec_app_current_user') || '';
+            const directGroup = getUserGroupName(curUser);
+            if (directGroup) return directGroup;
+            const baseId = getUserBaseId(curUser);
+            const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]');
+            const matchedAcc = rawAccounts.find(a => getUserBaseId(a.username) === baseId);
+            return matchedAcc ? getUserGroupName(matchedAcc.username) : '';
+        }
+
+        function getJobGroupName(job) {
+            if (!job) return '';
+            if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
+                return String(job.ownerGroup).trim();
+            }
+            const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]');
+            const candidates = [job.ownerUser, job.workerName, job.techReport?.inspector].filter(Boolean);
+            for (const c of candidates) {
+                const g = getUserGroupName(c);
+                if (g) return g;
+                const cBase = getUserBaseId(c);
+                if (cBase) {
+                    const acc = rawAccounts.find(a => getUserBaseId(a.username) === cBase);
+                    if (acc) {
+                        const accGroup = getUserGroupName(acc.username);
+                        if (accGroup) return accGroup;
+                    }
+                }
+            }
+            return '';
+        }
+
+        function canCurrentUserSeeJob(job) {
+            const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            if (currentRole === 'admin') return true;
+            const myGroup = getCurrentUserGroup();
+            const jobGroup = getJobGroupName(job);
+            // แสดงงานที่อยู่ในกลุ่มเดียวกัน รวมถึงงานส่วนกลางที่ไม่ได้ระบุกลุ่ม
+            if (!jobGroup || !myGroup) return true;
+            return myGroup === jobGroup;
+        }
+
         function goBackToMainPage() {
             const role = localStorage.getItem('elec_app_current_role') || 'user';
             if (role === 'tech') {
                 showToast("⛔ บัญชีผู้ใช้งานช่าง เข้าใช้งานได้เฉพาะหน้านี้เท่านั้น");
                 return;
             }
-            if (document.referrer || window.history.length > 1) {
-                window.history.back();
-            } else {
-                window.location.href = 'index.html';
-            }
+            window.location.href = 'index.html';
         }
 
         function updateRoleNavigationUI() {
             const currentUser = localStorage.getItem('elec_app_current_user') || '';
             const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            const myGroup = getCurrentUserGroup();
             const backBtn = document.getElementById('backToMainBtn');
             const userBadge = document.getElementById('loggedUserDisplayBadge');
 
@@ -385,8 +445,11 @@
             }
 
             if (userBadge) {
-                const roleName = currentRole === 'admin' ? '👑 แอดมิน' : (currentRole === 'tech' ? '🛠️ ช่างหน้างาน' : '👷 ผู้ใช้ทั่วไป');
-                userBadge.textContent = currentUser ? `${roleName}: ${currentUser}` : '';
+                const roleName = currentRole === 'admin'
+                    ? '👑 แอดมิน'
+                    : (currentRole === 'tech' ? '🛠️ ช่าง' : '👷 ผู้ใช้');
+                const groupTag = (currentRole !== 'admin' && myGroup) ? ` [🏢 ${myGroup}]` : '';
+                userBadge.textContent = currentUser ? `${roleName}: ${currentUser}${groupTag}` : '';
             }
         }
 
@@ -473,7 +536,7 @@
                         password: acc.password,
                         role: `${acc.role || 'user'}::${acc.sessionToken || ''}`
                     }));
-                    await fetch(CLOUD_USER_API_URL, {
+                    fetch(CLOUD_USER_API_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'saveUsers', users: payloadUsers })
@@ -495,8 +558,10 @@
         }
 
         async function syncJobsFromCloud(silent = false) {
+            if (isSyncingNow && silent) return;
+            isSyncingNow = true;
             const statusEl = document.getElementById('cloudStatusText');
-            if (!silent && statusEl) statusEl.textContent = "⏳ กำลังซิงค์ใบงานจาก Google Sheets...";
+            if (!silent && statusEl) statusEl.textContent = "⏳ กำลังดึงใบงานล่าสุด...";
             try {
                 const res = await fetch(CLOUD_USER_API_URL + '?t=' + Date.now(), { cache: 'no-store' });
                 const data = await res.json();
@@ -512,6 +577,7 @@
                             if (!matched || (matched.sessionToken && matched.sessionToken !== localToken)) {
                                 handleTechLogout();
                                 alert("🔒 บัญชีของคุณมีการเข้าสู่ระบบจากอุปกรณ์เครื่องอื่น หรือมีการเปลี่ยนรหัสผ่าน");
+                                isSyncingNow = false;
                                 return;
                             }
                             localStorage.setItem('elec_app_current_role', matched.role || 'user');
@@ -519,9 +585,16 @@
                         }
                     }
                     if (Array.isArray(data.jobs)) {
+                        cachedCloudJobs = data.jobs;
                         mergeCloudJobsToLocal(data.jobs);
+                        if (statusEl) {
+                            statusEl.textContent = `🟢 ซิงค์ล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit', second:'2-digit'})} น. • ออนไลน์ ${data.jobs.length} งาน)`;
+                        }
+                    } else {
+                        if (statusEl) {
+                            statusEl.textContent = `⚠️ Google Sheets ยังไม่อัปเดตโค้ดตาราง Jobs (กรุณา Deploy เวอร์ชันใหม่)`;
+                        }
                     }
-                    if (statusEl) statusEl.textContent = `🟢 ซิงค์ข้อมูลล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'})} น.)`;
                     renderJobCards();
                     if (!silent) showToast("🔄 อัปเดตใบงานล่าสุดเรียบร้อย");
                 }
@@ -529,16 +602,16 @@
                 if (statusEl) statusEl.textContent = "⚠️ โหมดออฟไลน์ (แสดงข้อมูลในเครื่อง)";
                 renderJobCards();
             }
+            isSyncingNow = false;
         }
 
-                function mergeCloudJobsToLocal(cloudJobs) {
+        function mergeCloudJobsToLocal(cloudJobs) {
             let localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
             let localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
 
             const cloudOutageKeys = new Set(cloudJobs.filter(j => j.jobType !== 'fault').map(j => j.dateTimeSaved));
             const cloudFaultKeys = new Set(cloudJobs.filter(j => j.jobType === 'fault').map(j => j.timestamp));
 
-            // งานที่เครื่องหลักดูดข้อมูลและลบออกจากชีตไปแล้ว ให้ปลดป้าย needsMainSync เพื่อไม่ส่งขึ้นชีตซ้ำอีก
             localOutages.forEach(item => {
                 if (item.techReport && item.techReport.needsMainSync && !cloudOutageKeys.has(item.dateTimeSaved)) {
                     delete item.techReport.needsMainSync;
@@ -572,34 +645,54 @@
             localStorage.setItem('fault_reports_all', JSON.stringify(Array.from(faultMap.values())));
         }
 
+        // ส่งข้อมูลขึ้น Cloud ทันทีใน 1 รอบ (ไม่ต้องรอ GET ซ้ำ)
         async function pushAllJobsToCloud() {
             const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            const myGroup = getCurrentUserGroup();
+
             let localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
             let localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
 
-            // กรองเฉพาะงานที่ "ยังไม่เสร็จ" หรือ "งานที่ช่างเพิ่งกดเสร็จและรอส่งเข้าเครื่องผู้ใช้ทั่วไป"
             const shouldKeepInCloud = (item) => {
+                if (!canCurrentUserSeeJob(item)) return false;
                 const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
-                if (!isDone) return true; // งานยังไม่เสร็จ ให้ค้างไว้ใน Google Sheets
-                if (currentRole === 'tech' && item.techReport.needsMainSync) return true; // รอเครื่องหลักดึงข้อมูลก่อนลบ
-                return false; // ถ้าทำบนเครื่องผู้ใช้ทั่วไป/แอดมิน หรือซิงค์เสร็จแล้ว ให้ลบออกจาก Google Sheets ทันที!
+                if (!isDone) return true;
+                if (currentRole === 'tech' && item.techReport.needsMainSync) return true;
+                return false;
             };
 
-            const activeOutages = localOutages.filter(shouldKeepInCloud).map(i => ({ ...i, jobType: 'outage' }));
-            const activeFaults = localFaults.filter(shouldKeepInCloud).map(i => ({ ...i, jobType: 'fault' }));
-            const combined = [...activeOutages.slice(0, 80), ...activeFaults.slice(0, 50)];
+            const otherGroupsJobs = (cachedCloudJobs || []).filter(cJob => {
+                if (currentRole === 'admin') return false;
+                const jGroup = getJobGroupName(cJob);
+                return jGroup !== '' && jGroup !== myGroup;
+            });
+
+            const activeOutages = localOutages.filter(shouldKeepInCloud).map(i => ({ ...i, jobType: 'outage', ownerGroup: getJobGroupName(i) || myGroup }));
+            const activeFaults = localFaults.filter(shouldKeepInCloud).map(i => ({ ...i, jobType: 'fault', ownerGroup: getJobGroupName(i) || myGroup }));
+
+            const combinedMap = new Map();
+            otherGroupsJobs.forEach(j => {
+                const k = (j.jobType === 'fault' ? 'F_' + j.timestamp : 'O_' + j.dateTimeSaved);
+                combinedMap.set(k, j);
+            });
+            [...activeOutages.slice(0, 80), ...activeFaults.slice(0, 50)].forEach(j => {
+                const k = (j.jobType === 'fault' ? 'F_' + j.timestamp : 'O_' + j.dateTimeSaved);
+                combinedMap.set(k, j);
+            });
+
+            const finalJobs = Array.from(combinedMap.values());
+            cachedCloudJobs = finalJobs;
 
             try {
                 await fetch(CLOUD_USER_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'saveJobs', jobs: combined })
+                    body: JSON.stringify({ action: 'saveJobs', jobs: finalJobs })
                 });
             } catch (e) {
                 console.warn("Cloud push error:", e);
             }
         }
-
 
         function renderJobCards() {
             const jobType = document.getElementById('filterJobType').value;
@@ -607,9 +700,11 @@
             const keyword = document.getElementById('searchJobKeyword').value.toLowerCase().trim();
             const container = document.getElementById('jobCardsContainer');
 
-            const rawList = jobType === 'outage'
+            const allRawList = jobType === 'outage'
                 ? JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
                 : JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+
+            const rawList = allRawList.filter(item => canCurrentUserSeeJob(item));
 
             let pendingCount = 0;
             let doneCount = 0;
@@ -635,8 +730,8 @@
 
             if (filtered.length === 0) {
                 const emptyMsg = statusFilter === 'pending'
-                    ? '🎉 ไม่มีงานค้างในฝั่งรอดำเนินการ (ดูงานที่เสร็จแล้วได้ที่ช่อง "✅ แก้ไขเสร็จสิ้น")'
-                    : (statusFilter === 'done' ? 'ยังไม่มีรายการงานที่แก้ไขเสร็จสิ้น' : 'ไม่พบรายการใบงานในหมวดนี้');
+                    ? '🎉 ไม่มีงานค้างในฝั่งรอดำเนินการของกลุ่มคุณ (ดูงานที่เสร็จแล้วได้ที่ช่อง "✅ แก้ไขเสร็จสิ้น")'
+                    : (statusFilter === 'done' ? 'ยังไม่มีรายการงานที่แก้ไขเสร็จสิ้นในกลุ่มของคุณ' : 'ไม่พบรายการใบงานในหมวดนี้');
                 container.innerHTML = `<div class="text-center text-slate-400 text-xs py-10 px-4">${emptyMsg}</div>`;
                 return;
             }
@@ -646,14 +741,19 @@
                 const key = jobType === 'outage' ? item.dateTimeSaved : item.timestamp;
                 const tr = item.techReport;
                 const isDone = tr && tr.status.includes('เสร็จสิ้น');
+                const jobGroup = getJobGroupName(item);
                 const badgeClass = isDone
                     ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
                     : (tr ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-rose-100 text-rose-700 border-rose-300');
                 const badgeLabel = tr ? tr.status : '⏳ รอตรวจสอบหน้างาน';
 
+                const groupBadgeHtml = jobGroup
+                    ? `<span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md mr-1">🏢 ${jobGroup}</span>`
+                    : '';
+
                 const titleHtml = jobType === 'outage'
-                    ? `งานที่ ${item.jobNo || '-'} (กะ ${item.shift || '-'}) • ${item.issueType || '-'}`
-                    : `⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+                    ? `${groupBadgeHtml}งานที่ ${item.jobNo || '-'} (กะ ${item.shift || '-'}) • ${item.issueType || '-'}`
+                    : `${groupBadgeHtml}⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
 
                 const subHtml = jobType === 'outage'
                     ? `📍 บริเวณ: ${item.area || '-'} | 🏠 ที่อยู่: ${item.address || '-'}`
@@ -766,6 +866,7 @@
 
             const item = list[idx];
             const loggedInUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            const myGroup = getCurrentUserGroup();
             const status = document.getElementById('techStatusInput').value;
             const realCause = document.getElementById('techCauseInput').value.trim() || '-';
             const actionTaken = document.getElementById('techActionInput').value.trim() || '-';
@@ -773,7 +874,11 @@
             const inspector = loggedInUser || document.getElementById('techInspectorInput').value.trim() || '-';
             document.getElementById('techInspectorInput').value = inspector;
 
-                        item.techReport = {
+            if (!item.ownerGroup && myGroup) {
+                item.ownerGroup = myGroup;
+            }
+
+            item.techReport = {
                 status,
                 realCause,
                 actionTaken,
@@ -823,11 +928,18 @@
             checkTechAuth();
             switchStatusTab('pending');
             syncJobsFromCloud(true);
+            // ซิงค์อัตโนมัติความเร็วสูงทุกๆ 5 วินาที
             setInterval(() => {
                 if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                     syncJobsFromCloud(true);
                 }
-            }, 20000);
+            }, 5000);
+        });
+
+        window.addEventListener('focus', () => {
+            if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                syncJobsFromCloud(true);
+            }
         });
     </script>
 </body>
