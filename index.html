@@ -5601,7 +5601,7 @@
                 return raw;
             };
 
-            function runWithGroupViewFilter(fn, context, args) {
+                        function runWithGroupViewFilter(fn, context, args) {
                 tagUntaggedLocalJobsWithCurrentGroup();
                 isFilteringStorageForView = true;
                 try {
@@ -5611,11 +5611,212 @@
                 }
             }
 
+            // คำนวณและจับคู่ช่างที่อยู่ใกล้จุดเกิดเหตุที่สุดในหน้าหลัก (index.html)
+            function findNearestTechForMainPage(item) {
+                const jobGroup = getJobGroupName(item);
+                const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                const rawText = `${item.gps || ''} ${item.address || ''} ${item.area || ''} ${item.weather || ''}`;
+                let coords = (typeof extractCoordsFromInput === 'function') ? extractCoordsFromInput(rawText) : null;
+
+                // หากไม่มีลิงก์พิกัด GPS ให้ใช้พิกัดตำบลที่ตั้งค่าไว้ในระบบมาช่วยคำนวณระยะทาง
+                if (!coords && typeof targetTambonCoordinates === 'object') {
+                    for (const [tbName, tbCoord] of Object.entries(targetTambonCoordinates)) {
+                        const cleanTb = tbName.replace('ตำบล', '').trim();
+                        if (cleanTb && rawText.includes(cleanTb)) {
+                            coords = { lat: tbCoord.lat, lon: tbCoord.lon };
+                            break;
+                        }
+                    }
+                }
+
+                if (coords && coords.lat && coords.lon) {
+                    const lat2 = parseFloat(coords.lat);
+                    const lon2 = parseFloat(coords.lon);
+                    const R = 6371;
+                    const candidates = [];
+
+                    Object.values(locMap).forEach(loc => {
+                        if (!loc || !loc.lat || !loc.lon || !loc.username) return;
+                        const tGroup = getUserGroupName(loc.username) || loc.group || '';
+                        if (jobGroup && tGroup && jobGroup !== tGroup) return;
+
+                        const dLat = (lat2 - loc.lat) * Math.PI / 180;
+                        const dLon = (lon2 - loc.lon) * Math.PI / 180;
+                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                                  Math.cos(loc.lat * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                        const straightKm = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+                        const roadKm = Math.max(0.2, straightKm * 1.35);
+                        const estMin = Math.max(1, Math.round((roadKm / 45) * 60));
+
+                        candidates.push({
+                            techName: loc.username,
+                            distanceKm: roadKm.toFixed(1),
+                            durationMin: estMin,
+                            hasGps: true
+                        });
+                    });
+
+                    if (candidates.length > 0) {
+                        candidates.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm));
+                        return candidates[0];
+                    }
+                }
+
+                if (item.recommendedTech && item.recommendedTech.techName) {
+                    return item.recommendedTech;
+                }
+
+                const techInGroup = (userAccountsList || []).filter(a => {
+                    if (a.role !== 'tech') return false;
+                    const g = getUserGroupName(a.username);
+                    return (!jobGroup || !g) ? true : (g === jobGroup);
+                });
+                if (techInGroup.length > 0) {
+                    return {
+                        techName: techInGroup.map(t => t.username).join(', '),
+                        hasGps: false
+                    };
+                }
+                return null;
+            }
+
+            // สร้าง HTML แสดงเวลานับถอยหลัง & แถบความคืบหน้าการเดินทางแบบเรียลไทม์ทุก 1 วินาทีในหน้าหลัก
+            function buildMainRealtimeNavHtml(nav) {
+                if (!nav) return '';
+                const nowMs = Date.now();
+                const isGpsFresh = nav.updatedAt && (nowMs - new Date(nav.updatedAt).getTime() < 45000);
+                const liveBadge = isGpsFresh
+                    ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>GPS สด</span>`
+                    : `<span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">⏱️ เรียลไทม์</span>`;
+
+                if (nav.isArrived) {
+                    return `
+                        <div class="flex justify-between items-center">
+                            <div class="font-bold text-emerald-700">📍 ช่างถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)</div>
+                            ${liveBadge}
+                        </div>
+                        <div class="w-full bg-emerald-200 h-1.5 rounded-full overflow-hidden my-1">
+                            <div class="bg-emerald-600 h-full w-full"></div>
+                        </div>
+                        <div class="text-[10px] text-emerald-800">👷 ช่าง: ${nav.techName || '-'} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                    `;
+                }
+
+                if (nav.etaTimestamp && nav.departTimestamp) {
+                    const remainSec = Math.max(0, Math.floor((nav.etaTimestamp - nowMs) / 1000));
+                    const totalDurSec = Math.max(60, Math.floor((nav.etaTimestamp - nav.departTimestamp) / 1000));
+                    const elapsedRatio = Math.min(1, Math.max(0.05, 1 - (remainSec / totalDurSec)));
+                    const progressPct = Math.round(elapsedRatio * 100);
+
+                    const initDist = parseFloat(nav.initialDistanceKm || nav.distanceKm || 0);
+                    const curDist = parseFloat(nav.distanceKm || 0);
+                    const estRemainDist = isGpsFresh
+                        ? curDist.toFixed(1)
+                        : Math.max(0.1, initDist * (1 - elapsedRatio * 0.95)).toFixed(1);
+
+                    if (remainSec <= 0) {
+                        return `
+                            <div class="flex justify-between items-center">
+                                <div class="font-bold text-emerald-700">📍 คาดว่าช่างถึงจุดเกิดเหตุแล้ว (ครบกำหนด ${nav.etaTime || ''})</div>
+                                ${liveBadge}
+                            </div>
+                            <div class="w-full bg-emerald-200 h-1.5 rounded-full overflow-hidden my-1">
+                                <div class="bg-emerald-600 h-full w-full"></div>
+                            </div>
+                            <div class="text-[10px] text-blue-800">👷 ช่าง: ${nav.techName || '-'} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                        `;
+                    }
+
+                    const mins = Math.floor(remainSec / 60);
+                    const secs = String(remainSec % 60).padStart(2, '0');
+
+                    return `
+                        <div class="flex justify-between items-center gap-1">
+                            <div class="font-bold text-blue-700">🚗 ช่างกำลังเดินทาง: อีก ${mins} นาที ${secs} วินาที (ถึง ~${nav.etaTime || '-'})</div>
+                            ${liveBadge}
+                        </div>
+                        <div class="w-full bg-blue-200/80 h-1.5 rounded-full overflow-hidden my-1">
+                            <div class="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-700" style="width: ${progressPct}%"></div>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px] text-blue-800">
+                            <span>📏 เหลือระยะทาง: ~${estRemainDist} กม. (${progressPct}%)</span>
+                            <span>👷 ${nav.techName || '-'} (ออก ${nav.departTime || '-'})</span>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="font-bold text-blue-700">🚗 ช่างกำลังเดินทาง: ${nav.statusText || '-'}</div>
+                    <div class="text-[10px] text-blue-800">👷 ช่าง: ${nav.techName || '-'} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                `;
+            }
+
+            function renderNavEtaBadgesInMainHistory() {
+                try {
+                    const decorateCardList = (selector, listData, keyField) => {
+                        const dataMap = new Map(listData.map(o => [o[keyField], o]));
+                        document.querySelectorAll(selector).forEach(card => {
+                            const editBtn = card.querySelector('button[onclick^="edit"]');
+                            if (!editBtn) return;
+                            const m = editBtn.getAttribute('onclick').match(/'([^']+)'/);
+                            if (!m) return;
+                            const item = dataMap.get(m[1]);
+                            let banner = card.querySelector('.tech-nav-eta-banner');
+                            const isDone = item?.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
+
+                            if (item && !isDone) {
+                                if (item.techNav) {
+                                    if (!banner) {
+                                        banner = document.createElement('div');
+                                        card.insertBefore(banner, card.lastElementChild);
+                                    }
+                                    banner.className = 'tech-nav-eta-banner p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-900 space-y-1 mt-1';
+                                    banner.innerHTML = buildMainRealtimeNavHtml(item.techNav);
+                                } else {
+                                    const rec = findNearestTechForMainPage(item);
+                                    if (rec) {
+                                        if (!banner) {
+                                            banner = document.createElement('div');
+                                            card.insertBefore(banner, card.lastElementChild);
+                                        }
+                                        banner.className = 'tech-nav-eta-banner p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex flex-wrap justify-between items-center gap-1 mt-1';
+                                        banner.innerHTML = rec.hasGps
+                                            ? `<span class="font-bold text-purple-800">🎯 แนะนำช่างใกล้สุด: ${rec.techName}</span><span class="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-700">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span>`
+                                            : `<span class="font-bold text-purple-800">🎯 ช่างประจำกลุ่มแนะนำ: ${rec.techName}</span><span class="text-[10px] text-purple-600">(รอแก้ไข)</span>`;
+                                    } else if (banner) {
+                                        banner.remove();
+                                    }
+                                }
+                            } else if (banner) {
+                                banner.remove();
+                            }
+                        });
+                    };
+
+                    const outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
+                    decorateCardList('#historyListOutage > div', outages, 'dateTimeSaved');
+
+                    const faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
+                    decorateCardList('#historyListFault > div', faults, 'timestamp');
+                } catch (e) {}
+            }
+
+            setInterval(renderNavEtaBadgesInMainHistory, 1000);
+
             const _origLoadOutageHistory = loadOutageHistory;
-            loadOutageHistory = function(...args) { return runWithGroupViewFilter(_origLoadOutageHistory, this, args); };
+            loadOutageHistory = function(...args) {
+                const res = runWithGroupViewFilter(_origLoadOutageHistory, this, args);
+                renderNavEtaBadgesInMainHistory();
+                return res;
+            };
 
             const _origLoadFaultHistory = loadFaultHistory;
-            loadFaultHistory = function(...args) { return runWithGroupViewFilter(_origLoadFaultHistory, this, args); };
+            loadFaultHistory = function(...args) {
+                const res = runWithGroupViewFilter(_origLoadFaultHistory, this, args);
+                renderNavEtaBadgesInMainHistory();
+                return res;
+            };
 
             const _origLoadAnalyticsData = loadAnalyticsData;
             loadAnalyticsData = function(...args) { return runWithGroupViewFilter(_origLoadAnalyticsData, this, args); };
@@ -5630,7 +5831,6 @@
                 return job && job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น');
             }
             
-            // ส่งใบงานขึ้น Google Sheets ทันทีรวดเดียว (ใช้ Cache ลดเวลาโหลดลงครึ่งหนึ่ง)
             async function syncJobsWithFieldPage(cloudJobsSnapshot = null) {
                 if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
                 const apiUrl = getActiveCloudApiUrl();
@@ -5641,8 +5841,10 @@
                     const myGroup = getCurrentUserGroup();
 
                     const baseCloudJobs = Array.isArray(cloudJobsSnapshot) ? cloudJobsSnapshot : cachedCloudJobs;
+                    const techLocEntry = (baseCloudJobs || []).find(j => j.jobType === 'tech_loc');
 
                     const otherGroupsCloudJobs = (baseCloudJobs || []).filter(cJob => {
+                        if (cJob.jobType === 'tech_loc') return false;
                         if (currentRole === 'admin') {
                             if (isJobFinishedAndRestored(cJob) && cJob.techReport && cJob.techReport.needsMainSync && getJobGroupName(cJob) !== '') {
                                 return true;
@@ -5655,11 +5857,11 @@
 
                     const myActiveOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]')
                         .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
-                        .map(i => ({ ...i, jobType: 'outage', ownerGroup: getJobGroupName(i) || myGroup }));
+                        .map(i => ({ ...i, jobType: 'outage', ownerGroup: getJobGroupName(i) || myGroup, recommendedTech: findNearestTechForMainPage(i) || i.recommendedTech }));
                     
                     const myActiveFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]')
                         .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
-                        .map(i => ({ ...i, jobType: 'fault', ownerGroup: getJobGroupName(i) || myGroup }));
+                        .map(i => ({ ...i, jobType: 'fault', ownerGroup: getJobGroupName(i) || myGroup, recommendedTech: findNearestTechForMainPage(i) || i.recommendedTech }));
 
                     const combinedMap = new Map();
                     otherGroupsCloudJobs.forEach(j => {
@@ -5672,6 +5874,7 @@
                     });
 
                     const finalJobs = Array.from(combinedMap.values());
+                    if (techLocEntry) finalJobs.push(techLocEntry);
                     cachedCloudJobs = finalJobs;
                     
                     await fetch(apiUrl, {
@@ -5682,7 +5885,6 @@
                 } catch (e) {}
             }
             
-            // ดึงข้อมูลทุกๆ 5 วินาที พร้อมดันงานที่ค้างในเครื่องขึ้น Google Sheets ทันที
             async function pullFieldReportsFromCloud() {
                 if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
                 const apiUrl = getActiveCloudApiUrl();
@@ -5694,15 +5896,23 @@
                     const data = await res.json();
                     if (data && Array.isArray(data.jobs)) {
                         cachedCloudJobs = data.jobs;
+
+                        const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
+                        if (locEntry && locEntry.techLocations) {
+                            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locEntry.techLocations));
+                        }
+
                         let outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                         let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
                         let changed = false;
+                        let navUpdated = false;
                         let hasCompletedGroupJobInCloud = false;
                         
                         const cloudOutageKeys = new Set();
                         const cloudFaultKeys = new Set();
 
                         data.jobs.forEach(cJob => {
+                            if (cJob.jobType === 'tech_loc') return;
                             if (!canCurrentUserSeeJob(cJob)) return;
 
                             const jobGroup = getJobGroupName(cJob);
@@ -5717,6 +5927,12 @@
                                 delete cleanReport.needsMainSync;
                             }
 
+                            let cleanNav = cJob.techNav ? { ...cJob.techNav } : undefined;
+                            if (cleanNav) delete cleanNav.needsMainSync;
+                            if (cJob.navCancelledAt && (!cleanNav?.updatedAt || cJob.navCancelledAt >= cleanNav.updatedAt)) {
+                                cleanNav = undefined;
+                            }
+
                             if (cJob.jobType !== 'fault' && cJob.dateTimeSaved) {
                                 cloudOutageKeys.add(cJob.dateTimeSaved);
                                 const idx = outages.findIndex(o => o.dateTimeSaved === cJob.dateTimeSaved);
@@ -5725,17 +5941,34 @@
                                         outages[idx].ownerGroup = jobGroup;
                                         changed = true;
                                     }
+                                    if (cJob.recommendedTech && JSON.stringify(outages[idx].recommendedTech) !== JSON.stringify(cJob.recommendedTech)) {
+                                        outages[idx].recommendedTech = cJob.recommendedTech;
+                                        changed = true;
+                                    }
+                                    if (!cleanNav && outages[idx].techNav && cJob.navCancelledAt && cJob.navCancelledAt >= (outages[idx].techNav.updatedAt || '')) {
+                                        delete outages[idx].techNav;
+                                        outages[idx].navCancelledAt = cJob.navCancelledAt;
+                                        changed = true;
+                                        navUpdated = true;
+                                    } else if (cleanNav && JSON.stringify(outages[idx].techNav) !== JSON.stringify(cleanNav)) {
+                                        outages[idx].techNav = cleanNav;
+                                        delete outages[idx].navCancelledAt;
+                                        changed = true;
+                                        navUpdated = true;
+                                    }
                                     if (cleanReport && JSON.stringify(outages[idx].techReport) !== JSON.stringify(cleanReport)) {
                                         outages[idx].techReport = cleanReport;
                                         outages[idx].formattedText = cJob.formattedText;
                                         changed = true;
                                     } else if (!outages[idx].techReport && cJob.formattedText && outages[idx].formattedText !== cJob.formattedText) {
-                                        outages[idx] = { ...cJob, ownerGroup: jobGroup };
+                                        outages[idx] = { ...cJob, ownerGroup: jobGroup, techNav: cleanNav };
                                         changed = true;
                                     }
                                 } else {
                                     const newJob = { ...cJob, ownerGroup: jobGroup };
                                     if (cleanReport) newJob.techReport = cleanReport;
+                                    if (cleanNav) newJob.techNav = cleanNav;
+                                    else delete newJob.techNav;
                                     outages.unshift(newJob);
                                     changed = true;
                                 }
@@ -5747,17 +5980,30 @@
                                         faults[idx].ownerGroup = jobGroup;
                                         changed = true;
                                     }
+                                    if (!cleanNav && faults[idx].techNav && cJob.navCancelledAt && cJob.navCancelledAt >= (faults[idx].techNav.updatedAt || '')) {
+                                        delete faults[idx].techNav;
+                                        faults[idx].navCancelledAt = cJob.navCancelledAt;
+                                        changed = true;
+                                        navUpdated = true;
+                                    } else if (cleanNav && JSON.stringify(faults[idx].techNav) !== JSON.stringify(cleanNav)) {
+                                        faults[idx].techNav = cleanNav;
+                                        delete faults[idx].navCancelledAt;
+                                        changed = true;
+                                        navUpdated = true;
+                                    }
                                     if (cleanReport && JSON.stringify(faults[idx].techReport) !== JSON.stringify(cleanReport)) {
                                         faults[idx].techReport = cleanReport;
                                         faults[idx].formattedText = cJob.formattedText;
                                         changed = true;
                                     } else if (!faults[idx].techReport && cJob.formattedText && faults[idx].formattedText !== cJob.formattedText) {
-                                        faults[idx] = { ...cJob, ownerGroup: jobGroup };
+                                        faults[idx] = { ...cJob, ownerGroup: jobGroup, techNav: cleanNav };
                                         changed = true;
                                     }
                                 } else {
                                     const newFault = { ...cJob, ownerGroup: jobGroup };
                                     if (cleanReport) newFault.techReport = cleanReport;
+                                    if (cleanNav) newFault.techNav = cleanNav;
+                                    else delete newFault.techNav;
                                     faults.unshift(newFault);
                                     changed = true;
                                 }
@@ -5771,7 +6017,9 @@
                             loadOutageHistory();
                             loadFaultHistory();
                             autoFillJobNo();
-                            showToast("⚡ ซิงค์ใบงานใหม่เข้าเครื่องแล้ว!");
+                            if (!navUpdated) showToast("⚡ ซิงค์ใบงานใหม่เข้าเครื่องแล้ว!");
+                        } else {
+                            renderNavEtaBadgesInMainHistory();
                         }
 
                         const hasUnsyncedLocalOutage = outages.some(o => canCurrentUserSeeJob(o) && !isJobFinishedAndRestored(o) && !cloudOutageKeys.has(o.dateTimeSaved));
@@ -5796,6 +6044,7 @@
                 if (target) {
                     target.ownerUser = curUser;
                     target.ownerGroup = curGroup || getUserGroupName(target.workerName);
+                    target.recommendedTech = findNearestTechForMainPage(target);
                     localStorage.setItem('elecReportsComplete_all', JSON.stringify(list));
                 }
                 loadOutageHistory();
@@ -5811,6 +6060,7 @@
                 if (list.length > 0) {
                     list[0].ownerUser = curUser;
                     list[0].ownerGroup = curGroup;
+                    list[0].recommendedTech = findNearestTechForMainPage(list[0]);
                     localStorage.setItem('fault_reports_all', JSON.stringify(list));
                 }
                 loadFaultHistory();
@@ -5834,7 +6084,6 @@
                 loadOutageHistory();
                 loadFaultHistory();
                 pullFieldReportsFromCloud();
-                // ซิงค์อัตโนมัติความเร็วสูงทุกๆ 5 วินาที
                 setInterval(() => {
                     if (!document.hidden) pullFieldReportsFromCloud();
                 }, 5000);
