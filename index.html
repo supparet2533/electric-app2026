@@ -5768,18 +5768,92 @@
                 `;
             }
 
+                        // ดึงทะเบียนรหัสงานที่ปิดเสร็จสิ้นแล้วทั้งหมด
+                        // ดึงทะเบียนรหัสงานที่ปิดเสร็จสิ้นแล้วทั้งหมด (รองรับทั้ง index.html และ page2.html 100%)
+            function getClosedJobsRegistry() {
+                try {
+                    const reg1 = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_closed_jobs_registry') || '{}');
+                    const reg2 = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_closed_reports_map') || '{}');
+                    return { ...reg1, ...reg2 };
+                } catch (e) {
+                    return {};
+                }
+            }
+
+            function saveClosedJobToRegistry(jobKey, reportObj) {
+                if (!jobKey) return;
+                const reg = getClosedJobsRegistry();
+                reg[jobKey] = reportObj || {
+                    status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
+                    realCause: '-',
+                    actionTaken: 'ปิดงานจากระบบหลัก',
+                    finishTime: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.',
+                    inspector: (localStorage.getItem('elec_app_current_user') || 'ผู้ใช้งานทั่วไป').trim(),
+                    updatedAt: new Date().toISOString()
+                };
+                const jsonStr = JSON.stringify(reg);
+                localStorage.setItem('elec_closed_jobs_registry', jsonStr);
+                localStorage.setItem('elec_closed_reports_map', jsonStr);
+            }
+
+            function syncClosedRegistryObject(mergedObj) {
+                if (!mergedObj || typeof mergedObj !== 'object') return;
+                const jsonStr = JSON.stringify(mergedObj);
+                localStorage.setItem('elec_closed_jobs_registry', jsonStr);
+                localStorage.setItem('elec_closed_reports_map', jsonStr);
+            }
+
+            // ปุ่มกด "ปิดงานด่วน" จากหน้าประวัติใน index.html โดยตรง
+            window.quickCloseJobFromMainHistory = async function(jobKey, jobType) {
+                const storageKey = jobType === 'fault' ? 'fault_reports_all' : 'elecReportsComplete_all';
+                const keyField = jobType === 'fault' ? 'timestamp' : 'dateTimeSaved';
+                let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, storageKey) || '[]');
+                const idx = list.findIndex(i => i[keyField] === jobKey);
+                if (idx === -1) return;
+
+                const curUser = (localStorage.getItem('elec_app_current_user') || 'ผู้ใช้งานทั่วไป').trim();
+                const now = new Date();
+                const finishTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
+
+                const reportObj = {
+                    status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
+                    realCause: list[idx].techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ',
+                    actionTaken: list[idx].techReport?.actionTaken || 'ปิดงานเรียบร้อย',
+                    finishTime: finishTimeStr,
+                    inspector: curUser,
+                    updatedAt: now.toISOString()
+                };
+
+                list[idx].techReport = reportObj;
+                delete list[idx].techNav;
+                delete list[idx].pendingInitialUpload;
+                localStorage.setItem(storageKey, JSON.stringify(list));
+                saveClosedJobToRegistry(jobKey, reportObj);
+
+                if (jobType === 'fault') loadFaultHistory();
+                else loadOutageHistory();
+
+                showToast("✅ ปิดงานเรียบร้อยแล้ว (ซิงค์แจ้งหน้าช่างอัตโนมัติ)");
+                await syncJobsWithFieldPage();
+            };
+
             function renderNavEtaBadgesInMainHistory() {
                 try {
-                    const decorateCardList = (selector, listData, keyField) => {
+                    const closedReg = getClosedJobsRegistry();
+                    const decorateCardList = (selector, listData, keyField, jobType) => {
                         const dataMap = new Map(listData.map(o => [o[keyField], o]));
                         document.querySelectorAll(selector).forEach(card => {
                             const editBtn = card.querySelector('button[onclick^="edit"]');
                             if (!editBtn) return;
                             const m = editBtn.getAttribute('onclick').match(/'([^']+)'/);
                             if (!m) return;
-                            const item = dataMap.get(m[1]);
+                            const jobKey = m[1];
+                            const item = dataMap.get(jobKey);
                             let banner = card.querySelector('.tech-nav-eta-banner');
-                            const isDone = item?.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
+
+                            const isDone = (item?.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น')) ||
+                                           Boolean(closedReg[jobKey]) ||
+                                           (item?.formattedText && item.formattedText.includes('แก้ไขเสร็จสิ้น'));
 
                             if (item && !isDone) {
                                 if (item.techNav) {
@@ -5797,13 +5871,31 @@
                                             card.insertBefore(banner, card.lastElementChild);
                                         }
                                         banner.className = 'tech-nav-eta-banner p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex flex-wrap justify-between items-center gap-1 mt-1';
-                                        banner.innerHTML = rec.hasGps
-                                            ? `<span class="font-bold text-purple-800">🎯 แนะนำช่างใกล้สุด: ${rec.techName}</span><span class="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-700">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span>`
-                                            : `<span class="font-bold text-purple-800">🎯 ช่างประจำกลุ่มแนะนำ: ${rec.techName}</span><span class="text-[10px] text-purple-600">(รอแก้ไข)</span>`;
+                                        const distBadge = rec.hasGps
+                                            ? `<span class="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-700">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span>`
+                                            : `<span class="text-[10px] text-purple-600">(รอแก้ไข)</span>`;
+                                        banner.innerHTML = `
+                                            <span class="font-bold text-purple-800">🎯 แนะนำช่างใกล้สุด: ${rec.techName}</span>
+                                            <div class="flex items-center gap-1">
+                                                ${distBadge}
+                                                <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
+                                            </div>
+                                        `;
                                     } else if (banner) {
                                         banner.remove();
                                     }
                                 }
+                            } else if (item && isDone) {
+                                const tr = item.techReport || closedReg[jobKey];
+                                if (!banner) {
+                                    banner = document.createElement('div');
+                                    card.insertBefore(banner, card.lastElementChild);
+                                }
+                                banner.className = 'tech-nav-eta-banner p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex flex-wrap justify-between items-center gap-1 mt-1';
+                                banner.innerHTML = `
+                                    <span class="font-bold text-emerald-700">✅ ปิดงานแก้ไขเสร็จสิ้นแล้ว (${tr?.actionTaken || tr?.realCause || 'จ่ายไฟคืนปกติ'})</span>
+                                    <span class="text-[10px] text-emerald-600">👷 ${tr?.inspector || '-'} ${tr?.finishTime ? `• ⏰ ${tr.finishTime}` : ''}</span>
+                                `;
                             } else if (banner) {
                                 banner.remove();
                             }
@@ -5811,10 +5903,10 @@
                     };
 
                     const outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
-                    decorateCardList('#historyListOutage > div', outages, 'dateTimeSaved');
+                    decorateCardList('#historyListOutage > div', outages, 'dateTimeSaved', 'outage');
 
                     const faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
-                    decorateCardList('#historyListFault > div', faults, 'timestamp');
+                    decorateCardList('#historyListFault > div', faults, 'timestamp', 'fault');
                 } catch (e) {}
             }
 
@@ -5844,14 +5936,27 @@
             exportData = function(...args) { return runWithGroupViewFilter(_origExportData, this, args); };
 
             function isJobFinishedAndRestored(job) {
-                return job && job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น');
+                if (!job) return false;
+                const key = job.jobType === 'fault' ? job.timestamp : (job.dateTimeSaved || job.timestamp);
+                const closedReg = getClosedJobsRegistry();
+                if (key && closedReg[key]) return true;
+                if (job.formattedText && job.formattedText.includes('แก้ไขเสร็จสิ้น')) return true;
+                return Boolean(job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น'));
+            }
+
+            function shouldPurgeFinishedJobFromCloud(job) {
+                if (!isJobFinishedAndRestored(job)) return false;
+                const updatedMs = job.techReport?.updatedAt ? new Date(job.techReport.updatedAt).getTime() : 0;
+                if (!updatedMs) return true;
+                return (Date.now() - updatedMs) > 180000;
             }
             
-            // ส่งข้อมูลจากหน้าหลักขึ้น Cloud โดยห้ามเขียนทับสถานะ techNav / techReport ที่ช่างเพิ่งส่งขึ้นมา
+            let isUploadingFromMain = false;
             async function syncJobsWithFieldPage(cloudJobsSnapshot = null) {
                 if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
                 const apiUrl = getActiveCloudApiUrl();
                 if (!apiUrl) return;
+                isUploadingFromMain = true;
                 try {
                     tagUntaggedLocalJobsWithCurrentGroup();
                     const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
@@ -5870,7 +5975,7 @@
                     const otherGroupsCloudJobs = (baseCloudJobs || []).filter(cJob => {
                         if (cJob.jobType === 'tech_loc') return false;
                         if (currentRole === 'admin') {
-                            if (isJobFinishedAndRestored(cJob) && cJob.techReport && cJob.techReport.needsMainSync && getJobGroupName(cJob) !== '') {
+                            if (isJobFinishedAndRestored(cJob) && !shouldPurgeFinishedJobFromCloud(cJob)) {
                                 return true;
                             }
                             return false;
@@ -5879,13 +5984,23 @@
                         return jGroup !== '' && jGroup !== myGroup;
                     });
 
+                    const closedReg = getClosedJobsRegistry();
+
                     const preserveCloudTechState = (localItem, type) => {
-                        const k = (type === 'fault' ? 'F_' + localItem.timestamp : 'O_' + localItem.dateTimeSaved);
+                        const rawKey = type === 'fault' ? localItem.timestamp : localItem.dateTimeSaved;
+                        const k = (type === 'fault' ? 'F_' + rawKey : 'O_' + rawKey);
                         const cJob = cloudLookupMap.get(k);
                         let mergedNav = localItem.techNav;
                         let mergedCancel = localItem.navCancelledAt;
+                        let mergedReport = localItem.techReport || closedReg[rawKey];
 
                         if (cJob) {
+                            const cRepTime = cJob.techReport?.updatedAt || '';
+                            const lRepTime = mergedReport?.updatedAt || '';
+                            if (cRepTime >= lRepTime && cJob.techReport) {
+                                mergedReport = cJob.techReport;
+                            }
+
                             const cCancel = cJob.navCancelledAt || '';
                             const lCancel = localItem.navCancelledAt || '';
                             mergedCancel = cCancel >= lCancel ? cCancel : lCancel;
@@ -5895,7 +6010,8 @@
                             if (cNavTime >= lNavTime && cJob.techNav) {
                                 mergedNav = cJob.techNav;
                             }
-                            if (mergedCancel && (!mergedNav?.updatedAt || mergedCancel >= mergedNav.updatedAt)) {
+                            if ((mergedReport && String(mergedReport.status || '').includes('เสร็จสิ้น')) ||
+                                (mergedCancel && (!mergedNav?.updatedAt || mergedCancel >= mergedNav.updatedAt))) {
                                 mergedNav = undefined;
                             }
                         }
@@ -5903,21 +6019,27 @@
                         const result = {
                             ...localItem,
                             jobType: type,
+                            syncedToCloud: true,
                             ownerGroup: getJobGroupName(localItem) || myGroup,
                             recommendedTech: findNearestTechForMainPage(localItem) || localItem.recommendedTech,
+                            techReport: mergedReport,
                             navCancelledAt: mergedCancel || undefined
                         };
+                        delete result.pendingInitialUpload;
                         if (mergedNav) result.techNav = mergedNav;
                         else delete result.techNav;
                         return result;
                     };
 
-                    const myActiveOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]')
-                        .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
+                    let rawOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
+                    let rawFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
+
+                    const myActiveOutages = rawOutages
+                        .filter(i => canCurrentUserSeeJob(i) && !shouldPurgeFinishedJobFromCloud(i))
                         .map(i => preserveCloudTechState(i, 'outage'));
                     
-                    const myActiveFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]')
-                        .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
+                    const myActiveFaults = rawFaults
+                        .filter(i => canCurrentUserSeeJob(i) && !shouldPurgeFinishedJobFromCloud(i))
                         .map(i => preserveCloudTechState(i, 'fault'));
 
                     const combinedMap = new Map();
@@ -5931,7 +6053,20 @@
                     });
 
                     const finalJobs = Array.from(combinedMap.values());
-                    if (techLocEntry) finalJobs.push(techLocEntry);
+                    const mergedClosedReg = {
+                        ...(techLocEntry?.closedJobsMap || {}),
+                        ...(techLocEntry?.closedReports || {}),
+                        ...closedReg
+                    };
+                    syncClosedRegistryObject(mergedClosedReg);
+
+                    finalJobs.push({
+                        jobType: 'tech_loc',
+                        techLocations: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}'),
+                        closedJobsMap: mergedClosedReg,
+                        closedReports: mergedClosedReg,
+                        updatedAt: new Date().toISOString()
+                    });
                     cachedCloudJobs = finalJobs;
                     
                     await fetch(apiUrl, {
@@ -5939,10 +6074,25 @@
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'saveJobs', jobs: finalJobs })
                     });
+
+                    // เคลียร์ flag pendingInitialUpload หลังจากส่งขึ้น Google Sheets สำเร็จแล้วเท่านั้น
+                    let localFlagChanged = false;
+                    rawOutages.forEach(o => {
+                        if (o.pendingInitialUpload) { delete o.pendingInitialUpload; o.syncedToCloud = true; localFlagChanged = true; }
+                    });
+                    rawFaults.forEach(f => {
+                        if (f.pendingInitialUpload) { delete f.pendingInitialUpload; f.syncedToCloud = true; localFlagChanged = true; }
+                    });
+                    if (localFlagChanged) {
+                        localStorage.setItem('elecReportsComplete_all', JSON.stringify(rawOutages));
+                        localStorage.setItem('fault_reports_all', JSON.stringify(rawFaults));
+                    }
                 } catch (e) {}
+                isUploadingFromMain = false;
             }
             
             async function pullFieldReportsFromCloud() {
+                if (isUploadingFromMain) return;
                 if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
                 const apiUrl = getActiveCloudApiUrl();
                 if (!apiUrl) return;
@@ -5955,15 +6105,25 @@
                         cachedCloudJobs = data.jobs;
 
                         const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
-                        if (locEntry && locEntry.techLocations) {
-                            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locEntry.techLocations));
+                        if (locEntry) {
+                            if (locEntry.techLocations) {
+                                localStorage.setItem('elec_tech_locations_map', JSON.stringify(locEntry.techLocations));
+                            }
+                            if (locEntry.closedJobsMap || locEntry.closedReports) {
+                                const mergedReg = {
+                                    ...getClosedJobsRegistry(),
+                                    ...(locEntry.closedJobsMap || {}),
+                                    ...(locEntry.closedReports || {})
+                                };
+                                syncClosedRegistryObject(mergedReg);
+                            }
                         }
 
                         let outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                         let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
                         let changed = false;
                         let navUpdated = false;
-                        let hasCompletedGroupJobInCloud = false;
+                        let hasExpiredCompletedJobInCloud = false;
                         
                         const cloudOutageKeys = new Set();
                         const cloudFaultKeys = new Set();
@@ -5973,9 +6133,9 @@
                             if (!canCurrentUserSeeJob(cJob)) return;
 
                             const jobGroup = getJobGroupName(cJob);
-                            if (isJobFinishedAndRestored(cJob)) {
+                            if (shouldPurgeFinishedJobFromCloud(cJob)) {
                                 if (currentRole !== 'admin' || jobGroup === '') {
-                                    hasCompletedGroupJobInCloud = true;
+                                    hasExpiredCompletedJobInCloud = true;
                                 }
                             }
 
@@ -5983,10 +6143,15 @@
                             if (cleanReport && (currentRole !== 'admin' || jobGroup === '')) {
                                 delete cleanReport.needsMainSync;
                             }
+                            if (cleanReport && String(cleanReport.status || '').includes('เสร็จสิ้น')) {
+                                const jKey = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
+                                saveClosedJobToRegistry(jKey, cleanReport);
+                            }
 
                             let cleanNav = cJob.techNav ? { ...cJob.techNav } : undefined;
                             if (cleanNav) delete cleanNav.needsMainSync;
-                            if (cJob.navCancelledAt && (!cleanNav?.updatedAt || cJob.navCancelledAt >= cleanNav.updatedAt)) {
+                            if ((cleanReport && String(cleanReport.status || '').includes('เสร็จสิ้น')) ||
+                                (cJob.navCancelledAt && (!cleanNav?.updatedAt || cJob.navCancelledAt >= cleanNav.updatedAt))) {
                                 cleanNav = undefined;
                             }
 
@@ -5994,6 +6159,7 @@
                                 cloudOutageKeys.add(cJob.dateTimeSaved);
                                 const idx = outages.findIndex(o => o.dateTimeSaved === cJob.dateTimeSaved);
                                 if (idx !== -1) {
+                                    outages[idx].syncedToCloud = true;
                                     if (jobGroup && outages[idx].ownerGroup !== jobGroup) {
                                         outages[idx].ownerGroup = jobGroup;
                                         changed = true;
@@ -6002,7 +6168,7 @@
                                         outages[idx].recommendedTech = cJob.recommendedTech;
                                         changed = true;
                                     }
-                                    if (!cleanNav && outages[idx].techNav && cJob.navCancelledAt && cJob.navCancelledAt >= (outages[idx].techNav.updatedAt || '')) {
+                                    if (!cleanNav && outages[idx].techNav && (cJob.navCancelledAt || cleanReport)) {
                                         delete outages[idx].techNav;
                                         outages[idx].navCancelledAt = cJob.navCancelledAt;
                                         changed = true;
@@ -6016,13 +6182,11 @@
                                     if (cleanReport && JSON.stringify(outages[idx].techReport) !== JSON.stringify(cleanReport)) {
                                         outages[idx].techReport = cleanReport;
                                         outages[idx].formattedText = cJob.formattedText;
-                                        changed = true;
-                                    } else if (!outages[idx].techReport && cJob.formattedText && outages[idx].formattedText !== cJob.formattedText) {
-                                        outages[idx] = { ...cJob, ownerGroup: jobGroup, techNav: cleanNav };
+                                        delete outages[idx].techNav;
                                         changed = true;
                                     }
                                 } else {
-                                    const newJob = { ...cJob, ownerGroup: jobGroup };
+                                    const newJob = { ...cJob, ownerGroup: jobGroup, syncedToCloud: true };
                                     if (cleanReport) newJob.techReport = cleanReport;
                                     if (cleanNav) newJob.techNav = cleanNav;
                                     else delete newJob.techNav;
@@ -6033,11 +6197,12 @@
                                 cloudFaultKeys.add(cJob.timestamp);
                                 const idx = faults.findIndex(f => f.timestamp === cJob.timestamp);
                                 if (idx !== -1) {
+                                    faults[idx].syncedToCloud = true;
                                     if (jobGroup && faults[idx].ownerGroup !== jobGroup) {
                                         faults[idx].ownerGroup = jobGroup;
                                         changed = true;
                                     }
-                                    if (!cleanNav && faults[idx].techNav && cJob.navCancelledAt && cJob.navCancelledAt >= (faults[idx].techNav.updatedAt || '')) {
+                                    if (!cleanNav && faults[idx].techNav && (cJob.navCancelledAt || cleanReport)) {
                                         delete faults[idx].techNav;
                                         faults[idx].navCancelledAt = cJob.navCancelledAt;
                                         changed = true;
@@ -6051,19 +6216,44 @@
                                     if (cleanReport && JSON.stringify(faults[idx].techReport) !== JSON.stringify(cleanReport)) {
                                         faults[idx].techReport = cleanReport;
                                         faults[idx].formattedText = cJob.formattedText;
-                                        changed = true;
-                                    } else if (!faults[idx].techReport && cJob.formattedText && faults[idx].formattedText !== cJob.formattedText) {
-                                        faults[idx] = { ...cJob, ownerGroup: jobGroup, techNav: cleanNav };
+                                        delete faults[idx].techNav;
                                         changed = true;
                                     }
                                 } else {
-                                    const newFault = { ...cJob, ownerGroup: jobGroup };
+                                    const newFault = { ...cJob, ownerGroup: jobGroup, syncedToCloud: true };
                                     if (cleanReport) newFault.techReport = cleanReport;
                                     if (cleanNav) newFault.techNav = cleanNav;
                                     else delete newFault.techNav;
                                     faults.unshift(newFault);
                                     changed = true;
                                 }
+                            }
+                        });
+
+                        const latestClosedReg = getClosedJobsRegistry();
+                        const nowMs = Date.now();
+                        outages.forEach(o => {
+                            const isJustCreated = o.createdAtMs && (nowMs - o.createdAtMs < 60000);
+                            if (!o.techReport && latestClosedReg[o.dateTimeSaved]) {
+                                o.techReport = latestClosedReg[o.dateTimeSaved];
+                                delete o.techNav;
+                                changed = true;
+                            } else if (!o.techReport && !o.pendingInitialUpload && !isJustCreated && !cloudOutageKeys.has(o.dateTimeSaved)) {
+                                o.techReport = { status: 'แก้ไขเสร็จสิ้น (ปิดงานแล้ว)', realCause: '-', actionTaken: 'ดำเนินการเสร็จสิ้น', updatedAt: new Date(0).toISOString() };
+                                delete o.techNav;
+                                changed = true;
+                            }
+                        });
+                        faults.forEach(f => {
+                            const isJustCreated = f.createdAtMs && (nowMs - f.createdAtMs < 60000);
+                            if (!f.techReport && latestClosedReg[f.timestamp]) {
+                                f.techReport = latestClosedReg[f.timestamp];
+                                delete f.techNav;
+                                changed = true;
+                            } else if (!f.techReport && !f.pendingInitialUpload && !isJustCreated && !cloudFaultKeys.has(f.timestamp)) {
+                                f.techReport = { status: 'แก้ไขเสร็จสิ้น (ปิดงานแล้ว)', realCause: '-', actionTaken: 'ดำเนินการเสร็จสิ้น', updatedAt: new Date(0).toISOString() };
+                                delete f.techNav;
+                                changed = true;
                             }
                         });
                         
@@ -6074,81 +6264,95 @@
                             loadOutageHistory();
                             loadFaultHistory();
                             autoFillJobNo();
-                            showToast(navUpdated ? "🚗 อัปเดตสถานะการเดินทางของช่างแล้ว!" : "⚡ ซิงค์ใบงานใหม่เข้าเครื่องแล้ว!");
+                            showToast(navUpdated ? "🚗 อัปเดตสถานะการเดินทางของช่างแล้ว!" : "✅ ซิงค์สถานะใบงานล่าสุดเรียบร้อย!");
                         } else {
                             renderNavEtaBadgesInMainHistory();
                         }
 
-                        const hasUnsyncedLocalOutage = outages.some(o => canCurrentUserSeeJob(o) && !isJobFinishedAndRestored(o) && !cloudOutageKeys.has(o.dateTimeSaved));
-                        const hasUnsyncedLocalFault = faults.some(f => canCurrentUserSeeJob(f) && !isJobFinishedAndRestored(f) && !cloudFaultKeys.has(f.timestamp));
+                        const hasNewUnsyncedOutage = outages.some(o => o.pendingInitialUpload && !cloudOutageKeys.has(o.dateTimeSaved));
+                        const hasNewUnsyncedFault = faults.some(f => f.pendingInitialUpload && !cloudFaultKeys.has(f.timestamp));
                         
-                        if (hasCompletedGroupJobInCloud || hasUnsyncedLocalOutage || hasUnsyncedLocalFault) {
+                        if (hasExpiredCompletedJobInCloud || hasNewUnsyncedOutage || hasNewUnsyncedFault) {
                             await syncJobsWithFieldPage(data.jobs);
                         }
                     }
                 } catch (e) {}
             }
             
-            const _origSaveOutage = saveOutageData;
+                                   const _origSaveOutage = saveOutageData;
             saveOutageData = function(...args) {
-                _origSaveOutage.apply(this, args);
-                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                const curGroup = getCurrentUserGroup();
-                let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
-                const savedKey = args[0];
-                const idx = list.findIndex(i => i.dateTimeSaved === savedKey);
-                const target = idx !== -1 ? list[idx] : list[0];
-                if (target) {
-                    target.ownerUser = curUser;
-                    if (curGroup) target.ownerGroup = curGroup;
-                    else delete target.ownerGroup;
-                    target.recommendedTech = findNearestTechForMainPage(target);
-                    localStorage.setItem('elecReportsComplete_all', JSON.stringify(list));
-                }
-                loadOutageHistory();
-                syncJobsWithFieldPage();
+            // จำรหัสรายการที่กำลังแก้ไขไว้ก่อนที่ _origSaveOutage จะล้างค่า editingOutageId เป็น null
+            const targetKey = editingOutageId || args[0];
+            _origSaveOutage.apply(this, args);
+            
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            const curGroup = getCurrentUserGroup();
+            let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
+            const idx = list.findIndex(i => i.dateTimeSaved === targetKey);
+            const target = idx !== -1 ? list[idx] : list[0];
+            
+            if (target) {
+            target.ownerUser = target.ownerUser || curUser;
+            target.pendingInitialUpload = true;
+            target.createdAtMs = target.createdAtMs || Date.now();
+            if (curGroup) target.ownerGroup = curGroup;
+            else delete target.ownerGroup;
+            target.recommendedTech = findNearestTechForMainPage(target);
+            localStorage.setItem('elecReportsComplete_all', JSON.stringify(list));
+            }
+            loadOutageHistory();
+            syncJobsWithFieldPage();
             };
             
             const _origSaveFault = saveAndCopyFault;
             saveAndCopyFault = function(...args) {
-                _origSaveFault.apply(this, args);
-                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                const curGroup = getCurrentUserGroup();
-                let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
-                if (list.length > 0) {
-                    list[0].ownerUser = curUser;
-                    if (curGroup) list[0].ownerGroup = curGroup;
-                    else delete list[0].ownerGroup;
-                    list[0].recommendedTech = findNearestTechForMainPage(list[0]);
-                    localStorage.setItem('fault_reports_all', JSON.stringify(list));
-                }
-                loadFaultHistory();
-                syncJobsWithFieldPage();
+            // จำรหัสรายการที่กำลังแก้ไขไว้ก่อนที่ _origSaveFault จะล้างค่า editingFaultId เป็น null
+            const targetKey = editingFaultId;
+            _origSaveFault.apply(this, args);
+            
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            const curGroup = getCurrentUserGroup();
+            let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
+            const idx = targetKey ? list.findIndex(i => i.timestamp === targetKey) : 0;
+            const target = (idx !== -1 && list[idx]) ? list[idx] : list[0];
+            
+            if (target) {
+            target.ownerUser = target.ownerUser || curUser;
+            target.pendingInitialUpload = true;
+            target.createdAtMs = target.createdAtMs || Date.now();
+            if (curGroup) target.ownerGroup = curGroup;
+            else delete target.ownerGroup;
+            target.recommendedTech = findNearestTechForMainPage(target);
+            localStorage.setItem('fault_reports_all', JSON.stringify(list));
+            }
+            loadFaultHistory();
+            syncJobsWithFieldPage();
             };
             
             const _origDeleteOutage = deleteOutageItem;
             deleteOutageItem = function(...args) {
-                _origDeleteOutage.apply(this, args);
-                setTimeout(syncJobsWithFieldPage, 300);
+            _origDeleteOutage.apply(this, args);
+            setTimeout(syncJobsWithFieldPage, 300);
             };
             
             const _origDeleteFault = deleteFaultItem;
             deleteFaultItem = function(...args) {
-                _origDeleteFault.apply(this, args);
-                setTimeout(syncJobsWithFieldPage, 300);
+            _origDeleteFault.apply(this, args);
+            setTimeout(syncJobsWithFieldPage, 300);
             };
             
             window.addEventListener('DOMContentLoaded', () => {
-                tagUntaggedLocalJobsWithCurrentGroup();
-                loadOutageHistory();
-                loadFaultHistory();
-                pullFieldReportsFromCloud();
-                setInterval(() => {
-                    if (!document.hidden) pullFieldReportsFromCloud();
-                }, 5000);
+            tagUntaggedLocalJobsWithCurrentGroup();
+            loadOutageHistory();
+            loadFaultHistory();
+            pullFieldReportsFromCloud();
+            setInterval(() => {
+            if (!document.hidden) pullFieldReportsFromCloud();
+            }, 5000);
             });
-
+            
             window.addEventListener('focus', pullFieldReportsFromCloud);
-        </script>
-</body>
-</html>
+            </script>
+            </body>
+            
+            </html>
