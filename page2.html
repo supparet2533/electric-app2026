@@ -198,6 +198,10 @@
                     <button type="button" id="backToMainBtn" onclick="goBackToMainPage()" class="hidden bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition items-center gap-1 shadow-sm">
                         ⬅️ <span>หน้าหลัก</span>
                     </button>
+                    <!-- ปุ่มเปิด/ปิดเสียงเตือนงานใหม่ -->
+                    <button type="button" id="soundAlertToggleBtn" onclick="toggleSoundAlert()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="เปิด/ปิดเสียงแจ้งเตือนเมื่อมีใบงานใหม่">
+                        🔔 เสียง: เปิด
+                    </button>
                     <button type="button" onclick="syncJobsFromCloud(false)" class="bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="ดึงงานล่าสุด">
                         🔄 ซิงค์งาน
                     </button>
@@ -228,7 +232,7 @@
             </div>
         </div>
 
-        <!-- แถบตัวกรองประเภทงาน สถานะ กะ และการเรียงลำดับ -->
+        <!-- แถบตัวกรองประเภทงาน สถานะ กะ วันที่ และการเรียงลำดับ -->
         <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-2.5">
             <!-- แถวที่ 1: ประเภทงาน & สถานะ -->
             <div class="grid grid-cols-2 gap-2">
@@ -275,6 +279,19 @@
                 </button>
                 <button type="button" id="shiftPill-3" onclick="selectShiftFilter('3')" class="py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-white text-slate-600 border-slate-200 hover:bg-slate-100">
                     🌙 กะ 3 (<span id="countShift3">0</span>)
+                </button>
+            </div>
+
+            <!-- แถวที่ 4: ตัวกรองวันที่ (เลือกเฉพาะวันนี้ / เลือกวันที่ย้อนหลัง / ทั้งหมด) -->
+            <div class="flex items-center gap-1.5">
+                <div class="relative flex-1">
+                    <input type="date" id="filterJobDate" onchange="onTechDateInputChanged()" class="w-full px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white">
+                </div>
+                <button type="button" id="dateBtnToday" onclick="setTechDateFilterToday()" class="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition whitespace-nowrap">
+                    📌 เฉพาะวันนี้
+                </button>
+                <button type="button" id="dateBtnAll" onclick="clearTechDateFilter()" class="px-3 py-1.5 rounded-xl text-xs font-bold border border-teal-600 bg-teal-600 text-white shadow-sm transition whitespace-nowrap">
+                    📅 ทุกวัน
                 </button>
             </div>
 
@@ -347,6 +364,17 @@
                     </div>
                 </div>
 
+                <!-- 📍 ช่องแนบพิกัดหน้างานจริงปัจจุบัน (กรณีใบงานเดิมไม่มีพิกัด หรือต้องการอัปเดตพิกัดจุดเกิดเหตุจริง) -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block font-bold text-slate-700">📍 พิกัดหน้างานจริง (GPS)</label>
+                        <button type="button" onclick="captureCurrentTechGpsForModal()" class="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                            📍 ดึงพิกัดมือถือปัจจุบัน
+                        </button>
+                    </div>
+                    <input type="text" id="techGpsInput" placeholder="กดปุ่มด้านบนเพื่อดึงพิกัดจุดเกิดเหตุ หรือวางลิงก์ Maps..." class="w-full px-3 py-1.5 text-xs">
+                </div>
+
                 <div class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block font-bold text-slate-700 mb-1">⏰ เวลาแก้ไขเสร็จ</label>
@@ -381,6 +409,161 @@
         let currentEditingJobType = 'outage';
         let cachedCloudJobs = [];
         let isSyncingNow = false;
+
+        // ==========================================
+        // 🔔 ระบบเสียงเตือนและสั่นเตือนเมื่อมีใบงานใหม่เข้าเครื่องช่าง
+        // ==========================================
+        let isSoundAlertEnabled = localStorage.getItem('elec_tech_sound_enabled') !== 'false';
+        let knownPendingJobKeys = new Set();
+        let hasInitializedPendingBaseline = false;
+
+        function updateSoundToggleButtonUI() {
+            const btn = document.getElementById('soundAlertToggleBtn');
+            if (!btn) return;
+            if (isSoundAlertEnabled) {
+                btn.textContent = '🔔 เสียง: เปิด';
+                btn.className = 'bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm';
+            } else {
+                btn.textContent = '🔕 เสียง: ปิด';
+                btn.className = 'bg-slate-800/50 hover:bg-slate-800/70 text-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm';
+            }
+        }
+
+        function toggleSoundAlert() {
+            isSoundAlertEnabled = !isSoundAlertEnabled;
+            localStorage.setItem('elec_tech_sound_enabled', isSoundAlertEnabled ? 'true' : 'false');
+            updateSoundToggleButtonUI();
+            if (isSoundAlertEnabled) {
+                playNewJobAlertSound(false);
+                showToast("🔔 เปิดเสียงแจ้งเตือนใบงานใหม่แล้ว");
+            } else {
+                showToast("🔕 ปิดเสียงแจ้งเตือนใบงานใหม่แล้ว");
+            }
+        }
+
+        function playNewJobAlertSound(isCritical = false) {
+            if (!isSoundAlertEnabled) return;
+            try {
+                if (navigator.vibrate) {
+                    navigator.vibrate(isCritical ? [300, 120, 300, 120, 400] : [200, 100, 200]);
+                }
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                const ctx = new AudioCtx();
+                const playTone = (freq, startSec, durSec) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = isCritical ? 'sawtooth' : 'sine';
+                    osc.frequency.setValueAtTime(freq, ctx.currentTime + startSec);
+                    gain.gain.setValueAtTime(0.18, ctx.currentTime + startSec);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startSec + durSec);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime + startSec);
+                    osc.stop(ctx.currentTime + startSec + durSec);
+                };
+
+                if (isCritical) {
+                    playTone(880, 0, 0.18);
+                    playTone(1174, 0.20, 0.18);
+                    playTone(880, 0.40, 0.18);
+                    playTone(1318, 0.60, 0.35);
+                } else {
+                    playTone(659.25, 0, 0.16);
+                    playTone(880, 0.18, 0.30);
+                }
+            } catch (e) {}
+        }
+
+        function checkNewIncomingPendingJobs() {
+            const outages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+            const faults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+            const currentPendingKeys = new Set();
+            let foundNewJob = false;
+            let foundCriticalJob = false;
+
+            outages.forEach(item => {
+                if (!canCurrentUserSeeJob(item)) return;
+                const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
+                if (!isDone) {
+                    const k = 'O_' + item.dateTimeSaved;
+                    currentPendingKeys.add(k);
+                    if (hasInitializedPendingBaseline && !knownPendingJobKeys.has(k)) {
+                        foundNewJob = true;
+                        if (item.priorityLevel === 'critical') foundCriticalJob = true;
+                    }
+                }
+            });
+
+            faults.forEach(item => {
+                if (!canCurrentUserSeeJob(item)) return;
+                const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
+                if (!isDone) {
+                    const k = 'F_' + item.timestamp;
+                    currentPendingKeys.add(k);
+                    if (hasInitializedPendingBaseline && !knownPendingJobKeys.has(k)) {
+                        foundNewJob = true;
+                        foundCriticalJob = true;
+                    }
+                }
+            });
+
+            knownPendingJobKeys = currentPendingKeys;
+            if (!hasInitializedPendingBaseline) {
+                hasInitializedPendingBaseline = true;
+                return;
+            }
+
+            if (foundNewJob) {
+                playNewJobAlertSound(foundCriticalJob);
+                showToast(foundCriticalJob ? "🚨 มีใบงานด่วน/วิกฤต เข้ามาใหม่!" : "🔔 มีใบงานแจ้งซ่อมเข้ามาใหม่!");
+            }
+        }
+
+        // ==========================================
+        // 📅 ตัวกรองวันที่ในหน้าช่าง (เฉพาะวันนี้ / เลือกวันที่ / ทุกวัน)
+        // ==========================================
+        function updateDateFilterButtonsUI() {
+            const dateVal = document.getElementById('filterJobDate')?.value || '';
+            const btnToday = document.getElementById('dateBtnToday');
+            const btnAll = document.getElementById('dateBtnAll');
+            if (!btnToday || !btnAll) return;
+
+            const now = new Date();
+            const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+            if (!dateVal) {
+                btnAll.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-teal-600 bg-teal-600 text-white shadow-sm transition whitespace-nowrap';
+                btnToday.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition whitespace-nowrap';
+            } else if (dateVal === todayIso) {
+                btnToday.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-teal-600 bg-teal-600 text-white shadow-sm transition whitespace-nowrap';
+                btnAll.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition whitespace-nowrap';
+            } else {
+                btnToday.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition whitespace-nowrap';
+                btnAll.className = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition whitespace-nowrap';
+            }
+        }
+
+        function setTechDateFilterToday() {
+            const now = new Date();
+            const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const dateEl = document.getElementById('filterJobDate');
+            if (dateEl) dateEl.value = todayIso;
+            updateDateFilterButtonsUI();
+            renderJobCards();
+        }
+
+        function clearTechDateFilter() {
+            const dateEl = document.getElementById('filterJobDate');
+            if (dateEl) dateEl.value = '';
+            updateDateFilterButtonsUI();
+            renderJobCards();
+        }
+
+        function onTechDateInputChanged() {
+            updateDateFilterButtonsUI();
+            renderJobCards();
+        }
 
         function getActiveCloudApiUrl() {
             const customUrl = (localStorage.getItem('elec_cloud_user_api_url') || '').trim();
@@ -575,7 +758,6 @@
             }
         }
 
-        // ฟังก์ชันเลือกกรองเฉพาะกะ (กะ 1, กะ 2, กะ 3 หรือ ทุกกะ)
         function selectShiftFilter(shiftVal) {
             const shiftSelect = document.getElementById('filterJobShift');
             if (shiftSelect) shiftSelect.value = shiftVal;
@@ -648,7 +830,6 @@
             showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
         }
 
-        // ล็อกอินหน้าช่างได้ทั้งรหัสพนักงานล้วน (เช่น 504815) หรือชื่อเต็ม (เช่น 504815 กฟส.บึง) และผูกกลุ่มให้อัตโนมัติ
         async function handleTechLogin() {
             const u = document.getElementById('techUsername').value.trim();
             const p = document.getElementById('techPassword').value.trim();
@@ -746,14 +927,15 @@
                                 mergeTechLocationsMap(locRegistry.techLocations);
                             }
                             if (locRegistry.closedReports || locRegistry.closedJobsMap) {
-                                const localClosed = JSON.parse(localStorage.getItem('elec_closed_reports_map') || '{}');
+                                const localClosed = getClosedReportsRegistry();
                                 Object.assign(localClosed, locRegistry.closedReports || {}, locRegistry.closedJobsMap || {});
-                                localStorage.setItem('elec_closed_reports_map', JSON.stringify(localClosed));
+                                saveClosedReportsRegistry(localClosed);
                             }
                         }
                         const realJobs = data.jobs.filter(j => j.jobType !== 'tech_loc');
                         cachedCloudJobs = realJobs;
                         mergeCloudJobsToLocal(realJobs);
+                        checkNewIncomingPendingJobs();
                         if (statusEl) {
                             statusEl.textContent = `🟢 ซิงค์ล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit', second:'2-digit'})} น. • ออนไลน์ ${realJobs.length} งาน)`;
                         }
@@ -773,7 +955,7 @@
         }
 
         // ==========================================
-        // 🛰️ ระบบนำทางเรียลไทม์ (ส่งข้อมูลขึ้น Cloud ก่อนสลับไปแอป Maps 100%)
+        // 🛰️ ระบบนำทางเรียลไทม์ & ดึงพิกัดหน้างาน
         // ==========================================
         let lastKnownTechCoords = null;
         let activeNavWatchId = null;
@@ -860,6 +1042,37 @@
                     { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
                 );
             }, 30000);
+        }
+
+        // ดึงพิกัดมือถือปัจจุบันใส่ใน Modal แจ้งผลตรวจสอบหน้างาน
+        function captureCurrentTechGpsForModal() {
+            const gpsInput = document.getElementById('techGpsInput');
+            if (!navigator.geolocation) {
+                showToast("⚠️ เบราว์เซอร์ไม่รองรับการดึงพิกัด GPS");
+                return;
+            }
+            showToast("⏳ กำลังดึงพิกัด GPS ปัจจุบัน...");
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    const lat = pos.coords.latitude.toFixed(6);
+                    const lon = pos.coords.longitude.toFixed(6);
+                    recordCurrentTechGpsLocation(lat, lon);
+                    const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+                    if (gpsInput) gpsInput.value = mapsUrl;
+                    showToast(`📍 ดึงพิกัดหน้างานสำเร็จ (${lat}, ${lon})`);
+                },
+                () => {
+                    if (lastKnownTechCoords) {
+                        const lat = lastKnownTechCoords.lat.toFixed(6);
+                        const lon = lastKnownTechCoords.lon.toFixed(6);
+                        if (gpsInput) gpsInput.value = `https://www.google.com/maps?q=${lat},${lon}`;
+                        showToast(`📍 ใช้พิกัดล่าสุดของเครื่อง (${lat}, ${lon})`);
+                    } else {
+                        showToast("❌ ไม่สามารถดึงพิกัดได้ กรุณาเปิด Location ในมือถือ");
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+            );
         }
 
         function extractCoordsFromJob(item) {
@@ -1130,7 +1343,7 @@
             );
         }
 
-        // บันทึกสถานะเดินทางและส่งขึ้น Google Sheets ให้สำเร็จก่อนเปิดแอป Google Maps
+        // รองรับทั้งการกด "🗺️ นำทาง Maps" (มีลิงก์ GPS) และ "🚗 กดออกเดินทาง" (กรณีใบงานไม่มีลิงก์ GPS)
         async function handleStartNavigation(key, jobType, gpsLink) {
             const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
             let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
@@ -1204,7 +1417,7 @@
 
             localStorage.setItem(storageKey, JSON.stringify(list));
             switchStatusTab('traveling');
-            showToast(`🚗 กำลังส่งสถานะเดินทางไปยังเครื่องหลัก...`);
+            showToast(gpsLink ? `🚗 กำลังส่งสถานะเดินทางและเปิด Google Maps...` : `🚗 บันทึกสถานะกำลังเดินทางไปหน้างานแล้ว!`);
 
             const pushPromise = pushAllJobsToCloud(true);
             await Promise.race([
@@ -1325,7 +1538,6 @@
             });
         }
 
-        // เช็กว่างานที่เพิ่งปิดเสร็จสิ้น อยู่ในช่วง 3 นาทีแรกหรือไม่ (เพื่อให้ทุกเครื่องซิงค์สถานะ "เสร็จสิ้น" ได้ครบก่อนล้างออกจากชีต)
         function isJobRecentlyCompleted(item) {
             if (!item || !item.techReport) return false;
             const isDone = String(item.techReport.status || '').includes('เสร็จสิ้น');
@@ -1400,7 +1612,6 @@
             localOutages.forEach(item => {
                 const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
                 const isJustCreated = item.createdAtMs && (nowMs - item.createdAtMs < 60000);
-                // ป้องกันงานใหม่ที่เพิ่งสร้างจาก index.html (ซึ่งกำลังอัปโหลด) ถูกตีสถานะเป็นปิดงานเอง
                 if (!isDone && !item.pendingInitialUpload && !isJustCreated && (closedMap[item.dateTimeSaved] || !cloudOutageKeys.has(item.dateTimeSaved))) {
                     if (activeNavJobKey === item.dateTimeSaved) stopRealtimeGpsWatch();
                     item.techReport = closedMap[item.dateTimeSaved] || {
@@ -1552,7 +1763,6 @@
             if (item && item.shift !== undefined && item.shift !== null && String(item.shift).trim() !== '' && String(item.shift).trim() !== '-') {
                 return String(item.shift).trim();
             }
-            // กรณีงาน TR/TL (แท็บ 1) ที่ไม่ได้ระบุเลขกะ ให้คำนวณกะจากเวลาที่เกิดเหตุอัตโนมัติ
             const timeStr = String(item?.time || '');
             const m = timeStr.match(/(\d{1,2})[\.:](\d{1,2})/);
             if (m) {
@@ -1593,7 +1803,6 @@
         }
 
         function getJobSortTimeMs(item, jobType) {
-            // หากมีเวลาอัปเดตผลหน้างานจริง (ที่ไม่ใช่ค่าเริ่มต้น 1970) ให้ใช้เวลานั้นก่อน
             if (item?.techReport?.updatedAt) {
                 const t = new Date(item.techReport.updatedAt).getTime();
                 if (t > 10000000) return t;
@@ -1624,15 +1833,26 @@
             const jobType = document.getElementById('filterJobType').value;
             const statusFilter = document.getElementById('filterJobStatus').value;
             const shiftFilter = document.getElementById('filterJobShift')?.value || 'all';
+            const selectedDateIso = document.getElementById('filterJobDate')?.value || '';
             const sortOrder = document.getElementById('sortJobOrder')?.value || 'shift_job_asc';
             const keyword = document.getElementById('searchJobKeyword').value.toLowerCase().trim();
             const container = document.getElementById('jobCardsContainer');
+
+            let targetThaiDateStr = '';
+            if (selectedDateIso) {
+                const [y, m, d] = selectedDateIso.split('-');
+                targetThaiDateStr = `${d}/${m}/${parseInt(y, 10) + 543}`;
+            }
 
             const allRawList = jobType === 'outage'
                 ? JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
                 : JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
 
-            const rawList = allRawList.filter(item => canCurrentUserSeeJob(item));
+            const rawList = allRawList.filter(item => {
+                if (!canCurrentUserSeeJob(item)) return false;
+                if (targetThaiDateStr && getJobDateDisplay(item, jobType) !== targetThaiDateStr) return false;
+                return true;
+            });
 
             let pendingCount = 0;
             let travelingCount = 0;
@@ -1652,7 +1872,6 @@
             if (travEl) travEl.textContent = travelingCount;
             document.getElementById('countDoneJobs').textContent = doneCount;
 
-            // 1. กรองตามสถานะ (รอแก้ไข / กำลังเดินทาง / เสร็จสิ้น / ทั้งหมด) และคำค้นหา
             const statusAndKeywordFiltered = rawList.filter(item => {
                 const isDone = item.techReport && item.techReport.status.includes('เสร็จสิ้น');
                 const isTraveling = !isDone && Boolean(item.techNav);
@@ -1669,7 +1888,6 @@
                 return true;
             });
 
-            // นับจำนวนงานแยกตามกะ (กะ 1, กะ 2, กะ 3) สำหรับหมวดที่เปิดดูอยู่
             let countS1 = 0, countS2 = 0, countS3 = 0;
             statusAndKeywordFiltered.forEach(item => {
                 const sh = getEffectiveJobShift(item, jobType);
@@ -1687,13 +1905,11 @@
             if (elS2) elS2.textContent = countS2;
             if (elS3) elS3.textContent = countS3;
 
-            // 2. กรองตามกะที่เลือก (ทุกกะ หรือ เฉพาะ กะ 1 / 2 / 3)
             const filtered = statusAndKeywordFiltered.filter(item => {
                 if (shiftFilter === 'all') return true;
                 return getEffectiveJobShift(item, jobType) === shiftFilter;
             });
 
-            // 3. เรียงลำดับตามตัวเลือกของผู้ใช้
             filtered.sort((a, b) => {
                 const jobNoA = parseInt(a.jobNo, 10) || 0;
                 const jobNoB = parseInt(b.jobNo, 10) || 0;
@@ -1705,13 +1921,11 @@
                 const timeB = getJobSortTimeMs(b, jobType);
 
                 if (sortOrder === 'shift_job_asc') {
-                    // วันที่ล่าสุดขึ้นก่อน -> เรียงกะ 1, 2, 3 -> เรียงเลขงาน น้อยไปมาก (1, 2, 3...)
                     if (dateNumA !== dateNumB) return dateNumB - dateNumA;
                     if (shiftA !== shiftB) return shiftA - shiftB;
                     if (jobNoA !== jobNoB) return jobNoA - jobNoB;
                     return timeA - timeB;
                 } else if (sortOrder === 'shift_job_desc') {
-                    // วันที่ล่าสุดขึ้นก่อน -> เรียงกะ 3, 2, 1 -> เรียงเลขงาน มากไปน้อย
                     if (dateNumA !== dateNumB) return dateNumB - dateNumA;
                     if (shiftA !== shiftB) return shiftB - shiftA;
                     if (jobNoA !== jobNoB) return jobNoB - jobNoA;
@@ -1727,7 +1941,6 @@
                     if (timeA !== timeB) return timeA - timeB;
                     return jobNoA - jobNoB;
                 } else {
-                    // time_desc (เวลาล่าสุด -> เก่าสุด)
                     if (dateNumA !== dateNumB) return dateNumB - dateNumA;
                     if (timeA !== timeB) return timeB - timeA;
                     return jobNoB - jobNoA;
@@ -1736,7 +1949,6 @@
 
             container.innerHTML = '';
 
-            // หากเปิดดูช่อง "⏳ รอแก้ไข" อยู่ แต่มีช่างกำลังเดินทาง ให้แสดงแถบแจ้งเตือนสีฟ้าด้านบนสุดให้กดดูได้ทันที
             if (statusFilter === 'pending' && travelingCount > 0) {
                 const noticeBanner = document.createElement('button');
                 noticeBanner.type = 'button';
@@ -1751,14 +1963,16 @@
 
             if (filtered.length === 0) {
                 let emptyMsg = 'ไม่พบรายการใบงานในหมวดนี้';
-                if (shiftFilter !== 'all') {
+                if (targetThaiDateStr) {
+                    emptyMsg = `ไม่มีรายการใบงานในวันที่ ${targetThaiDateStr} สำหรับหมวดนี้ (กดปุ่ม "📅 ทุกวัน" เพื่อดูทั้งหมด)`;
+                } else if (shiftFilter !== 'all') {
                     emptyMsg = `ไม่มีรายการใบงานใน "กะ ${shiftFilter}" สำหรับหมวดนี้ (กดปุ่ม "ทุกกะ" ด้านบนเพื่อดูทั้งหมด)`;
                 } else if (statusFilter === 'pending') {
                     emptyMsg = travelingCount > 0
                         ? `🎉 งานทั้งหมดกำลังอยู่ในระหว่างเดินทางแล้ว (${travelingCount} งาน) กดปุ่มสีฟ้าด้านบนเพื่อดูเวลานับถอยหลังได้เลยครับ`
                         : '🎉 ไม่มีงานค้างในฝั่งรอแก้ไข';
                 } else if (statusFilter === 'traveling') {
-                    emptyMsg = '🚗 ยังไม่มีรายการงานที่กำลังเดินทางในขณะนี้ (เมื่อช่างกด "🗺️ นำทาง Maps" งานจะย้ายมาอยู่ที่ช่องนี้)';
+                    emptyMsg = '🚗 ยังไม่มีรายการงานที่กำลังเดินทางในขณะนี้ (เมื่อช่างกด "🗺️ นำทาง Maps" หรือ "🚗 กดออกเดินทาง" งานจะย้ายมาอยู่ที่ช่องนี้)';
                 } else if (statusFilter === 'done') {
                     emptyMsg = 'ยังไม่มีรายการงานที่แก้ไขเสร็จสิ้นในกลุ่มของคุณ';
                 }
@@ -1769,7 +1983,6 @@
                 return;
             }
 
-            // นับจำนวนงานในแต่ละกลุ่ม (วันที่ + กะ) เพื่อแสดงบนแถบคั่นหัวข้อ
             const shiftGroupCounts = {};
             filtered.forEach(item => {
                 const dStr = getJobDateDisplay(item, jobType);
@@ -1786,7 +1999,6 @@
                 const shStr = getEffectiveJobShift(item, jobType);
                 const gKey = `${dStr}__${shStr}`;
 
-                // แสดงแถบคั่นแยกตามกะและวันที่
                 if (showGroupHeaders && gKey !== lastRenderedGroupKey) {
                     lastRenderedGroupKey = gKey;
                     const shiftTimeDesc = shStr === '1' ? '00.30 - 08.30 น.' : (shStr === '2' ? '08.30 - 16.30 น.' : (shStr === '3' ? '16.30 - 00.30 น.' : ''));
@@ -1836,6 +2048,11 @@
 
                 const nearestTechHtml = (!isDone && !nav) ? buildRecommendedTechBadgeHtml(item) : '';
 
+                // ปุ่มเดินทาง: ถ้ามีลิงก์ GPS ให้แสดง "🗺️ นำทาง Maps" แต่ถ้าไม่มีลิงก์ GPS ให้แสดงปุ่ม "🚗 กดออกเดินทาง" แทน
+                const travelButtonHtml = gpsLink
+                    ? `<button type="button" onclick="handleStartNavigation('${key}', '${jobType}', '${safeGpsAttr}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">🗺️ ${nav ? 'นำทางซ้ำ' : 'นำทาง Maps'}</button>`
+                    : (!isDone ? `<button type="button" onclick="handleStartNavigation('${key}', '${jobType}', '')" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition">🚗 ${nav ? 'อัปเดตเดินทาง' : 'กดออกเดินทาง'}</button>` : '');
+
                 const card = document.createElement('div');
                 card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 border-l-4 ${isDone ? 'border-l-emerald-500' : (nav ? 'border-l-blue-500' : 'border-l-amber-500')}`;
                 card.innerHTML = `
@@ -1860,7 +2077,7 @@
                     <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
                         <div class="flex flex-wrap gap-1.5">
                             ${phoneNum ? `<a href="tel:${phoneNum}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold">📞 โทร ${phoneNum}</a>` : ''}
-                            ${gpsLink ? `<button type="button" onclick="handleStartNavigation('${key}', '${jobType}', '${safeGpsAttr}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">🗺️ ${nav ? 'นำทางซ้ำ' : 'นำทาง Maps'}</button>` : ''}
+                            ${travelButtonHtml}
                             ${(nav && !isDone) ? `<button type="button" onclick="handleCancelNavigation('${key}', '${jobType}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition">❌ ยกเลิกเดินทาง</button>` : ''}
                         </div>
                         <button type="button" onclick="openInspectModal('${key}', '${jobType}')" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition">
@@ -1899,6 +2116,7 @@
             document.getElementById('techStatusInput').value = tr.status || 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
             document.getElementById('techCauseInput').value = tr.realCause || '';
             document.getElementById('techActionInput').value = tr.actionTaken || '';
+            document.getElementById('techGpsInput').value = (item.gps && item.gps !== '-') ? item.gps : (tr.fieldGps || '');
             document.getElementById('techFinishTimeInput').value = tr.finishTime || defaultTime;
             document.getElementById('techInspectorInput').value = loggedInUser || tr.inspector || '';
 
@@ -1951,12 +2169,17 @@
             const status = document.getElementById('techStatusInput').value;
             const realCause = document.getElementById('techCauseInput').value.trim() || '-';
             const actionTaken = document.getElementById('techActionInput').value.trim() || '-';
+            const fieldGps = document.getElementById('techGpsInput')?.value.trim() || '';
             const finishTime = document.getElementById('techFinishTimeInput').value.trim() || '-';
             const inspector = loggedInUser || document.getElementById('techInspectorInput').value.trim() || '-';
             document.getElementById('techInspectorInput').value = inspector;
 
             if (myGroup) {
                 item.ownerGroup = myGroup;
+            }
+
+            if (fieldGps) {
+                item.gps = fieldGps;
             }
 
             if (activeNavJobKey === currentEditingJobKey && status.includes('เสร็จสิ้น')) {
@@ -1967,6 +2190,7 @@
                 status,
                 realCause,
                 actionTaken,
+                fieldGps: fieldGps || item.gps || '',
                 finishTime,
                 inspector,
                 updatedAt: new Date().toISOString(),
@@ -1985,7 +2209,8 @@
                 ? `📋 งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'}`
                 : `📋 วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
 
-            const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${jobHeaderLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}`;
+            const gpsLineText = fieldGps ? `\n📍 พิกัดหน้างาน : ${fieldGps}` : '';
+            const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${jobHeaderLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}${gpsLineText}`;
 
             const baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
             item.formattedText = `${baseText}\n\n${techOnlyText}`;
@@ -2017,7 +2242,6 @@
             rec.start();
         }
 
-        // ฟังก์ชันอัปเดตเวลา Active อัตโนมัติ (เชื่อมต่อเวลาหมดอายุ 1 ชม. ร่วมกับ index.html)
         function touchTechActivity() {
             if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
             const now = Date.now();
@@ -2033,14 +2257,16 @@
             }
         }
 
-        // อัปเดตเวลา Active อัตโนมัติเพื่อเชื่อมต่อกับหน้าหลัก (index.html) ไม่ให้หลุดออกจากระบบเมื่อสลับหน้า
         ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
             window.addEventListener(evt, touchTechActivity, { passive: true });
         });
 
         window.addEventListener('DOMContentLoaded', () => {
             checkTechAuth();
+            updateSoundToggleButtonUI();
+            updateDateFilterButtonsUI();
             initTechGpsTracker();
+            checkNewIncomingPendingJobs();
             switchStatusTab('pending');
             syncJobsFromCloud(true);
             setInterval(updateLiveNavDomElements, 1000);
