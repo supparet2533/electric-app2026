@@ -393,19 +393,55 @@
         // ==========================================
         // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน (ตรวจสอบเฉพาะจากบัญชีผู้ใช้ ไม่ดึงจาก workerName)
         // ==========================================
-        function getUserGroupName(username) {
+                function getUserGroupName(username) {
             if (!username) return '';
             const s = String(username).trim();
             const parts = s.split(/\s+/);
             if (parts.length > 1) return parts.slice(1).join(' ').trim();
             const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
             if (peaMatch && peaMatch[1] !== s) return peaMatch[1].trim();
+            const numGroupMatch = s.match(/^(\d{4,10})([ก-๙a-zA-Z].*)$/);
+            if (numGroupMatch) return numGroupMatch[2].trim();
             return '';
         }
 
         function getUserBaseId(username) {
             if (!username) return '';
-            return String(username).trim().split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim().toLowerCase();
+            const s = String(username).trim();
+            const firstPart = s.split(/\s+/)[0];
+            const withoutPea = firstPart.replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim();
+            const numMatch = withoutPea.match(/^(\d{4,10})/);
+            if (numMatch) return numMatch[1].toLowerCase();
+            return withoutPea.toLowerCase();
+        }
+
+        function normalizeUsernameFormat(rawUsername) {
+            const s = String(rawUsername || '').trim();
+            if (!s) return '';
+            const baseId = getUserBaseId(s);
+            const groupName = getUserGroupName(s);
+            if (baseId && groupName && s.toLowerCase() !== 'admin') {
+                const origBase = s.split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim() || baseId;
+                return `${origBase} ${groupName}`;
+            }
+            return s;
+        }
+
+        function isUsernameMatchingAccount(inputUser, accountUser) {
+            if (!inputUser || !accountUser) return false;
+            const inTrim = String(inputUser).trim().toLowerCase();
+            const accTrim = String(accountUser).trim().toLowerCase();
+            if (inTrim === accTrim) return true;
+
+            const inBase = getUserBaseId(inputUser);
+            const accBase = getUserBaseId(accountUser);
+            if (!inBase || !accBase || inBase !== accBase) return false;
+
+            const inGroup = getUserGroupName(inputUser).toLowerCase();
+            const accGroup = getUserGroupName(accountUser).toLowerCase();
+            if (inGroup && accGroup && inGroup !== accGroup) return false;
+
+            return true;
         }
 
         function getValidSystemGroupsSet() {
@@ -422,6 +458,8 @@
             const curUser = localStorage.getItem('elec_app_current_user') || '';
             const directGroup = getUserGroupName(curUser);
             if (directGroup) return directGroup;
+            const savedGroup = localStorage.getItem('elec_app_current_group') || '';
+            if (savedGroup) return savedGroup;
             const baseId = getUserBaseId(curUser);
             const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]');
             const matchedAcc = rawAccounts.find(a => getUserBaseId(a.username) === baseId);
@@ -433,7 +471,6 @@
             const validGroups = getValidSystemGroupsSet();
             const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]');
 
-            // 1. ตรวจสอบจากผู้สร้างใบงาน (ownerUser) หรือช่างผู้รับผิดชอบ
             const userCandidates = [job.ownerUser, job.techNav?.techName, job.techReport?.inspector].filter(Boolean);
             for (const c of userCandidates) {
                 const g = getUserGroupName(c);
@@ -448,7 +485,6 @@
                 }
             }
 
-            // 2. ตรวจสอบจาก ownerGroup เฉพาะที่ตรงกับกลุ่มจริงของระบบ (ตัดชื่อที่ติดมาจากช่องผู้ปฏิบัติงานออก)
             if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
                 const og = String(job.ownerGroup).trim();
                 if (validGroups.has(og) || /^กฟ/.test(og)) {
@@ -473,7 +509,6 @@
                 showToast("⛔ บัญชีผู้ใช้งานช่าง เข้าใช้งานได้เฉพาะหน้านี้เท่านั้น");
                 return;
             }
-            localStorage.setItem('elec_app_last_active', Date.now().toString());
             window.location.href = 'index.html';
         }
 
@@ -498,8 +533,9 @@
                 const roleName = currentRole === 'admin'
                     ? '👑 แอดมิน'
                     : (currentRole === 'tech' ? '🛠️ ช่าง' : '👷 ผู้ใช้');
+                const baseDisplay = getUserBaseId(currentUser) || currentUser;
                 const groupTag = (currentRole !== 'admin' && myGroup) ? ` [🏢 ${myGroup}]` : '';
-                userBadge.textContent = currentUser ? `${roleName}: ${currentUser}${groupTag}` : '';
+                userBadge.textContent = currentUser ? `${roleName}: ${baseDisplay}${groupTag}` : '';
             }
         }
 
@@ -540,33 +576,8 @@
             renderJobCards();
         }
 
-        function touchTechActivity() {
-            if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
-            const now = Date.now();
-            const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
-            if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
-                handleTechLogout();
-                alert("⏳ ระบบได้ออกจากระบบอัตโนมัติ เนื่องจากไม่มีการใช้งานเกิน 1 ชั่วโมง");
-                return;
-            }
-            if (now - lastSavedActivityTime > 10000) {
-                localStorage.setItem('elec_app_last_active', now.toString());
-                lastSavedActivityTime = now;
-            }
-        }
-
         function checkTechAuth() {
             const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
-            if (isLogged) {
-                const now = Date.now();
-                const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
-                if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
-                    handleTechLogout();
-                    return;
-                }
-                localStorage.setItem('elec_app_last_active', now.toString());
-                lastSavedActivityTime = now;
-            }
             document.getElementById('techLoginScreen').classList.toggle('hidden', isLogged);
             updateRoleNavigationUI();
         }
@@ -575,6 +586,7 @@
             stopRealtimeGpsWatch();
             localStorage.removeItem('elec_app_logged_in');
             localStorage.removeItem('elec_app_current_user');
+            localStorage.removeItem('elec_app_current_group');
             localStorage.removeItem('elec_app_current_role');
             localStorage.removeItem('elec_app_session_token');
             localStorage.removeItem('elec_app_last_active');
@@ -582,11 +594,12 @@
             showToast("🔒 ออกจากระบบเรียบร้อยแล้ว");
         }
 
+        // ล็อกอินหน้าช่างได้ทั้งรหัสพนักงานล้วน (เช่น 504815) หรือชื่อเต็ม (เช่น 504815 กฟส.บึง) และผูกกลุ่มให้อัตโนมัติ
         async function handleTechLogin() {
             const u = document.getElementById('techUsername').value.trim();
             const p = document.getElementById('techPassword').value.trim();
             const btn = document.getElementById('techLoginBtn');
-            if (!u || !p) { showToast("⚠️ กรุณากรอกชื่อและรหัสผ่าน"); return; }
+            if (!u || !p) { showToast("⚠️ กรุณากรอกรหัสพนักงานและรหัสผ่าน"); return; }
 
             btn.disabled = true;
             btn.textContent = "⏳ กำลังตรวจสอบบัญชี...";
@@ -594,25 +607,29 @@
 
             const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[{"username":"admin","password":"1234","role":"admin"}]');
             const accounts = rawAccounts.map(parseAccountRecord);
-            const foundIdx = accounts.findIndex(a => a.username.toLowerCase() === u.toLowerCase() && a.password === p);
+            const foundIdx = accounts.findIndex(a => isUsernameMatchingAccount(u, a.username) && a.password === p);
 
             if (foundIdx !== -1) {
                 const found = accounts[foundIdx];
+                const fullCanonicalName = normalizeUsernameFormat(found.username);
+                found.username = fullCanonicalName;
+                const boundGroup = getUserGroupName(fullCanonicalName);
+
                 const now = Date.now();
                 const newSessionToken = 'sess_' + now + '_' + Math.random().toString(36).substring(2, 8);
                 found.sessionToken = newSessionToken;
 
                 localStorage.setItem('elec_app_logged_in', 'true');
-                localStorage.setItem('elec_app_current_user', found.username);
+                localStorage.setItem('elec_app_current_user', fullCanonicalName);
+                localStorage.setItem('elec_app_current_group', boundGroup);
                 localStorage.setItem('elec_app_current_role', found.role || 'user');
                 localStorage.setItem('elec_app_session_token', newSessionToken);
                 localStorage.setItem('elec_app_last_active', now.toString());
-                lastSavedActivityTime = now;
                 localStorage.setItem('elec_user_accounts', JSON.stringify(accounts));
 
                 try {
                     const payloadUsers = accounts.map(acc => ({
-                        username: acc.username,
+                        username: normalizeUsernameFormat(acc.username),
                         password: acc.password,
                         role: `${acc.role || 'user'}::${acc.sessionToken || ''}`
                     }));
@@ -630,11 +647,11 @@
                 checkTechAuth();
                 initTechGpsTracker();
                 renderJobCards();
-                showToast(`🔓 ยินดีต้อนรับคุณ ${found.username}`);
+                showToast(`🔓 ยินดีต้อนรับคุณ ${fullCanonicalName}`);
             } else {
                 btn.disabled = false;
                 btn.textContent = "เข้าสู่ระบบ";
-                showToast("❌ ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+                showToast("❌ รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง");
             }
         }
 
@@ -652,15 +669,18 @@
                         localStorage.setItem('elec_user_accounts', JSON.stringify(parsedUsers));
 
                         if (localStorage.getItem('elec_app_logged_in') === 'true') {
-                            const curUser = (localStorage.getItem('elec_app_current_user') || '').toLowerCase();
+                            const curUser = localStorage.getItem('elec_app_current_user') || '';
                             const localToken = localStorage.getItem('elec_app_session_token') || '';
-                            const matched = parsedUsers.find(u => u.username.toLowerCase() === curUser);
+                            const matched = parsedUsers.find(u => isUsernameMatchingAccount(curUser, u.username));
                             if (!matched || (matched.sessionToken && matched.sessionToken !== localToken)) {
                                 handleTechLogout();
                                 alert("🔒 บัญชีของคุณมีการเข้าสู่ระบบจากอุปกรณ์เครื่องอื่น หรือมีการเปลี่ยนรหัสผ่าน");
                                 isSyncingNow = false;
                                 return;
                             }
+                            const fullCanonicalName = normalizeUsernameFormat(matched.username);
+                            localStorage.setItem('elec_app_current_user', fullCanonicalName);
+                            localStorage.setItem('elec_app_current_group', getUserGroupName(fullCanonicalName));
                             localStorage.setItem('elec_app_current_role', matched.role || 'user');
                             updateRoleNavigationUI();
                         }
@@ -672,9 +692,9 @@
                                 mergeTechLocationsMap(locRegistry.techLocations);
                             }
                             if (locRegistry.closedReports || locRegistry.closedJobsMap) {
-                                const localClosed = getClosedReportsRegistry();
-                                Object.assign(localClosed, locRegistry.closedJobsMap || {}, locRegistry.closedReports || {});
-                                saveClosedReportsRegistry(localClosed);
+                                const localClosed = JSON.parse(localStorage.getItem('elec_closed_reports_map') || '{}');
+                                Object.assign(localClosed, locRegistry.closedReports || {}, locRegistry.closedJobsMap || {});
+                                localStorage.setItem('elec_closed_reports_map', JSON.stringify(localClosed));
                             }
                         }
                         const realJobs = data.jobs.filter(j => j.jobType !== 'tech_loc');
@@ -1749,7 +1769,7 @@
             await pushAllJobsToCloud();
         }
 
-        function startVoice(inputId) {
+                function startVoice(inputId) {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SR) { showToast("เบราว์เซอร์ไม่รองรับสั่งงานด้วยเสียง"); return; }
             const rec = new SR();
@@ -1760,6 +1780,22 @@
                 el.value = (el.value ? el.value + ' ' : '') + e.results[0][0].transcript;
             };
             rec.start();
+        }
+
+        // ฟังก์ชันอัปเดตเวลา Active อัตโนมัติ (เชื่อมต่อเวลาหมดอายุ 1 ชม. ร่วมกับ index.html)
+        function touchTechActivity() {
+            if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            const now = Date.now();
+            const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
+            if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
+                handleTechLogout();
+                alert("⏳ ระบบได้ออกจากระบบอัตโนมัติ เนื่องจากไม่มีการใช้งานเกิน 1 ชั่วโมง");
+                return;
+            }
+            if (now - lastSavedActivityTime > 10000) {
+                localStorage.setItem('elec_app_last_active', now.toString());
+                lastSavedActivityTime = now;
+            }
         }
 
         // อัปเดตเวลา Active อัตโนมัติเพื่อเชื่อมต่อกับหน้าหลัก (index.html) ไม่ให้หลุดออกจากระบบเมื่อสลับหน้า
