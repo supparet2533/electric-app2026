@@ -5504,7 +5504,7 @@
                         // ==========================================
             // ⚡ ระบบแบ่งกลุ่มผู้ใช้งาน & ซิงค์ความเร็วสูง (Fast Cloud Sync Every 5s)
             // ==========================================
-            let cachedCloudJobs = [];
+                        let cachedCloudJobs = [];
 
             function getUserGroupName(username) {
                 if (!username) return '';
@@ -5521,25 +5521,33 @@
                 return String(username).trim().split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim().toLowerCase();
             }
 
+            function getValidSystemGroupsSet() {
+                const set = new Set();
+                (userAccountsList || []).forEach(a => {
+                    const g = getUserGroupName(a.username);
+                    if (g) set.add(g);
+                });
+                return set;
+            }
+
             function getCurrentUserGroup() {
                 const curUser = localStorage.getItem('elec_app_current_user') || '';
                 const directGroup = getUserGroupName(curUser);
                 if (directGroup) return directGroup;
-                // ค้นหาชื่อกลุ่มจากตารางบัญชีผู้ใช้ล่าสุด (กรณีล็อกอินด้วยรหัสตัวเลขเฉยๆ แต่แอดมินตั้งกลุ่มให้แล้ว)
                 const baseId = getUserBaseId(curUser);
                 const matchedAcc = (userAccountsList || []).find(a => getUserBaseId(a.username) === baseId);
                 return matchedAcc ? getUserGroupName(matchedAcc.username) : '';
             }
 
+            // ดึงชื่อกลุ่มจากบัญชีผู้ใช้งานจริงเท่านั้น (ไม่ดึงจากช่อง workerName)
             function getJobGroupName(job) {
                 if (!job) return '';
-                if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
-                    return String(job.ownerGroup).trim();
-                }
-                const candidates = [job.ownerUser, job.workerName, job.techReport?.inspector].filter(Boolean);
-                for (const c of candidates) {
+                const validGroups = getValidSystemGroupsSet();
+
+                const userCandidates = [job.ownerUser, job.techNav?.techName, job.techReport?.inspector].filter(Boolean);
+                for (const c of userCandidates) {
                     const g = getUserGroupName(c);
-                    if (g) return g;
+                    if (g && (validGroups.size === 0 || validGroups.has(g) || /^กฟ/.test(g))) return g;
                     const cBase = getUserBaseId(c);
                     if (cBase) {
                         const acc = (userAccountsList || []).find(a => getUserBaseId(a.username) === cBase);
@@ -5549,15 +5557,21 @@
                         }
                     }
                 }
+
+                if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
+                    const og = String(job.ownerGroup).trim();
+                    if (validGroups.has(og) || /^กฟ/.test(og)) {
+                        return og;
+                    }
+                }
                 return '';
             }
 
             function canCurrentUserSeeJob(job) {
                 const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
-                if (currentRole === 'admin') return true; // Admin เห็นทั้งหมดทุกกลุ่ม
+                if (currentRole === 'admin') return true;
                 const myGroup = getCurrentUserGroup();
                 const jobGroup = getJobGroupName(job);
-                // หากใบงานไม่ได้ระบุกลุ่ม (เช่น งานส่วนกลางที่ Admin สร้าง หรืองานเก่าก่อนตั้งกลุ่ม) ให้แสดงให้เห็นด้วย
                 if (!jobGroup || !myGroup) return true;
                 return myGroup === jobGroup;
             }
@@ -5566,13 +5580,18 @@
                 const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
                 const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
                 const myGroup = getCurrentUserGroup();
-                if (!curUser || currentRole === 'admin' || !myGroup) return;
+                const validGroups = getValidSystemGroupsSet();
 
                 ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
                     let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, storageKey) || '[]');
                     let updated = false;
                     list.forEach(item => {
-                        if (!item.ownerGroup) {
+                        // ล้างค่า ownerGroup ที่เคยติดมาจากช่อง workerName ออกอัตโนมัติ
+                        if (item.ownerGroup && !validGroups.has(item.ownerGroup) && !/^กฟ/.test(item.ownerGroup)) {
+                            delete item.ownerGroup;
+                            updated = true;
+                        }
+                        if (!item.ownerGroup && curUser && currentRole !== 'admin' && myGroup) {
                             item.ownerUser = item.ownerUser || curUser;
                             item.ownerGroup = myGroup;
                             updated = true;
@@ -5601,7 +5620,7 @@
                 return raw;
             };
 
-                        function runWithGroupViewFilter(fn, context, args) {
+            function runWithGroupViewFilter(fn, context, args) {
                 tagUntaggedLocalJobsWithCurrentGroup();
                 isFilteringStorageForView = true;
                 try {
@@ -5611,14 +5630,12 @@
                 }
             }
 
-            // คำนวณและจับคู่ช่างที่อยู่ใกล้จุดเกิดเหตุที่สุดในหน้าหลัก (index.html)
             function findNearestTechForMainPage(item) {
                 const jobGroup = getJobGroupName(item);
                 const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
                 const rawText = `${item.gps || ''} ${item.address || ''} ${item.area || ''} ${item.weather || ''}`;
                 let coords = (typeof extractCoordsFromInput === 'function') ? extractCoordsFromInput(rawText) : null;
 
-                // หากไม่มีลิงก์พิกัด GPS ให้ใช้พิกัดตำบลที่ตั้งค่าไว้ในระบบมาช่วยคำนวณระยะทาง
                 if (!coords && typeof targetTambonCoordinates === 'object') {
                     for (const [tbName, tbCoord] of Object.entries(targetTambonCoordinates)) {
                         const cleanTb = tbName.replace('ตำบล', '').trim();
@@ -5681,7 +5698,6 @@
                 return null;
             }
 
-            // สร้าง HTML แสดงเวลานับถอยหลัง & แถบความคืบหน้าการเดินทางแบบเรียลไทม์ทุก 1 วินาทีในหน้าหลัก
             function buildMainRealtimeNavHtml(nav) {
                 if (!nav) return '';
                 const nowMs = Date.now();
@@ -5831,6 +5847,7 @@
                 return job && job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น');
             }
             
+            // ส่งข้อมูลจากหน้าหลักขึ้น Cloud โดยห้ามเขียนทับสถานะ techNav / techReport ที่ช่างเพิ่งส่งขึ้นมา
             async function syncJobsWithFieldPage(cloudJobsSnapshot = null) {
                 if (localStorage.getItem('elec_app_logged_in') !== 'true' || localStorage.getItem('elec_app_current_role') === 'tech') return;
                 const apiUrl = getActiveCloudApiUrl();
@@ -5842,6 +5859,13 @@
 
                     const baseCloudJobs = Array.isArray(cloudJobsSnapshot) ? cloudJobsSnapshot : cachedCloudJobs;
                     const techLocEntry = (baseCloudJobs || []).find(j => j.jobType === 'tech_loc');
+
+                    const cloudLookupMap = new Map();
+                    (baseCloudJobs || []).forEach(cj => {
+                        if (cj.jobType === 'tech_loc') return;
+                        const k = (cj.jobType === 'fault' ? 'F_' + cj.timestamp : 'O_' + cj.dateTimeSaved);
+                        cloudLookupMap.set(k, cj);
+                    });
 
                     const otherGroupsCloudJobs = (baseCloudJobs || []).filter(cJob => {
                         if (cJob.jobType === 'tech_loc') return false;
@@ -5855,13 +5879,46 @@
                         return jGroup !== '' && jGroup !== myGroup;
                     });
 
+                    const preserveCloudTechState = (localItem, type) => {
+                        const k = (type === 'fault' ? 'F_' + localItem.timestamp : 'O_' + localItem.dateTimeSaved);
+                        const cJob = cloudLookupMap.get(k);
+                        let mergedNav = localItem.techNav;
+                        let mergedCancel = localItem.navCancelledAt;
+
+                        if (cJob) {
+                            const cCancel = cJob.navCancelledAt || '';
+                            const lCancel = localItem.navCancelledAt || '';
+                            mergedCancel = cCancel >= lCancel ? cCancel : lCancel;
+
+                            const cNavTime = cJob.techNav?.updatedAt || '';
+                            const lNavTime = localItem.techNav?.updatedAt || '';
+                            if (cNavTime >= lNavTime && cJob.techNav) {
+                                mergedNav = cJob.techNav;
+                            }
+                            if (mergedCancel && (!mergedNav?.updatedAt || mergedCancel >= mergedNav.updatedAt)) {
+                                mergedNav = undefined;
+                            }
+                        }
+
+                        const result = {
+                            ...localItem,
+                            jobType: type,
+                            ownerGroup: getJobGroupName(localItem) || myGroup,
+                            recommendedTech: findNearestTechForMainPage(localItem) || localItem.recommendedTech,
+                            navCancelledAt: mergedCancel || undefined
+                        };
+                        if (mergedNav) result.techNav = mergedNav;
+                        else delete result.techNav;
+                        return result;
+                    };
+
                     const myActiveOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]')
                         .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
-                        .map(i => ({ ...i, jobType: 'outage', ownerGroup: getJobGroupName(i) || myGroup, recommendedTech: findNearestTechForMainPage(i) || i.recommendedTech }));
+                        .map(i => preserveCloudTechState(i, 'outage'));
                     
                     const myActiveFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]')
                         .filter(i => canCurrentUserSeeJob(i) && !isJobFinishedAndRestored(i))
-                        .map(i => ({ ...i, jobType: 'fault', ownerGroup: getJobGroupName(i) || myGroup, recommendedTech: findNearestTechForMainPage(i) || i.recommendedTech }));
+                        .map(i => preserveCloudTechState(i, 'fault'));
 
                     const combinedMap = new Map();
                     otherGroupsCloudJobs.forEach(j => {
@@ -5937,7 +5994,7 @@
                                 cloudOutageKeys.add(cJob.dateTimeSaved);
                                 const idx = outages.findIndex(o => o.dateTimeSaved === cJob.dateTimeSaved);
                                 if (idx !== -1) {
-                                    if (jobGroup && !outages[idx].ownerGroup) {
+                                    if (jobGroup && outages[idx].ownerGroup !== jobGroup) {
                                         outages[idx].ownerGroup = jobGroup;
                                         changed = true;
                                     }
@@ -5976,7 +6033,7 @@
                                 cloudFaultKeys.add(cJob.timestamp);
                                 const idx = faults.findIndex(f => f.timestamp === cJob.timestamp);
                                 if (idx !== -1) {
-                                    if (jobGroup && !faults[idx].ownerGroup) {
+                                    if (jobGroup && faults[idx].ownerGroup !== jobGroup) {
                                         faults[idx].ownerGroup = jobGroup;
                                         changed = true;
                                     }
@@ -6017,7 +6074,7 @@
                             loadOutageHistory();
                             loadFaultHistory();
                             autoFillJobNo();
-                            if (!navUpdated) showToast("⚡ ซิงค์ใบงานใหม่เข้าเครื่องแล้ว!");
+                            showToast(navUpdated ? "🚗 อัปเดตสถานะการเดินทางของช่างแล้ว!" : "⚡ ซิงค์ใบงานใหม่เข้าเครื่องแล้ว!");
                         } else {
                             renderNavEtaBadgesInMainHistory();
                         }
@@ -6025,7 +6082,7 @@
                         const hasUnsyncedLocalOutage = outages.some(o => canCurrentUserSeeJob(o) && !isJobFinishedAndRestored(o) && !cloudOutageKeys.has(o.dateTimeSaved));
                         const hasUnsyncedLocalFault = faults.some(f => canCurrentUserSeeJob(f) && !isJobFinishedAndRestored(f) && !cloudFaultKeys.has(f.timestamp));
                         
-                        if (changed || hasCompletedGroupJobInCloud || hasUnsyncedLocalOutage || hasUnsyncedLocalFault) {
+                        if (hasCompletedGroupJobInCloud || hasUnsyncedLocalOutage || hasUnsyncedLocalFault) {
                             await syncJobsWithFieldPage(data.jobs);
                         }
                     }
@@ -6043,7 +6100,8 @@
                 const target = idx !== -1 ? list[idx] : list[0];
                 if (target) {
                     target.ownerUser = curUser;
-                    target.ownerGroup = curGroup || getUserGroupName(target.workerName);
+                    if (curGroup) target.ownerGroup = curGroup;
+                    else delete target.ownerGroup;
                     target.recommendedTech = findNearestTechForMainPage(target);
                     localStorage.setItem('elecReportsComplete_all', JSON.stringify(list));
                 }
@@ -6059,7 +6117,8 @@
                 let list = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
                 if (list.length > 0) {
                     list[0].ownerUser = curUser;
-                    list[0].ownerGroup = curGroup;
+                    if (curGroup) list[0].ownerGroup = curGroup;
+                    else delete list[0].ownerGroup;
                     list[0].recommendedTech = findNearestTechForMainPage(list[0]);
                     localStorage.setItem('fault_reports_all', JSON.stringify(list));
                 }
