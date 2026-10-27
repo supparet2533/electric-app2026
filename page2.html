@@ -228,8 +228,9 @@
             </div>
         </div>
 
-        <!-- แถบตัวกรองประเภทงานและสถานะ -->
+        <!-- แถบตัวกรองประเภทงาน สถานะ กะ และการเรียงลำดับ -->
         <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-2.5">
+            <!-- แถวที่ 1: ประเภทงาน & สถานะ -->
             <div class="grid grid-cols-2 gap-2">
                 <select id="filterJobType" onchange="renderJobCards()" class="px-3 py-2 text-xs font-bold text-slate-700 bg-white">
                     <option value="outage">📞 งานรับแจ้งไฟขัดข้อง (แท็บ 2)</option>
@@ -242,7 +243,42 @@
                     <option value="all">📋 แสดงรวมทั้งหมด</option>
                 </select>
             </div>
-            <input type="text" id="searchJobKeyword" oninput="renderJobCards()" placeholder="🔍 ค้นหาเลขงาน, บริเวณ, อาการ, ชื่อช่าง..." class="w-full px-3.5 py-2 text-xs bg-white">
+
+            <!-- แถวที่ 2: แยกกะแสดงผล & เรียงลำดับใบงาน -->
+            <div class="grid grid-cols-2 gap-2">
+                <select id="filterJobShift" onchange="selectShiftFilter(this.value)" class="px-3 py-2 text-xs font-bold text-teal-800 bg-white border-teal-200">
+                    <option value="all" selected>🕒 แยกกะ: แสดงทุกกะ</option>
+                    <option value="1">🌅 เฉพาะ กะ 1 (00.30-08.30)</option>
+                    <option value="2">☀️ เฉพาะ กะ 2 (08.30-16.30)</option>
+                    <option value="3">🌙 เฉพาะ กะ 3 (16.30-00.30)</option>
+                </select>
+                <select id="sortJobOrder" onchange="renderJobCards()" class="px-3 py-2 text-xs font-bold text-indigo-800 bg-white border-indigo-200">
+                    <option value="shift_job_asc" selected>🗂️ แยกกะ + งานที่ 1 ➔ ล่าสุด</option>
+                    <option value="shift_job_desc">🗂️ แยกกะ + งานล่าสุด ➔ 1</option>
+                    <option value="time_desc">⏱️ เวลาล่าสุด ➔ เก่าสุด</option>
+                    <option value="time_asc">⏱️ เวลาเก่าสุด ➔ ล่าสุด</option>
+                    <option value="job_asc">🔢 เลขงาน น้อย ➔ มาก (รวม)</option>
+                    <option value="job_desc">🔢 เลขงาน มาก ➔ น้อย (รวม)</option>
+                </select>
+            </div>
+
+            <!-- แถวที่ 3: ปุ่มด่วนกดแยกกะพร้อมแสดงจำนวนงานในแต่ละกะ -->
+            <div class="grid grid-cols-4 gap-1.5 pt-0.5" id="shiftQuickPills">
+                <button type="button" id="shiftPill-all" onclick="selectShiftFilter('all')" class="py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-teal-600 text-white border-teal-600 shadow-sm">
+                    ทุกกะ (<span id="countShiftAll">0</span>)
+                </button>
+                <button type="button" id="shiftPill-1" onclick="selectShiftFilter('1')" class="py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-white text-slate-600 border-slate-200 hover:bg-slate-100">
+                    🌅 กะ 1 (<span id="countShift1">0</span>)
+                </button>
+                <button type="button" id="shiftPill-2" onclick="selectShiftFilter('2')" class="py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-white text-slate-600 border-slate-200 hover:bg-slate-100">
+                    ☀️ กะ 2 (<span id="countShift2">0</span>)
+                </button>
+                <button type="button" id="shiftPill-3" onclick="selectShiftFilter('3')" class="py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-white text-slate-600 border-slate-200 hover:bg-slate-100">
+                    🌙 กะ 3 (<span id="countShift3">0</span>)
+                </button>
+            </div>
+
+            <input type="text" id="searchJobKeyword" oninput="renderJobCards()" placeholder="🔍 ค้นหาเลขงาน, กะ, วันที่, บริเวณ, อาการ, ชื่อช่าง..." class="w-full px-3.5 py-2 text-xs bg-white">
         </div>
 
         <!-- ป้ายบอกฝั่งที่กำลังเปิดดูอยู่ และชื่อผู้ใช้งานปัจจุบัน -->
@@ -393,7 +429,7 @@
         // ==========================================
         // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน (ตรวจสอบเฉพาะจากบัญชีผู้ใช้ ไม่ดึงจาก workerName)
         // ==========================================
-                function getUserGroupName(username) {
+        function getUserGroupName(username) {
             if (!username) return '';
             const s = String(username).trim();
             const parts = s.split(/\s+/);
@@ -537,6 +573,24 @@
                 const groupTag = (currentRole !== 'admin' && myGroup) ? ` [🏢 ${myGroup}]` : '';
                 userBadge.textContent = currentUser ? `${roleName}: ${baseDisplay}${groupTag}` : '';
             }
+        }
+
+        // ฟังก์ชันเลือกกรองเฉพาะกะ (กะ 1, กะ 2, กะ 3 หรือ ทุกกะ)
+        function selectShiftFilter(shiftVal) {
+            const shiftSelect = document.getElementById('filterJobShift');
+            if (shiftSelect) shiftSelect.value = shiftVal;
+
+            ['all', '1', '2', '3'].forEach(s => {
+                const pill = document.getElementById('shiftPill-' + s);
+                if (!pill) return;
+                if (s === shiftVal) {
+                    pill.className = 'py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-teal-600 text-white border-teal-600 shadow-sm';
+                } else {
+                    pill.className = 'py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-white text-slate-600 border-slate-200 hover:bg-slate-100';
+                }
+            });
+
+            renderJobCards();
         }
 
         function switchStatusTab(tabValue) {
@@ -1491,9 +1545,86 @@
             }
         }
 
+        // ==========================================
+        // 🕒 ฟังก์ชันช่วยดึงกะ วันที่ และเรียงลำดับใบงาน
+        // ==========================================
+        function getEffectiveJobShift(item, jobType) {
+            if (item && item.shift !== undefined && item.shift !== null && String(item.shift).trim() !== '' && String(item.shift).trim() !== '-') {
+                return String(item.shift).trim();
+            }
+            // กรณีงาน TR/TL (แท็บ 1) ที่ไม่ได้ระบุเลขกะ ให้คำนวณกะจากเวลาที่เกิดเหตุอัตโนมัติ
+            const timeStr = String(item?.time || '');
+            const m = timeStr.match(/(\d{1,2})[\.:](\d{1,2})/);
+            if (m) {
+                const totalMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+                if (totalMin >= 30 && totalMin < 510) return '1';
+                if (totalMin >= 510 && totalMin < 990) return '2';
+                return '3';
+            }
+            return 'ไม่ระบุ';
+        }
+
+        function getJobDateDisplay(item, jobType) {
+            if (item?.reportDate && item.reportDate !== '-') return String(item.reportDate).trim();
+            if (item?.dateTimeSaved) return String(item.dateTimeSaved).split(' ')[0].trim();
+            if (item?.timestamp) {
+                const d = new Date(item.timestamp);
+                if (!isNaN(d.getTime())) {
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const yyyy = d.getFullYear() + 543;
+                    return `${dd}/${mm}/${yyyy}`;
+                }
+            }
+            return 'ไม่ระบุวันที่';
+        }
+
+        function getJobDateNumericValue(item, jobType) {
+            const dateStr = getJobDateDisplay(item, jobType);
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+                const d = parseInt(parts[0], 10) || 0;
+                const m = parseInt(parts[1], 10) || 0;
+                let y = parseInt(parts[2], 10) || 0;
+                if (y < 2400) y += 543;
+                return y * 10000 + m * 100 + d;
+            }
+            return 0;
+        }
+
+        function getJobSortTimeMs(item, jobType) {
+            // หากมีเวลาอัปเดตผลหน้างานจริง (ที่ไม่ใช่ค่าเริ่มต้น 1970) ให้ใช้เวลานั้นก่อน
+            if (item?.techReport?.updatedAt) {
+                const t = new Date(item.techReport.updatedAt).getTime();
+                if (t > 10000000) return t;
+            }
+            if (item?.timestamp) {
+                const t = new Date(item.timestamp).getTime();
+                if (!isNaN(t)) return t;
+            }
+            if (item?.dateTimeSaved) {
+                const parts = String(item.dateTimeSaved).trim().split(/\s+/);
+                const dParts = (parts[0] || '').split('/');
+                if (dParts.length === 3) {
+                    const day = parseInt(dParts[0], 10) || 1;
+                    const month = (parseInt(dParts[1], 10) || 1) - 1;
+                    let year = parseInt(dParts[2], 10) || 2569;
+                    if (year > 2400) year -= 543;
+                    const tParts = (parts[1] || '00:00:00').split(/[:\.]/);
+                    const hr = parseInt(tParts[0], 10) || 0;
+                    const min = parseInt(tParts[1], 10) || 0;
+                    const sec = parseInt(tParts[2], 10) || 0;
+                    return new Date(year, month, day, hr, min, sec).getTime();
+                }
+            }
+            return 0;
+        }
+
         function renderJobCards() {
             const jobType = document.getElementById('filterJobType').value;
             const statusFilter = document.getElementById('filterJobStatus').value;
+            const shiftFilter = document.getElementById('filterJobShift')?.value || 'all';
+            const sortOrder = document.getElementById('sortJobOrder')?.value || 'shift_job_asc';
             const keyword = document.getElementById('searchJobKeyword').value.toLowerCase().trim();
             const container = document.getElementById('jobCardsContainer');
 
@@ -1521,7 +1652,8 @@
             if (travEl) travEl.textContent = travelingCount;
             document.getElementById('countDoneJobs').textContent = doneCount;
 
-            const filtered = rawList.filter(item => {
+            // 1. กรองตามสถานะ (รอแก้ไข / กำลังเดินทาง / เสร็จสิ้น / ทั้งหมด) และคำค้นหา
+            const statusAndKeywordFiltered = rawList.filter(item => {
                 const isDone = item.techReport && item.techReport.status.includes('เสร็จสิ้น');
                 const isTraveling = !isDone && Boolean(item.techNav);
                 const isPending = !isDone && !item.techNav;
@@ -1535,6 +1667,71 @@
                     return textBlob.includes(keyword);
                 }
                 return true;
+            });
+
+            // นับจำนวนงานแยกตามกะ (กะ 1, กะ 2, กะ 3) สำหรับหมวดที่เปิดดูอยู่
+            let countS1 = 0, countS2 = 0, countS3 = 0;
+            statusAndKeywordFiltered.forEach(item => {
+                const sh = getEffectiveJobShift(item, jobType);
+                if (sh === '1') countS1++;
+                else if (sh === '2') countS2++;
+                else if (sh === '3') countS3++;
+            });
+
+            const elSAll = document.getElementById('countShiftAll');
+            const elS1 = document.getElementById('countShift1');
+            const elS2 = document.getElementById('countShift2');
+            const elS3 = document.getElementById('countShift3');
+            if (elSAll) elSAll.textContent = statusAndKeywordFiltered.length;
+            if (elS1) elS1.textContent = countS1;
+            if (elS2) elS2.textContent = countS2;
+            if (elS3) elS3.textContent = countS3;
+
+            // 2. กรองตามกะที่เลือก (ทุกกะ หรือ เฉพาะ กะ 1 / 2 / 3)
+            const filtered = statusAndKeywordFiltered.filter(item => {
+                if (shiftFilter === 'all') return true;
+                return getEffectiveJobShift(item, jobType) === shiftFilter;
+            });
+
+            // 3. เรียงลำดับตามตัวเลือกของผู้ใช้
+            filtered.sort((a, b) => {
+                const jobNoA = parseInt(a.jobNo, 10) || 0;
+                const jobNoB = parseInt(b.jobNo, 10) || 0;
+                const shiftA = parseInt(getEffectiveJobShift(a, jobType), 10) || 99;
+                const shiftB = parseInt(getEffectiveJobShift(b, jobType), 10) || 99;
+                const dateNumA = getJobDateNumericValue(a, jobType);
+                const dateNumB = getJobDateNumericValue(b, jobType);
+                const timeA = getJobSortTimeMs(a, jobType);
+                const timeB = getJobSortTimeMs(b, jobType);
+
+                if (sortOrder === 'shift_job_asc') {
+                    // วันที่ล่าสุดขึ้นก่อน -> เรียงกะ 1, 2, 3 -> เรียงเลขงาน น้อยไปมาก (1, 2, 3...)
+                    if (dateNumA !== dateNumB) return dateNumB - dateNumA;
+                    if (shiftA !== shiftB) return shiftA - shiftB;
+                    if (jobNoA !== jobNoB) return jobNoA - jobNoB;
+                    return timeA - timeB;
+                } else if (sortOrder === 'shift_job_desc') {
+                    // วันที่ล่าสุดขึ้นก่อน -> เรียงกะ 3, 2, 1 -> เรียงเลขงาน มากไปน้อย
+                    if (dateNumA !== dateNumB) return dateNumB - dateNumA;
+                    if (shiftA !== shiftB) return shiftB - shiftA;
+                    if (jobNoA !== jobNoB) return jobNoB - jobNoA;
+                    return timeB - timeA;
+                } else if (sortOrder === 'job_asc') {
+                    if (jobNoA !== jobNoB) return jobNoA - jobNoB;
+                    return dateNumB - dateNumA;
+                } else if (sortOrder === 'job_desc') {
+                    if (jobNoA !== jobNoB) return jobNoB - jobNoA;
+                    return dateNumB - dateNumA;
+                } else if (sortOrder === 'time_asc') {
+                    if (dateNumA !== dateNumB) return dateNumA - dateNumB;
+                    if (timeA !== timeB) return timeA - timeB;
+                    return jobNoA - jobNoB;
+                } else {
+                    // time_desc (เวลาล่าสุด -> เก่าสุด)
+                    if (dateNumA !== dateNumB) return dateNumB - dateNumA;
+                    if (timeA !== timeB) return timeB - timeA;
+                    return jobNoB - jobNoA;
+                }
             });
 
             container.innerHTML = '';
@@ -1554,7 +1751,9 @@
 
             if (filtered.length === 0) {
                 let emptyMsg = 'ไม่พบรายการใบงานในหมวดนี้';
-                if (statusFilter === 'pending') {
+                if (shiftFilter !== 'all') {
+                    emptyMsg = `ไม่มีรายการใบงานใน "กะ ${shiftFilter}" สำหรับหมวดนี้ (กดปุ่ม "ทุกกะ" ด้านบนเพื่อดูทั้งหมด)`;
+                } else if (statusFilter === 'pending') {
                     emptyMsg = travelingCount > 0
                         ? `🎉 งานทั้งหมดกำลังอยู่ในระหว่างเดินทางแล้ว (${travelingCount} งาน) กดปุ่มสีฟ้าด้านบนเพื่อดูเวลานับถอยหลังได้เลยครับ`
                         : '🎉 ไม่มีงานค้างในฝั่งรอแก้ไข';
@@ -1570,7 +1769,41 @@
                 return;
             }
 
+            // นับจำนวนงานในแต่ละกลุ่ม (วันที่ + กะ) เพื่อแสดงบนแถบคั่นหัวข้อ
+            const shiftGroupCounts = {};
             filtered.forEach(item => {
+                const dStr = getJobDateDisplay(item, jobType);
+                const shStr = getEffectiveJobShift(item, jobType);
+                const gKey = `${dStr}__${shStr}`;
+                shiftGroupCounts[gKey] = (shiftGroupCounts[gKey] || 0) + 1;
+            });
+
+            const showGroupHeaders = sortOrder.startsWith('shift_') || statusFilter === 'done' || shiftFilter !== 'all';
+            let lastRenderedGroupKey = null;
+
+            filtered.forEach(item => {
+                const dStr = getJobDateDisplay(item, jobType);
+                const shStr = getEffectiveJobShift(item, jobType);
+                const gKey = `${dStr}__${shStr}`;
+
+                // แสดงแถบคั่นแยกตามกะและวันที่
+                if (showGroupHeaders && gKey !== lastRenderedGroupKey) {
+                    lastRenderedGroupKey = gKey;
+                    const shiftTimeDesc = shStr === '1' ? '00.30 - 08.30 น.' : (shStr === '2' ? '08.30 - 16.30 น.' : (shStr === '3' ? '16.30 - 00.30 น.' : ''));
+                    const shiftEmoji = shStr === '1' ? '🌅' : (shStr === '2' ? '☀️' : (shStr === '3' ? '🌙' : '🕒'));
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = 'sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-slate-800 to-teal-900 text-white px-3.5 py-2 rounded-xl shadow-sm text-xs font-bold mt-2';
+                    headerDiv.innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <span>📅 ${dStr}</span>
+                            <span class="text-teal-300">•</span>
+                            <span class="text-amber-300">${shiftEmoji} กะ ${shStr} ${shiftTimeDesc ? `<span class="text-[10px] font-normal text-slate-300">(${shiftTimeDesc})</span>` : ''}</span>
+                        </div>
+                        <span class="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full">${shiftGroupCounts[gKey]} งาน</span>
+                    `;
+                    container.appendChild(headerDiv);
+                }
+
                 const key = jobType === 'outage' ? item.dateTimeSaved : item.timestamp;
                 const tr = item.techReport;
                 const nav = item.techNav;
@@ -1587,9 +1820,11 @@
                     ? `<span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md mr-1">🏢 ${jobGroup}</span>`
                     : '';
 
+                const shiftBadgeHtml = `<span class="inline-block bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold px-2 py-0.5 rounded-md mr-1">🕒 กะ ${shStr}</span>`;
+
                 const titleHtml = jobType === 'outage'
-                    ? `${groupBadgeHtml}งานที่ ${item.jobNo || '-'} (กะ ${item.shift || '-'}) • ${item.issueType || '-'}`
-                    : `${groupBadgeHtml}⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+                    ? `${groupBadgeHtml}${shiftBadgeHtml}งานที่ ${item.jobNo || '-'} • ${item.issueType || '-'}`
+                    : `${groupBadgeHtml}${shiftBadgeHtml}⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
 
                 const subHtml = jobType === 'outage'
                     ? `📍 บริเวณ: ${item.area || '-'} | 🏠 ที่อยู่: ${item.address || '-'}`
@@ -1605,7 +1840,7 @@
                 card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 border-l-4 ${isDone ? 'border-l-emerald-500' : (nav ? 'border-l-blue-500' : 'border-l-amber-500')}`;
                 card.innerHTML = `
                     <div class="flex justify-between items-start gap-2">
-                        <div class="font-bold text-slate-800 text-xs sm:text-sm">${titleHtml}</div>
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm leading-snug">${titleHtml}</div>
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${badgeClass}">${badgeLabel}</span>
                     </div>
                     <div class="text-xs text-slate-600">${subHtml}</div>
@@ -1619,7 +1854,7 @@
                         <div class="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-950 space-y-0.5">
                             <div><strong>🔍 สาเหตุจริง:</strong> ${tr.realCause || '-'}</div>
                             <div><strong>🛠️ การแก้ไข:</strong> ${tr.actionTaken || '-'}</div>
-                            <div class="text-[10px] text-emerald-700 pt-0.5">⏰ เสร็จเวลา: ${tr.finishTime || '-'} | 👷 ช่าง: ${tr.inspector || '-'}</div>
+                            <div class="text-[10px] text-emerald-700 pt-0.5">📅 ${dStr} | ⏰ เสร็จเวลา: ${tr.finishTime || '-'} | 👷 ช่าง: ${tr.inspector || '-'}</div>
                         </div>
                     ` : ''}
                     <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
@@ -1769,7 +2004,7 @@
             await pushAllJobsToCloud();
         }
 
-                function startVoice(inputId) {
+        function startVoice(inputId) {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SR) { showToast("เบราว์เซอร์ไม่รองรับสั่งงานด้วยเสียง"); return; }
             const rec = new SR();
