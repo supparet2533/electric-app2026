@@ -3,14 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ระบบช่างตรวจสอบหน้างาน - PEA MWM</title>
+    <title>ระบบช่างตรวจสอบหน้างาน</title>
+
+    <!-- ตั้งค่าข้อความตัวอย่างลิงก์เวลาแชร์ลงใน LINE -->
+    <meta property="og:title" content="ระบบช่างตรวจสอบหน้างาน">
+    <meta property="og:description" content="ระบบรับ-ส่งข้อมูลใบงานและรายงานผลตรวจสอบหน้างานไฟฟ้าขัดข้อง">
 
     <!-- ตั้งค่า Web App และชื่อทางลัดบนหน้าจอโฮมมือถือ -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ช่างไฟฟ้า PEA">
-    <meta name="application-name" content="ช่างไฟฟ้า PEA">
+    <meta name="apple-mobile-web-app-title" content="ช่างไฟฟ้า">
+    <meta name="application-name" content="ช่างไฟฟ้า">
     <meta name="theme-color" content="#0f766e">
 
     <!-- โลโก้อิโมจิผสม 🛠️ + ⚡ สำหรับทางลัดหน้าจอโฮม -->
@@ -82,8 +86,8 @@
                 if (touchPng) touchPng.href = pngUrl;
 
                 const manifest = {
-                    name: "ระบบช่างตรวจสอบหน้างาน - PEA",
-                    short_name: "ช่างไฟฟ้า PEA",
+                    name: "ระบบช่างตรวจสอบหน้างาน",
+                    short_name: "ช่างไฟฟ้า",
                     start_url: window.location.href,
                     display: "standalone",
                     background_color: "#0f766e",
@@ -295,10 +299,14 @@
                     </h1>
                     <p id="cloudStatusText" class="text-[11px] text-emerald-100 mt-0.5">🟢 พร้อมรับ-ส่งข้อมูลใบงาน</p>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0 ml-auto">
+                <div class="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
                     <!-- ปุ่มกลับหน้าหลักรับแจ้ง (ซ่อนอัตโนมัติสำหรับสิทธิ์ "ผู้ใช้งานช่าง") -->
                     <button type="button" id="backToMainBtn" onclick="goBackToMainPage()" class="hidden bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition items-center gap-1 shadow-sm">
                         ⬅️ <span>หน้าหลัก</span>
+                    </button>
+                    <!-- ปุ่มเปิด/ปิดพิกัด GPS -->
+                    <button type="button" id="gpsToggleBtn" onclick="toggleGpsTracking()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="เปิด/ปิดการแชร์พิกัด GPS">
+                        📍 GPS: เปิด
                     </button>
                     <!-- ปุ่มเปิด/ปิดเสียงเตือนงานใหม่ -->
                     <button type="button" id="soundAlertToggleBtn" onclick="toggleSoundAlert()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="เปิด/ปิดเสียงแจ้งเตือนเมื่อมีใบงานใหม่">
@@ -1057,8 +1065,10 @@
         }
 
         // ==========================================
-        // 🛰️ ระบบนำทางเรียลไทม์ & ดึงพิกัดหน้างาน
+        // 🛰️ ระบบนำทางเรียลไทม์ & ปุ่มเปิด/ปิดพิกัด GPS
         // ==========================================
+        let isGpsTrackingEnabled = localStorage.getItem('elec_tech_gps_enabled') !== 'false';
+        let techGpsIntervalId = null;
         let lastKnownTechCoords = null;
         let activeNavWatchId = null;
         let activeNavJobKey = null;
@@ -1073,6 +1083,54 @@
             "หนองขาม": { lat: 13.1189, lon: 100.9856 },
             "สุรศักดิ์": { lat: 13.1592, lon: 100.9581 }
         };
+
+        function updateGpsToggleButtonUI() {
+            const btn = document.getElementById('gpsToggleBtn');
+            if (!btn) return;
+            if (isGpsTrackingEnabled) {
+                btn.textContent = '📍 GPS: เปิด';
+                btn.className = 'bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm';
+            } else {
+                btn.textContent = '🚫 GPS: ปิด';
+                btn.className = 'bg-slate-800/50 hover:bg-slate-800/70 text-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm';
+            }
+        }
+
+        async function toggleGpsTracking() {
+            isGpsTrackingEnabled = !isGpsTrackingEnabled;
+            localStorage.setItem('elec_tech_gps_enabled', isGpsTrackingEnabled ? 'true' : 'false');
+            updateGpsToggleButtonUI();
+
+            if (isGpsTrackingEnabled) {
+                showToast("📍 เปิดการแชร์พิกัด GPS แล้ว กำลังค้นหาตำแหน่ง...");
+                initTechGpsTracker(true);
+            } else {
+                stopRealtimeGpsWatch();
+                if (techGpsIntervalId) {
+                    clearInterval(techGpsIntervalId);
+                    techGpsIntervalId = null;
+                }
+                lastKnownTechCoords = null;
+
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                if (curUser) {
+                    const locMap = getTechLocationsMap();
+                    locMap[curUser] = {
+                        username: curUser,
+                        role: localStorage.getItem('elec_app_current_role') || 'tech',
+                        group: getCurrentUserGroup(),
+                        lat: null,
+                        lon: null,
+                        gpsDisabled: true,
+                        updatedAt: new Date().toISOString()
+                    };
+                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                }
+                renderJobCards();
+                showToast("🚫 ปิดการแชร์พิกัด GPS เรียบร้อยแล้ว");
+                await pushAllJobsToCloud(true);
+            }
+        }
 
         async function requestScreenWakeLock() {
             try {
@@ -1094,7 +1152,10 @@
         function mergeTechLocationsMap(cloudLocs) {
             if (!cloudLocs || typeof cloudLocs !== 'object') return;
             const localMap = getTechLocationsMap();
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim().toLowerCase();
+
             Object.keys(cloudLocs).forEach(uKey => {
+                if (!isGpsTrackingEnabled && curUser && uKey.toLowerCase() === curUser) return;
                 const cItem = cloudLocs[uKey];
                 const lItem = localMap[uKey];
                 if (!lItem || (cItem.updatedAt && cItem.updatedAt >= (lItem.updatedAt || ''))) {
@@ -1105,7 +1166,7 @@
         }
 
         function recordCurrentTechGpsLocation(lat, lon) {
-            if (!lat || !lon) return;
+            if (!isGpsTrackingEnabled || !lat || !lon) return;
             lastKnownTechCoords = { lat: parseFloat(lat), lon: parseFloat(lon) };
             const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
             const curRole = localStorage.getItem('elec_app_current_role') || 'user';
@@ -1118,24 +1179,34 @@
                 group: getCurrentUserGroup(),
                 lat: parseFloat(lat),
                 lon: parseFloat(lon),
+                gpsDisabled: false,
                 updatedAt: new Date().toISOString()
             };
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
         }
 
-        function initTechGpsTracker() {
-            if (!navigator.geolocation) return;
+        function initTechGpsTracker(showFeedback = false) {
+            updateGpsToggleButtonUI();
+            if (!isGpsTrackingEnabled) return;
+            if (!navigator.geolocation) {
+                if (showFeedback) showToast("⚠️ เบราว์เซอร์ของคุณไม่รองรับ GPS");
+                return;
+            }
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
                     recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
                     renderJobCards();
                     pushAllJobsToCloud(true);
+                    if (showFeedback) showToast("🟢 จับพิกัด GPS ปัจจุบันสำเร็จ!");
                 },
-                () => {},
+                () => {
+                    if (showFeedback) showToast("⚠️ ไม่สามารถดึงพิกัดได้ กรุณาเปิด Location ในเครื่อง");
+                },
                 { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
             );
-            setInterval(() => {
-                if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            if (techGpsIntervalId) clearInterval(techGpsIntervalId);
+            techGpsIntervalId = setInterval(() => {
+                if (!isGpsTrackingEnabled || localStorage.getItem('elec_app_logged_in') !== 'true') return;
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
                         recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
@@ -1158,7 +1229,7 @@
                 (pos) => {
                     const lat = pos.coords.latitude.toFixed(6);
                     const lon = pos.coords.longitude.toFixed(6);
-                    recordCurrentTechGpsLocation(lat, lon);
+                    if (isGpsTrackingEnabled) recordCurrentTechGpsLocation(lat, lon);
                     const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
                     if (gpsInput) gpsInput.value = mapsUrl;
                     showToast(`📍 ดึงพิกัดหน้างานสำเร็จ (${lat}, ${lon})`);
@@ -1225,46 +1296,47 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
         }
 
-        function findNearestTechForJob(item) {
+                function findNearestTechForJob(item) {
             const jobGroup = getJobGroupName(item);
             const destCoord = extractCoordsFromJob(item);
             const locMap = getTechLocationsMap();
             const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]').map(parseAccountRecord);
             const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
             const curRole = localStorage.getItem('elec_app_current_role') || 'user';
-
-            if (lastKnownTechCoords && curUser && curRole !== 'admin') {
+            
+            if (isGpsTrackingEnabled && lastKnownTechCoords && curUser && curRole !== 'admin') {
                 locMap[curUser] = {
                     username: curUser,
                     role: curRole,
                     group: getCurrentUserGroup(),
                     lat: lastKnownTechCoords.lat,
                     lon: lastKnownTechCoords.lon,
+                    gpsDisabled: false,
                     updatedAt: new Date().toISOString()
                 };
             }
-
+            
             const techAccountsInGroup = rawAccounts.filter(acc => {
                 if (acc.role !== 'tech') return false;
                 const accGroup = getUserGroupName(acc.username);
                 if (!jobGroup || !accGroup) return true;
                 return accGroup === jobGroup;
             });
-
+            
             if (destCoord) {
                 const candidatesWithGps = [];
                 Object.values(locMap).forEach(loc => {
-                    if (!loc || !loc.lat || !loc.lon || !loc.username) return;
+                    if (!loc || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return;
                     const accMatch = rawAccounts.find(a => a.username.toLowerCase() === loc.username.toLowerCase());
                     const effectiveRole = accMatch ? accMatch.role : (loc.role || 'tech');
                     const effectiveGroup = getUserGroupName(loc.username) || loc.group || '';
-
+                    
                     if (jobGroup && effectiveGroup && jobGroup !== effectiveGroup) return;
-
+                    
                     const straightKm = calcHaversineKm(loc.lat, loc.lon, destCoord.lat, destCoord.lon);
                     const roadKm = Math.max(0.2, straightKm * 1.35);
                     const estMin = Math.max(1, Math.round((roadKm / 45) * 60));
-
+                    
                     candidatesWithGps.push({
                         username: loc.username,
                         role: effectiveRole,
@@ -1273,10 +1345,10 @@
                         isTechRole: effectiveRole === 'tech'
                     });
                 });
-
+                
                 const techOnlyCandidates = candidatesWithGps.filter(c => c.isTechRole);
                 const pool = techOnlyCandidates.length > 0 ? techOnlyCandidates : candidatesWithGps;
-
+                
                 if (pool.length > 0) {
                     pool.sort((a, b) => a.roadKm - b.roadKm);
                     const best = pool[0];
@@ -1289,14 +1361,21 @@
                     };
                 }
             }
-
+            
+            // เช็กว่าช่างที่เคยแนะนำไว้ในใบงาน กดปิด GPS ไปแล้วหรือยัง
             if (item.recommendedTech && item.recommendedTech.techName) {
-                return {
-                    ...item.recommendedTech,
-                    isMe: curUser && item.recommendedTech.techName.toLowerCase() === curUser.toLowerCase()
-                };
+                const recName = item.recommendedTech.techName;
+                const recLoc = locMap[recName] || Object.values(locMap).find(l => l && l.username && l.username.toLowerCase() === recName.toLowerCase());
+                const isRecGpsOff = (curUser && recName.toLowerCase() === curUser.toLowerCase() && !isGpsTrackingEnabled) ||
+                    (recLoc && (recLoc.gpsDisabled || !recLoc.lat || !recLoc.lon));
+                if (!isRecGpsOff) {
+                    return {
+                        ...item.recommendedTech,
+                        isMe: curUser && recName.toLowerCase() === curUser.toLowerCase()
+                    };
+                }
             }
-
+            
             if (techAccountsInGroup.length > 0) {
                 return {
                     techName: techAccountsInGroup.map(t => t.username).join(', '),
@@ -1380,7 +1459,7 @@
 
         function startRealtimeGpsWatch(key, jobType, destCoord) {
             stopRealtimeGpsWatch();
-            if (!navigator.geolocation || !destCoord) return;
+            if (!isGpsTrackingEnabled || !navigator.geolocation || !destCoord) return;
 
             activeNavJobKey = key;
             activeNavJobType = jobType;
@@ -1388,6 +1467,10 @@
 
             activeNavWatchId = navigator.geolocation.watchPosition(
                 async (pos) => {
+                    if (!isGpsTrackingEnabled) {
+                        stopRealtimeGpsWatch();
+                        return;
+                    }
                     recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
                     const nowMs = Date.now();
                     if (nowMs - lastNavCloudPushTime < 8000) return;
@@ -1527,7 +1610,7 @@
                 new Promise(resolve => setTimeout(resolve, 650))
             ]);
 
-            if (destCoord) {
+            if (destCoord && isGpsTrackingEnabled) {
                 startRealtimeGpsWatch(key, jobType, destCoord);
             }
 
@@ -1649,7 +1732,7 @@
             return (Date.now() - updatedMs) < 180000;
         }
 
-                // ตรวจสอบว่าเป็นรายงานผลที่ถูกระบบบังคับปิดเองจากบั๊กหรือไม่
+        // ตรวจสอบว่าเป็นรายงานผลที่ถูกระบบบังคับปิดเองจากบั๊กหรือไม่
         function isAutoGeneratedFakeClosure(reportObj) {
             if (!reportObj) return false;
             if (reportObj.realCause === 'ปิดงานโดยผู้ใช้งานทั่วไป' && reportObj.actionTaken === 'ดำเนินการเสร็จสิ้นจากระบบหลัก') return true;
@@ -1775,7 +1858,6 @@
                 return merged;
             };
 
-            // ปิดงานเฉพาะที่มีอยู่ในทะเบียนสั่งปิดงานจริง (closedMap) เท่านั้น ไม่เดาสถานะปิดงานเองเมื่อ Cloud ซิงค์สลับบัญชี
             const outageMap = new Map();
             localOutages.forEach(item => {
                 const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
@@ -1853,7 +1935,6 @@
                 return false;
             };
 
-            // รักษาใบงานที่ยังค้างอยู่บน Cloud เสมอ แม้ล็อกอินด้วยบัญชี Admin
             const preservedCloudJobs = (cachedCloudJobs || []).filter(cJob => {
                 if (cJob.jobType === 'tech_loc') return false;
                 const jKey = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
@@ -1893,7 +1974,6 @@
                 combinedMap.set(k, j);
             });
 
-            // ลบงานที่ปิดเกิน 3 นาทีออกจากคิวออนไลน์บน Cloud
             Array.from(combinedMap.entries()).forEach(([k, val]) => {
                 const isDone = val.techReport && String(val.techReport.status || '').includes('เสร็จสิ้น');
                 if (isDone && !val.techReport.needsMainSync && !isJobRecentlyCompleted(val)) {
@@ -2471,6 +2551,7 @@
             rescueFalselyClosedRecentJobs();
             checkTechAuth();
             updateSoundToggleButtonUI();
+            updateGpsToggleButtonUI();
             updateDateFilterButtonsUI();
             checkNewIncomingPendingJobs();
             switchStatusTab('pending');
