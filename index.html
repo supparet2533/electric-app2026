@@ -297,9 +297,14 @@
     <!-- 🌟 กล่องใหญ่แบ่ง 2 ฝั่ง (ซ่อนไว้ด้วย hidden จนกว่าจะล็อกอินผ่าน) -->
     <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-4">
         
-        <!-- ================= ฝั่งซ้าย: รูปกราฟิก (แสดงเฉพาะในคอมพิวเตอร์) ================= -->
-        <div class="hidden lg:flex flex-col justify-center sticky top-10 space-y-6">
-            <div class="relative w-full rounded-3xl overflow-hidden shadow-2xl border border-white/20 transform transition hover:scale-[1.02] duration-300">
+        <!-- ================= ฝั่งซ้าย: โลโก้ (คลิกเพื่อเปิดเว็บเบราว์เซอร์ชิดขอบซ้ายจอ) ================= -->
+        <div id="leftLogoPanel" class="hidden lg:flex flex-col justify-center sticky top-10 space-y-6">
+            <div onclick="openLeftWebBrowser()" title="คลิกเพื่อเปิดเว็บเบราว์เซอร์ฝั่งซ้าย" class="group cursor-pointer relative w-full rounded-3xl overflow-hidden shadow-2xl border border-white/20 transform transition hover:scale-[1.02] duration-300">
+                <!-- ป้ายแนะนำเมื่อเอาเมาส์ชี้ที่โลโก้ -->
+                <div class="absolute top-4 right-4 z-20 bg-slate-900/80 backdrop-blur-md text-white text-xs font-semibold px-3.5 py-1.5 rounded-full border border-white/20 shadow-lg flex items-center gap-1.5 group-hover:bg-blue-600 transition">
+                    🌐 <span>คลิกเปิดเว็บเบราว์เซอร์ฝั่งซ้าย</span>
+                </div>
+
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 500" class="w-full h-auto block">
                     <defs>
                         <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -349,13 +354,220 @@
                 <p class="text-slate-500 text-sm leading-relaxed mb-6">
                     เครื่องมือสำหรับพนักงานและช่างไฟฟ้า ช่วยบันทึกการแจ้งเหตุ คำนวณขนาดฟิวส์ และวิเคราะห์สถิติข้อมูลได้อย่างรวดเร็ว แม่นยำ รองรับการส่งออกข้อมูล และมีผู้ช่วย AI ส่วนตัว
                 </p>
-                <div class="flex gap-3 text-[11px] font-semibold text-slate-600">
+                <div class="flex flex-wrap gap-3 text-[11px] font-semibold text-slate-600">
                     <span class="flex items-center gap-1 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">⚡ 22/115kV</span>
                     <span class="flex items-center gap-1 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">🤖 AI Chatbot</span>
                     <span class="flex items-center gap-1 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">📊 Analytics</span>
+                    <button type="button" onclick="openLeftWebBrowser()" class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-sm transition">
+                        🌐 เปิดเว็บฝั่งซ้าย
+                    </button>
                 </div>
             </div>
         </div>
+
+        <!-- ================= 🌐 หน้าต่างเว็บเบราว์เซอร์ชิดขอบซ้ายสุดของจอ ================= -->
+        <div id="leftBrowserDock" class="hidden fixed top-0 left-0 bottom-0 z-40 flex-col bg-slate-900 border-r border-slate-300 shadow-2xl transition-all duration-200" style="width: 55vw;">
+            <!-- แถบควบคุมด้านบน (Address Bar) -->
+            <div class="bg-slate-800 px-3 py-2 border-b border-slate-700 flex items-center gap-1.5">
+                <span class="text-blue-400 text-sm shrink-0">🌐</span>
+                <input type="text" id="leftBrowserUrlInput" placeholder="วางลิงก์เว็บไซต์ เช่น https://... แล้วกด Enter" 
+                    onkeypress="if(event.key === 'Enter') navigateLeftBrowser()"
+                    class="flex-1 min-w-0 px-3 py-1.5 text-xs bg-slate-900 text-white border border-slate-600 rounded-lg focus:outline-none focus:border-blue-400 font-mono">
+                <button type="button" onclick="navigateLeftBrowser()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0">
+                    ไป ➔
+                </button>
+                <button type="button" onclick="reloadLeftBrowser()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0" title="รีเฟรชหน้าเว็บ">
+                    🔄
+                </button>
+                <button type="button" onclick="addLeftBrowserBookmark()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/30 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0" title="บันทึกลิงก์นี้ไว้กดด่วน">
+                    ⭐ เก็บลิงก์
+                </button>
+                <button type="button" onclick="openLeftBrowserPopup()" class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition shrink-0" title="เปิดเป็นหน้าต่างแยกชิดซ้ายจอ (ใช้กรณีเว็บปลายทางบล็อก iframe)">
+                    🪟 หน้าต่างแยก
+                </button>
+                <!-- ปุ่มปรับขนาดความกว้าง -->
+                <div class="hidden xl:flex items-center bg-slate-900 rounded-lg p-0.5 border border-slate-700 text-[10px] text-slate-300 shrink-0">
+                    <button type="button" onclick="setLeftBrowserWidth('45vw')" class="px-1.5 py-1 hover:bg-slate-700 rounded">45%</button>
+                    <button type="button" onclick="setLeftBrowserWidth('55vw')" class="px-1.5 py-1 hover:bg-slate-700 rounded">55%</button>
+                    <button type="button" onclick="setLeftBrowserWidth('65vw')" class="px-1.5 py-1 hover:bg-slate-700 rounded">65%</button>
+                </div>
+                <button type="button" onclick="closeLeftWebBrowser()" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0" title="ปิดเบราว์เซอร์กลับไปหน้าโลโก้">
+                    ✕ ปิด
+                </button>
+            </div>
+
+            <!-- แถบลิงก์ด่วน (Bookmarks) -->
+            <div class="bg-slate-800/90 px-3 py-1.5 border-b border-slate-700 flex items-center gap-1.5 overflow-x-auto text-[11px]" id="leftBrowserBookmarksBar"></div>
+
+            <!-- พื้นที่แสดงหน้าเว็บ (Iframe เต็มความสูงที่เหลือ) -->
+            <div class="relative flex-1 w-full bg-white">
+                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+            </div>
+        </div>
+
+        <script>
+            // ==========================================
+            // 🌐 ระบบควบคุมเว็บเบราว์เซอร์ชิดขอบซ้ายหน้าจอ
+            // ==========================================
+            const DEFAULT_LEFT_BOOKMARKS = [
+                { name: "🛠️ หน้าช่าง (Page 2)", url: "page2.html" },
+                { name: "🌧️ เรดาร์ฝน Windy", url: "https://embed.windy.com/embed2.html?lat=13.116&lon=101.095&zoom=10&level=surface&overlay=rain" },
+                { name: "🗺️ Google Maps", url: "https://www.google.com/maps?q=13.1361,101.0322&hl=th&z=13&output=embed" }
+            ];
+
+            function getLeftBrowserBookmarks() {
+                try {
+                    const saved = localStorage.getItem('elec_left_browser_bookmarks');
+                    if (saved) return JSON.parse(saved);
+                } catch (e) {}
+                return DEFAULT_LEFT_BOOKMARKS;
+            }
+
+            function renderLeftBrowserBookmarks() {
+                const bar = document.getElementById('leftBrowserBookmarksBar');
+                if (!bar) return;
+                const list = getLeftBrowserBookmarks();
+                bar.innerHTML = `<span class="text-slate-400 font-semibold shrink-0">📌 ลิงก์ด่วน:</span>`;
+                list.forEach((bm, idx) => {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'inline-flex items-center bg-slate-700/80 hover:bg-slate-600 text-slate-100 rounded-md overflow-hidden shrink-0 border border-slate-600 transition';
+                    wrap.innerHTML = `
+                        <button type="button" onclick="loadLeftBrowserUrl('${bm.url.replace(/'/g, "\\'")}')" class="px-2 py-0.5 font-medium truncate max-w-[160px]">${bm.name}</button>
+                        <button type="button" onclick="removeLeftBrowserBookmark(${idx})" class="px-1.5 py-0.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 leading-none" title="ลบลิงก์นี้">&times;</button>
+                    `;
+                    bar.appendChild(wrap);
+                });
+            }
+
+            function addLeftBrowserBookmark() {
+                const urlInput = document.getElementById('leftBrowserUrlInput');
+                const url = (urlInput?.value || '').trim();
+                if (!url) {
+                    showToast("⚠️ กรุณาวางลิงก์ในช่องก่อนกดเก็บลิงก์");
+                    return;
+                }
+                showCustomPrompt("ตั้งชื่อปุ่มลิงก์ด่วน:", "เว็บงานไฟฟ้า", function(name) {
+                    if (!name || !name.trim()) return;
+                    const list = getLeftBrowserBookmarks();
+                    list.push({ name: name.trim(), url: formatLeftBrowserUrl(url) });
+                    localStorage.setItem('elec_left_browser_bookmarks', JSON.stringify(list));
+                    renderLeftBrowserBookmarks();
+                    showToast("⭐ บันทึกลิงก์ด่วนเรียบร้อยแล้ว");
+                }, "⭐ บันทึกลิงก์ด่วน");
+            }
+
+            function removeLeftBrowserBookmark(index) {
+                const list = getLeftBrowserBookmarks();
+                list.splice(index, 1);
+                localStorage.setItem('elec_left_browser_bookmarks', JSON.stringify(list));
+                renderLeftBrowserBookmarks();
+            }
+
+            function formatLeftBrowserUrl(rawUrl) {
+                let u = (rawUrl || '').trim();
+                if (!u) return 'about:blank';
+                if (u === 'page2.html' || u.startsWith('./') || u.startsWith('/')) return u;
+                if (!/^https?:\/\//i.test(u)) {
+                    u = 'https://' + u;
+                }
+                return u;
+            }
+
+            function openLeftWebBrowser() {
+                const logoPanel = document.getElementById('leftLogoPanel');
+                const dock = document.getElementById('leftBrowserDock');
+                const mainApp = document.getElementById('mainAppContent');
+                const savedWidth = localStorage.getItem('elec_left_browser_width') || '55vw';
+
+                if (logoPanel) {
+                    logoPanel.classList.remove('lg:flex');
+                    logoPanel.classList.add('hidden');
+                }
+                if (dock) {
+                    dock.style.width = savedWidth;
+                    dock.classList.remove('hidden');
+                    dock.classList.add('flex');
+                }
+                if (mainApp) {
+                    mainApp.classList.remove('lg:grid-cols-2', 'max-w-7xl');
+                    mainApp.classList.add('lg:grid-cols-1', 'max-w-full');
+                    mainApp.style.paddingLeft = savedWidth;
+                }
+
+                renderLeftBrowserBookmarks();
+
+                const lastUrl = localStorage.getItem('elec_left_browser_last_url') || 'page2.html';
+                const inputEl = document.getElementById('leftBrowserUrlInput');
+                const iframe = document.getElementById('leftBrowserIframe');
+                if (inputEl && !inputEl.value) inputEl.value = lastUrl;
+                if (iframe && (!iframe.getAttribute('src') || iframe.getAttribute('src') === 'about:blank')) {
+                    loadLeftBrowserUrl(lastUrl);
+                }
+                localStorage.setItem('elec_left_browser_open', 'true');
+            }
+
+            function closeLeftWebBrowser() {
+                const logoPanel = document.getElementById('leftLogoPanel');
+                const dock = document.getElementById('leftBrowserDock');
+                const mainApp = document.getElementById('mainAppContent');
+
+                if (dock) {
+                    dock.classList.add('hidden');
+                    dock.classList.remove('flex');
+                }
+                if (logoPanel) {
+                    logoPanel.classList.add('lg:flex');
+                }
+                if (mainApp) {
+                    mainApp.classList.add('lg:grid-cols-2', 'max-w-7xl');
+                    mainApp.classList.remove('lg:grid-cols-1', 'max-w-full');
+                    mainApp.style.paddingLeft = '';
+                }
+                localStorage.setItem('elec_left_browser_open', 'false');
+            }
+
+            function setLeftBrowserWidth(widthVal) {
+                const dock = document.getElementById('leftBrowserDock');
+                const mainApp = document.getElementById('mainAppContent');
+                if (dock) dock.style.width = widthVal;
+                if (mainApp) mainApp.style.paddingLeft = widthVal;
+                localStorage.setItem('elec_left_browser_width', widthVal);
+            }
+
+            function loadLeftBrowserUrl(rawUrl) {
+                const formatted = formatLeftBrowserUrl(rawUrl);
+                const inputEl = document.getElementById('leftBrowserUrlInput');
+                const iframe = document.getElementById('leftBrowserIframe');
+                if (inputEl) inputEl.value = formatted;
+                if (iframe) iframe.src = formatted;
+                localStorage.setItem('elec_left_browser_last_url', formatted);
+            }
+
+            function navigateLeftBrowser() {
+                const inputEl = document.getElementById('leftBrowserUrlInput');
+                if (!inputEl) return;
+                loadLeftBrowserUrl(inputEl.value);
+            }
+
+            function reloadLeftBrowser() {
+                const iframe = document.getElementById('leftBrowserIframe');
+                const inputEl = document.getElementById('leftBrowserUrlInput');
+                if (iframe) {
+                    iframe.src = formatLeftBrowserUrl(inputEl?.value || iframe.src);
+                    showToast("🔄 รีเฟรชหน้าเว็บฝั่งซ้ายแล้ว");
+                }
+            }
+
+            // เปิดเป็นหน้าต่างป๊อปอัปวางชิดซ้ายจอ (สำหรับเว็บที่บล็อกการฝัง iframe เช่น Google Sheets หรือระบบภายในบางตัว)
+            function openLeftBrowserPopup() {
+                const inputEl = document.getElementById('leftBrowserUrlInput');
+                const url = formatLeftBrowserUrl(inputEl?.value || 'https://www.google.com');
+                const w = Math.floor(window.screen.availWidth * 0.55);
+                const h = window.screen.availHeight;
+                window.open(url, 'LeftSideWebPopup', `width=${w},height=${h},left=0,top=0,resizable=yes,scrollbars=yes`);
+            }
+        </script>
+
 
         <!-- ================= ฝั่งขวา: ตัวแอปพลิเคชันเดิม ================= -->
         <div class="max-w-xl w-full mx-auto bg-white rounded-2xl shadow-xl overflow-visible mb-6 lg:mb-0 relative z-10">
@@ -5434,21 +5646,41 @@
                         showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
                     }
 
-                    // 1.4 ลบเฉพาะคำว่า "ที่อยู่ :" หรือ "ที่อยู่:" ออก
-                    const addressPrefixRegex = /ที่อยู่\s*[:：]\s*/gi;
-                    if (addressPrefixRegex.test(addrText)) {
-                        addrText = addrText.replace(addressPrefixRegex, '');
+                                                           // 1.4 ตัดคำว่า "ที่อยู่ :" ออก และดึงที่อยู่หลัง "ที่อยู่ :" ขึ้นไปไว้บรรทัดบนแรกสุดชิดซ้ายสุด
+                    let extractedTopAddress = '';
+                    const addressExtractRegex = /ที่อยู่\s*[:：]\s*(\d+(?:\/\d+)?\s*ม\.\d+\s*ต\.(?:บ่อวิน|บึง|เขาคันทรง|มาบยางพร|ตะเคียนเตี้ย|[ก-๙a-zA-Z]+)\s*อ\.(?:ศรีราชา|ปลวกแดง|บางละมุง|[ก-๙a-zA-Z]+)\s*จ\.(?:ชลบุรี|ระยอง|[ก-๙a-zA-Z]+)|[^\r\n]+)/i;
+                    const matchAddr = addrText.match(addressExtractRegex);
+
+                    if (matchAddr) {
+                        extractedTopAddress = matchAddr[1].trim();
+                        addrText = addrText.replace(matchAddr[0], '');
+                        addrText = addrText.replace(/ที่อยู่\s*[:：]\s*/gi, '');
+                        isModified = true;
+                        showToast("🏠 ย้ายที่อยู่ขึ้นบรรทัดแรกสุดชิดซ้ายแล้ว");
+                    } else if (/ที่อยู่\s*[:：]\s*/i.test(addrText)) {
+                        addrText = addrText.replace(/ที่อยู่\s*[:：]\s*/gi, '');
                         isModified = true;
                     }
 
                     if (isModified) {
-                        this.value = addrText.replace(/[ \t]{2,}/g, ' ').replace(/\n\s*\n/g, '\n').trim();
+                        const remainingLines = addrText
+                            .split(/\r?\n/)
+                            .map(line => line.replace(/[ \t]{2,}/g, ' ').trim())
+                            .filter(line => line !== '')
+                            .join('\n');
+
+                        if (extractedTopAddress) {
+                            this.value = remainingLines
+                                ? `${extractedTopAddress}\n${remainingLines}`
+                                : extractedTopAddress;
+                        } else {
+                            this.value = remainingLines;
+                        }
                         this.style.height = 'auto';
                         this.style.height = (this.scrollHeight) + 'px';
                     }
                 });
             }
-
             // 2. เมื่อช่อง "พิกัด (GPS Link)" มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
             if (gpsInputEl) {
                 gpsInputEl.addEventListener('input', function() {
