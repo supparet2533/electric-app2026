@@ -4,6 +4,102 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ระบบช่างตรวจสอบหน้างาน - PEA MWM</title>
+
+    <!-- ตั้งค่า Web App และชื่อทางลัดบนหน้าจอโฮมมือถือ -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ช่างไฟฟ้า PEA">
+    <meta name="application-name" content="ช่างไฟฟ้า PEA">
+    <meta name="theme-color" content="#0f766e">
+
+    <!-- โลโก้อิโมจิผสม 🛠️ + ⚡ สำหรับทางลัดหน้าจอโฮม -->
+    <link id="favIconPng" rel="icon" type="image/png" sizes="512x512" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+    <link id="webManifestLink" rel="manifest">
+
+    <!-- สคริปต์สร้างอิโมจิใหม่ (🛠️ ซ้อนกับ ⚡) ขนาด 512x512 แบบทันที เพื่อให้ Chrome สร้างทางลัดพร้อมรูปโลโก้ -->
+    <script>
+        (function() {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+
+                // 1. วาดพื้นหลังสี่เหลี่ยมขอบมนสีเขียว-น้ำเงินเข้ม
+                const grad = ctx.createLinearGradient(0, 0, 512, 512);
+                grad.addColorStop(0, '#0f766e');
+                grad.addColorStop(0.5, '#0d9488');
+                grad.addColorStop(1, '#1e3a8a');
+
+                const r = 115;
+                ctx.beginPath();
+                ctx.moveTo(r, 0);
+                ctx.lineTo(512 - r, 0);
+                ctx.quadraticCurveTo(512, 0, 512, r);
+                ctx.lineTo(512, 512 - r);
+                ctx.quadraticCurveTo(512, 512, 512 - r, 512);
+                ctx.lineTo(r, 512);
+                ctx.quadraticCurveTo(0, 512, 0, 512 - r);
+                ctx.lineTo(0, r);
+                ctx.quadraticCurveTo(0, 0, r, 0);
+                ctx.closePath();
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                // 2. วาดวงแหวนเส้นประด้านหลัง
+                ctx.beginPath();
+                ctx.arc(256, 256, 205, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+                ctx.lineWidth = 10;
+                ctx.setLineDash([24, 16]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                // 3. วาดอิโมจิ 🛠️ (ค้อนไขว้ประแจ) ขนาดใหญ่เป็นฐานตรงกลาง
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+                ctx.shadowBlur = 20;
+                ctx.shadowOffsetY = 8;
+                ctx.font = '320px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+                ctx.fillText('🛠️', 256, 272);
+
+                // 4. วาดอิโมจิ ⚡ (สายฟ้า) ซ้อนทับตรงจุดตัดกึ่งกลางของ 🛠️
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+                ctx.shadowBlur = 24;
+                ctx.shadowOffsetY = 4;
+                ctx.font = '210px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+                ctx.fillText('⚡', 266, 252);
+
+                const pngUrl = canvas.toDataURL('image/png');
+
+                const favPng = document.getElementById('favIconPng');
+                const touchPng = document.getElementById('appleTouchIconPng');
+                if (favPng) favPng.href = pngUrl;
+                if (touchPng) touchPng.href = pngUrl;
+
+                const manifest = {
+                    name: "ระบบช่างตรวจสอบหน้างาน - PEA",
+                    short_name: "ช่างไฟฟ้า PEA",
+                    start_url: window.location.href,
+                    display: "standalone",
+                    background_color: "#0f766e",
+                    theme_color: "#0f766e",
+                    icons: [
+                        { src: pngUrl, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+                        { src: pngUrl, sizes: "512x512", type: "image/png", purpose: "any maskable" }
+                    ]
+                };
+                const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+                const manifestLink = document.getElementById('webManifestLink');
+                if (manifestLink) manifestLink.href = URL.createObjectURL(manifestBlob);
+            } catch (e) {}
+        })();
+    </script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -183,14 +279,20 @@
         </div>
     </div>
 
-    <!-- 🛠️ หน้าต่างหลักสำหรับช่างตรวจสอบหน้างาน -->
+    <!-- 🛠️⚡ หน้าต่างหลักสำหรับช่างตรวจสอบหน้างาน -->
     <div id="techMainApp" class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
         
         <!-- Header -->
         <div class="bg-gradient-to-r from-teal-700 to-emerald-600 px-4 py-4 text-white">
             <div class="flex flex-wrap justify-between items-center gap-2">
                 <div class="min-w-0">
-                    <h1 class="text-base sm:text-lg font-bold flex items-center gap-1.5">🛠️ ระบบช่างรายงานผลหน้างาน</h1>
+                    <h1 class="text-base sm:text-lg font-bold flex items-center gap-2">
+                        <span class="relative inline-flex items-center justify-center w-7 h-7 bg-white/15 rounded-lg shadow-inner shrink-0">
+                            <span class="text-lg leading-none">🛠️</span>
+                            <span class="absolute text-xs leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] translate-x-[1px] -translate-y-[1px]">⚡</span>
+                        </span>
+                        <span>ระบบช่างรายงานผลหน้างาน</span>
+                    </h1>
                     <p id="cloudStatusText" class="text-[11px] text-emerald-100 mt-0.5">🟢 พร้อมรับ-ส่งข้อมูลใบงาน</p>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0 ml-auto">
