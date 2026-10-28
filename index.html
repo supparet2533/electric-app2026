@@ -5730,12 +5730,12 @@
             }
         }
 
-        function findNearestTechForMainPage(item) {
+                function findNearestTechForMainPage(item) {
             const jobGroup = getJobGroupName(item);
             const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
             const rawText = `${item.gps || ''} ${item.address || ''} ${item.area || ''} ${item.weather || ''}`;
             let coords = (typeof extractCoordsFromInput === 'function') ? extractCoordsFromInput(rawText) : null;
-
+            
             if (!coords && typeof targetTambonCoordinates === 'object') {
                 for (const [tbName, tbCoord] of Object.entries(targetTambonCoordinates)) {
                     const cleanTb = tbName.replace('ตำบล', '').trim();
@@ -5745,27 +5745,28 @@
                     }
                 }
             }
-
+            
             if (coords && coords.lat && coords.lon) {
                 const lat2 = parseFloat(coords.lat);
                 const lon2 = parseFloat(coords.lon);
                 const R = 6371;
                 const candidates = [];
-
+                
                 Object.values(locMap).forEach(loc => {
-                    if (!loc || !loc.lat || !loc.lon || !loc.username) return;
+                    // ข้ามช่างที่กดปิด GPS (gpsDisabled) หรือไม่มีพิกัด
+                    if (!loc || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return;
                     const tGroup = getUserGroupName(loc.username) || loc.group || '';
                     if (jobGroup && tGroup && jobGroup !== tGroup) return;
-
+                    
                     const dLat = (lat2 - loc.lat) * Math.PI / 180;
                     const dLon = (lon2 - loc.lon) * Math.PI / 180;
                     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                              Math.cos(loc.lat * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                        Math.cos(loc.lat * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                        Math.sin(dLon / 2) * Math.sin(dLon / 2);
                     const straightKm = R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
                     const roadKm = Math.max(0.2, straightKm * 1.35);
                     const estMin = Math.max(1, Math.round((roadKm / 45) * 60));
-
+                    
                     candidates.push({
                         techName: loc.username,
                         distanceKm: roadKm.toFixed(1),
@@ -5773,17 +5774,22 @@
                         hasGps: true
                     });
                 });
-
+                
                 if (candidates.length > 0) {
                     candidates.sort((a, b) => parseFloat(a.distanceKm) - parseFloat(b.distanceKm));
                     return candidates[0];
                 }
             }
-
+            
+            // เช็กว่าค่าเดิมที่บันทึกไว้ในใบงาน ช่างคนนั้นกดปิด GPS ไปแล้วหรือยัง
             if (item.recommendedTech && item.recommendedTech.techName) {
-                return item.recommendedTech;
+                const recName = item.recommendedTech.techName;
+                const recLoc = locMap[recName] || Object.values(locMap).find(l => l && l.username && l.username.toLowerCase() === recName.toLowerCase());
+                if (!recLoc || (!recLoc.gpsDisabled && recLoc.lat && recLoc.lon)) {
+                    return item.recommendedTech;
+                }
             }
-
+            
             const techInGroup = (userAccountsList || []).filter(a => {
                 if (a.role !== 'tech') return false;
                 const g = getUserGroupName(a.username);
