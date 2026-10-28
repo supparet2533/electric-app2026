@@ -365,14 +365,17 @@
             </div>
         </div>
 
-        <!-- ================= 🌐 หน้าต่างเว็บเบราว์เซอร์ชิดขอบซ้ายสุดของจอ ================= -->
+                       <!-- ================= 🌐 หน้าต่างเว็บเบราว์เซอร์ชิดขอบซ้ายสุดของจอ ================= -->
         <div id="leftBrowserDock" class="hidden fixed top-0 left-0 bottom-0 z-40 flex-col bg-slate-900 border-r border-slate-300 shadow-2xl transition-all duration-200" style="width: 55vw;">
-            <!-- แถบควบคุมด้านบน (Address Bar) -->
+            <!-- แถบควบคุมด้านบน (Address Bar ตัวอักษรสีดำ) -->
             <div class="bg-slate-800 px-3 py-2 border-b border-slate-700 flex items-center gap-1.5">
                 <span class="text-blue-400 text-sm shrink-0">🌐</span>
-                <input type="text" id="leftBrowserUrlInput" placeholder="วางลิงก์เว็บไซต์ เช่น https://... แล้วกด Enter" 
+                <input type="text" id="leftBrowserUrlInput" placeholder="วางลิงก์เว็บไซต์ หรือลิงก์จากหน้าต่างที่ 2 แล้วกด Enter" 
                     onkeypress="if(event.key === 'Enter') navigateLeftBrowser()"
-                    class="flex-1 min-w-0 px-3 py-1.5 text-xs bg-slate-900 text-white border border-slate-600 rounded-lg focus:outline-none focus:border-blue-400 font-mono">
+                    class="flex-1 min-w-0 px-3 py-1.5 text-xs bg-white text-black font-semibold placeholder-slate-400 border border-slate-400 rounded-lg focus:outline-none focus:border-blue-500 font-mono">
+                <button type="button" onclick="pasteClipboardToLeftBrowser()" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-amber-400/30 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0" title="วางลิงก์ที่ก๊อปมาจากหน้าต่างที่ 2 แล้วเปิดทันที">
+                    📋 วางลิงก์หน้า 2
+                </button>
                 <button type="button" onclick="navigateLeftBrowser()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0">
                     ไป ➔
                 </button>
@@ -382,8 +385,8 @@
                 <button type="button" onclick="addLeftBrowserBookmark()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/30 px-2.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0" title="บันทึกลิงก์นี้ไว้กดด่วน">
                     ⭐ เก็บลิงก์
                 </button>
-                <button type="button" onclick="openLeftBrowserPopup()" class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition shrink-0" title="เปิดเป็นหน้าต่างแยกชิดซ้ายจอ (ใช้กรณีเว็บปลายทางบล็อก iframe)">
-                    🪟 หน้าต่างแยก
+                <button type="button" onclick="openLeftBrowserPopup()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition shrink-0 shadow" title="เปิดเป็นหน้าต่างแยกชิดซ้ายจอ (รองรับเว็บที่ล็อกอินแล้วเด้งหน้า 2 แยกตัว)">
+                    🪟 โหมดหน้าต่างลอยชิดซ้าย
                 </button>
                 <!-- ปุ่มปรับขนาดความกว้าง -->
                 <div class="hidden xl:flex items-center bg-slate-900 rounded-lg p-0.5 border border-slate-700 text-[10px] text-slate-300 shrink-0">
@@ -397,18 +400,27 @@
             </div>
 
             <!-- แถบลิงก์ด่วน (Bookmarks) -->
-            <div class="bg-slate-800/90 px-3 py-1.5 border-b border-slate-700 flex items-center gap-1.5 overflow-x-auto text-[11px]" id="leftBrowserBookmarksBar"></div>
+            <div class="bg-slate-800/95 px-3 py-1.5 border-b border-slate-700 flex items-center justify-between gap-2 text-[11px]">
+                <div class="flex items-center gap-1.5 overflow-x-auto" id="leftBrowserBookmarksBar"></div>
+                <button type="button" onclick="openLeftBrowserPopup()" class="text-[10px] text-emerald-300 hover:text-emerald-200 underline shrink-0 whitespace-nowrap">
+                    💡 เว็บเด้งหน้า 2 หรือปฏิเสธเชื่อมต่อ? กดใช้โหมดหน้าต่างลอยชิดซ้าย
+                </button>
+            </div>
 
-            <!-- พื้นที่แสดงหน้าเว็บ (Iframe เต็มความสูงที่เหลือ) -->
+            <!-- พื้นที่แสดงหน้าเว็บ (Iframe ปลดล็อก Popups เต็มความสูงที่เหลือ) -->
             <div class="relative flex-1 w-full bg-white">
-                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                    allowfullscreen></iframe>
             </div>
         </div>
 
         <script>
             // ==========================================
-            // 🌐 ระบบควบคุมเว็บเบราว์เซอร์ชิดขอบซ้ายหน้าจอ
+            // 🌐 ระบบควบคุมเว็บเบราว์เซอร์ชิดขอบซ้ายหน้าจอ (รองรับเว็บที่เด้งหน้า 2)
             // ==========================================
+            let leftPopupWindowRef = null;
+
             const DEFAULT_LEFT_BOOKMARKS = [
                 { name: "🛠️ หน้าช่าง (Page 2)", url: "page2.html" },
                 { name: "🌧️ เรดาร์ฝน Windy", url: "https://embed.windy.com/embed2.html?lat=13.116&lon=101.095&zoom=10&level=surface&overlay=rain" },
@@ -470,7 +482,31 @@
                 if (!/^https?:\/\//i.test(u)) {
                     u = 'https://' + u;
                 }
+
+                const ytRegex = /(?:youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i;
+                const ytMatch = u.match(ytRegex);
+                if (ytMatch) {
+                    const videoId = ytMatch[1];
+                    const timeMatch = u.match(/[?&](?:t|start)=(\d+)/i);
+                    const startQuery = timeMatch ? `?start=${timeMatch[1]}&autoplay=1` : '?autoplay=1';
+                    return `https://www.youtube.com/embed/${videoId}${startQuery}`;
+                }
+
                 return u;
+            }
+
+            async function pasteClipboardToLeftBrowser() {
+                try {
+                    const text = await navigator.clipboard.readText();
+                    if (text && text.trim()) {
+                        loadLeftBrowserUrl(text.trim());
+                        showToast("📋 ดึงลิงก์หน้า 2 เข้าเบราว์เซอร์ฝั่งซ้ายแล้ว!");
+                    } else {
+                        showToast("⚠️ ไม่พบลิงก์ในคลิปบอร์ด");
+                    }
+                } catch (e) {
+                    showToast("⚠️ กรุณากด Ctrl+V ในช่องลิงก์แล้วกด Enter");
+                }
             }
 
             function openLeftWebBrowser() {
@@ -497,12 +533,7 @@
                 renderLeftBrowserBookmarks();
 
                 const lastUrl = localStorage.getItem('elec_left_browser_last_url') || 'page2.html';
-                const inputEl = document.getElementById('leftBrowserUrlInput');
-                const iframe = document.getElementById('leftBrowserIframe');
-                if (inputEl && !inputEl.value) inputEl.value = lastUrl;
-                if (iframe && (!iframe.getAttribute('src') || iframe.getAttribute('src') === 'about:blank')) {
-                    loadLeftBrowserUrl(lastUrl);
-                }
+                loadLeftBrowserUrl(lastUrl);
                 localStorage.setItem('elec_left_browser_open', 'true');
             }
 
@@ -523,6 +554,9 @@
                     mainApp.classList.remove('lg:grid-cols-1', 'max-w-full');
                     mainApp.style.paddingLeft = '';
                 }
+                if (leftPopupWindowRef && !leftPopupWindowRef.closed) {
+                    leftPopupWindowRef.close();
+                }
                 localStorage.setItem('elec_left_browser_open', 'false');
             }
 
@@ -535,10 +569,16 @@
             }
 
             function loadLeftBrowserUrl(rawUrl) {
+                const rawTrimmed = (rawUrl || '').trim();
+                if (/^(?:https?:\/\/)?(?:www\.)?youtube\.com\/?$/i.test(rawTrimmed)) {
+                    openLeftBrowserPopup('https://www.youtube.com');
+                    return;
+                }
+
                 const formatted = formatLeftBrowserUrl(rawUrl);
                 const inputEl = document.getElementById('leftBrowserUrlInput');
                 const iframe = document.getElementById('leftBrowserIframe');
-                if (inputEl) inputEl.value = formatted;
+                if (inputEl) inputEl.value = rawTrimmed || formatted;
                 if (iframe) iframe.src = formatted;
                 localStorage.setItem('elec_left_browser_last_url', formatted);
             }
@@ -558,13 +598,20 @@
                 }
             }
 
-            // เปิดเป็นหน้าต่างป๊อปอัปวางชิดซ้ายจอ (สำหรับเว็บที่บล็อกการฝัง iframe เช่น Google Sheets หรือระบบภายในบางตัว)
-            function openLeftBrowserPopup() {
+            function openLeftBrowserPopup(overrideUrl) {
                 const inputEl = document.getElementById('leftBrowserUrlInput');
-                const url = formatLeftBrowserUrl(inputEl?.value || 'https://www.google.com');
-                const w = Math.floor(window.screen.availWidth * 0.55);
+                let url = (overrideUrl || inputEl?.value || 'https://www.google.com').trim();
+                if (!/^https?:\/\//i.test(url) && url !== 'page2.html') {
+                    url = 'https://' + url;
+                }
+                const w = Math.floor(window.screen.availWidth * 0.54);
                 const h = window.screen.availHeight;
-                window.open(url, 'LeftSideWebPopup', `width=${w},height=${h},left=0,top=0,resizable=yes,scrollbars=yes`);
+                leftPopupWindowRef = window.open(
+                    url,
+                    'LeftSideWebPopup',
+                    `width=${w},height=${h},left=0,top=0,resizable=yes,scrollbars=yes,toolbar=yes,location=yes`
+                );
+                showToast("🪟 เปิดหน้าต่างลอยชิดซ้ายแล้ว (เมื่อล็อกอินแล้วเด้งหน้า 2 ก๊อปลิงก์หน้า 2 มากดปุ่ม '📋 วางลิงก์หน้า 2' ได้เลย)");
             }
         </script>
 
