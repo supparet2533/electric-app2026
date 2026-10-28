@@ -31,7 +31,6 @@
                 canvas.height = 512;
                 const ctx = canvas.getContext('2d');
 
-                // 1. วาดพื้นหลังสี่เหลี่ยมขอบมนสีเขียว-น้ำเงินเข้ม
                 const grad = ctx.createLinearGradient(0, 0, 512, 512);
                 grad.addColorStop(0, '#0f766e');
                 grad.addColorStop(0.5, '#0d9488');
@@ -52,7 +51,6 @@
                 ctx.fillStyle = grad;
                 ctx.fill();
 
-                // 2. วาดวงแหวนเส้นประด้านหลัง
                 ctx.beginPath();
                 ctx.arc(256, 256, 205, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
@@ -64,14 +62,12 @@
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
 
-                // 3. วาดอิโมจิ 🛠️ (ค้อนไขว้ประแจ) ขนาดใหญ่เป็นฐานตรงกลาง
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
                 ctx.shadowBlur = 20;
                 ctx.shadowOffsetY = 8;
                 ctx.font = '320px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
                 ctx.fillText('🛠️', 256, 272);
 
-                // 4. วาดอิโมจิ ⚡ (สายฟ้า) ซ้อนทับตรงจุดตัดกึ่งกลางของ 🛠️
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
                 ctx.shadowBlur = 24;
                 ctx.shadowOffsetY = 4;
@@ -117,7 +113,6 @@
     <!-- ================= 🔐 หน้าล็อกอิน (ใช้หน้าเดียวกับระบบหลัก Smart Grid SVG) ================= -->
     <div id="techLoginScreen" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
         
-        <!-- ⚡ พื้นหลังกราฟิกโครงข่ายไฟฟ้าแรงสูง (Custom Smart Grid SVG + แอนิเมชันกระแสไฟ) -->
         <svg class="absolute inset-0 w-full h-full object-cover pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
             <defs>
                 <linearGradient id="gridSky" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -183,7 +178,6 @@
                 <circle cx="1200" cy="170" r="4" opacity="0.7" />
             </g>
 
-            <!-- 🗼 เสาส่งไฟฟ้าแรงสูง -->
             <g stroke="rgba(148, 163, 184, 0.35)" stroke-width="2" fill="none">
                 <path d="M360,820 L395,360 L415,360 L450,820" />
                 <line x1="340" y1="420" x2="470" y2="420" stroke-width="2.5" />
@@ -214,7 +208,6 @@
                 <path d="M1045,360 L1020,420 L1052,490 L1015,560 L1065,660 L1002,750" stroke-width="1.2" />
             </g>
 
-            <!-- ⚡ สายส่งไฟฟ้าหลัก & กระแสไฟวิ่ง -->
             <g fill="none" stroke="url(#powerLineGrad)" stroke-width="1.8">
                 <path d="M-50,460 Q150,530 340,420 Q500,510 635,378" />
                 <path d="M805,378 Q900,510 970,420 Q1200,530 1500,450" />
@@ -241,7 +234,6 @@
 
         <div class="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px] pointer-events-none"></div>
 
-        <!-- เนื้อหาหน้าล็อกอิน (เหมือนหน้าแรก 100%) -->
         <div class="relative z-10 w-full max-w-6xl mx-6 flex flex-col md:flex-row items-center justify-between gap-10">
             <div class="text-white space-y-2 text-center md:text-left">
                 <div class="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-semibold px-3 py-1 rounded-full mb-1 backdrop-blur-sm">
@@ -300,15 +292,12 @@
                     <p id="cloudStatusText" class="text-[11px] text-emerald-100 mt-0.5">🟢 พร้อมรับ-ส่งข้อมูลใบงาน</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
-                    <!-- ปุ่มกลับหน้าหลักรับแจ้ง (ซ่อนอัตโนมัติสำหรับสิทธิ์ "ผู้ใช้งานช่าง") -->
                     <button type="button" id="backToMainBtn" onclick="goBackToMainPage()" class="hidden bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition items-center gap-1 shadow-sm">
                         ⬅️ <span>หน้าหลัก</span>
                     </button>
-                    <!-- ปุ่มเปิด/ปิดพิกัด GPS -->
                     <button type="button" id="gpsToggleBtn" onclick="toggleGpsTracking()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="เปิด/ปิดการแชร์พิกัด GPS">
                         📍 GPS: เปิด
                     </button>
-                    <!-- ปุ่มเปิด/ปิดเสียงเตือนงานใหม่ -->
                     <button type="button" id="soundAlertToggleBtn" onclick="toggleSoundAlert()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm" title="เปิด/ปิดเสียงแจ้งเตือนเมื่อมีใบงานใหม่">
                         🔔 เสียง: เปิด
                     </button>
@@ -321,7 +310,6 @@
                 </div>
             </div>
 
-            <!-- ปุ่มกล่องสรุปจำนวนงาน 4 สถานะ (แยก รอแก้ไข / กำลังเดินทาง / แก้ไขเสร็จสิ้น ออกจากกันชัดเจน) -->
             <div class="grid grid-cols-4 gap-1.5 mt-4 text-center">
                 <button type="button" id="tabBox-all" onclick="switchStatusTab('all')" class="bg-white/15 hover:bg-white/25 backdrop-blur-sm rounded-xl p-2 transition border-2 border-transparent">
                     <div class="text-[10px] text-emerald-100 truncate">งานทั้งหมด</div>
@@ -342,9 +330,8 @@
             </div>
         </div>
 
-        <!-- แถบตัวกรองประเภทงาน สถานะ กะ วันที่ และการเรียงลำดับ -->
+        <!-- แถบตัวกรอง -->
         <div class="p-4 bg-slate-50 border-b border-slate-200 space-y-2.5">
-            <!-- แถวที่ 1: ประเภทงาน & สถานะ -->
             <div class="grid grid-cols-2 gap-2">
                 <select id="filterJobType" onchange="renderJobCards()" class="px-3 py-2 text-xs font-bold text-slate-700 bg-white">
                     <option value="outage">📞 งานรับแจ้งไฟขัดข้อง (แท็บ 2)</option>
@@ -358,7 +345,6 @@
                 </select>
             </div>
 
-            <!-- แถวที่ 2: แยกกะแสดงผล & เรียงลำดับใบงาน -->
             <div class="grid grid-cols-2 gap-2">
                 <select id="filterJobShift" onchange="selectShiftFilter(this.value)" class="px-3 py-2 text-xs font-bold text-teal-800 bg-white border-teal-200">
                     <option value="all" selected>🕒 แยกกะ: แสดงทุกกะ</option>
@@ -376,7 +362,6 @@
                 </select>
             </div>
 
-            <!-- แถวที่ 3: ปุ่มด่วนกดแยกกะพร้อมแสดงจำนวนงานในแต่ละกะ -->
             <div class="grid grid-cols-4 gap-1.5 pt-0.5" id="shiftQuickPills">
                 <button type="button" id="shiftPill-all" onclick="selectShiftFilter('all')" class="py-1.5 px-2 rounded-xl text-[11px] font-bold border transition bg-teal-600 text-white border-teal-600 shadow-sm">
                     ทุกกะ (<span id="countShiftAll">0</span>)
@@ -392,7 +377,6 @@
                 </button>
             </div>
 
-            <!-- แถวที่ 4: ตัวกรองวันที่ (เลือกเฉพาะวันนี้ / เลือกวันที่ย้อนหลัง / ทั้งหมด) -->
             <div class="flex items-center gap-1.5">
                 <div class="relative flex-1">
                     <input type="date" id="filterJobDate" onchange="onTechDateInputChanged()" class="w-full px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white">
@@ -408,7 +392,6 @@
             <input type="text" id="searchJobKeyword" oninput="renderJobCards()" placeholder="🔍 ค้นหาเลขงาน, กะ, วันที่, บริเวณ, อาการ, ชื่อช่าง..." class="w-full px-3.5 py-2 text-xs bg-white">
         </div>
 
-        <!-- ป้ายบอกฝั่งที่กำลังเปิดดูอยู่ และชื่อผู้ใช้งานปัจจุบัน -->
         <div class="px-4 pt-3 pb-1 flex items-center justify-between gap-2">
             <span id="currentViewBadge" class="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
                 ⏳ กำลังแสดง: งานรอแก้ไข
@@ -416,12 +399,10 @@
             <span id="loggedUserDisplayBadge" class="text-[11px] font-semibold text-slate-500 truncate"></span>
         </div>
 
-        <!-- รายการการ์ดใบงาน -->
         <div id="jobCardsContainer" class="p-4 pt-2 space-y-3 max-h-[68vh] overflow-y-auto">
             <p class="text-center text-sm text-slate-400 py-8">กำลังโหลดรายการงาน...</p>
         </div>
 
-        <!-- Signature Footer -->
         <div class="bg-slate-50 px-6 py-3 border-t border-slate-200 text-center text-xs text-slate-500 font-medium">
             Developed by SamSrikacha
         </div>
@@ -474,7 +455,6 @@
                     </div>
                 </div>
 
-                <!-- 📍 ช่องแนบพิกัดหน้างานจริงปัจจุบัน (กรณีใบงานเดิมไม่มีพิกัด หรือต้องการอัปเดตพิกัดจุดเกิดเหตุจริง) -->
                 <div>
                     <div class="flex items-center justify-between mb-1">
                         <label class="block font-bold text-slate-700">📍 พิกัดหน้างานจริง (GPS)</label>
@@ -513,7 +493,7 @@
 
     <script>
         const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
-        const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000; // 1 ชั่วโมง (ตรงกับ index.html)
+        const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
         let lastSavedActivityTime = 0;
         let currentEditingJobKey = null;
         let currentEditingJobType = 'outage';
@@ -688,6 +668,7 @@
             setTimeout(() => t.classList.add('opacity-0'), 2500);
         }
 
+        // แยกค่า role, sessionToken และ displayName (ชื่อช่างที่แอดมินตั้งไว้)
         function parseAccountRecord(rawAcc) {
             const rawRole = String(rawAcc.role || 'user');
             const parts = rawRole.split('::');
@@ -695,12 +676,32 @@
                 username: String(rawAcc.username || '').trim(),
                 password: String(rawAcc.password || '').trim(),
                 role: parts[0] || 'user',
-                sessionToken: rawAcc.sessionToken !== undefined ? rawAcc.sessionToken : (parts[1] || '')
+                sessionToken: rawAcc.sessionToken !== undefined ? rawAcc.sessionToken : (parts[1] || ''),
+                displayName: rawAcc.displayName !== undefined ? String(rawAcc.displayName).trim() : (parts[2] || '').trim()
             };
         }
 
+        // แปลงรหัสพนักงานเป็นชื่อช่างที่ตั้งไว้ (ถ้ามี)
+        function formatTechDisplayName(rawNameOrList) {
+            if (!rawNameOrList || rawNameOrList === '-') return '-';
+            const str = String(rawNameOrList).trim();
+            if (str.includes(',')) {
+                return str.split(',').map(s => formatTechDisplayName(s.trim())).join(', ');
+            }
+            const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]').map(parseAccountRecord);
+            const matchedAcc = rawAccounts.find(a => isUsernameMatchingAccount(str, a.username));
+            if (matchedAcc && matchedAcc.displayName) {
+                const grp = getUserGroupName(matchedAcc.username) || getUserGroupName(str);
+                if (grp && !matchedAcc.displayName.includes(grp)) {
+                    return `${matchedAcc.displayName} ${grp}`;
+                }
+                return matchedAcc.displayName;
+            }
+            return str;
+        }
+
         // ==========================================
-        // 🗂️ ทะเบียนงานที่ปิดเสร็จสิ้นแล้ว (เชื่อมตรงกันทั้ง index.html และ page2.html)
+        // 🗂️ ทะเบียนงานที่ปิดเสร็จสิ้นแล้ว
         // ==========================================
         function getClosedReportsRegistry() {
             try {
@@ -720,7 +721,7 @@
         }
 
         // ==========================================
-        // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน (ตรวจสอบเฉพาะจากบัญชีผู้ใช้ ไม่ดึงจาก workerName)
+        // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน
         // ==========================================
         function getUserGroupName(username) {
             if (!username) return '';
@@ -862,9 +863,13 @@
                 const roleName = currentRole === 'admin'
                     ? '👑 แอดมิน'
                     : (currentRole === 'tech' ? '🛠️ ช่าง' : '👷 ผู้ใช้');
-                const baseDisplay = getUserBaseId(currentUser) || currentUser;
+                const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]').map(parseAccountRecord);
+                const matchedAcc = rawAccounts.find(a => isUsernameMatchingAccount(currentUser, a.username));
+                const nameDisplay = (matchedAcc && matchedAcc.displayName)
+                    ? matchedAcc.displayName
+                    : (getUserBaseId(currentUser) || currentUser);
                 const groupTag = (currentRole !== 'admin' && myGroup) ? ` [🏢 ${myGroup}]` : '';
-                userBadge.textContent = currentUser ? `${roleName}: ${baseDisplay}${groupTag}` : '';
+                userBadge.textContent = currentUser ? `${roleName}: ${nameDisplay}${groupTag}` : '';
             }
         }
 
@@ -976,7 +981,7 @@
                     const payloadUsers = accounts.map(acc => ({
                         username: normalizeUsernameFormat(acc.username),
                         password: acc.password,
-                        role: `${acc.role || 'user'}::${acc.sessionToken || ''}`
+                        role: `${acc.role || 'user'}::${acc.sessionToken || ''}::${(acc.displayName || '').replace(/::/g, ' ').trim()}`
                     }));
                     fetch(getActiveCloudApiUrl(), {
                         method: 'POST',
@@ -992,7 +997,7 @@
                 checkTechAuth();
                 initTechGpsTracker();
                 renderJobCards();
-                showToast(`🔓 ยินดีต้อนรับคุณ ${fullCanonicalName}`);
+                showToast(`🔓 ยินดีต้อนรับคุณ ${formatTechDisplayName(fullCanonicalName)}`);
             } else {
                 btn.disabled = false;
                 btn.textContent = "เข้าสู่ระบบ";
@@ -1217,7 +1222,6 @@
             }, 30000);
         }
 
-        // ดึงพิกัดมือถือปัจจุบันใส่ใน Modal แจ้งผลตรวจสอบหน้างาน
         function captureCurrentTechGpsForModal() {
             const gpsInput = document.getElementById('techGpsInput');
             if (!navigator.geolocation) {
@@ -1296,7 +1300,7 @@
             return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
         }
 
-                function findNearestTechForJob(item) {
+        function findNearestTechForJob(item) {
             const jobGroup = getJobGroupName(item);
             const destCoord = extractCoordsFromJob(item);
             const locMap = getTechLocationsMap();
@@ -1362,7 +1366,6 @@
                 }
             }
             
-            // เช็กว่าช่างที่เคยแนะนำไว้ในใบงาน กดปิด GPS ไปแล้วหรือยัง
             if (item.recommendedTech && item.recommendedTech.techName) {
                 const recName = item.recommendedTech.techName;
                 const recLoc = locMap[recName] || Object.values(locMap).find(l => l && l.username && l.username.toLowerCase() === recName.toLowerCase());
@@ -1391,12 +1394,13 @@
         function buildRecommendedTechBadgeHtml(item) {
             const rec = findNearestTechForJob(item);
             if (!rec) return '';
+            const friendlyTechName = formatTechDisplayName(rec.techName);
 
             if (rec.hasGps) {
                 return `
                     <div class="p-2 bg-purple-50/90 border border-purple-200 rounded-xl text-[11px] text-purple-950 flex flex-wrap items-center justify-between gap-1">
                         <div class="font-bold text-purple-800 flex items-center gap-1">
-                            <span>🎯 แนะนำช่างใกล้สุด: ${rec.techName}</span>
+                            <span>🎯 แนะนำช่างใกล้สุด: ${friendlyTechName}</span>
                             ${rec.isMe ? `<span class="bg-amber-400 text-slate-950 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">⭐ คุณอยู่ใกล้สุด</span>` : ''}
                         </div>
                         <span class="text-[10px] font-semibold text-purple-700 bg-white px-2 py-0.5 rounded-md border border-purple-200">
@@ -1408,7 +1412,7 @@
 
             return `
                 <div class="p-2 bg-purple-50/70 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex items-center justify-between gap-1">
-                    <span class="font-bold text-purple-800">🎯 ช่างประจำกลุ่มแนะนำ: ${rec.techName}</span>
+                    <span class="font-bold text-purple-800">🎯 ช่างประจำกลุ่มแนะนำ: ${friendlyTechName}</span>
                     <span class="text-[10px] text-purple-600">(รอจับพิกัด GPS)</span>
                 </div>
             `;
@@ -1528,7 +1532,6 @@
             );
         }
 
-        // รองรับทั้งการกด "🗺️ นำทาง Maps" (มีลิงก์ GPS) และ "🚗 กดออกเดินทาง" (กรณีใบงานไม่มีลิงก์ GPS)
         async function handleStartNavigation(key, jobType, gpsLink) {
             const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
             let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
@@ -1647,6 +1650,7 @@
             const liveBadge = isGpsFresh
                 ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>GPS สด</span>`
                 : `<span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">⏱️ เรียลไทม์</span>`;
+            const friendlyTech = formatTechDisplayName(nav.techName || '-');
 
             if (nav.isArrived) {
                 return `
@@ -1657,7 +1661,7 @@
                     <div class="w-full bg-emerald-200 h-2 rounded-full overflow-hidden my-1">
                         <div class="bg-emerald-600 h-full w-full"></div>
                     </div>
-                    <div class="text-[10px] text-emerald-800">👷 ช่าง: ${nav.techName || '-'} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                    <div class="text-[10px] text-emerald-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
                 `;
             }
 
@@ -1682,7 +1686,7 @@
                         <div class="w-full bg-emerald-200 h-2 rounded-full overflow-hidden my-1">
                             <div class="bg-emerald-600 h-full w-full"></div>
                         </div>
-                        <div class="text-[10px] text-blue-800">👷 ช่าง: ${nav.techName || '-'} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                        <div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
                     `;
                 }
 
@@ -1699,14 +1703,14 @@
                     </div>
                     <div class="flex justify-between items-center text-[10px] text-blue-800">
                         <span>📏 ระยะทางเหลือ: ~${estRemainDist} กม. (${progressPct}%)</span>
-                        <span>👷 ${nav.techName || '-'} (ออก ${nav.departTime || '-'})</span>
+                        <span>👷 ${friendlyTech} (ออก ${nav.departTime || '-'})</span>
                     </div>
                 `;
             }
 
             return `
                 <div class="font-bold text-blue-700">🚗 ${nav.statusText || 'กำลังเดินทาง'}</div>
-                <div class="text-[10px] text-blue-800">👷 ช่าง: ${nav.techName || '-'} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                <div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
             `;
         }
 
@@ -1732,7 +1736,6 @@
             return (Date.now() - updatedMs) < 180000;
         }
 
-        // ตรวจสอบว่าเป็นรายงานผลที่ถูกระบบบังคับปิดเองจากบั๊กหรือไม่
         function isAutoGeneratedFakeClosure(reportObj) {
             if (!reportObj) return false;
             if (reportObj.realCause === 'ปิดงานโดยผู้ใช้งานทั่วไป' && reportObj.actionTaken === 'ดำเนินการเสร็จสิ้นจากระบบหลัก') return true;
@@ -1741,7 +1744,6 @@
             return false;
         }
 
-        // กู้คืนใบงานของวันนี้ที่เผลอถูกระบบบังคับปิดเอง ให้กลับไปเป็น "รอแก้ไข" อัตโนมัติ
         function rescueFalselyClosedRecentJobs() {
             const now = new Date();
             const todayThai = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543}`;
@@ -1813,7 +1815,6 @@
                     bestReport = closedMap[jobKey];
                 }
 
-                // กรณีมีการสั่งคืนสถานะกลับเป็นรอแก้ไข (reopenedAt)
                 const latestReopen = (cJob.reopenedAt || '') >= (existing.reopenedAt || '') ? (cJob.reopenedAt || '') : (existing.reopenedAt || '');
                 if (latestReopen && (!bestReport?.updatedAt || latestReopen > bestReport.updatedAt)) {
                     bestReport = undefined;
@@ -2329,7 +2330,7 @@
                         <div class="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-950 space-y-0.5">
                             <div><strong>🔍 สาเหตุจริง:</strong> ${tr.realCause || '-'}</div>
                             <div><strong>🛠️ การแก้ไข:</strong> ${tr.actionTaken || '-'}</div>
-                            <div class="text-[10px] text-emerald-700 pt-0.5">📅 ${dStr} | ⏰ เสร็จเวลา: ${tr.finishTime || '-'} | 👷 ช่าง: ${tr.inspector || '-'}</div>
+                            <div class="text-[10px] text-emerald-700 pt-0.5">📅 ${dStr} | ⏰ เสร็จเวลา: ${tr.finishTime || '-'} | 👷 ช่าง: ${formatTechDisplayName(tr.inspector || '-')}</div>
                         </div>
                     ` : ''}
                     <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
@@ -2378,13 +2379,14 @@
             const tr = item.techReport || {};
 
             const loggedInUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            const defaultInspector = loggedInUser ? formatTechDisplayName(loggedInUser) : (tr.inspector ? formatTechDisplayName(tr.inspector) : '');
 
             statusSelect.value = tr.status || 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
             document.getElementById('techCauseInput').value = tr.realCause || '';
             document.getElementById('techActionInput').value = tr.actionTaken || '';
             document.getElementById('techGpsInput').value = (item.gps && item.gps !== '-') ? item.gps : (tr.fieldGps || '');
             document.getElementById('techFinishTimeInput').value = tr.finishTime || defaultTime;
-            document.getElementById('techInspectorInput').value = loggedInUser || tr.inspector || '';
+            document.getElementById('techInspectorInput').value = defaultInspector;
 
             document.getElementById('inspectModal').classList.remove('hidden');
         }
@@ -2437,7 +2439,8 @@
             const actionTaken = document.getElementById('techActionInput').value.trim() || '-';
             const fieldGps = document.getElementById('techGpsInput')?.value.trim() || '';
             const finishTime = document.getElementById('techFinishTimeInput').value.trim() || '-';
-            const inspector = loggedInUser || document.getElementById('techInspectorInput').value.trim() || '-';
+            const typedInspector = document.getElementById('techInspectorInput').value.trim();
+            const inspector = typedInspector || (loggedInUser ? formatTechDisplayName(loggedInUser) : '-');
             document.getElementById('techInspectorInput').value = inspector;
 
             if (myGroup && !item.ownerGroup) {
@@ -2448,7 +2451,6 @@
                 item.gps = fieldGps;
             }
 
-            // กรณีเลือกคืนสถานะใบงานกลับเป็น "รอแก้ไข"
             if (status === 'รอแก้ไข') {
                 delete item.techReport;
                 delete item.techNav;
