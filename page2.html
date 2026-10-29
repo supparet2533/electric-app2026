@@ -2788,6 +2788,70 @@
                 await flushPendingJobsWhenOnline();
             }
         });
+    </script>  
+    <!-- 📲 ระบบติดตั้งแอป PWA เต็มจอ & ทำงานออฟไลน์ -->
+    <script>
+        (function() {
+            // 1. เชื่อมไฟล์ manifest.json จริง เพื่อให้ Chrome ซ่อนแถบ URL ด้านบน 100%
+            let manifestEl = document.getElementById('webManifestLink') || document.querySelector('link[rel="manifest"]');
+            if (!manifestEl) {
+                manifestEl = document.createElement('link');
+                manifestEl.rel = 'manifest';
+                document.head.appendChild(manifestEl);
+            }
+            manifestEl.href = 'manifest.json';
+
+            // 2. ลงทะเบียน Service Worker (sw.js)
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js').catch(() => {});
+                });
+            }
+
+            // 3. ตรวจสอบว่าเปิดจากแอปที่ติดตั้งแล้วหรือยัง (ถ้าเปิดแบบเต็มจอแล้ว ไม่ต้องแสดงปุ่มติดตั้งซ้ำ)
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            if (isStandalone) return;
+
+            let deferredInstallPrompt = null;
+
+            // สร้างแถบปุ่ม "📲 ติดตั้งแอปลงมือถือ" ด้านบนสุด
+            const installBanner = document.createElement('div');
+            installBanner.id = 'pwaInstallBanner';
+            installBanner.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[180] hidden items-center gap-2 bg-slate-900/95 text-white px-4 py-2 rounded-full shadow-2xl border border-emerald-400/50 text-xs font-bold backdrop-blur-md';
+            installBanner.innerHTML = `
+                <span>📲 ติดตั้งเป็นแอปเต็มจอ</span>
+                <button type="button" id="pwaInstallConfirmBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded-full text-[11px] font-extrabold shadow transition">
+                    ติดตั้งเลย
+                </button>
+                <button type="button" onclick="this.parentElement.classList.add('hidden')" class="text-slate-400 hover:text-white pl-1 text-base leading-none">&times;</button>
+            `;
+            document.body.appendChild(installBanner);
+
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredInstallPrompt = e;
+                installBanner.classList.remove('hidden');
+                installBanner.classList.add('flex');
+            });
+
+            document.getElementById('pwaInstallConfirmBtn').addEventListener('click', async () => {
+                if (deferredInstallPrompt) {
+                    deferredInstallPrompt.prompt();
+                    const { outcome } = await deferredInstallPrompt.userChoice;
+                    if (outcome === 'accepted') {
+                        installBanner.classList.add('hidden');
+                    }
+                    deferredInstallPrompt = null;
+                } else {
+                    alert("📲 วิธีติดตั้งแอปแบบเต็มจอ:\n• มือถือ Android: กดปุ่มจุด 3 จุด (⋮) มุมขวาบนของ Chrome เลือก 'ติดตั้งแอป' หรือ 'เพิ่มลงในหน้าจอหลัก'\n• iPhone (Safari): กดปุ่มแชร์ด้านล่าง เลือก 'เพิ่มไปยังหน้าจอโฮม'");
+                }
+            });
+
+            window.addEventListener('appinstalled', () => {
+                installBanner.classList.add('hidden');
+                if (typeof showToast === 'function') showToast("🎉 ติดตั้งแอปเรียบร้อยแล้ว! เปิดจากไอคอนบนหน้าจอมือถือได้เลย");
+            });
+        })();
     </script>
 </body>
 </html>
