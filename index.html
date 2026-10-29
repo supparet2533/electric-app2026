@@ -11,9 +11,55 @@
     <meta name="apple-mobile-web-app-title" content="ระบบงานไฟฟ้า">
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     
-    <!-- โลโก้สายฟ้าแบบ Vector ฝังในโค้ด (ออกแบบให้เข้ากับธีมสีแอป) -->
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
+    <!-- โลโก้สายฟ้า 512x512 PNG สำหรับติดตั้งแอปบนมือถือ -->
+    <link id="mainFavIconPng" rel="icon" type="image/png" sizes="512x512" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
+    <link id="mainAppleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
+    <link id="webManifestLink" rel="manifest" href="manifest-main.json">
+    <script>
+        (function() {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                const grad = ctx.createLinearGradient(0, 0, 512, 512);
+                grad.addColorStop(0, '#2563eb');
+                grad.addColorStop(1, '#4f46e5');
+                const r = 115;
+                ctx.beginPath();
+                ctx.moveTo(r, 0);
+                ctx.lineTo(512 - r, 0);
+                ctx.quadraticCurveTo(512, 0, 512, r);
+                ctx.lineTo(512, 512 - r);
+                ctx.quadraticCurveTo(512, 512, 512 - r, 512);
+                ctx.lineTo(r, 512);
+                ctx.quadraticCurveTo(0, 512, 0, 512 - r);
+                ctx.lineTo(0, r);
+                ctx.quadraticCurveTo(0, 0, r, 0);
+                ctx.closePath();
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.moveTo(318, 48);
+                ctx.lineTo(142, 304);
+                ctx.lineTo(256, 304);
+                ctx.lineTo(212, 464);
+                ctx.lineTo(410, 192);
+                ctx.lineTo(296, 192);
+                ctx.closePath();
+                ctx.fill();
+
+                const pngUrl = canvas.toDataURL('image/png');
+                const fav = document.getElementById('mainFavIconPng');
+                const touch = document.getElementById('mainAppleTouchIconPng');
+                if (fav) fav.href = pngUrl;
+                if (touch) touch.href = pngUrl;
+            } catch (e) {}
+        })();
+    </script>
+
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -7072,8 +7118,7 @@
                 manifestEl.rel = 'manifest';
                 document.head.appendChild(manifestEl);
             }
-            manifestEl.href = 'manifest.json';
-
+            manifestEl.href = 'manifest-main.json';
             // 2. ลงทะเบียน Service Worker (sw.js)
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
