@@ -1,0 +1,30 @@
+{
+  "name": "pea-electric-tools",
+  "version": "1.7.0",
+  "description": "ระบบเครื่องมือจัดการงานไฟฟ้า",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.samsrikacha.peaelectric",
+    "productName": "PEA-Electric-Tools",
+    "files": [
+      "index.html",
+      "page2.html",
+      "main.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "portable": {
+      "artifactName": "PEA-Electric-Tools.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
