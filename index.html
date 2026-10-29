@@ -6090,7 +6090,7 @@
             }
         }
 
-                function findNearestTechForMainPage(item) {
+                        function findNearestTechForMainPage(item) {
             const jobGroup = getJobGroupName(item);
             const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
             const rawText = `${item.gps || ''} ${item.address || ''} ${item.area || ''} ${item.weather || ''}`;
@@ -6105,6 +6105,19 @@
                     }
                 }
             }
+
+            const isSameTechMain = (nameA, nameB) => {
+                if (!nameA || !nameB) return false;
+                if (isUsernameMatchingAccount(nameA, nameB)) return true;
+                const dA = formatTechDisplayName(nameA).toLowerCase().replace(/\s+/g, '');
+                const dB = formatTechDisplayName(nameB).toLowerCase().replace(/\s+/g, '');
+                return Boolean(dA && dB && dA === dB);
+            };
+
+            const isTechGpsOffMain = (targetName) => {
+                if (!targetName) return true;
+                return Object.values(locMap).some(l => l && isSameTechMain(l.username, targetName) && (l.gpsDisabled || !l.lat || !l.lon));
+            };
             
             if (coords && coords.lat && coords.lon) {
                 const lat2 = parseFloat(coords.lat);
@@ -6113,8 +6126,8 @@
                 const candidates = [];
                 
                 Object.values(locMap).forEach(loc => {
-                    // ข้ามช่างที่กดปิด GPS (gpsDisabled) หรือไม่มีพิกัด
                     if (!loc || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return;
+                    if (isTechGpsOffMain(loc.username)) return;
                     const tGroup = getUserGroupName(loc.username) || loc.group || '';
                     if (jobGroup && tGroup && jobGroup !== tGroup) return;
                     
@@ -6144,8 +6157,7 @@
             // เช็กว่าค่าเดิมที่บันทึกไว้ในใบงาน ช่างคนนั้นกดปิด GPS ไปแล้วหรือยัง
             if (item.recommendedTech && item.recommendedTech.techName) {
                 const recName = item.recommendedTech.techName;
-                const recLoc = locMap[recName] || Object.values(locMap).find(l => l && l.username && l.username.toLowerCase() === recName.toLowerCase());
-                if (!recLoc || (!recLoc.gpsDisabled && recLoc.lat && recLoc.lon)) {
+                if (!isTechGpsOffMain(recName) && item.recommendedTech.hasGps) {
                     return item.recommendedTech;
                 }
             }
