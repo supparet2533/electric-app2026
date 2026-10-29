@@ -1,8 +1,9 @@
 {
-  "name": "ระบบจัดการงานไฟฟ้าและช่างหน้างาน",
-  "short_name": "งานไฟฟ้า PEA",
+  "id": "./page2.html",
+  "name": "ระบบช่างตรวจสอบหน้างาน",
+  "short_name": "ช่างไฟฟ้า PEA",
   "start_url": "./page2.html",
-  "scope": "./",
+  "scope": "./page2.html",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f766e",
