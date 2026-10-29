@@ -1,0 +1,24 @@
+{
+  "name": "ระบบจัดการงานไฟฟ้าและช่างหน้างาน",
+  "short_name": "งานไฟฟ้า PEA",
+  "start_url": "./page2.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f766e",
+  "theme_color": "#0f766e",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
