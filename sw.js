@@ -1,9 +1,10 @@
-const CACHE_NAME = 'pea-electric-pwa-v1';
+const CACHE_NAME = 'pea-electric-pwa-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './page2.html',
-  './manifest.json'
+  './manifest.json',
+  './manifest-main.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -22,7 +23,6 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// ดึงหน้าเว็บเวอร์ชันล่าสุดจากเน็ตก่อนเสมอ หากไม่มีสัญญาณเน็ตจึงดึงจากความจำเครื่อง
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
