@@ -1173,7 +1173,7 @@
             "สุรศักดิ์": { lat: 13.1592, lon: 100.9581 }
         };
 
-        function updateGpsToggleButtonUI() {
+                function updateGpsToggleButtonUI() {
             const btn = document.getElementById('gpsToggleBtn');
             if (!btn) return;
             if (isGpsTrackingEnabled) {
@@ -1183,6 +1183,48 @@
                 btn.textContent = '🚫 GPS: ปิด';
                 btn.className = 'bg-slate-800/50 hover:bg-slate-800/70 text-slate-200 px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm';
             }
+        }
+
+        // เช็กว่าเป็นช่างคนเดียวกันหรือไม่ (เทียบทั้งรหัสพนักงาน ชื่อบัญชี และชื่อแสดงผล เช่น SAM)
+        function isSameTechPerson(nameA, nameB) {
+            if (!nameA || !nameB) return false;
+            if (isUsernameMatchingAccount(nameA, nameB)) return true;
+            const dispA = formatTechDisplayName(nameA).toLowerCase().replace(/\s+/g, '');
+            const dispB = formatTechDisplayName(nameB).toLowerCase().replace(/\s+/g, '');
+            return Boolean(dispA && dispB && dispA === dispB);
+        }
+
+        // ล้างพิกัดทุกคีย์ที่เป็นของช่างคนปัจจุบันเมื่ออยู่ในสถานะ "GPS: ปิด"
+        function clearMyGpsFromLocationsMap() {
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            if (!curUser) return;
+            const locMap = getTechLocationsMap();
+            const nowIso = new Date().toISOString();
+
+            Object.keys(locMap).forEach(k => {
+                const item = locMap[k];
+                if (isSameTechPerson(k, curUser) || (item && isSameTechPerson(item.username, curUser))) {
+                    locMap[k] = {
+                        ...item,
+                        username: item?.username || curUser,
+                        lat: null,
+                        lon: null,
+                        gpsDisabled: true,
+                        updatedAt: nowIso
+                    };
+                }
+            });
+
+            locMap[curUser] = {
+                username: curUser,
+                role: localStorage.getItem('elec_app_current_role') || 'tech',
+                group: getCurrentUserGroup(),
+                lat: null,
+                lon: null,
+                gpsDisabled: true,
+                updatedAt: nowIso
+            };
+            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
         }
 
         async function toggleGpsTracking() {
@@ -1200,23 +1242,9 @@
                     techGpsIntervalId = null;
                 }
                 lastKnownTechCoords = null;
-
-                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                if (curUser) {
-                    const locMap = getTechLocationsMap();
-                    locMap[curUser] = {
-                        username: curUser,
-                        role: localStorage.getItem('elec_app_current_role') || 'tech',
-                        group: getCurrentUserGroup(),
-                        lat: null,
-                        lon: null,
-                        gpsDisabled: true,
-                        updatedAt: new Date().toISOString()
-                    };
-                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
-                }
+                clearMyGpsFromLocationsMap();
                 renderJobCards();
-                showToast("🚫 ปิดการแชร์พิกัด GPS เรียบร้อยแล้ว");
+                showToast("🚫 ปิดการแชร์พิกัด GPS และล้างตำแหน่งค้างเรียบร้อยแล้ว");
                 await pushAllJobsToCloud(true);
             }
         }
@@ -1241,17 +1269,23 @@
         function mergeTechLocationsMap(cloudLocs) {
             if (!cloudLocs || typeof cloudLocs !== 'object') return;
             const localMap = getTechLocationsMap();
-            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim().toLowerCase();
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
 
             Object.keys(cloudLocs).forEach(uKey => {
-                if (!isGpsTrackingEnabled && curUser && uKey.toLowerCase() === curUser) return;
                 const cItem = cloudLocs[uKey];
+                // หากเครื่องนี้ปิด GPS อยู่ ห้ามดึงพิกัดเก่าของตัวเองจาก Cloud กลับมาทับเด็ดขาด
+                if (!isGpsTrackingEnabled && curUser && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem?.username, curUser))) {
+                    return;
+                }
                 const lItem = localMap[uKey];
                 if (!lItem || (cItem.updatedAt && cItem.updatedAt >= (lItem.updatedAt || ''))) {
                     localMap[uKey] = cItem;
                 }
             });
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
+            if (!isGpsTrackingEnabled) {
+                clearMyGpsFromLocationsMap();
+            }
         }
 
         function recordCurrentTechGpsLocation(lat, lon) {
@@ -1262,6 +1296,13 @@
             if (!curUser || curRole === 'admin') return;
 
             const locMap = getTechLocationsMap();
+            // ลบคีย์เก่าที่ชื่อซ้ำซ้อนกันออก เพื่อใช้คีย์มาตรฐานตัวเดียว
+            Object.keys(locMap).forEach(k => {
+                if (k !== curUser && (isSameTechPerson(k, curUser) || isSameTechPerson(locMap[k]?.username, curUser))) {
+                    delete locMap[k];
+                }
+            });
+
             locMap[curUser] = {
                 username: curUser,
                 role: curRole,
@@ -1276,7 +1317,11 @@
 
         function initTechGpsTracker(showFeedback = false) {
             updateGpsToggleButtonUI();
-            if (!isGpsTrackingEnabled) return;
+            if (!isGpsTrackingEnabled) {
+                clearMyGpsFromLocationsMap();
+                renderJobCards();
+                return;
+            }
             if (!navigator.geolocation) {
                 if (showFeedback) showToast("⚠️ เบราว์เซอร์ของคุณไม่รองรับ GPS");
                 return;
@@ -1410,12 +1455,21 @@
                 if (!jobGroup || !accGroup) return true;
                 return accGroup === jobGroup;
             });
+
+            // ตรวจสอบว่าช่างคนนั้นมีคีย์ใดคีย์หนึ่งสั่งปิด GPS ไว้หรือไม่
+            const isTechGpsTurnedOff = (targetName) => {
+                if (!targetName) return true;
+                if (!isGpsTrackingEnabled && curUser && isSameTechPerson(targetName, curUser)) return true;
+                return Object.values(locMap).some(l => l && isSameTechPerson(l.username, targetName) && (l.gpsDisabled || !l.lat || !l.lon));
+            };
             
             if (destCoord) {
                 const candidatesWithGps = [];
                 Object.values(locMap).forEach(loc => {
                     if (!loc || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return;
-                    const accMatch = rawAccounts.find(a => a.username.toLowerCase() === loc.username.toLowerCase());
+                    if (isTechGpsTurnedOff(loc.username)) return;
+
+                    const accMatch = rawAccounts.find(a => isUsernameMatchingAccount(loc.username, a.username));
                     const effectiveRole = accMatch ? accMatch.role : (loc.role || 'tech');
                     const effectiveGroup = getUserGroupName(loc.username) || loc.group || '';
                     
@@ -1426,7 +1480,7 @@
                     const estMin = Math.max(1, Math.round((roadKm / 45) * 60));
                     
                     candidatesWithGps.push({
-                        username: loc.username,
+                        username: accMatch ? accMatch.username : loc.username,
                         role: effectiveRole,
                         roadKm,
                         estMin,
@@ -1445,20 +1499,17 @@
                         distanceKm: best.roadKm.toFixed(1),
                         durationMin: best.estMin,
                         hasGps: true,
-                        isMe: curUser && best.username.toLowerCase() === curUser.toLowerCase()
+                        isMe: Boolean(curUser && isSameTechPerson(best.username, curUser))
                     };
                 }
             }
             
             if (item.recommendedTech && item.recommendedTech.techName) {
                 const recName = item.recommendedTech.techName;
-                const recLoc = locMap[recName] || Object.values(locMap).find(l => l && l.username && l.username.toLowerCase() === recName.toLowerCase());
-                const isRecGpsOff = (curUser && recName.toLowerCase() === curUser.toLowerCase() && !isGpsTrackingEnabled) ||
-                    (recLoc && (recLoc.gpsDisabled || !recLoc.lat || !recLoc.lon));
-                if (!isRecGpsOff) {
+                if (!isTechGpsTurnedOff(recName) && item.recommendedTech.hasGps) {
                     return {
                         ...item.recommendedTech,
-                        isMe: curUser && recName.toLowerCase() === curUser.toLowerCase()
+                        isMe: Boolean(curUser && isSameTechPerson(recName, curUser))
                     };
                 }
             }
@@ -1469,7 +1520,7 @@
                     distanceKm: null,
                     durationMin: null,
                     hasGps: false,
-                    isMe: techAccountsInGroup.some(t => t.username.toLowerCase() === curUser.toLowerCase())
+                    isMe: techAccountsInGroup.some(t => isSameTechPerson(t.username, curUser))
                 };
             }
             return null;
@@ -1480,7 +1531,7 @@
             if (!rec) return '';
             const friendlyTechName = formatTechDisplayName(rec.techName);
 
-            if (rec.hasGps) {
+            if (rec.hasGps && rec.distanceKm) {
                 return `
                     <div class="p-2 bg-purple-50/90 border border-purple-200 rounded-xl text-[11px] text-purple-950 flex flex-wrap items-center justify-between gap-1">
                         <div class="font-bold text-purple-800 flex items-center gap-1">
@@ -1497,7 +1548,7 @@
             return `
                 <div class="p-2 bg-purple-50/70 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex items-center justify-between gap-1">
                     <span class="font-bold text-purple-800">🎯 ช่างประจำกลุ่มแนะนำ: ${friendlyTechName}</span>
-                    <span class="text-[10px] text-purple-600">(รอจับพิกัด GPS)</span>
+                    <span class="text-[10px] text-purple-600">(ปิด GPS / รอจับพิกัด)</span>
                 </div>
             `;
         }
