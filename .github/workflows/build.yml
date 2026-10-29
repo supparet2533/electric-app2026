@@ -24,8 +24,8 @@ jobs:
       - name: สร้างไฟล์โปรแกรม .exe
         run: npm run dist
 
-      - name: อัปโหลดไฟล์ .exe เตรียมให้ดาวน์โหลด
+      - name: อัปโหลดไฟล์ .zip เตรียมให้ดาวน์โหลด
         uses: actions/upload-artifact@v4
         with:
           name: PEA-Electric-App-Windows
-          path: dist/PEA-Electric-Tools.exe
+          path: dist/*.zip
