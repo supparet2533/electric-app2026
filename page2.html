@@ -1971,8 +1971,22 @@
             localStorage.setItem('fault_reports_all', JSON.stringify(Array.from(faultMap.values())));
         }
 
-        async function pushAllJobsToCloud(useKeepAlive = false) {
+                async function pushAllJobsToCloud(useKeepAlive = false) {
             if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+
+            // บันทึกสถานะว่ามีข้อมูลใหม่ของช่างที่รอส่งขึ้น Cloud
+            localStorage.setItem('elec_tech_has_pending_push', 'true');
+            const statusEl = document.getElementById('cloudStatusText');
+
+            // กรณีมือถือไม่มีสัญญาณอินเทอร์เน็ตในขณะนั้น ให้เก็บไว้รอส่งอัตโนมัติ
+            if (!navigator.onLine) {
+                if (statusEl) {
+                    statusEl.textContent = "🟠 ออฟไลน์ (บันทึกในเครื่องแล้ว • รอสัญญาณเน็ตเพื่อส่งอัตโนมัติ)";
+                }
+                showToast("📶 ไม่มีสัญญาณเน็ต บันทึกไว้ในเครื่องแล้ว (จะส่งอัตโนมัติเมื่อมีเน็ต)");
+                return;
+            }
+
             if (!hasCompletedInitialCloudSync) return;
 
             const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
@@ -2072,13 +2086,23 @@
             }
 
             try {
-                await fetch(getActiveCloudApiUrl(), {
+                const res = await fetch(getActiveCloudApiUrl(), {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: bodyStr
                 });
+                if (res.ok) {
+                    // ส่งขึ้น Cloud สำเร็จ ล้างสถานะงานค้างออก
+                    localStorage.removeItem('elec_tech_has_pending_push');
+                    if (statusEl) {
+                        statusEl.textContent = `🟢 ส่งข้อมูลซิงค์สำเร็จ (${new Date().toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit', second:'2-digit'})} น.)`;
+                    }
+                }
             } catch (e) {
                 console.warn("Cloud push error:", e);
+                if (statusEl) {
+                    statusEl.textContent = "🟠 ส่งข้อมูลไม่สำเร็จ (ระบบจะส่งให้อัตโนมัติเมื่อสัญญาณเน็ตเสถียร)";
+                }
             }
         }
 
@@ -2615,6 +2639,31 @@
             window.addEventListener(evt, touchTechActivity, { passive: true });
         });
 
+                // ฟังก์ชันส่งงานที่ค้างในเครื่องขึ้น Cloud อัตโนมัติทันทีที่สัญญาณเน็ตกลับมา
+        async function flushPendingJobsWhenOnline() {
+            if (!navigator.onLine || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            if (localStorage.getItem('elec_tech_has_pending_push') === 'true') {
+                const statusEl = document.getElementById('cloudStatusText');
+                if (statusEl) statusEl.textContent = "⏳ สัญญาณเน็ตกลับมาแล้ว กำลังส่งงานที่ค้างไว้...";
+                showToast("🌐 สัญญาณเน็ตกลับมาแล้ว กำลังอัปเดตงานขึ้นระบบ...");
+                await syncJobsFromCloud(true);
+                await pushAllJobsToCloud(false);
+                showToast("✅ ส่งข้อมูลงานที่ค้างไว้ขึ้นระบบเรียบร้อยแล้ว!");
+            } else {
+                await syncJobsFromCloud(true);
+            }
+        }
+
+        window.addEventListener('online', flushPendingJobsWhenOnline);
+
+        window.addEventListener('offline', () => {
+            const statusEl = document.getElementById('cloudStatusText');
+            if (statusEl) {
+                statusEl.textContent = "🟠 ขาดการเชื่อมต่อเน็ต (สามารถบันทึกงานได้ ระบบจะส่งให้อัตโนมัติเมื่อมีเน็ต)";
+            }
+            showToast("⚠️ สัญญาณอินเทอร์เน็ตขาดหาย (โหมดออฟไลน์อัตโนมัติ)");
+        });
+
         window.addEventListener('DOMContentLoaded', async () => {
             rescueFalselyClosedRecentJobs();
             checkTechAuth();
@@ -2624,19 +2673,25 @@
             checkNewIncomingPendingJobs();
             switchStatusTab('pending');
             await syncJobsFromCloud(true);
+            if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) {
+                await pushAllJobsToCloud(false);
+            }
             initTechGpsTracker();
             setInterval(updateLiveNavDomElements, 1000);
-            setInterval(() => {
+            setInterval(async () => {
                 if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
-                    syncJobsFromCloud(true);
+                    await syncJobsFromCloud(true);
+                    if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) {
+                        await pushAllJobsToCloud(false);
+                    }
                 }
             }, 5000);
         });
 
-        window.addEventListener('focus', () => {
+        window.addEventListener('focus', async () => {
             if (localStorage.getItem('elec_app_logged_in') === 'true') {
                 checkTechAuth();
-                syncJobsFromCloud(true);
+                await flushPendingJobsWhenOnline();
             }
         });
     </script>
