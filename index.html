@@ -7106,10 +7106,10 @@
         
         window.addEventListener('focus', pullFieldReportsFromCloud);
     </script>   
-    <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin - Direct Cloud Sync) -->
+        <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin - Direct By-pass Sync) -->
     <script>
         (function() {
-            const ONLINE_THRESHOLD_MS = 180 * 1000; // ถือว่าออนไลน์หากเคลื่อนไหวภายใน 3 นาที
+            const ONLINE_THRESHOLD_MS = 180 * 1000; // 3 นาที
             let presenceInterval = null;
             let isPushingHeartbeat = false;
 
@@ -7205,7 +7205,7 @@
                 updateOnlineCountUI();
             }
 
-            // ⚡ ดึงข้อมูลล่าสุดจาก Cloud มารวมกับสถานะออนไลน์ของเครื่องนี้ แล้วส่งกลับขึ้น Cloud ทันที
+            // ⚡ ดึงข้อมูลล่าสุดจาก Cloud มารวมกับสถานะออนไลน์ของเครื่องนี้ แล้วส่งกลับขึ้น Cloud ด้วย Payload พิเศษ (ป้องกันสิทธิ์บล็อก)
             async function pushOnlineHeartbeatDirectToCloud() {
                 if (isPushingHeartbeat || localStorage.getItem('elec_app_logged_in') !== 'true') return;
                 const apiUrl = getActiveCloudApiUrl();
@@ -7213,17 +7213,20 @@
 
                 isPushingHeartbeat = true;
                 try {
+                    // 1. ดึงข้อมูลล่าสุดจาก Cloud ก่อน
                     const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
                     const data = await res.json();
                     let cloudJobs = (data && Array.isArray(data.jobs)) ? data.jobs : (cachedCloudJobs || []);
+                    
+                    // 2. ผสมข้อมูลออนไลน์เก่าบน Cloud กับข้อมูลใหม่บนเครื่อง
                     const cloudLocEntry = cloudJobs.find(j => j.jobType === 'tech_loc');
-
                     let localMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
                     if (cloudLocEntry && cloudLocEntry.techLocations) {
                         localMap = mergeOnlineLocationsSafe(cloudLocEntry.techLocations, localMap);
                         localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
                     }
 
+                    // 3. ประทับตราเวลาปัจจุบันให้เครื่องตัวเองอีกครั้ง
                     updateMyOnlineHeartbeat(false);
                     const updatedMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
 
@@ -7247,13 +7250,17 @@
                     ];
 
                     cachedCloudJobs = payloadJobs;
+
+                    // 4. ส่งขึ้น Cloud ทันทีด้วย Fetch (By-pass ฟังก์ชันปกติ)
                     await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'saveJobs', jobs: payloadJobs })
                     });
+                    
                     updateOnlineCountUI();
                 } catch (e) {
+                    console.warn("Heartbeat sync failed:", e);
                 } finally {
                     isPushingHeartbeat = false;
                 }
@@ -7391,7 +7398,7 @@
                 triggerManualPresenceSync();
             };
 
-            // ดึงข้อมูลตรงจาก Cloud ทันทีเมื่อกดปุ่มรีเฟรชสถานะ
+            // ดึงข้อมูลตรงจาก Cloud ทันทีเมื่อกดปุ่มรีเฟรชสถานะ และส่งเวลาใหม่กลับขึ้นไป
             window.triggerManualPresenceSync = async function() {
                 const apiUrl = getActiveCloudApiUrl();
                 if (apiUrl && navigator.onLine) {
@@ -7409,6 +7416,8 @@
                     } catch (e) {}
                 }
                 updateMyOnlineHeartbeat(false);
+                pushOnlineHeartbeatDirectToCloud(); // สั่งยิงกลับขึ้น Cloud ทันทีเพื่อความชัวร์
+                
                 renderOnlineUsersModalList();
                 if (isCurrentUserAdmin()) {
                     showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
@@ -7490,6 +7499,10 @@
                 const merged = mergeOnlineLocationsSafe(beforeMap, afterMap);
                 localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
                 updateMyOnlineHeartbeat(false);
+
+                // สั่งซิงค์กลับทันทีหากข้อมูลใหม่กว่าข้อมูลบนคลาวด์
+                pushOnlineHeartbeatDirectToCloud();
+                
                 return res;
             };
 
@@ -7499,6 +7512,7 @@
                 pushOnlineHeartbeatDirectToCloud();
 
                 if (presenceInterval) clearInterval(presenceInterval);
+                // ยิงสถานะออนไลน์ขึ้น Cloud อัตโนมัติทุกๆ 20 วินาที
                 presenceInterval = setInterval(() => {
                     if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                         pushOnlineHeartbeatDirectToCloud();
