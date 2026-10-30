@@ -2795,6 +2795,245 @@
             }
         });
     </script>  
+    <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์สำหรับหน้าช่าง (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
+    <script>
+        (function() {
+            const ONLINE_THRESHOLD_MS = 90 * 1000;
+            let techPresenceInterval = null;
+
+            function isCurrentTechUserAdmin() {
+                return localStorage.getItem('elec_app_logged_in') === 'true' &&
+                       localStorage.getItem('elec_app_current_role') === 'admin';
+            }
+
+            function injectTechOnlineButton() {
+                const headerRightGroup = document.querySelector('#techMainApp .bg-gradient-to-r .flex.flex-wrap.items-center.gap-1\\.5');
+                if (!headerRightGroup) return;
+
+                let btn = document.getElementById('techOnlineUsersBtn');
+                if (!btn) {
+                    btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.id = 'techOnlineUsersBtn';
+                    btn.onclick = openTechOnlineModal;
+                    btn.className = 'hidden bg-emerald-500/90 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm items-center gap-1';
+                    btn.title = 'ดูรายชื่อผู้ที่กำลังออนไลน์ (เฉพาะแอดมิน)';
+                    btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-200 animate-ping"></span><span>ออนไลน์ (<span id="techOnlineCountBadge">1</span>)</span>`;
+                    headerRightGroup.insertBefore(btn, headerRightGroup.firstChild);
+                }
+
+                // แสดงปุ่มเฉพาะแอดมินเท่านั้น (ช่างและผู้ใช้ทั่วไปจะไม่เห็นปุ่มนี้)
+                if (isCurrentTechUserAdmin()) {
+                    btn.classList.remove('hidden');
+                    btn.classList.add('flex');
+                } else {
+                    btn.classList.add('hidden');
+                    btn.classList.remove('flex');
+                    const modal = document.getElementById('techOnlineModal');
+                    if (modal) modal.classList.add('hidden');
+                }
+            }
+
+            // ส่งสัญญาณชีพจรเบื้องหลังของช่างและผู้ใช้ทุกคนขึ้น Cloud เพื่อให้แอดมินตรวจสอบได้
+            function updateTechOnlineHeartbeat() {
+                if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                if (!curUser) return;
+
+                const curRole = localStorage.getItem('elec_app_current_role') || 'tech';
+                const curGroup = typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '';
+                const nowIso = new Date().toISOString();
+                const locMap = getTechLocationsMap();
+                const existing = locMap[curUser] || {};
+
+                locMap[curUser] = {
+                    ...existing,
+                    username: curUser,
+                    role: curRole,
+                    group: curGroup,
+                    lat: (isGpsTrackingEnabled && lastKnownTechCoords) ? lastKnownTechCoords.lat : (isGpsTrackingEnabled ? existing.lat : null),
+                    lon: (isGpsTrackingEnabled && lastKnownTechCoords) ? lastKnownTechCoords.lon : (isGpsTrackingEnabled ? existing.lon : null),
+                    gpsDisabled: !isGpsTrackingEnabled,
+                    currentPage: '📱 หน้าช่าง',
+                    isOnline: true,
+                    lastSeenAt: nowIso,
+                    updatedAt: nowIso
+                };
+                localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                updateTechOnlineCountUI();
+            }
+
+            function getTechVisibleAccountsWithStatus() {
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                const locMap = getTechLocationsMap();
+                const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]').map(parseAccountRecord);
+                const now = Date.now();
+                const results = [];
+
+                rawAccounts.forEach(acc => {
+                    let matchedLoc = locMap[acc.username];
+                    if (!matchedLoc) {
+                        const foundKey = Object.keys(locMap).find(k => isSameTechPerson(k, acc.username));
+                        if (foundKey) matchedLoc = locMap[foundKey];
+                    }
+
+                    const isMe = isSameTechPerson(curUser, acc.username);
+                    const lastSeenStr = matchedLoc?.lastSeenAt || matchedLoc?.updatedAt || '';
+                    const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : 0;
+                    const diffMs = now - lastSeenMs;
+                    const isOnline = isMe || (matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
+
+                    results.push({
+                        username: acc.username,
+                        displayName: formatTechDisplayName(acc.username),
+                        role: acc.role || 'user',
+                        isOnline,
+                        isMe,
+                        lastSeenMs,
+                        diffMs,
+                        currentPage: isMe ? '📱 หน้าช่าง' : (matchedLoc?.currentPage || (acc.role === 'tech' ? '📱 หน้าช่าง' : '💻 หน้าหลัก')),
+                        hasGps: isMe ? Boolean(isGpsTrackingEnabled && lastKnownTechCoords) : Boolean(matchedLoc && !matchedLoc.gpsDisabled && matchedLoc.lat && matchedLoc.lon)
+                    });
+                });
+
+                results.sort((a, b) => {
+                    if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+                    return (b.lastSeenMs || 0) - (a.lastSeenMs || 0);
+                });
+
+                return results;
+            }
+
+            function updateTechOnlineCountUI() {
+                injectTechOnlineButton();
+                if (!isCurrentTechUserAdmin()) return;
+
+                const list = getTechVisibleAccountsWithStatus();
+                const onlineCount = list.filter(i => i.isOnline).length;
+                const badge = document.getElementById('techOnlineCountBadge');
+                if (badge) badge.textContent = onlineCount;
+
+                const modal = document.getElementById('techOnlineModal');
+                if (modal && !modal.classList.contains('hidden')) {
+                    renderTechOnlineModalList();
+                }
+            }
+
+            window.openTechOnlineModal = function() {
+                if (!isCurrentTechUserAdmin()) {
+                    showCustomAlert("⛔ เฉพาะแอดมิน (ผู้ดูแลระบบ) เท่านั้นที่สามารถดูสถานะออนไลน์ได้", "🔒 จำกัดสิทธิ์การเข้าถึง");
+                    return;
+                }
+
+                let modal = document.getElementById('techOnlineModal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'techOnlineModal';
+                    modal.className = 'fixed inset-0 bg-slate-900/60 hidden z-[190] flex items-center justify-center p-3 backdrop-blur-sm';
+                    modal.innerHTML = `
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+                            <div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center">
+                                <h3 class="font-bold text-sm flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping"></span>
+                                    <span>สถานะผู้ใช้งานออนไลน์ (เฉพาะ Admin)</span>
+                                </h3>
+                                <button type="button" onclick="document.getElementById('techOnlineModal').classList.add('hidden')" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+                            </div>
+                            <div class="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center text-[11px] text-emerald-800 font-semibold">
+                                <span id="techOnlineSummaryText">กำลังตรวจสอบ...</span>
+                                <button type="button" onclick="syncJobsFromCloud(false)" class="text-teal-700 hover:underline font-bold">🔄 ซิงค์สถานะ</button>
+                            </div>
+                            <div id="techOnlineListContainer" class="p-3.5 overflow-y-auto space-y-2 flex-1 bg-slate-50"></div>
+                            <div class="p-3 bg-white border-t flex justify-end">
+                                <button type="button" onclick="document.getElementById('techOnlineModal').classList.add('hidden')" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">ปิดหน้าต่าง</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                }
+                renderTechOnlineModalList();
+                modal.classList.remove('hidden');
+            };
+
+            function renderTechOnlineModalList() {
+                if (!isCurrentTechUserAdmin()) return;
+                const container = document.getElementById('techOnlineListContainer');
+                const summaryEl = document.getElementById('techOnlineSummaryText');
+                if (!container) return;
+
+                const list = getTechVisibleAccountsWithStatus();
+                const onlineCount = list.filter(i => i.isOnline).length;
+                if (summaryEl) summaryEl.textContent = `🟢 ออนไลน์ขณะนี้ ${onlineCount} คน (ทั้งหมด ${list.length} บัญชี)`;
+
+                container.innerHTML = '';
+                list.forEach(item => {
+                    const roleIcon = item.role === 'admin' ? '👑' : (item.role === 'tech' ? '🛠️' : '👷');
+                    const statusBadge = item.isOnline
+                        ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>ออนไลน์</span>`
+                        : `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-semibold px-2 py-0.5 rounded-full">⚪ ออฟไลน์</span>`;
+
+                    let timeLabel = 'ยังไม่เคยออนไลน์';
+                    if (item.isOnline) timeLabel = 'ออนไลน์ขณะนี้';
+                    else if (item.lastSeenMs) {
+                        const mins = Math.max(1, Math.floor(item.diffMs / 60000));
+                        timeLabel = mins < 60 ? `ออฟไลน์เมื่อ ${mins} นาทีที่แล้ว` : `ออฟไลน์เมื่อ ${Math.floor(mins / 60)} ชม. ที่แล้ว`;
+                    }
+
+                    const card = document.createElement('div');
+                    card.className = `p-3 rounded-xl border bg-white shadow-sm flex items-center justify-between gap-2 ${item.isOnline ? 'border-emerald-300 border-l-4 border-l-emerald-500' : 'border-slate-200 opacity-75'}`;
+                    card.innerHTML = `
+                        <div class="min-w-0 flex-1 space-y-0.5">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="font-bold text-slate-800 text-xs truncate">${roleIcon} ${item.displayName}</span>
+                                ${item.isMe ? `<span class="bg-teal-100 text-teal-800 text-[9px] font-bold px-1.5 py-0.5 rounded">คุณ</span>` : ''}
+                            </div>
+                            <div class="text-[10px] text-slate-500 flex items-center gap-2">
+                                ${item.isOnline ? `<span class="text-teal-700 font-semibold">${item.currentPage}</span>` : ''}
+                                ${item.role === 'tech' ? `<span>• ${item.hasGps ? '📍 เปิด GPS' : '🚫 ปิด GPS'}</span>` : ''}
+                            </div>
+                            <div class="text-[10px] ${item.isOnline ? 'text-emerald-600 font-semibold' : 'text-slate-400'}">🕒 ${timeLabel}</div>
+                        </div>
+                        <div class="shrink-0">${statusBadge}</div>
+                    `;
+                    container.appendChild(card);
+                });
+            }
+
+            const _origUpdateRoleUI = updateRoleNavigationUI;
+            updateRoleNavigationUI = function(...args) {
+                const res = _origUpdateRoleUI.apply(this, args);
+                injectTechOnlineButton();
+                return res;
+            };
+
+            const _origSyncCloud = syncJobsFromCloud;
+            syncJobsFromCloud = async function(...args) {
+                updateTechOnlineHeartbeat();
+                const res = await _origSyncCloud.apply(this, args);
+                updateTechOnlineCountUI();
+                return res;
+            };
+
+            window.addEventListener('DOMContentLoaded', () => {
+                injectTechOnlineButton();
+                updateTechOnlineHeartbeat();
+                setTimeout(() => {
+                    if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                        pushAllJobsToCloud(true);
+                    }
+                }, 2500);
+
+                if (techPresenceInterval) clearInterval(techPresenceInterval);
+                techPresenceInterval = setInterval(() => {
+                    if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                        updateTechOnlineHeartbeat();
+                        pushAllJobsToCloud(true);
+                    }
+                }, 30000);
+            });
+        })();
+    </script>
+
     <!-- 📲 ระบบติดตั้งแอป PWA เต็มจอ & ทำงานออฟไลน์ -->
     <script>
         (function() {
