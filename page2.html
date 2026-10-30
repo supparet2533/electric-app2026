@@ -794,15 +794,19 @@
         }
 
         // ==========================================
-        // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน
+        // 🏢 ระบบแยกกลุ่มผู้ใช้งานและช่างหน้างาน (รองรับทั้งชื่อ กฟส. ล้วน และ รหัส+กฟส.)
         // ==========================================
         function getUserGroupName(username) {
             if (!username) return '';
             const s = String(username).trim();
+            if (s.toLowerCase() === 'admin') return '';
+            // 1. กรณีมีคำว่า กฟส./กฟฟ./กฟจ./กฟต./กฟอ. อยู่ด้วย (ไม่ว่าจะมีรหัสนำหน้าหรือไม่ก็ตาม)
+            const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
+            if (peaMatch) return peaMatch[1].trim();
+            // 2. กรณีเว้นวรรค เช่น "504815 แหลมฉบัง"
             const parts = s.split(/\s+/);
             if (parts.length > 1) return parts.slice(1).join(' ').trim();
-            const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
-            if (peaMatch && peaMatch[1] !== s) return peaMatch[1].trim();
+            // 3. กรณีตัวเลขรหัสพนักงานนำหน้าตามด้วยชื่อกลุ่มติดกัน
             const numGroupMatch = s.match(/^(\d{4,10})([ก-๙a-zA-Z].*)$/);
             if (numGroupMatch) return numGroupMatch[2].trim();
             return '';
@@ -813,6 +817,7 @@
             const s = String(username).trim();
             const firstPart = s.split(/\s+/)[0];
             const withoutPea = firstPart.replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim();
+            if (!withoutPea) return s.toLowerCase(); // กรณีตั้งชื่อเป็น "กฟส.แหลมฉบัง" ล้วนๆ
             const numMatch = withoutPea.match(/^(\d{4,10})/);
             if (numMatch) return numMatch[1].toLowerCase();
             return withoutPea.toLowerCase();
@@ -823,7 +828,7 @@
             if (!s) return '';
             const baseId = getUserBaseId(s);
             const groupName = getUserGroupName(s);
-            if (baseId && groupName && s.toLowerCase() !== 'admin') {
+            if (baseId && groupName && baseId.toLowerCase() !== groupName.toLowerCase() && s.toLowerCase() !== 'admin') {
                 const origBase = s.split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim() || baseId;
                 return `${origBase} ${groupName}`;
             }
@@ -865,7 +870,7 @@
             if (savedGroup) return savedGroup;
             const baseId = getUserBaseId(curUser);
             const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]');
-            const matchedAcc = rawAccounts.find(a => getUserBaseId(a.username) === baseId);
+            const matchedAcc = rawAccounts.find(a => isUsernameMatchingAccount(curUser, a.username) || getUserBaseId(a.username) === baseId);
             return matchedAcc ? getUserGroupName(matchedAcc.username) : '';
         }
 
@@ -874,27 +879,28 @@
             const validGroups = getValidSystemGroupsSet();
             const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[]');
 
+            if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
+                const og = String(job.ownerGroup).trim();
+                if (validGroups.size === 0 || validGroups.has(og) || /^กฟ/.test(og)) {
+                    return og;
+                }
+            }
+
             const userCandidates = [job.ownerUser, job.techNav?.techName, job.techReport?.inspector].filter(Boolean);
             for (const c of userCandidates) {
                 const g = getUserGroupName(c);
                 if (g && (validGroups.size === 0 || validGroups.has(g) || /^กฟ/.test(g))) return g;
                 const cBase = getUserBaseId(c);
                 if (cBase) {
-                    const acc = rawAccounts.find(a => getUserBaseId(a.username) === cBase);
+                    const acc = rawAccounts.find(a => isUsernameMatchingAccount(c, a.username) || getUserBaseId(a.username) === cBase);
                     if (acc) {
                         const accGroup = getUserGroupName(acc.username);
                         if (accGroup) return accGroup;
                     }
                 }
             }
-
-            if (job.ownerGroup && String(job.ownerGroup).trim() !== '') {
-                const og = String(job.ownerGroup).trim();
-                if (validGroups.has(og) || /^กฟ/.test(og)) {
-                    return og;
-                }
-            }
-            return '';
+            // งานเก่าในเครื่องที่บันทึกไว้ก่อนมีระบบแยกกลุ่ม ให้ถือเป็นของ กฟส.บึง เพื่อไม่ให้โผล่ข้ามไปกลุ่มอื่น
+            return 'กฟส.บึง';
         }
 
         function canCurrentUserSeeJob(job) {
@@ -902,7 +908,7 @@
             if (currentRole === 'admin') return true;
             const myGroup = getCurrentUserGroup();
             const jobGroup = getJobGroupName(job);
-            if (!jobGroup || !myGroup) return true;
+            if (!myGroup) return true;
             return myGroup === jobGroup;
         }
 
