@@ -7109,12 +7109,34 @@
     <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
     <script>
         (function() {
-            const ONLINE_THRESHOLD_MS = 90 * 1000; // ถือว่าออนไลน์หากเคลื่อนไหวภายใน 90 วินาที
+            const ONLINE_THRESHOLD_MS = 180 * 1000; // ถือว่าออนไลน์หากเคลื่อนไหวภายใน 3 นาที
             let presenceInterval = null;
+            let lastHeartbeatPushMs = 0;
 
             function isCurrentUserAdmin() {
                 return localStorage.getItem('elec_app_logged_in') === 'true' &&
                        localStorage.getItem('elec_app_current_role') === 'admin';
+            }
+
+            function getTimestampMs(locObj) {
+                if (!locObj) return 0;
+                const tStr = locObj.lastSeenAt || locObj.updatedAt || '';
+                const ms = tStr ? new Date(tStr).getTime() : 0;
+                return isNaN(ms) ? 0 : ms;
+            }
+
+            // รวมข้อมูลสถานะออนไลน์โดยยึดเวลาที่ใหม่ล่าสุดเสมอ (ป้องกันข้อมูลเก่า 28/10/2569 มาทับ)
+            function mergeOnlineLocationsSafe(mapA, mapB) {
+                const combined = { ...(mapA || {}) };
+                Object.keys(mapB || {}).forEach(k => {
+                    const itemB = mapB[k];
+                    if (!itemB || typeof itemB !== 'object') return;
+                    const itemA = combined[k];
+                    if (!itemA || getTimestampMs(itemB) >= getTimestampMs(itemA)) {
+                        combined[k] = itemB;
+                    }
+                });
+                return combined;
             }
 
             function injectOnlineHeaderButton() {
@@ -7133,7 +7155,6 @@
                     headerBtnGroup.insertBefore(btn, headerBtnGroup.firstChild);
                 }
 
-                // แสดงปุ่มเฉพาะเมื่อล็อกอินด้วยบัญชี Admin เท่านั้น
                 if (isCurrentUserAdmin()) {
                     btn.classList.remove('hidden');
                     btn.classList.add('flex');
@@ -7145,7 +7166,6 @@
                 }
             }
 
-            // ส่งสัญญาณชีพจรเบื้องหลังสำหรับทุกบัญชี เพื่อให้แอดมินเช็กได้ว่าใครออนไลน์อยู่
             function updateMyOnlineHeartbeat(isLoggingOut = false) {
                 if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
                 const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
@@ -7161,6 +7181,14 @@
                 } catch (e) { locMap = {}; }
 
                 const existing = locMap[curUser] || {};
+
+                // ลบคีย์เก่าที่ชื่อซ้ำกับตัวเองแต่คนละรูปแบบออก เพื่อไม่ให้เวลาเก่าค้าง
+                Object.keys(locMap).forEach(k => {
+                    if (k !== curUser && isUsernameMatchingAccount(k, curUser)) {
+                        delete locMap[k];
+                    }
+                });
+
                 locMap[curUser] = {
                     ...existing,
                     username: curUser,
@@ -7196,18 +7224,37 @@
 
                 accounts.forEach(acc => {
                     const accGroup = getUserGroupName(acc.username);
-                    let matchedLoc = locMap[acc.username];
-                    if (!matchedLoc) {
-                        const foundKey = Object.keys(locMap).find(k => isUsernameMatchingAccount(k, acc.username));
-                        if (foundKey) matchedLoc = locMap[foundKey];
-                    }
+                    const accDisp = formatTechDisplayName(acc.username).toLowerCase().replace(/\s+/g, '');
+
+                    // ค้นหาทุกคีย์ที่ตรงกับบัญชีนี้ แล้วเลือกตัวที่มีเวลาใหม่ล่าสุดเสมอ
+                    let matchedLoc = null;
+                    let bestTimeMs = -1;
+
+                    Object.keys(locMap).forEach(k => {
+                        const candidate = locMap[k];
+                        if (!candidate) return;
+                        const kDisp = formatTechDisplayName(k).toLowerCase().replace(/\s+/g, '');
+                        const cUserDisp = formatTechDisplayName(candidate.username || '').toLowerCase().replace(/\s+/g, '');
+
+                        const isMatch = (k.toLowerCase() === acc.username.toLowerCase()) ||
+                                        isUsernameMatchingAccount(k, acc.username) ||
+                                        isUsernameMatchingAccount(candidate.username, acc.username) ||
+                                        (accDisp && (kDisp === accDisp || cUserDisp === accDisp));
+
+                        if (isMatch) {
+                            const tMs = getTimestampMs(candidate);
+                            if (tMs > bestTimeMs) {
+                                bestTimeMs = tMs;
+                                matchedLoc = candidate;
+                            }
+                        }
+                    });
 
                     const isMe = isUsernameMatchingAccount(curUser, acc.username);
-                    const lastSeenStr = matchedLoc?.lastSeenAt || matchedLoc?.updatedAt || '';
-                    const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : 0;
+                    const lastSeenMs = bestTimeMs > 0 ? bestTimeMs : 0;
                     const diffMs = now - lastSeenMs;
 
-                    const isOnline = isMe || (matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
+                    const isOnline = isMe || Boolean(matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
 
                     results.push({
                         username: acc.username,
@@ -7290,15 +7337,18 @@
                 }
                 renderOnlineUsersModalList();
                 modal.classList.remove('hidden');
+                triggerManualPresenceSync();
             };
 
+            // ดึงข้อมูลจาก Cloud มารวมก่อนเสมอ แล้วค่อยส่งสถานะของตัวเองกลับขึ้นไป (ไม่ให้ทับข้อมูลคนอื่น)
             window.triggerManualPresenceSync = async function() {
-                if (!isCurrentUserAdmin()) return;
+                await pullFieldReportsFromCloud();
                 updateMyOnlineHeartbeat(false);
                 await syncJobsWithFieldPage();
-                await pullFieldReportsFromCloud();
                 renderOnlineUsersModalList();
-                showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
+                if (isCurrentUserAdmin()) {
+                    showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
+                }
             };
 
             function renderOnlineUsersModalList() {
@@ -7354,34 +7404,58 @@
             checkLoginStatus = function(...args) {
                 const res = _origCheckLoginStatus.apply(this, args);
                 injectOnlineHeaderButton();
+                updateMyOnlineHeartbeat(false);
                 return res;
+            };
+
+            const _origSyncWithField = syncJobsWithFieldPage;
+            syncJobsWithFieldPage = async function(...args) {
+                updateMyOnlineHeartbeat(false);
+                const cloudSnap = Array.isArray(args[0]) ? args[0] : cachedCloudJobs;
+                const cloudLocEntry = (cloudSnap || []).find(j => j.jobType === 'tech_loc');
+                if (cloudLocEntry && cloudLocEntry.techLocations) {
+                    const localMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                    const merged = mergeOnlineLocationsSafe(cloudLocEntry.techLocations, localMap);
+                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
+                }
+                return await _origSyncWithField.apply(this, args);
             };
 
             const _origPullCloud = pullFieldReportsFromCloud;
             pullFieldReportsFromCloud = async function(...args) {
-                updateMyOnlineHeartbeat(false);
+                let beforeMap = {};
+                try {
+                    beforeMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                } catch (e) {}
+
                 const res = await _origPullCloud.apply(this, args);
+
+                let afterMap = {};
+                try {
+                    afterMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                } catch (e) {}
+
+                const merged = mergeOnlineLocationsSafe(beforeMap, afterMap);
+                localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
                 updateMyOnlineHeartbeat(false);
-                updateOnlineCountUI();
+
+                // ส่งสถานะออนไลน์ของเครื่องนี้ขึ้น Cloud ทุกๆ 15 วินาที
+                if (Date.now() - lastHeartbeatPushMs > 15000 && localStorage.getItem('elec_app_logged_in') === 'true') {
+                    lastHeartbeatPushMs = Date.now();
+                    syncJobsWithFieldPage();
+                }
                 return res;
             };
 
             window.addEventListener('DOMContentLoaded', () => {
                 injectOnlineHeaderButton();
                 updateMyOnlineHeartbeat(false);
-                setTimeout(() => {
-                    if (localStorage.getItem('elec_app_logged_in') === 'true') {
-                        syncJobsWithFieldPage();
-                    }
-                }, 2000);
-
                 if (presenceInterval) clearInterval(presenceInterval);
                 presenceInterval = setInterval(() => {
                     if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                         updateMyOnlineHeartbeat(false);
-                        syncJobsWithFieldPage();
                     }
-                }, 30000);
+                }, 15000);
             });
         })();
     </script>
