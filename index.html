@@ -7105,7 +7105,287 @@
         });
         
         window.addEventListener('focus', pullFieldReportsFromCloud);
-    </script>    
+    </script>   
+    <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
+    <script>
+        (function() {
+            const ONLINE_THRESHOLD_MS = 90 * 1000; // ถือว่าออนไลน์หากเคลื่อนไหวภายใน 90 วินาที
+            let presenceInterval = null;
+
+            function isCurrentUserAdmin() {
+                return localStorage.getItem('elec_app_logged_in') === 'true' &&
+                       localStorage.getItem('elec_app_current_role') === 'admin';
+            }
+
+            function injectOnlineHeaderButton() {
+                const headerBtnGroup = document.querySelector('#mainAppContent .bg-gradient-to-r .flex.items-center.gap-1\\.5.shrink-0');
+                if (!headerBtnGroup) return;
+
+                let btn = document.getElementById('onlineUsersBtn');
+                if (!btn) {
+                    btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.id = 'onlineUsersBtn';
+                    btn.onclick = openOnlineUsersModal;
+                    btn.className = 'hidden bg-emerald-500/90 hover:bg-emerald-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm items-center gap-1 font-semibold';
+                    btn.title = 'ดูรายชื่อผู้ที่กำลังออนไลน์ (เฉพาะแอดมิน)';
+                    btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-200 animate-ping"></span><span class="text-xs">ออนไลน์ (<span id="onlineCountBadge">1</span>)</span>`;
+                    headerBtnGroup.insertBefore(btn, headerBtnGroup.firstChild);
+                }
+
+                // แสดงปุ่มเฉพาะเมื่อล็อกอินด้วยบัญชี Admin เท่านั้น
+                if (isCurrentUserAdmin()) {
+                    btn.classList.remove('hidden');
+                    btn.classList.add('flex');
+                } else {
+                    btn.classList.add('hidden');
+                    btn.classList.remove('flex');
+                    const modal = document.getElementById('onlineUsersModal');
+                    if (modal) modal.classList.add('hidden');
+                }
+            }
+
+            // ส่งสัญญาณชีพจรเบื้องหลังสำหรับทุกบัญชี เพื่อให้แอดมินเช็กได้ว่าใครออนไลน์อยู่
+            function updateMyOnlineHeartbeat(isLoggingOut = false) {
+                if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                if (!curUser) return;
+
+                const curRole = localStorage.getItem('elec_app_current_role') || 'user';
+                const curGroup = typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '';
+                const nowIso = new Date().toISOString();
+
+                let locMap = {};
+                try {
+                    locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                } catch (e) { locMap = {}; }
+
+                const existing = locMap[curUser] || {};
+                locMap[curUser] = {
+                    ...existing,
+                    username: curUser,
+                    role: curRole,
+                    group: curGroup,
+                    lat: existing.lat || null,
+                    lon: existing.lon || null,
+                    gpsDisabled: existing.gpsDisabled !== undefined ? existing.gpsDisabled : true,
+                    currentPage: '💻 หน้าหลัก',
+                    isOnline: !isLoggingOut,
+                    lastSeenAt: nowIso,
+                    updatedAt: nowIso
+                };
+
+                localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                updateOnlineCountUI();
+            }
+
+            function getVisibleAccountsWithStatus() {
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+
+                let locMap = {};
+                try {
+                    locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                } catch (e) { locMap = {}; }
+
+                const accounts = (typeof userAccountsList !== 'undefined' && userAccountsList.length > 0)
+                    ? userAccountsList
+                    : JSON.parse(localStorage.getItem('elec_user_accounts') || '[]').map(parseAccountRecord);
+
+                const now = Date.now();
+                const results = [];
+
+                accounts.forEach(acc => {
+                    const accGroup = getUserGroupName(acc.username);
+                    let matchedLoc = locMap[acc.username];
+                    if (!matchedLoc) {
+                        const foundKey = Object.keys(locMap).find(k => isUsernameMatchingAccount(k, acc.username));
+                        if (foundKey) matchedLoc = locMap[foundKey];
+                    }
+
+                    const isMe = isUsernameMatchingAccount(curUser, acc.username);
+                    const lastSeenStr = matchedLoc?.lastSeenAt || matchedLoc?.updatedAt || '';
+                    const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : 0;
+                    const diffMs = now - lastSeenMs;
+
+                    const isOnline = isMe || (matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
+
+                    results.push({
+                        username: acc.username,
+                        displayName: formatTechDisplayName(acc.username),
+                        role: acc.role || 'user',
+                        group: accGroup,
+                        isOnline,
+                        isMe,
+                        lastSeenMs,
+                        diffMs,
+                        currentPage: isMe ? '💻 หน้าหลัก' : (matchedLoc?.currentPage || (acc.role === 'tech' ? '📱 หน้าช่าง' : '💻 หน้าหลัก')),
+                        hasGps: Boolean(matchedLoc && !matchedLoc.gpsDisabled && matchedLoc.lat && matchedLoc.lon)
+                    });
+                });
+
+                results.sort((a, b) => {
+                    if (a.isOnline !== b.isOnline) return a.isOnline ? -1 : 1;
+                    return (b.lastSeenMs || 0) - (a.lastSeenMs || 0);
+                });
+
+                return results;
+            }
+
+            function formatLastSeenText(item) {
+                if (item.isOnline) return 'ออนไลน์ขณะนี้';
+                if (!item.lastSeenMs) return 'ยังไม่เคยออนไลน์';
+                const mins = Math.max(1, Math.floor(item.diffMs / 60000));
+                if (mins < 60) return `ออฟไลน์เมื่อ ${mins} นาทีที่แล้ว`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `ออฟไลน์เมื่อ ${hrs} ชม. ที่แล้ว`;
+                return `ออนไลน์ล่าสุด ${new Date(item.lastSeenMs).toLocaleDateString('th-TH')}`;
+            }
+
+            function updateOnlineCountUI() {
+                injectOnlineHeaderButton();
+                if (!isCurrentUserAdmin()) return;
+
+                const list = getVisibleAccountsWithStatus();
+                const onlineCount = list.filter(i => i.isOnline).length;
+                const badge = document.getElementById('onlineCountBadge');
+                if (badge) badge.textContent = onlineCount;
+
+                const modal = document.getElementById('onlineUsersModal');
+                if (modal && !modal.classList.contains('hidden')) {
+                    renderOnlineUsersModalList();
+                }
+            }
+
+            window.openOnlineUsersModal = function() {
+                if (!isCurrentUserAdmin()) {
+                    showCustomAlert("⛔ เฉพาะแอดมิน (ผู้ดูแลระบบ) เท่านั้นที่สามารถดูสถานะออนไลน์ได้", "🔒 จำกัดสิทธิ์การเข้าถึง");
+                    return;
+                }
+
+                let modal = document.getElementById('onlineUsersModal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'onlineUsersModal';
+                    modal.className = 'fixed inset-0 bg-slate-900/60 hidden z-[190] flex items-center justify-center p-4 backdrop-blur-sm';
+                    modal.innerHTML = `
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+                            <div class="px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex justify-between items-center">
+                                <h3 class="font-bold text-sm flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping"></span>
+                                    <span>สถานะผู้ใช้งานออนไลน์ (เฉพาะ Admin)</span>
+                                </h3>
+                                <button type="button" onclick="document.getElementById('onlineUsersModal').classList.add('hidden')" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+                            </div>
+                            <div class="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center text-[11px] text-emerald-800 font-semibold">
+                                <span id="onlineModalSummaryText">กำลังตรวจสอบสถานะ...</span>
+                                <button type="button" onclick="triggerManualPresenceSync()" class="text-teal-700 hover:underline font-bold">🔄 รีเฟรชสถานะ</button>
+                            </div>
+                            <div id="onlineUsersListContainer" class="p-4 overflow-y-auto space-y-2 flex-1 bg-slate-50"></div>
+                            <div class="p-3 bg-white border-t flex justify-end">
+                                <button type="button" onclick="document.getElementById('onlineUsersModal').classList.add('hidden')" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">ปิดหน้าต่าง</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                }
+                renderOnlineUsersModalList();
+                modal.classList.remove('hidden');
+            };
+
+            window.triggerManualPresenceSync = async function() {
+                if (!isCurrentUserAdmin()) return;
+                updateMyOnlineHeartbeat(false);
+                await syncJobsWithFieldPage();
+                await pullFieldReportsFromCloud();
+                renderOnlineUsersModalList();
+                showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
+            };
+
+            function renderOnlineUsersModalList() {
+                if (!isCurrentUserAdmin()) return;
+                const container = document.getElementById('onlineUsersListContainer');
+                const summaryEl = document.getElementById('onlineModalSummaryText');
+                if (!container) return;
+
+                const list = getVisibleAccountsWithStatus();
+                const onlineCount = list.filter(i => i.isOnline).length;
+                if (summaryEl) {
+                    summaryEl.textContent = `🟢 ออนไลน์ขณะนี้ ${onlineCount} คน (จากทั้งหมด ${list.length} บัญชี)`;
+                }
+
+                container.innerHTML = '';
+                list.forEach(item => {
+                    const roleIcon = item.role === 'admin' ? '👑' : (item.role === 'tech' ? '🛠️' : '👷');
+                    const roleText = item.role === 'admin' ? 'แอดมิน' : (item.role === 'tech' ? 'ช่างหน้างาน' : 'ผู้ใช้ทั่วไป');
+                    const statusBadge = item.isOnline
+                        ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>ออนไลน์</span>`
+                        : `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-semibold px-2 py-0.5 rounded-full">⚪ ออฟไลน์</span>`;
+
+                    const gpsBadge = item.role === 'tech'
+                        ? (item.hasGps
+                            ? `<span class="text-[10px] text-emerald-600 font-semibold">📍 เปิด GPS</span>`
+                            : `<span class="text-[10px] text-slate-400">🚫 ปิด GPS</span>`)
+                        : '';
+
+                    const card = document.createElement('div');
+                    card.className = `p-3 rounded-xl border bg-white shadow-sm flex items-center justify-between gap-2 ${item.isOnline ? 'border-emerald-300 border-l-4 border-l-emerald-500' : 'border-slate-200 opacity-75'}`;
+                    card.innerHTML = `
+                        <div class="min-w-0 flex-1 space-y-0.5">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="font-bold text-slate-800 text-xs sm:text-sm truncate">${roleIcon} ${item.displayName}</span>
+                                ${item.isMe ? `<span class="bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">คุณ</span>` : ''}
+                            </div>
+                            <div class="text-[11px] text-slate-500 flex flex-wrap items-center gap-2">
+                                <span>สิทธิ์: ${roleText}</span>
+                                ${item.isOnline ? `<span class="text-teal-700 font-semibold">• ${item.currentPage}</span>` : ''}
+                                ${gpsBadge}
+                            </div>
+                            <div class="text-[10px] ${item.isOnline ? 'text-emerald-600 font-semibold' : 'text-slate-400'}">
+                                🕒 ${formatLastSeenText(item)}
+                            </div>
+                        </div>
+                        <div class="shrink-0">${statusBadge}</div>
+                    `;
+                    container.appendChild(card);
+                });
+            }
+
+            const _origCheckLoginStatus = checkLoginStatus;
+            checkLoginStatus = function(...args) {
+                const res = _origCheckLoginStatus.apply(this, args);
+                injectOnlineHeaderButton();
+                return res;
+            };
+
+            const _origPullCloud = pullFieldReportsFromCloud;
+            pullFieldReportsFromCloud = async function(...args) {
+                updateMyOnlineHeartbeat(false);
+                const res = await _origPullCloud.apply(this, args);
+                updateMyOnlineHeartbeat(false);
+                updateOnlineCountUI();
+                return res;
+            };
+
+            window.addEventListener('DOMContentLoaded', () => {
+                injectOnlineHeaderButton();
+                updateMyOnlineHeartbeat(false);
+                setTimeout(() => {
+                    if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                        syncJobsWithFieldPage();
+                    }
+                }, 2000);
+
+                if (presenceInterval) clearInterval(presenceInterval);
+                presenceInterval = setInterval(() => {
+                    if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                        updateMyOnlineHeartbeat(false);
+                        syncJobsWithFieldPage();
+                    }
+                }, 30000);
+            });
+        })();
+    </script>
+
     <!-- 📲 ระบบติดตั้งแอป PWA เต็มจอ & ทำงานออฟไลน์ -->
     <script>
         (function() {
