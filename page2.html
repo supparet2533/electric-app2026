@@ -2798,12 +2798,20 @@
     <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์สำหรับหน้าช่าง (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
     <script>
         (function() {
-            const ONLINE_THRESHOLD_MS = 90 * 1000;
+            const ONLINE_THRESHOLD_MS = 180 * 1000; // 3 นาที
             let techPresenceInterval = null;
+            let lastTechHeartbeatPushMs = 0;
 
             function isCurrentTechUserAdmin() {
                 return localStorage.getItem('elec_app_logged_in') === 'true' &&
                        localStorage.getItem('elec_app_current_role') === 'admin';
+            }
+
+            function getTechTimestampMs(locObj) {
+                if (!locObj) return 0;
+                const tStr = locObj.lastSeenAt || locObj.updatedAt || '';
+                const ms = tStr ? new Date(tStr).getTime() : 0;
+                return isNaN(ms) ? 0 : ms;
             }
 
             function injectTechOnlineButton() {
@@ -2822,7 +2830,6 @@
                     headerRightGroup.insertBefore(btn, headerRightGroup.firstChild);
                 }
 
-                // แสดงปุ่มเฉพาะแอดมินเท่านั้น (ช่างและผู้ใช้ทั่วไปจะไม่เห็นปุ่มนี้)
                 if (isCurrentTechUserAdmin()) {
                     btn.classList.remove('hidden');
                     btn.classList.add('flex');
@@ -2834,7 +2841,6 @@
                 }
             }
 
-            // ส่งสัญญาณชีพจรเบื้องหลังของช่างและผู้ใช้ทุกคนขึ้น Cloud เพื่อให้แอดมินตรวจสอบได้
             function updateTechOnlineHeartbeat() {
                 if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
                 const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
@@ -2845,6 +2851,12 @@
                 const nowIso = new Date().toISOString();
                 const locMap = getTechLocationsMap();
                 const existing = locMap[curUser] || {};
+
+                Object.keys(locMap).forEach(k => {
+                    if (k !== curUser && isSameTechPerson(k, curUser)) {
+                        delete locMap[k];
+                    }
+                });
 
                 locMap[curUser] = {
                     ...existing,
@@ -2871,17 +2883,25 @@
                 const results = [];
 
                 rawAccounts.forEach(acc => {
-                    let matchedLoc = locMap[acc.username];
-                    if (!matchedLoc) {
-                        const foundKey = Object.keys(locMap).find(k => isSameTechPerson(k, acc.username));
-                        if (foundKey) matchedLoc = locMap[foundKey];
-                    }
+                    let matchedLoc = null;
+                    let bestTimeMs = -1;
+
+                    Object.keys(locMap).forEach(k => {
+                        const candidate = locMap[k];
+                        if (!candidate) return;
+                        if (isSameTechPerson(k, acc.username) || isSameTechPerson(candidate.username, acc.username)) {
+                            const tMs = getTechTimestampMs(candidate);
+                            if (tMs > bestTimeMs) {
+                                bestTimeMs = tMs;
+                                matchedLoc = candidate;
+                            }
+                        }
+                    });
 
                     const isMe = isSameTechPerson(curUser, acc.username);
-                    const lastSeenStr = matchedLoc?.lastSeenAt || matchedLoc?.updatedAt || '';
-                    const lastSeenMs = lastSeenStr ? new Date(lastSeenStr).getTime() : 0;
+                    const lastSeenMs = bestTimeMs > 0 ? bestTimeMs : 0;
                     const diffMs = now - lastSeenMs;
-                    const isOnline = isMe || (matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
+                    const isOnline = isMe || Boolean(matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
 
                     results.push({
                         username: acc.username,
@@ -2976,7 +2996,10 @@
                     if (item.isOnline) timeLabel = 'ออนไลน์ขณะนี้';
                     else if (item.lastSeenMs) {
                         const mins = Math.max(1, Math.floor(item.diffMs / 60000));
-                        timeLabel = mins < 60 ? `ออฟไลน์เมื่อ ${mins} นาทีที่แล้ว` : `ออฟไลน์เมื่อ ${Math.floor(mins / 60)} ชม. ที่แล้ว`;
+                        const hrs = Math.floor(mins / 60);
+                        if (mins < 60) timeLabel = `ออฟไลน์เมื่อ ${mins} นาทีที่แล้ว`;
+                        else if (hrs < 24) timeLabel = `ออฟไลน์เมื่อ ${hrs} ชม. ที่แล้ว`;
+                        else timeLabel = `ออนไลน์ล่าสุด ${new Date(item.lastSeenMs).toLocaleDateString('th-TH')}`;
                     }
 
                     const card = document.createElement('div');
@@ -3006,30 +3029,32 @@
                 return res;
             };
 
+            const _origPushCloud = pushAllJobsToCloud;
+            pushAllJobsToCloud = async function(...args) {
+                updateTechOnlineHeartbeat();
+                return await _origPushCloud.apply(this, args);
+            };
+
             const _origSyncCloud = syncJobsFromCloud;
             syncJobsFromCloud = async function(...args) {
-                updateTechOnlineHeartbeat();
                 const res = await _origSyncCloud.apply(this, args);
-                updateTechOnlineCountUI();
+                updateTechOnlineHeartbeat();
+                if (Date.now() - lastTechHeartbeatPushMs > 15000 && localStorage.getItem('elec_app_logged_in') === 'true') {
+                    lastTechHeartbeatPushMs = Date.now();
+                    pushAllJobsToCloud(true);
+                }
                 return res;
             };
 
             window.addEventListener('DOMContentLoaded', () => {
                 injectTechOnlineButton();
                 updateTechOnlineHeartbeat();
-                setTimeout(() => {
-                    if (localStorage.getItem('elec_app_logged_in') === 'true') {
-                        pushAllJobsToCloud(true);
-                    }
-                }, 2500);
-
                 if (techPresenceInterval) clearInterval(techPresenceInterval);
                 techPresenceInterval = setInterval(() => {
                     if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                         updateTechOnlineHeartbeat();
-                        pushAllJobsToCloud(true);
                     }
-                }, 30000);
+                }, 15000);
             });
         })();
     </script>
