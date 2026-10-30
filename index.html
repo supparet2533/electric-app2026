@@ -5720,8 +5720,8 @@
                         showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
                     }
 
-                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]"
-                    const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)\s*[:：]\s*[\r?\n\s]*[\d\-\s\(\)]{8,20}/gi;
+                                       // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" และ "เบอร์โทร : -"
+                    const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)[ \t]*[:：]?[ \t]*(?:\r?\n[ \t]*)?(?:[0-9\-\(\) \t]{8,20}|-+|ไม่มี)[ \t]*\r?\n?/gi;
                     
                     if (phoneRegex.test(addrText)) {
                         addrText = addrText.replace(phoneRegex, '');
@@ -5744,20 +5744,21 @@
                         showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
                     }
 
-                                                           // 1.4 ตัดคำว่า "ที่อยู่ :" ออก และดึงที่อยู่หลัง "ที่อยู่ :" ขึ้นไปไว้บรรทัดบนแรกสุดชิดซ้ายสุด
+                                                                               // 1.4 ตัดคำว่า "ที่อยู่" หรือ "ที่อยู่ :" ออกทั้งหมด และดึงบ้านเลขที่ขึ้นบรรทัดบนสุดชิดซ้าย
                     let extractedTopAddress = '';
-                    const addressExtractRegex = /ที่อยู่\s*[:：]\s*(\d+(?:\/\d+)?\s*ม\.\d+\s*ต\.(?:บ่อวิน|บึง|เขาคันทรง|มาบยางพร|ตะเคียนเตี้ย|[ก-๙a-zA-Z]+)\s*อ\.(?:ศรีราชา|ปลวกแดง|บางละมุง|[ก-๙a-zA-Z]+)\s*จ\.(?:ชลบุรี|ระยอง|[ก-๙a-zA-Z]+)|[^\r\n]+)/i;
+                    const addressExtractRegex = /ที่อยู่\s*[:：]?\s*(\d+(?:\/\d+)?\s*(?:หมู่ที่|หมู่|ม\.)?\s*\d*\s*ต\.[ก-๙a-zA-Z]+\s*อ\.[ก-๙a-zA-Z]+\s*จ\.[ก-๙a-zA-Z]+|[^\r\n]+)/i;
                     const matchAddr = addrText.match(addressExtractRegex);
 
                     if (matchAddr) {
-                        extractedTopAddress = matchAddr[1].trim();
+                        extractedTopAddress = matchAddr[1].replace(/ที่อยู่\s*[:：]?\s*/gi, '').trim();
                         addrText = addrText.replace(matchAddr[0], '');
-                        addrText = addrText.replace(/ที่อยู่\s*[:：]\s*/gi, '');
+                        addrText = addrText.replace(/ที่อยู่\s*[:：]?\s*/gi, '');
                         isModified = true;
-                        showToast("🏠 ย้ายที่อยู่ขึ้นบรรทัดแรกสุดชิดซ้ายแล้ว");
-                    } else if (/ที่อยู่\s*[:：]\s*/i.test(addrText)) {
-                        addrText = addrText.replace(/ที่อยู่\s*[:：]\s*/gi, '');
+                        showToast("🏠 ตัดคำว่า 'ที่อยู่' และจัดชิดซ้ายบนสุดแล้ว");
+                    } else if (/ที่อยู่\s*[:：]?\s*/i.test(addrText)) {
+                        addrText = addrText.replace(/ที่อยู่\s*[:：]?\s*/gi, '');
                         isModified = true;
+                        showToast("✂️ ตัดคำว่า 'ที่อยู่' ออกจากช่องที่อยู่แล้ว");
                     }
 
                     if (isModified) {
