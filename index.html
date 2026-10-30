@@ -60,7 +60,6 @@
         })();
     </script>
 
-
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -411,7 +410,7 @@
             </div>
         </div>
 
-                       <!-- ================= 🌐 หน้าต่างเว็บเบราว์เซอร์ชิดขอบซ้ายสุดของจอ ================= -->
+        <!-- ================= 🌐 หน้าต่างเว็บเบราว์เซอร์ชิดขอบซ้ายสุดของจอ ================= -->
         <div id="leftBrowserDock" class="hidden fixed top-0 left-0 bottom-0 z-40 flex-col bg-slate-900 border-r border-slate-300 shadow-2xl transition-all duration-200" style="width: 55vw;">
             <!-- แถบควบคุมด้านบน (Address Bar ตัวอักษรสีดำ) -->
             <div class="bg-slate-800 px-3 py-2 border-b border-slate-700 flex items-center gap-1.5">
@@ -674,7 +673,7 @@
                     </h1>
                     <p class="text-[11px] sm:text-xs text-blue-100 mt-0.5 truncate">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
                 </div>
-                                <!-- ปุ่มจัดการผู้ใช้ (เฉพาะ Admin), หน้าช่าง, สำรองข้อมูล และ ปุ่มออกจากระบบ -->
+                <!-- ปุ่มจัดการผู้ใช้ (เฉพาะ Admin), หน้าช่าง, สำรองข้อมูล และ ปุ่มออกจากระบบ -->
                 <div class="flex items-center gap-1.5 shrink-0">
                     <button type="button" id="adminUserManageBtn" onclick="openUserManageModal()" class="hidden bg-amber-500/90 hover:bg-amber-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm items-center gap-1 font-semibold" title="จัดการบัญชีผู้ใช้ (เฉพาะแอดมิน)">
                         👤 <span class="text-xs hidden sm:inline">ผู้ใช้</span>
@@ -689,7 +688,6 @@
                         🚪 <span class="text-xs hidden sm:inline">ออก</span>
                     </button>
                 </div>
-
             </div>
             
             <!-- Tab Buttons (4 ปุ่ม) -->
@@ -864,7 +862,7 @@
                     </div>
                 </div>
 
-                               <!-- ฟิลด์พื้นที่ & สภาพอากาศ -->
+                <!-- ฟิลด์พื้นที่ & สภาพอากาศ -->
                 <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100 relative z-20">
                     <div class="drag-handle flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move w-max">
                         <div class="flex items-center gap-2">
@@ -891,13 +889,12 @@
                                 </div>
                                 <ul id="tambonSortableList" class="py-1"></ul>
                             </div>
-
                         </div>
                         <div>
                             <div class="flex items-center h-6 mb-1">
                                 <label class="text-xs font-semibold text-slate-600">สภาพอากาศ (อัปเดตอัตโนมัติ)</label>
                             </div>
-                                                        <select id="weatherSelect" onchange="onWeatherManualChange()" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm font-semibold text-blue-800 transition-colors">
+                            <select id="weatherSelect" onchange="onWeatherManualChange()" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm font-semibold text-blue-800 transition-colors">
                                 <option value="" disabled selected hidden>-- เลือกอากาศ --</option>
                                 <option value="ปกติ">ปกติ</option>
                                 <option value="ครึ้มฟ้าครึ้มฝน">ครึ้มฟ้าครึ้มฝน</option>
@@ -908,7 +905,6 @@
                                 <option value="ฝนตกฟ้าคะนองรุนแรง">ฝนตกฟ้าคะนองรุนแรง</option>
                                 <option value="ฝนเพิ่งหยุดตก">ฝนเพิ่งหยุดตก</option>
                             </select>
-
                         </div>
                     </div>
                     <div class="px-2 mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
@@ -966,7 +962,7 @@
                     </div>
                 </div>
 
-                                <div data-id="reporter">
+                <div data-id="reporter">
                     <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move w-max hover:bg-slate-50 px-1 -mx-1 rounded transition">
                         <span class="text-slate-400 text-lg leading-none">≡</span> <span>📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก</span>
                     </label>
@@ -983,7 +979,7 @@
                 </div>
             </div>
 
-                        <div class="flex gap-2 mt-6">
+            <div class="flex gap-2 mt-6">
                 <button onclick="saveAndCopyFault(false)" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow-lg transition duration-200 flex items-center justify-center gap-1.5 text-xs sm:text-base whitespace-nowrap">
                     📋 บันทึก / คัดลอก
                 </button>
@@ -1041,7 +1037,7 @@
                 <span class="text-[10px] text-slate-400">ลาก ≡ เพื่อสลับลำดับ</span>
             </div>
             
-            <!-- Gemini Chatbot UI แทนที่ปุ่มเดิม -->
+            <!-- Gemini Chatbot UI -->
             <div id="geminiChatbot" class="mb-4 bg-white border border-purple-200 rounded-xl shadow-md overflow-hidden flex flex-col h-[350px]">
                 <!-- Header -->
                 <div class="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-3 flex justify-between items-center shadow-sm z-10">
@@ -1137,7 +1133,7 @@
                     </div>
                 </div>
 
-                                <div data-id="address">
+                <div data-id="address">
                     <div class="flex items-center justify-between gap-2 mb-1">
                         <label class="drag-handle flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-700 cursor-move hover:bg-slate-50 px-1 -mx-1 rounded transition whitespace-nowrap">
                             <span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 ที่อยู่ (บ้านเลขที่/หมู่):</span>
@@ -1174,7 +1170,7 @@
                     </label>
                     <input type="text" id="gps" class="w-full px-4 py-2 border rounded-lg text-sm" placeholder="วาง Lat: XX Long: YY หรือลิงก์ Google Maps">
                     
-                    <!-- 🟢 เพิ่มหน้าต่างแสดงแผนที่ Google Maps ตรงนี้ -->
+                    <!-- หน้าต่างแสดงแผนที่ Google Maps -->
                     <div id="mapPreviewContainer" class="hidden mt-2.5 rounded-xl overflow-hidden border border-slate-300 shadow-sm bg-slate-100 transition-all">
                         <div class="bg-slate-800 text-white text-[11px] px-3 py-1.5 flex justify-between items-center">
                             <span id="mapCoordLabel" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span>
@@ -1185,7 +1181,7 @@
                 </div>
             </div>
 
-                                    <div class="flex gap-2 mt-2">
+            <div class="flex gap-2 mt-2">
                 <button type="button" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow transition flex items-center justify-center gap-1.5 text-xs sm:text-base whitespace-nowrap" onclick="generateOutageMessage(false)">
                     📋 บันทึก / คัดลอก
                 </button>
@@ -1559,11 +1555,10 @@
     <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none text-sm z-[70]">
         แจ้งเตือนระบบ
     </div>
-        <script>
+    <!-- ===== จบส่วนที่ 1 / 3 (นำโค้ดส่วนที่ 2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
+    <!-- ===== เริ่มส่วนที่ 2 / 3 (วางต่อจากส่วนที่ 1 ได้เลยครับ) ===== -->
+    <script>
         // ==========================================
-                // ==========================================
-                // ==========================================
-                // ==========================================
         //  🔐 LOGIN & CLOUD MULTI-USER AUTHENTICATION (SINGLE DEVICE / AUTO-KICK)
         // ==========================================
         const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
@@ -1587,8 +1582,7 @@
             return '';
         }
 
-        // แยกค่า role และ sessionToken ออกจากกัน (เก็บในคอลัมน์ role ของชีตในรูปแบบ role::sessionToken)
-                // ==========================================
+        // ==========================================
         // 🆔 ฟังก์ชันแยกรหัสพนักงาน (0000000) และชื่อกลุ่มสังกัด (เช่น กฟส.บึง)
         // ==========================================
         function getUserGroupName(username) {
@@ -1649,8 +1643,7 @@
             return true;
         }
 
-        // แยกค่า role และ sessionToken ออกจากกัน (เก็บในคอลัมน์ role ของชีตในรูปแบบ role::sessionToken)
-                // แยกค่า role, sessionToken และ displayName (เก็บในคอลัมน์ role ของชีตในรูปแบบ role::sessionToken::displayName)
+        // แยกค่า role, sessionToken และ displayName (เก็บในคอลัมน์ role ของชีตในรูปแบบ role::sessionToken::displayName)
         function parseAccountRecord(rawAcc) {
             const rawRole = String(rawAcc.role || 'user');
             const parts = rawRole.split('::');
@@ -2484,6 +2477,7 @@
                 showToast(`🗑️ ลบบัญชี "${targetAcc.username}" เรียบร้อยแล้ว`);
             }, "🗑️ ยืนยันการลบบัญชีผู้ใช้");
         }
+
         ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt => {
             window.addEventListener(evt, resetInactivityTimer, { passive: true });
         });
@@ -2532,7 +2526,7 @@
 
         let targetTambonCoordinates = {};
 
-                function setupTambonInputSync() {
+        function setupTambonInputSync() {
             const hiddenInput = document.getElementById('tambonSelect');
             if (!hiddenInput || hiddenInput._isSynced) return;
             const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
@@ -2648,7 +2642,6 @@
             }
         });
 
-
         function getIssuePriority(issueText) {
             if (!issueText || !issueText.trim()) {
                 return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
@@ -2679,9 +2672,8 @@
             }
         }
 
-
         // ==========================================
-                //  REAL-TIME WEATHER STREAM (HIGH-ACCURACY PRECIPITATION + MANUAL LOCK)
+        //  REAL-TIME WEATHER STREAM (HIGH-ACCURACY PRECIPITATION + MANUAL LOCK)
         // ==========================================
         let isWeatherLockedByUser = false;
         
@@ -2696,7 +2688,6 @@
             else if (weatherStr === "ฝนตกหนัก" || weatherStr === "ฝนตกฟ้าคะนองรุนแรง") weatherSelect.classList.add("text-rose-600");
         }
         
-        // เมื่อผู้ใช้เลือกสภาพอากาศเองตามหน้างานจริง ให้ล็อกค่าไว้ไม่ให้ระบบอัตโนมัติเขียนทับ
         function onWeatherManualChange() {
             isWeatherLockedByUser = true;
             const weatherSelect = document.getElementById('weatherSelect');
@@ -2714,7 +2705,6 @@
             
             if (!tambonName || !targetTambonCoordinates[tambonName]) return;
             
-            // หากมีการใส่พิกัด GPS จุดเกิดเหตุในแท็บ 1 ให้ใช้พิกัดจุดเกิดเหตุจริงแทนพิกัดกลางตำบล
             let coord = targetTambonCoordinates[tambonName];
             let locationLabel = tambonName;
             const gpsVal = document.getElementById('gpsInput')?.value || '';
@@ -2824,7 +2814,7 @@
         // ==========================================
         //  TAMBON MANAGEMENT MODAL SYSTEM
         // ==========================================
-                function openTambonManageModal() {
+        function openTambonManageModal() {
             renderTambonModalList();
             document.getElementById('tambonModal').classList.remove('hidden');
             
@@ -3217,92 +3207,6 @@
             });
         }
 
-        function exportAnalyticsToExcel() {
-            if (currentFilteredFaults.length === 0 && currentFilteredOutages.length === 0) {
-                showToast("⚠️ ไม่มีข้อมูลสถิติสำหรับส่งออก (ลองปรับตัวกรอง)");
-                return;
-            }
-
-            let issueCounts = {};
-            currentFilteredOutages.forEach(item => {
-                let issue = item.issueType || 'อื่นๆ';
-                issueCounts[issue] = (issueCounts[issue] || 0) + 1;
-            });
-            let sortedIssues = Object.entries(issueCounts).sort((a, b) => b[1] - a[1]);
-
-            let count22kV = currentFilteredFaults.filter(i => i.system === '22kV').length;
-            let count115kV = currentFilteredFaults.filter(i => i.system === '115kV').length;
-
-            let filterInfo = `วันที่พิมพ์รายงาน: ${new Date().toLocaleDateString('th-TH')}`;
-
-            let tableHtml = `
-            <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-            <head>
-                <meta charset="utf-8">
-                <style>
-                    table { border-collapse: collapse; margin-bottom: 20px; width: 100%; }
-                    th, td { border: 1px solid #000000; text-align: center; padding: 6px 10px; mso-number-format:"\\@"; }
-                    th { background-color: #d9e1f2; font-weight: bold; }
-                    .title { font-size: 16px; font-weight: bold; text-align: left; margin-bottom: 5px; }
-                    .subtitle { font-size: 12px; color: #555; margin-bottom: 15px; }
-                </style>
-            </head>
-            <body>
-                <div class="title">📊 รายงานสรุปสถิติมือถือ (Analytics Summary - Filtered)</div>
-                <div class="subtitle">${filterInfo}</div>
-                <table>
-                    <tr>
-                        <th>หัวข้อสถิติ</th>
-                        <th>จำนวนรวม (รายการ)</th>
-                    </tr>
-                    <tr>
-                        <td>รายงานเหตุ (TR/TL) ที่ผ่านตัวกรอง</td>
-                        <td>${currentFilteredFaults.length}</td>
-                    </tr>
-                    <tr>
-                        <td>รับแจ้งไฟฟ้าขัดข้อง ที่ผ่านตัวกรอง</td>
-                        <td>${currentFilteredOutages.length}</td>
-                    </tr>
-                    <tr>
-                        <td>ระบบ 22kV (รายงานเหตุ)</td>
-                        <td>${count22kV}</td>
-                    </tr>
-                    <tr>
-                        <td>ระบบ 115kV (รายงานเหตุ)</td>
-                        <td>${count115kV}</td>
-                    </tr>
-                </table>
-
-                <div class="title">⚡ สถิติลักษณะอาการขัดข้อง (Issues Breakdown - Filtered)</div>
-                <table>
-                    <tr>
-                        <th>ลำดับ</th>
-                        <th>ลักษณะอาการขัดข้อง</th>
-                        <th>จำนวนครั้งที่แจ้ง</th>
-                    </tr>
-                    ${sortedIssues.map((item, index) => `
-                        <tr>
-                            <td>${index + 1}</td>
-                            <td>${item[0]}</td>
-                            <td>${item[1]}</td>
-                        </tr>
-                    `).join('')}
-                </table>
-            </body>
-            </html>`;
-
-            const blob = new Blob([tableHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            let dateStr = new Date().toISOString().split('T')[0];
-            link.setAttribute("href", url);
-            link.setAttribute("download", `Analytics_Filtered_Summary_${dateStr}.xls`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast("📊 ส่งออกสรุปสถิติ (Excel) เรียบร้อยแล้ว!");
-        }
-
         // ==========================================
         //  BACKUP & RESTORE SYSTEM
         // ==========================================
@@ -3376,7 +3280,7 @@
                         meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
                         last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                     }
-                }
+                };
 
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
                 const downloadAnchor = document.createElement('a');
@@ -3593,7 +3497,7 @@
         }
 
         // ==========================================
-        //  AI CHATBOT (GEMINI 3.8 FLASH) SCRIPT
+        //  AI CHATBOT (GEMINI FLASH WITH FALLBACK) SCRIPT
         // ==========================================
         let chatContext = [];
 
@@ -3710,16 +3614,24 @@
                 }
             };
 
-            const modelToUse = 'gemini-3.8-flash';
+            // รองรับการสลับรุ่นโมเดลอัตโนมัติ เพื่อให้ใช้งานได้เสถียร 100%
+            const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            let response = null;
 
-            let response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
+            for (const modelToUse of candidateModels) {
+                response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                if (response.ok) break;
+                if (response.status === 401 || response.status === 403) {
+                    throw new Error("Invalid API Key");
+                }
+            }
 
-            if (!response.ok) {
-                if (response.status === 400 || response.status === 403 || response.status === 401) {
+            if (!response || !response.ok) {
+                if (response && (response.status === 400 || response.status === 401 || response.status === 403)) {
                     throw new Error("Invalid API Key");
                 }
                 throw new Error("API Request Failed");
@@ -3760,6 +3672,7 @@
                 addrEl.value = data.address;
                 addrEl.style.height = 'auto';
                 addrEl.style.height = addrEl.scrollHeight + 'px';
+                addrEl.dispatchEvent(new Event('input'));
                 filled = true;
             }
             if(data.phone && data.phone.trim() !== "") { document.getElementById('phone').value = data.phone; filled = true; }
@@ -3888,7 +3801,7 @@
                 };
                 dropdown.appendChild(li);
             });
-                        dropdown.classList.remove('hidden');
+            dropdown.classList.remove('hidden');
         }
 
         // ==========================================
@@ -4258,7 +4171,7 @@
         // ==========================================
         //  MISC & UTILITIES
         // ==========================================
-        function formatGpsInput(inputVal) {
+                function formatGpsInput(inputVal) {
             if (!inputVal) return '-';
             let val = inputVal.trim();
             
@@ -4504,14 +4417,16 @@
                 presentCurrField.classList.remove('hidden');
             }
         }
+        // ===== จบส่วนที่ 2 / 3 (นำโค้ดส่วนที่ 3 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+        // ===== เริ่มส่วนที่ 3 / 3 (วางต่อจากส่วนที่ 2 จนจบไฟล์ได้เลยครับ) =====
 
-                function openLineAppWithFallback(text) {
+        function openLineAppWithFallback(text) {
             copyTextToClipboard(text, "✅ บันทึกและคัดลอกข้อความเตรียมส่ง LINE แล้ว!");
             const lineShareUrl = 'https://line.me/R/share?text=' + encodeURIComponent(text);
             window.open(lineShareUrl, '_blank');
         }
 
-                // ตัวแปรจำสถานะรายการที่กำลังแก้ไข (เพื่อบันทึกทับรายการเดิม)
+        // ตัวแปรจำสถานะรายการที่กำลังแก้ไข (เพื่อบันทึกทับรายการเดิม)
         let editingFaultId = localStorage.getItem('elec_editing_fault_id') || null;
         let editingOutageId = localStorage.getItem('elec_editing_outage_id') || null;
 
@@ -4604,7 +4519,7 @@
                 causeStr += ` ${tlStatus}`;
             }
 
-                        let textToCopy = '';
+            let textToCopy = '';
             if (system === '115kV') {
                 textToCopy = `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n📍 ระยะทาง : ${distance}\n🎯 โซน : ${zone}\n📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
             } else {
@@ -4616,13 +4531,14 @@
             if (editingFaultId) {
                 const idx = history.findIndex(h => h.timestamp === editingFaultId);
                 if (idx !== -1) {
-                    // บันทึกทับในรายการเดิม โดยคงเวลาบันทึก (timestamp) และลำดับเดิมไว้
+                    const existingTechBlock = (history[idx].formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[1];
+                    const finalFormatted = existingTechBlock ? `${textToCopy}\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---${existingTechBlock}` : textToCopy;
                     history[idx] = {
                         ...history[idx],
                         time, system, circuit, station, cause, count, tlStatus, phase,
                         currA, currB, currC, currG, distance, zone, weather, presentCurr,
                         device, disconnectDevice, powerUpToDevice, reporter, gps,
-                        formattedText: textToCopy
+                        formattedText: finalFormatted
                     };
                 } else {
                     history.unshift({
@@ -4712,7 +4628,8 @@
             if (editingOutageId) {
                 const idx = history.findIndex(h => h.dateTimeSaved === editingOutageId);
                 if (idx !== -1) {
-                    // บันทึกทับในรายการเดิม โดยคงเวลาบันทึกเดิม (dateTimeSaved) และลำดับเดิมไว้ทุกประการ
+                    const existingTechBlock = (history[idx].formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[1];
+                    const finalFormatted = existingTechBlock ? `${formattedText}\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---${existingTechBlock}` : formattedText;
                     history[idx] = {
                         ...history[idx],
                         reportDate,
@@ -4724,7 +4641,7 @@
                         address,
                         phone,
                         gps,
-                        formattedText,
+                        formattedText: finalFormatted,
                         priorityLevel
                     };
                 } else {
@@ -4874,7 +4791,8 @@
         function deleteOutageItem(dateTimeSaved) {
             showCustomConfirm('คุณต้องการลบรายการประวัตินี้ใช่หรือไม่?', function() {
                 if (editingOutageId === dateTimeSaved) setEditingOutageId(null);
-                let history = JSON.parse(localStorage.getItem('elecReportsComplete_all')) || [];
+                if (typeof recordDeletedJobToRegistry === 'function') recordDeletedJobToRegistry(dateTimeSaved);
+                let history = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                 history = history.filter(h => h.dateTimeSaved !== dateTimeSaved);
                 localStorage.setItem('elecReportsComplete_all', JSON.stringify(history));
                 performAutoBackupSnapshot();
@@ -5027,6 +4945,7 @@
             document.getElementById('sortable-tab1')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             showToast("📝 โหมดแก้ไข: เมื่อบันทึกจะทับลงในรายการเดิมทันที");
         }
+
         function copyFaultAgain(timestamp) {
             let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
             let item = history.find(h => h.timestamp === timestamp);
@@ -5037,7 +4956,9 @@
 
         function deleteFaultItem(timestamp) {
             showCustomConfirm('คุณต้องการลบรายการนี้ใช่หรือไม่?', function() {
-                let history = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+                if (editingFaultId === timestamp) setEditingFaultId(null);
+                if (typeof recordDeletedJobToRegistry === 'function') recordDeletedJobToRegistry(timestamp);
+                let history = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
                 history = history.filter(h => h.timestamp !== timestamp);
                 localStorage.setItem('fault_reports_all', JSON.stringify(history));
                 performAutoBackupSnapshot();
@@ -5046,7 +4967,7 @@
             }, "🗑️ ยืนยันการลบประวัติ");
         }
 
-                // โหลดไลบรารี SheetJS อัตโนมัติสำหรับสร้างไฟล์ Excel (.xlsx) แท้ที่เปิดบนมือถือและ Google Sheets ได้ 100%
+        // โหลดไลบรารี SheetJS อัตโนมัติสำหรับสร้างไฟล์ Excel (.xlsx) แท้ที่เปิดบนมือถือและ Google Sheets ได้ 100%
         function ensureXlsxLibraryLoaded() {
             return new Promise((resolve) => {
                 if (typeof XLSX !== 'undefined') {
@@ -5082,7 +5003,7 @@
             document.body.removeChild(link);
         }
 
-                async function exportData(type) {
+        async function exportData(type) {
             let data = [];
             let headers = [];
             let filename = '';
@@ -5130,7 +5051,7 @@
                         item.distance, item.zone, item.presentCurr,
                         item.device, item.disconnectDevice, item.powerUpToDevice,
                         item.reporter, tr?.fieldGps || item.gps || '-',
-                        statusText, tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', tr?.inspector || '-'
+                        statusText, tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-')
                     ];
                 });
                 filename = `Fault_Report_${selectedDate || 'All'}.xlsx`;
@@ -5164,14 +5085,13 @@
                         item.dateTimeSaved ? item.dateTimeSaved.split(' ')[0] : '', 
                         item.reportDate, item.jobNo, item.shift, item.issueType,
                         item.workerName, item.area, item.address, item.phone, tr?.fieldGps || item.gps || '-',
-                        statusText, tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', tr?.inspector || '-'
+                        statusText, tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-')
                     ];
                 });
                 filename = `Outage_Report_${selectedDate || 'All'}.xlsx`;
                 sheetName = 'ประวัติรับแจ้ง';
             }
 
-            // แปลงทุกเซลล์เป็นข้อความเพื่อรักษาเลข 0 นำหน้า (เช่น เบอร์โทร 08... และเลข CA)
             const cleanRows = data.map(row => row.map(cell => (cell === undefined || cell === null) ? "" : String(cell)));
 
             const isLoaded = await ensureXlsxLibraryLoaded();
@@ -5188,7 +5108,7 @@
             }
         }
 
-        // อัปเกรดปุ่มส่งออกสถิติในแท็บ 4 ให้เป็นไฟล์ .xlsx แท้ด้วยเช่นกัน
+        // ปุ่มส่งออกสถิติในแท็บ 4 เป็นไฟล์ .xlsx แท้
         async function exportAnalyticsToExcel() {
             if (currentFilteredFaults.length === 0 && currentFilteredOutages.length === 0) {
                 showToast("⚠️ ไม่มีข้อมูลสถิติสำหรับส่งออก (ลองปรับตัวกรอง)");
@@ -5233,7 +5153,6 @@
                 showToast("📊 ส่งออกสรุปสถิติ (.csv) เรียบร้อยแล้ว!");
             }
         }
-
 
         function addTxRow() {
             const div = document.createElement('div');
@@ -5451,7 +5370,6 @@
 
             recognition.start();
         }
-
 
         // ==========================================
         //  GPS TO AREA (AUTO-FILL & APPEND)
@@ -5720,7 +5638,7 @@
                         showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
                     }
 
-                                       // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" และ "เบอร์โทร : -"
+                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" และ "เบอร์โทร : -"
                     const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)[ \t]*[:：]?[ \t]*(?:\r?\n[ \t]*)?(?:[0-9\-\(\) \t]{8,20}|-+|ไม่มี)[ \t]*\r?\n?/gi;
                     
                     if (phoneRegex.test(addrText)) {
@@ -5744,7 +5662,7 @@
                         showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
                     }
 
-                                                                               // 1.4 ตัดคำว่า "ที่อยู่" หรือ "ที่อยู่ :" ออกทั้งหมด และดึงบ้านเลขที่ขึ้นบรรทัดบนสุดชิดซ้าย
+                    // 1.4 ตัดคำว่า "ที่อยู่" หรือ "ที่อยู่ :" ออกทั้งหมด และดึงบ้านเลขที่ขึ้นบรรทัดบนสุดชิดซ้าย
                     let extractedTopAddress = '';
                     const addressExtractRegex = /ที่อยู่\s*[:：]?\s*(\d+(?:\/\d+)?\s*(?:หมู่ที่|หมู่|ม\.)?\s*\d*\s*ต\.[ก-๙a-zA-Z]+\s*อ\.[ก-๙a-zA-Z]+\s*จ\.[ก-๙a-zA-Z]+|[^\r\n]+)/i;
                     const matchAddr = addrText.match(addressExtractRegex);
@@ -5780,6 +5698,7 @@
                     }
                 });
             }
+
             // 2. เมื่อช่อง "พิกัด (GPS Link)" มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
             if (gpsInputEl) {
                 gpsInputEl.addEventListener('input', function() {
@@ -5876,13 +5795,11 @@
             }
             try {
                 const draft = JSON.parse(saved);
-                // ตรวจสอบว่ามีการกรอกข้อมูลอื่นค้างไว้จริงหรือไม่
                 const hasActiveDraftData = Boolean(
                     draft.systemSelect || draft.circuitSelect || draft.stationValue ||
                     draft.causeSelect || draft.deviceInput || draft.reporterInput || draft.gpsInput
                 );
 
-                // ให้แสดงเวลาปัจจุบันเสมอเมื่อเปิดหน้าเว็บ (ยกเว้นอยู่ในโหมดกดแก้ไขประวัติเดิม)
                 if (editingFaultId && draft.timeInput) {
                     document.getElementById('timeInput').value = draft.timeInput;
                     isTimeManuallyEdited = true;
@@ -6095,7 +6012,6 @@
                         delete item.ownerGroup;
                         updated = true;
                     }
-                    // หากเป็นงานเก่าที่ยังไม่มีป้ายกลุ่ม ให้ล็อกเป็นของกลุ่มเจ้าของงานเดิม (หรือ กฟส.บึง) เสมอ
                     if (!item.ownerGroup) {
                         item.ownerGroup = getJobGroupName(item) || 'กฟส.บึง';
                         updated = true;
@@ -6134,7 +6050,7 @@
             }
         }
 
-                        function findNearestTechForMainPage(item) {
+        function findNearestTechForMainPage(item) {
             const jobGroup = getJobGroupName(item);
             const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
             const rawText = `${item.gps || ''} ${item.address || ''} ${item.area || ''} ${item.weather || ''}`;
@@ -6198,7 +6114,6 @@
                 }
             }
             
-            // เช็กว่าค่าเดิมที่บันทึกไว้ในใบงาน ช่างคนนั้นกดปิด GPS ไปแล้วหรือยัง
             if (item.recommendedTech && item.recommendedTech.techName) {
                 const recName = item.recommendedTech.techName;
                 if (!isTechGpsOffMain(recName) && item.recommendedTech.hasGps) {
@@ -6220,7 +6135,7 @@
             return null;
         }
 
-                function buildMainRealtimeNavHtml(nav) {
+        function buildMainRealtimeNavHtml(nav) {
             if (!nav) return '';
             const nowMs = Date.now();
             const isGpsFresh = nav.updatedAt && (nowMs - new Date(nav.updatedAt).getTime() < 45000);
@@ -6291,8 +6206,7 @@
             `;
         }
 
-        // ดึงทะเบียนรหัสงานที่ปิดเสร็จสิ้นแล้วทั้งหมด (รองรับทั้ง index.html และ page2.html 100%)
-                function isAutoGeneratedFakeClosureMain(reportObj) {
+        function isAutoGeneratedFakeClosureMain(reportObj) {
             if (!reportObj) return false;
             if (reportObj.realCause === 'ปิดงานโดยผู้ใช้งานทั่วไป' && reportObj.actionTaken === 'ดำเนินการเสร็จสิ้นจากระบบหลัก') return true;
             if (reportObj.status === 'แก้ไขเสร็จสิ้น (ปิดงานแล้ว)') return true;
@@ -6337,12 +6251,37 @@
             }
         }
 
-        // ดึงทะเบียนรหัสงานที่ปิดเสร็จสิ้นแล้วทั้งหมด (รองรับทั้ง index.html และ page2.html 100%)
-                // ==========================================
-        // 🛡️ ระบบป้องกันความจำเบราว์เซอร์เต็ม & ล้างแคชซิงค์อัตโนมัติ
         // ==========================================
-        const MAX_CLOSED_REGISTRY_AGE_MS = 7 * 24 * 60 * 60 * 1000; // เก็บคิวซิงค์งานปิดแล้วไม่เกิน 7 วัน
-        const MAX_CLOSED_REGISTRY_ITEMS = 150; // เก็บในทะเบียนซิงค์สูงสุด 150 งานล่าสุด
+        // 🛡️ ระบบป้องกันความจำเบราว์เซอร์เต็ม & ทะเบียนงานที่ถูกลบ/ปิดแล้ว
+        // ==========================================
+        const MAX_CLOSED_REGISTRY_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 วัน
+        const MAX_CLOSED_REGISTRY_ITEMS = 150;
+
+        // ทะเบียนจำรหัสงานที่ถูกลบไปแล้ว (ป้องกันงานที่ลบแล้วเด้งกลับมาจาก Cloud หรือหน้าช่าง)
+        function getDeletedJobsRegistry() {
+            try {
+                const raw = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_jobs_registry') || '{}');
+                const now = Date.now();
+                const validEntries = Object.entries(raw).filter(([k, ts]) => (now - Number(ts)) < MAX_CLOSED_REGISTRY_AGE_MS);
+                return Object.fromEntries(validEntries.slice(-200));
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function recordDeletedJobToRegistry(jobKey) {
+            if (!jobKey) return;
+            const reg = getDeletedJobsRegistry();
+            reg[jobKey] = Date.now();
+            localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(reg));
+        }
+
+        function syncDeletedRegistryObject(mergedObj) {
+            if (!mergedObj || typeof mergedObj !== 'object') return;
+            const now = Date.now();
+            const validEntries = Object.entries(mergedObj).filter(([k, ts]) => (now - Number(ts)) < MAX_CLOSED_REGISTRY_AGE_MS);
+            localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(Object.fromEntries(validEntries.slice(-200))));
+        }
 
         function pruneClosedRegistryMap(rawMap) {
             if (!rawMap || typeof rawMap !== 'object') return {};
@@ -6374,13 +6313,11 @@
             } catch (err) {
                 console.warn("Storage full, running auto-cleanup...", err);
                 try {
-                    // 1. ล้างทะเบียนสำรองที่ซ้ำซ้อน
                     localStorage.removeItem('elec_closed_reports_map');
                     const reg = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_closed_jobs_registry') || '{}');
                     const pruned = pruneClosedRegistryMap(reg);
                     _origStorageSetItem.call(this, 'elec_closed_jobs_registry', JSON.stringify(pruned));
 
-                    // 2. หากยังเต็มอยู่ ให้ย่อขนาดไฟล์ Auto-Backup ชั่วคราวเพื่อรักษาข้อมูลประวัติหลักไว้
                     if (key !== 'elec_app_auto_backup_snapshot') {
                         localStorage.removeItem('elec_app_auto_backup_snapshot');
                     }
@@ -6394,7 +6331,6 @@
             }
         };
 
-        // คำนวณพื้นที่ความจำ LocalStorage ที่ใช้ไป
         function getStorageUsageStats() {
             let totalBytes = 0;
             for (let i = 0; i < localStorage.length; i++) {
@@ -6408,13 +6344,11 @@
             return { usedMb, maxMb: maxMb.toFixed(2), pct };
         }
 
-        // ล้างเฉพาะแคชชั่วคราวโดยไม่ลบประวัติใบงาน
         window.cleanTemporaryCacheSafe = function() {
             const closedReg = getClosedJobsRegistry();
             let outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
             let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
 
-            // ฝังผลตรวจสอบลงในประวัติหลักถาวรทุกใบก่อนล้างแคชซิงค์
             outages.forEach(o => {
                 if (!o.techReport && closedReg[o.dateTimeSaved]) o.techReport = closedReg[o.dateTimeSaved];
             });
@@ -6472,7 +6406,6 @@
             renderStorageMeterInBackupModal();
         };
 
-        // ดึงทะเบียนรหัสงานที่ปิดเสร็จสิ้นแล้วทั้งหมด (พร้อมกรองรายการเก่าเกิน 7 วันออกอัตโนมัติ)
         function getClosedJobsRegistry() {
             try {
                 const reg1 = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_closed_jobs_registry') || '{}');
@@ -6486,12 +6419,13 @@
         function saveClosedJobToRegistry(jobKey, reportObj) {
             if (!jobKey) return;
             const reg = getClosedJobsRegistry();
+            const rawUser = (localStorage.getItem('elec_app_current_user') || 'ผู้ใช้งานทั่วไป').trim();
             reg[jobKey] = reportObj || {
                 status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
                 realCause: '-',
                 actionTaken: 'ปิดงานจากระบบหลัก',
                 finishTime: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.',
-                inspector: (localStorage.getItem('elec_app_current_user') || 'ผู้ใช้งานทั่วไป').trim(),
+                inspector: formatTechDisplayName(rawUser),
                 updatedAt: new Date().toISOString()
             };
             const pruned = pruneClosedRegistryMap(reg);
@@ -6508,8 +6442,7 @@
             localStorage.removeItem('elec_closed_reports_map');
         }
 
-
-        // ปุ่มกด "ปิดงานด่วน" จากหน้าประวัติใน index.html โดยตรง
+        // ปุ่มกด "ปิดงานด่วน" จากหน้าประวัติใน index.html โดยตรง (ฟอร์แมตตรงกับ page2.html 100%)
         window.quickCloseJobFromMainHistory = async function(jobKey, jobType) {
             const storageKey = jobType === 'fault' ? 'fault_reports_all' : 'elecReportsComplete_all';
             const keyField = jobType === 'fault' ? 'timestamp' : 'dateTimeSaved';
@@ -6517,23 +6450,40 @@
             const idx = list.findIndex(i => i[keyField] === jobKey);
             if (idx === -1) return;
 
+            const item = list[idx];
             const curUser = (localStorage.getItem('elec_app_current_user') || 'ผู้ใช้งานทั่วไป').trim();
+            const inspectorDisplay = formatTechDisplayName(curUser);
             const now = new Date();
             const finishTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
 
+            const status = 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
+            const realCause = item.techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ';
+            const actionTaken = item.techReport?.actionTaken || 'ปิดงานเรียบร้อย';
+
             const reportObj = {
-                status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
-                realCause: list[idx].techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ',
-                actionTaken: list[idx].techReport?.actionTaken || 'ปิดงานเรียบร้อย',
+                status,
+                realCause,
+                actionTaken,
+                fieldGps: item.gps || '',
                 finishTime: finishTimeStr,
-                inspector: curUser,
-                updatedAt: now.toISOString()
+                inspector: inspectorDisplay,
+                updatedAt: now.toISOString(),
+                needsMainSync: true
             };
 
-            list[idx].techReport = reportObj;
-            delete list[idx].techNav;
-            delete list[idx].pendingInitialUpload;
-            delete list[idx].reopenedAt;
+            const jobHeaderLine = jobType === 'outage'
+                ? `📋 งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'}`
+                : `📋 วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+
+            const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${jobHeaderLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTimeStr}\n👷 ผู้ตรวจสอบ : ${inspectorDisplay}`;
+            const baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+
+            item.formattedText = `${baseText}\n\n${techOnlyText}`;
+            item.techReport = reportObj;
+            delete item.techNav;
+            delete item.pendingInitialUpload;
+            delete item.reopenedAt;
+
             localStorage.setItem(storageKey, JSON.stringify(list));
             saveClosedJobToRegistry(jobKey, reportObj);
 
@@ -6584,7 +6534,6 @@
                                         : `<span class="text-[10px] text-purple-600">(รอแก้ไข)</span>`;
                                     banner.innerHTML = `
                                         <span class="font-bold text-purple-800">🎯 แนะนำช่างใกล้สุด: ${formatTechDisplayName(rec.techName)}</span>
-
                                         <div class="flex items-center gap-1">
                                             ${distBadge}
                                             <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
@@ -6603,7 +6552,7 @@
                             banner.className = 'tech-nav-eta-banner p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex flex-wrap justify-between items-center gap-1 mt-1';
                             banner.innerHTML = `
                                 <span class="font-bold text-emerald-700">✅ ปิดงานแก้ไขเสร็จสิ้นแล้ว (${tr?.actionTaken || tr?.realCause || 'จ่ายไฟคืนปกติ'})</span>
-                                <span class="text-[10px] text-emerald-600">👷 ${tr?.inspector || '-'} ${tr?.finishTime ? `• ⏰ ${tr.finishTime}` : ''}</span>
+                                <span class="text-[10px] text-emerald-600">👷 ${formatTechDisplayName(tr?.inspector || '-')} ${tr?.finishTime ? `• ⏰ ${tr.finishTime}` : ''}</span>
                             `;
                         } else if (banner) {
                             banner.remove();
@@ -6653,7 +6602,7 @@
             return Boolean(job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น') && !isAutoGeneratedFakeClosureMain(job.techReport));
         }
 
-                function shouldPurgeFinishedJobFromCloud(job) {
+        function shouldPurgeFinishedJobFromCloud(job) {
             if (!isJobFinishedAndRestored(job)) return false;
             const updatedMs = job.techReport?.updatedAt ? new Date(job.techReport.updatedAt).getTime() : 0;
             if (!updatedMs) return true;
@@ -6674,19 +6623,24 @@
 
                 const baseCloudJobs = Array.isArray(cloudJobsSnapshot) ? cloudJobsSnapshot : cachedCloudJobs;
                 const techLocEntry = (baseCloudJobs || []).find(j => j.jobType === 'tech_loc');
+                const deletedReg = getDeletedJobsRegistry();
 
                 const cloudLookupMap = new Map();
                 (baseCloudJobs || []).forEach(cj => {
                     if (cj.jobType === 'tech_loc') return;
-                    const k = (cj.jobType === 'fault' ? 'F_' + cj.timestamp : 'O_' + cj.dateTimeSaved);
+                    const rawK = cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved;
+                    if (rawK && deletedReg[rawK]) return;
+                    const k = (cj.jobType === 'fault' ? 'F_' + rawK : 'O_' + rawK);
                     cloudLookupMap.set(k, cj);
                 });
 
-                // รักษาใบงานที่ยังไม่ปิดบน Cloud เสมอ แม้ล็อกอินด้วย Admin
+                // รักษาใบงานของกลุ่มอื่นบน Cloud (ส่วนของกลุ่มตัวเองและ Admin ให้ยึดตามรายการที่ยังไม่ถูกลบในเครื่อง)
                 const preservedCloudJobs = (baseCloudJobs || []).filter(cJob => {
                     if (cJob.jobType === 'tech_loc') return false;
+                    const rawK = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
+                    if (rawK && deletedReg[rawK]) return false;
                     if (shouldPurgeFinishedJobFromCloud(cJob)) return false;
-                    if (currentRole === 'admin') return true;
+                    if (currentRole === 'admin') return false;
                     const jGroup = getJobGroupName(cJob);
                     return jGroup !== '' && jGroup !== myGroup;
                 });
@@ -6732,17 +6686,20 @@
                         mergedGps = mergedReport.fieldGps;
                     }
 
+                    const freshRecommended = findNearestTechForMainPage(localItem);
+
                     const result = {
                         ...localItem,
                         gps: mergedGps,
                         jobType: type,
                         syncedToCloud: true,
                         ownerGroup: getJobGroupName(localItem) || myGroup,
-                        recommendedTech: findNearestTechForMainPage(localItem) || localItem.recommendedTech,
+                        recommendedTech: freshRecommended || undefined,
                         techReport: mergedReport,
                         navCancelledAt: mergedCancel || undefined
                     };
                     delete result.pendingInitialUpload;
+                    if (!freshRecommended) delete result.recommendedTech;
                     if (!mergedReport) delete result.techReport;
                     if (mergedNav) result.techNav = mergedNav;
                     else delete result.techNav;
@@ -6753,11 +6710,11 @@
                 let rawFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
 
                 const myActiveOutages = rawOutages
-                    .filter(i => canCurrentUserSeeJob(i) && !shouldPurgeFinishedJobFromCloud(i))
+                    .filter(i => !deletedReg[i.dateTimeSaved] && canCurrentUserSeeJob(i) && !shouldPurgeFinishedJobFromCloud(i))
                     .map(i => preserveCloudTechState(i, 'outage'));
                 
                 const myActiveFaults = rawFaults
-                    .filter(i => canCurrentUserSeeJob(i) && !shouldPurgeFinishedJobFromCloud(i))
+                    .filter(i => !deletedReg[i.timestamp] && canCurrentUserSeeJob(i) && !shouldPurgeFinishedJobFromCloud(i))
                     .map(i => preserveCloudTechState(i, 'fault'));
 
                 const combinedMap = new Map();
@@ -6781,11 +6738,19 @@
                 });
                 syncClosedRegistryObject(mergedClosedReg);
 
+                const mergedDeletedReg = {
+                    ...(techLocEntry?.deletedJobsMap || {}),
+                    ...deletedReg
+                };
+                syncDeletedRegistryObject(mergedDeletedReg);
+
                 finalJobs.push({
                     jobType: 'tech_loc',
+                    dateTimeSaved: 'TECH_LOC_REGISTRY',
                     techLocations: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}'),
                     closedJobsMap: mergedClosedReg,
                     closedReports: mergedClosedReg,
+                    deletedJobsMap: mergedDeletedReg,
                     updatedAt: new Date().toISOString()
                 });
                 cachedCloudJobs = finalJobs;
@@ -6841,19 +6806,41 @@
                             });
                             syncClosedRegistryObject(mergedReg);
                         }
+                        if (locEntry.deletedJobsMap) {
+                            const mergedDel = {
+                                ...getDeletedJobsRegistry(),
+                                ...locEntry.deletedJobsMap
+                            };
+                            syncDeletedRegistryObject(mergedDel);
+                        }
                     }
 
+                    const deletedReg = getDeletedJobsRegistry();
                     let outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                     let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
                     let changed = false;
                     let navUpdated = false;
                     let hasExpiredCompletedJobInCloud = false;
+
+                    // กรองงานที่อยู่ในทะเบียนลบออกจากเครื่องอัตโนมัติ
+                    const beforeOutageLen = outages.length;
+                    outages = outages.filter(o => !deletedReg[o.dateTimeSaved]);
+                    if (outages.length !== beforeOutageLen) changed = true;
+
+                    const beforeFaultLen = faults.length;
+                    faults = faults.filter(f => !deletedReg[f.timestamp]);
+                    if (faults.length !== beforeFaultLen) changed = true;
                     
                     const cloudOutageKeys = new Set();
                     const cloudFaultKeys = new Set();
 
                     data.jobs.forEach(cJob => {
                         if (cJob.jobType === 'tech_loc') return;
+                        const rawJobKey = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
+                        if (rawJobKey && deletedReg[rawJobKey]) {
+                            hasExpiredCompletedJobInCloud = true;
+                            return;
+                        }
                         if (!canCurrentUserSeeJob(cJob)) return;
 
                         const jobGroup = getJobGroupName(cJob);
@@ -6982,7 +6969,6 @@
                         }
                     });
 
-                    // อัปเดตปิดงานเฉพาะรายการที่มีอยู่ในทะเบียนสั่งปิดจริง (latestClosedReg) เท่านั้น
                     const latestClosedReg = getClosedJobsRegistry();
                     outages.forEach(o => {
                         const validClosed = latestClosedReg[o.dateTimeSaved] && !isAutoGeneratedFakeClosureMain(latestClosedReg[o.dateTimeSaved])
@@ -7106,7 +7092,8 @@
         
         window.addEventListener('focus', pullFieldReportsFromCloud);
     </script>   
-        <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin - Direct By-pass Sync) -->
+
+    <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
     <script>
         (function() {
             const ONLINE_THRESHOLD_MS = 180 * 1000; // 3 นาที
@@ -7205,32 +7192,39 @@
                 updateOnlineCountUI();
             }
 
-            // ⚡ ดึงข้อมูลล่าสุดจาก Cloud มารวมกับสถานะออนไลน์ของเครื่องนี้ แล้วส่งกลับขึ้น Cloud ด้วย Payload พิเศษ (ป้องกันสิทธิ์บล็อก)
             async function pushOnlineHeartbeatDirectToCloud() {
-                if (isPushingHeartbeat || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+                if (isPushingHeartbeat || isUploadingFromMain || localStorage.getItem('elec_app_logged_in') !== 'true') return;
                 const apiUrl = getActiveCloudApiUrl();
                 if (!apiUrl || !navigator.onLine) return;
 
                 isPushingHeartbeat = true;
                 try {
-                    // 1. ดึงข้อมูลล่าสุดจาก Cloud ก่อน
                     const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
                     const data = await res.json();
                     let cloudJobs = (data && Array.isArray(data.jobs)) ? data.jobs : (cachedCloudJobs || []);
                     
-                    // 2. ผสมข้อมูลออนไลน์เก่าบน Cloud กับข้อมูลใหม่บนเครื่อง
                     const cloudLocEntry = cloudJobs.find(j => j.jobType === 'tech_loc');
                     let localMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
                     if (cloudLocEntry && cloudLocEntry.techLocations) {
-                        localMap = mergeOnlineLocationsSafe(cloudLocEntry.techLocations, localMap);
+                        localMap = mergeOnlineLocationsSafe(localMap, cloudLocEntry.techLocations);
                         localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
                     }
 
-                    // 3. ประทับตราเวลาปัจจุบันให้เครื่องตัวเองอีกครั้ง
                     updateMyOnlineHeartbeat(false);
                     const updatedMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
 
-                    const otherJobs = cloudJobs.filter(j => j.jobType !== 'tech_loc');
+                    const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
+                    const mergedDeleted = {
+                        ...(cloudLocEntry?.deletedJobsMap || {}),
+                        ...deletedReg
+                    };
+
+                    const otherJobs = cloudJobs.filter(j => {
+                        if (j.jobType === 'tech_loc') return false;
+                        const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+                        return !(rk && mergedDeleted[rk]);
+                    });
+
                     const closedReg = typeof getClosedJobsRegistry === 'function' ? getClosedJobsRegistry() : {};
                     const mergedClosed = {
                         ...(cloudLocEntry?.closedJobsMap || {}),
@@ -7242,16 +7236,17 @@
                         ...otherJobs,
                         {
                             jobType: 'tech_loc',
+                            dateTimeSaved: 'TECH_LOC_REGISTRY',
                             techLocations: updatedMap,
                             closedJobsMap: mergedClosed,
                             closedReports: mergedClosed,
+                            deletedJobsMap: mergedDeleted,
                             updatedAt: new Date().toISOString()
                         }
                     ];
 
                     cachedCloudJobs = payloadJobs;
 
-                    // 4. ส่งขึ้น Cloud ทันทีด้วย Fetch (By-pass ฟังก์ชันปกติ)
                     await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -7398,26 +7393,8 @@
                 triggerManualPresenceSync();
             };
 
-            // ดึงข้อมูลตรงจาก Cloud ทันทีเมื่อกดปุ่มรีเฟรชสถานะ และส่งเวลาใหม่กลับขึ้นไป
             window.triggerManualPresenceSync = async function() {
-                const apiUrl = getActiveCloudApiUrl();
-                if (apiUrl && navigator.onLine) {
-                    try {
-                        const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
-                        const data = await res.json();
-                        if (data && Array.isArray(data.jobs)) {
-                            const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
-                            if (locEntry && locEntry.techLocations) {
-                                const curMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
-                                const merged = mergeOnlineLocationsSafe(curMap, locEntry.techLocations);
-                                localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
-                            }
-                        }
-                    } catch (e) {}
-                }
-                updateMyOnlineHeartbeat(false);
-                pushOnlineHeartbeatDirectToCloud(); // สั่งยิงกลับขึ้น Cloud ทันทีเพื่อความชัวร์
-                
+                await pushOnlineHeartbeatDirectToCloud();
                 renderOnlineUsersModalList();
                 if (isCurrentUserAdmin()) {
                     showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
@@ -7478,38 +7455,21 @@
                 const res = _origCheckLoginStatus.apply(this, args);
                 injectOnlineHeaderButton();
                 updateMyOnlineHeartbeat(false);
-                pushOnlineHeartbeatDirectToCloud();
                 return res;
             };
 
             const _origPullCloud = pullFieldReportsFromCloud;
             pullFieldReportsFromCloud = async function(...args) {
-                let beforeMap = {};
-                try {
-                    beforeMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
-                } catch (e) {}
-
                 const res = await _origPullCloud.apply(this, args);
-
-                let afterMap = {};
-                try {
-                    afterMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
-                } catch (e) {}
-
-                const merged = mergeOnlineLocationsSafe(beforeMap, afterMap);
-                localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
+                // อัปเดตสถานะของตัวเองในเครื่องและตัวเลข Badge ทันที โดยไม่ยิง POST ซ้ำซ้อนทุก 5 วินาที
                 updateMyOnlineHeartbeat(false);
-
-                // สั่งซิงค์กลับทันทีหากข้อมูลใหม่กว่าข้อมูลบนคลาวด์
-                pushOnlineHeartbeatDirectToCloud();
-                
                 return res;
             };
 
             window.addEventListener('DOMContentLoaded', () => {
                 injectOnlineHeaderButton();
                 updateMyOnlineHeartbeat(false);
-                pushOnlineHeartbeatDirectToCloud();
+                setTimeout(pushOnlineHeartbeatDirectToCloud, 1500);
 
                 if (presenceInterval) clearInterval(presenceInterval);
                 // ยิงสถานะออนไลน์ขึ้น Cloud อัตโนมัติทุกๆ 20 วินาที
@@ -7525,7 +7485,7 @@
     <!-- 📲 ระบบติดตั้งแอป PWA เต็มจอ & ทำงานออฟไลน์ -->
     <script>
         (function() {
-            // 1. เชื่อมไฟล์ manifest.json จริง เพื่อให้ Chrome ซ่อนแถบ URL ด้านบน 100%
+            // 1. เชื่อมไฟล์ manifest-main.json เพื่อให้ Chrome ซ่อนแถบ URL ด้านบน 100%
             let manifestEl = document.getElementById('webManifestLink') || document.querySelector('link[rel="manifest"]');
             if (!manifestEl) {
                 manifestEl = document.createElement('link');
@@ -7533,6 +7493,7 @@
                 document.head.appendChild(manifestEl);
             }
             manifestEl.href = 'manifest-main.json';
+
             // 2. ลงทะเบียน Service Worker (sw.js)
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
