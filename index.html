@@ -7106,12 +7106,12 @@
         
         window.addEventListener('focus', pullFieldReportsFromCloud);
     </script>   
-    <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
+    <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin - Direct Cloud Sync) -->
     <script>
         (function() {
             const ONLINE_THRESHOLD_MS = 180 * 1000; // ถือว่าออนไลน์หากเคลื่อนไหวภายใน 3 นาที
             let presenceInterval = null;
-            let lastHeartbeatPushMs = 0;
+            let isPushingHeartbeat = false;
 
             function isCurrentUserAdmin() {
                 return localStorage.getItem('elec_app_logged_in') === 'true' &&
@@ -7125,7 +7125,6 @@
                 return isNaN(ms) ? 0 : ms;
             }
 
-            // รวมข้อมูลสถานะออนไลน์โดยยึดเวลาที่ใหม่ล่าสุดเสมอ (ป้องกันข้อมูลเก่า 28/10/2569 มาทับ)
             function mergeOnlineLocationsSafe(mapA, mapB) {
                 const combined = { ...(mapA || {}) };
                 Object.keys(mapB || {}).forEach(k => {
@@ -7182,7 +7181,6 @@
 
                 const existing = locMap[curUser] || {};
 
-                // ลบคีย์เก่าที่ชื่อซ้ำกับตัวเองแต่คนละรูปแบบออก เพื่อไม่ให้เวลาเก่าค้าง
                 Object.keys(locMap).forEach(k => {
                     if (k !== curUser && isUsernameMatchingAccount(k, curUser)) {
                         delete locMap[k];
@@ -7207,6 +7205,60 @@
                 updateOnlineCountUI();
             }
 
+            // ⚡ ดึงข้อมูลล่าสุดจาก Cloud มารวมกับสถานะออนไลน์ของเครื่องนี้ แล้วส่งกลับขึ้น Cloud ทันที
+            async function pushOnlineHeartbeatDirectToCloud() {
+                if (isPushingHeartbeat || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+                const apiUrl = getActiveCloudApiUrl();
+                if (!apiUrl || !navigator.onLine) return;
+
+                isPushingHeartbeat = true;
+                try {
+                    const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
+                    const data = await res.json();
+                    let cloudJobs = (data && Array.isArray(data.jobs)) ? data.jobs : (cachedCloudJobs || []);
+                    const cloudLocEntry = cloudJobs.find(j => j.jobType === 'tech_loc');
+
+                    let localMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                    if (cloudLocEntry && cloudLocEntry.techLocations) {
+                        localMap = mergeOnlineLocationsSafe(cloudLocEntry.techLocations, localMap);
+                        localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
+                    }
+
+                    updateMyOnlineHeartbeat(false);
+                    const updatedMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+
+                    const otherJobs = cloudJobs.filter(j => j.jobType !== 'tech_loc');
+                    const closedReg = typeof getClosedJobsRegistry === 'function' ? getClosedJobsRegistry() : {};
+                    const mergedClosed = {
+                        ...(cloudLocEntry?.closedJobsMap || {}),
+                        ...(cloudLocEntry?.closedReports || {}),
+                        ...closedReg
+                    };
+
+                    const payloadJobs = [
+                        ...otherJobs,
+                        {
+                            jobType: 'tech_loc',
+                            techLocations: updatedMap,
+                            closedJobsMap: mergedClosed,
+                            closedReports: mergedClosed,
+                            updatedAt: new Date().toISOString()
+                        }
+                    ];
+
+                    cachedCloudJobs = payloadJobs;
+                    await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'saveJobs', jobs: payloadJobs })
+                    });
+                    updateOnlineCountUI();
+                } catch (e) {
+                } finally {
+                    isPushingHeartbeat = false;
+                }
+            }
+
             function getVisibleAccountsWithStatus() {
                 const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
 
@@ -7226,7 +7278,6 @@
                     const accGroup = getUserGroupName(acc.username);
                     const accDisp = formatTechDisplayName(acc.username).toLowerCase().replace(/\s+/g, '');
 
-                    // ค้นหาทุกคีย์ที่ตรงกับบัญชีนี้ แล้วเลือกตัวที่มีเวลาใหม่ล่าสุดเสมอ
                     let matchedLoc = null;
                     let bestTimeMs = -1;
 
@@ -7340,11 +7391,24 @@
                 triggerManualPresenceSync();
             };
 
-            // ดึงข้อมูลจาก Cloud มารวมก่อนเสมอ แล้วค่อยส่งสถานะของตัวเองกลับขึ้นไป (ไม่ให้ทับข้อมูลคนอื่น)
+            // ดึงข้อมูลตรงจาก Cloud ทันทีเมื่อกดปุ่มรีเฟรชสถานะ
             window.triggerManualPresenceSync = async function() {
-                await pullFieldReportsFromCloud();
+                const apiUrl = getActiveCloudApiUrl();
+                if (apiUrl && navigator.onLine) {
+                    try {
+                        const res = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
+                        const data = await res.json();
+                        if (data && Array.isArray(data.jobs)) {
+                            const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
+                            if (locEntry && locEntry.techLocations) {
+                                const curMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                                const merged = mergeOnlineLocationsSafe(curMap, locEntry.techLocations);
+                                localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
+                            }
+                        }
+                    } catch (e) {}
+                }
                 updateMyOnlineHeartbeat(false);
-                await syncJobsWithFieldPage();
                 renderOnlineUsersModalList();
                 if (isCurrentUserAdmin()) {
                     showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
@@ -7405,20 +7469,8 @@
                 const res = _origCheckLoginStatus.apply(this, args);
                 injectOnlineHeaderButton();
                 updateMyOnlineHeartbeat(false);
+                pushOnlineHeartbeatDirectToCloud();
                 return res;
-            };
-
-            const _origSyncWithField = syncJobsWithFieldPage;
-            syncJobsWithFieldPage = async function(...args) {
-                updateMyOnlineHeartbeat(false);
-                const cloudSnap = Array.isArray(args[0]) ? args[0] : cachedCloudJobs;
-                const cloudLocEntry = (cloudSnap || []).find(j => j.jobType === 'tech_loc');
-                if (cloudLocEntry && cloudLocEntry.techLocations) {
-                    const localMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
-                    const merged = mergeOnlineLocationsSafe(cloudLocEntry.techLocations, localMap);
-                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
-                }
-                return await _origSyncWithField.apply(this, args);
             };
 
             const _origPullCloud = pullFieldReportsFromCloud;
@@ -7438,24 +7490,20 @@
                 const merged = mergeOnlineLocationsSafe(beforeMap, afterMap);
                 localStorage.setItem('elec_tech_locations_map', JSON.stringify(merged));
                 updateMyOnlineHeartbeat(false);
-
-                // ส่งสถานะออนไลน์ของเครื่องนี้ขึ้น Cloud ทุกๆ 15 วินาที
-                if (Date.now() - lastHeartbeatPushMs > 15000 && localStorage.getItem('elec_app_logged_in') === 'true') {
-                    lastHeartbeatPushMs = Date.now();
-                    syncJobsWithFieldPage();
-                }
                 return res;
             };
 
             window.addEventListener('DOMContentLoaded', () => {
                 injectOnlineHeaderButton();
                 updateMyOnlineHeartbeat(false);
+                pushOnlineHeartbeatDirectToCloud();
+
                 if (presenceInterval) clearInterval(presenceInterval);
                 presenceInterval = setInterval(() => {
                     if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
-                        updateMyOnlineHeartbeat(false);
+                        pushOnlineHeartbeatDirectToCloud();
                     }
-                }, 15000);
+                }, 20000);
             });
         })();
     </script>
