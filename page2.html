@@ -1905,9 +1905,12 @@
             const statusEl = document.getElementById('cloudStatusText');
             if (!silent && statusEl) statusEl.textContent = "⏳ กำลังอัปเดตข้อมูลใบงานขึ้นระบบ...";
 
-            try {
-                const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
-                const localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+                        try {
+                const deletedMap = JSON.parse(localStorage.getItem('elec_deleted_jobs_registry') || '{}');
+                const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
+                    .filter(item => !deletedMap[item.dateTimeSaved]);
+                const localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]')
+                    .filter(item => !deletedMap[item.timestamp]);
 
                 const activeOutages = localOutages
                     .filter(item => {
