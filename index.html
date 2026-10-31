@@ -976,6 +976,15 @@
                         <span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 พิกัด GPS</span>
                     </label>
                     <input type="text" id="gpsInput" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none" placeholder="ระบุพิกัด GPS เช่น Lat: 13.05 Long: 101.11 หรือ ลิงก์ Google Maps">
+                    
+                    <!-- หน้าต่างแสดงแผนที่ Google Maps (Tab 1) -->
+                    <div id="mapPreviewContainerTab1" class="hidden mt-2.5 rounded-xl overflow-hidden border border-slate-300 shadow-sm bg-slate-100 transition-all">
+                        <div class="bg-slate-800 text-white text-[11px] px-3 py-1.5 flex justify-between items-center">
+                            <span id="mapCoordLabelTab1" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span>
+                            <a id="mapExternalLinkTab1" href="#" target="_blank" class="text-blue-300 hover:text-white underline whitespace-nowrap ml-2">เปิดแอป Maps ↗</a>
+                        </div>
+                        <iframe id="googleMapIframeTab1" class="w-full h-56 border-0" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+                    </div>
                 </div>
             </div>
 
@@ -5737,82 +5746,139 @@
                 });
             }
 
-                        // ฟังก์ชันคลายลิงก์ย่อ maps.app.goo.gl เพื่อดึงพิกัด Lat/Lon อัตโนมัติ
-                        // ฟังก์ชันช่วยแกะพิกัดจากข้อความหรือ URL ทุกรูปแบบ (ไม่ค้างเมื่อเจอเครื่องหมาย % หรือ +)
+                                    // ฟังก์ชันช่วยแกะพิกัดจากข้อความหรือ URL ทุกรูปแบบ (รองรับ Base64 จาก Proxy และรหัสซ้อน %25)
             function parseCoordsFromAnyText(rawStr) {
                 if (!rawStr) return null;
-                let s = String(rawStr)
-                    .replace(/%2C/gi, ',')
-                    .replace(/%2B/gi, '+')
-                    .replace(/%20/gi, ' ')
-                    .replace(/%C2%B0/gi, '°')
-                    .replace(/%27/gi, "'")
-                    .replace(/%22/gi, '"');
-                try { s = decodeURIComponent(s); } catch (e) {}
+                let s = String(rawStr);
 
-                // 1. รูปแบบ !3d(lat)!4d(lon)
+                // ถอดรหัส Base64 กรณี Proxy (AllOrigins) ส่งเนื้อหากลับมาเป็น data:text/html;base64,...
+                if (s.includes('base64,')) {
+                    try {
+                        const b64Part = s.split('base64,')[1].split(/[\s"']/)[0];
+                        s += ' ' + atob(b64Part);
+                    } catch (e) {}
+                }
+
+                for (let i = 0; i < 3; i++) {
+                    s = s.replace(/%25/gi, '%')
+                         .replace(/%40/gi, '@')
+                         .replace(/%2C/gi, ',')
+                         .replace(/%2B/gi, '+')
+                         .replace(/%20/gi, ' ')
+                         .replace(/%3A/gi, ':')
+                         .replace(/%2F/gi, '/')
+                         .replace(/%3F/gi, '?')
+                         .replace(/%3D/gi, '=')
+                         .replace(/%26/gi, '&')
+                         .replace(/%21/gi, '!')
+                         .replace(/%C2%B0/gi, '°')
+                         .replace(/%E2%80%B2/gi, "'")
+                         .replace(/%E2%80%B3/gi, '"')
+                         .replace(/%27/gi, "'")
+                         .replace(/%22/gi, '"');
+                }
+
+                // 1. รูปแบบ !3d(lat)!4d(lon) หรือ [null,null,lat,lon]
                 const m3d = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
                 if (m3d) return { lat: m3d[1], lon: m3d[2] };
 
+                const mNullArr = s.match(/\[null\s*,\s*null\s*,\s*(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{2,3}\.\d{4,})\]/);
+                if (mNullArr) return { lat: mNullArr[1], lon: mNullArr[2] };
+
                 // 2. รูปแบบ @lat,lon หรือ center=lat,lon หรือ q=lat,lon หรือ search/lat,+lon
-                const mUrl = s.match(/(?:@|center=|q=|ll=|search\/)(-?\d{1,2}\.\d+)[,\s+]+(-?\d{2,3}\.\d+)/i);
+                const mUrl = s.match(/(?:@|center=|q=|ll=|search\/|place\/)(-?\d{1,2}\.\d{3,})[,\s+]+(-?\d{2,3}\.\d{3,})/i);
                 if (mUrl) return { lat: mUrl[1], lon: mUrl[2] };
 
-                // 3. รูปแบบพิกัด DMS เช่น 13°15'13.3"N+101°00'16.0"E
+                // 3. รูปแบบพิกัดองศา DMS เช่น 13°15'13.3"N+101°00'16.0"E
                 const sPlusToSpace = s.replace(/\+/g, ' ');
                 const cDms = extractCoordsFromInput(sPlusToSpace);
                 if (cDms && cDms.lat && cDms.lon) return cDms;
 
-                // 4. รูปแบบทศนิยมคู่ทั่วไป เช่น 13.253694, +101.004444
-                const mPair = s.match(/(-?\d{1,2}\.\d{3,})\s*,\s*\+?(-?\d{2,3}\.\d{3,})/);
+                // 4. รูปแบบพิกัดประเทศไทย (Lat 5-21, Lon 97-106)
+                const mThai = s.match(/\b([5-9]\.\d{4,}|1\d\.\d{4,}|20\.\d{4,})\s*[,\s+]+\s*\+?(9[7-9]\.\d{4,}|10[0-6]\.\d{4,})\b/);
+                if (mThai) return { lat: mThai[1], lon: mThai[2] };
+
+                // 5. รูปแบบทศนิยมคู่ทั่วไป
+                const mPair = s.match(/(-?\d{1,2}\.\d{4,})\s*,\s*\+?(-?\d{2,3}\.\d{4,})/);
                 if (mPair) return { lat: mPair[1], lon: mPair[2] };
 
                 return null;
             }
 
-            // ฟังก์ชันคลายลิงก์ย่อ maps.app.goo.gl เพื่อดึงพิกัด Lat/Lon อัตโนมัติ
+            // ฟังก์ชันดึงข้อมูลพร้อมตั้งเวลาตัดจบ (Timeout)
+            async function fetchWithTimeout(url, timeoutMs = 5000) {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+                    clearTimeout(timer);
+                    return res;
+                } catch (e) {
+                    clearTimeout(timer);
+                    throw e;
+                }
+            }
+
+            // ฟังก์ชันคลายลิงก์ย่อ maps.app.goo.gl แบบดึงพร้อมกันทุกช่องทาง
             async function resolveCoordsFromInputOrShortLink(rawVal) {
                 const val = (rawVal || '').trim();
                 if (!val) return null;
 
-                // 1. ลองดึงพิกัดจากข้อความหรือลิงก์เต็มโดยตรงก่อน
                 let directCoords = parseCoordsFromAnyText(val);
                 if (directCoords) return directCoords;
 
-                // 2. หากเป็นลิงก์ย่อ maps.app.goo.gl หรือ goo.gl/maps ให้ดึงลิงก์ปลายทางมาแกะพิกัด
-                if (/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/\S+/i.test(val)) {
-                    if (typeof showToast === 'function') showToast("⏳ กำลังดึงพิกัดจากลิงก์ย่อ Google Maps...");
+                const shortUrlMatch = val.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/[^\s"']+/i);
+                if (shortUrlMatch) {
+                    const shortUrl = shortUrlMatch[0];
+                    if (typeof showToast === 'function') showToast("⏳ กำลังคลายลิงก์ย่อ Google Maps...");
 
-                    // ลองดึงผ่าน Proxy ตัวที่ 1 (AllOrigins)
+                    const tasks = [
+                        (async () => {
+                            const r = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(shortUrl)}`, 5500);
+                            if (!r.ok) throw new Error('allorigins failed');
+                            const d = await r.json();
+                            const c = parseCoordsFromAnyText(d?.status?.url || '') || parseCoordsFromAnyText(d?.contents || '');
+                            if (!c) throw new Error('no coords');
+                            return c;
+                        })(),
+                        (async () => {
+                            const r = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(shortUrl)}`, 5500);
+                            if (!r.ok) throw new Error('codetabs failed');
+                            const t = await r.text();
+                            const c = parseCoordsFromAnyText(t);
+                            if (!c) throw new Error('no coords');
+                            return c;
+                        })(),
+                        (async () => {
+                            const r = await fetchWithTimeout(`https://unshorten.me/json/${shortUrl}`, 5000);
+                            if (!r.ok) throw new Error('unshorten failed');
+                            const d = await r.json();
+                            const c = parseCoordsFromAnyText(d?.resolved_url || '');
+                            if (!c) throw new Error('no coords');
+                            return c;
+                        })()
+                    ];
+
                     try {
-                        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(val)}`;
-                        const res = await fetch(proxyUrl);
-                        if (res.ok) {
-                            const data = await res.json();
-                            const cFromUrl = parseCoordsFromAnyText(data?.status?.url || '');
-                            if (cFromUrl) return cFromUrl;
-
-                            const cFromHtml = parseCoordsFromAnyText(data?.contents || '');
-                            if (cFromHtml) return cFromHtml;
+                        const resolved = await Promise.any(tasks);
+                        if (resolved && resolved.lat && resolved.lon) {
+                            const fullUrl = `https://www.google.com/maps?q=${resolved.lat},${resolved.lon}`;
+                            ['gps', 'gpsInput'].forEach(id => {
+                                const el = document.getElementById(id);
+                                if (el && el.value.trim() === val) {
+                                    el.value = fullUrl;
+                                }
+                            });
+                            if (typeof saveFaultDraft === 'function') saveFaultDraft();
+                            if (typeof saveOutageDraft === 'function') saveOutageDraft();
+                            if (typeof showToast === 'function') showToast(`📍 แปลงลิงก์ย่อสำเร็จ: ${resolved.lat}, ${resolved.lon}`);
+                            return resolved;
                         }
                     } catch (e) {
-                        console.warn("Primary proxy error:", e);
+                        console.warn("All shortlink resolvers failed:", e);
                     }
 
-                    // สำรอง: ลองดึงผ่าน Proxy ตัวที่ 2 (CodeTabs) กรณีตัวแรกขัดข้อง
-                    try {
-                        const backupProxy = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(val)}`;
-                        const res2 = await fetch(backupProxy);
-                        if (res2.ok) {
-                            const textData = await res2.text();
-                            const cFromBackup = parseCoordsFromAnyText(textData);
-                            if (cFromBackup) return cFromBackup;
-                        }
-                    } catch (e2) {
-                        console.warn("Backup proxy error:", e2);
-                    }
-
-                    if (typeof showToast === 'function') showToast("⚠️ ไม่พบตัวเลขพิกัดในลิงก์ย่อนี้ กรุณาวางลิงก์เต็ม");
+                    if (typeof showToast === 'function') showToast("⚠️ ไม่สามารถคลายลิงก์ย่อได้ กรุณาวางลิงก์เต็มหรือพิกัดตัวเลข");
                 }
                 return null;
             }
@@ -5844,28 +5910,69 @@
                 });
             }
 
-            // 3. เมื่อช่อง "พิกัด GPS" หน้า TR/TL (Tab 1) มีข้อมูล ให้แสดงแผนที่ในเว็บฝั่งซ้ายด้วย
+                        // 3. เมื่อช่อง "พิกัด GPS" หน้า TR/TL (Tab 1) มีข้อมูล ให้แสดงกรอบแผนที่บนมือถือและเว็บฝั่งซ้าย
             let gpsTab1Timeout;
             const gpsTab1InputEl = document.getElementById('gpsInput');
 
+            function updateMapPreviewTab1(coords) {
+                const container = document.getElementById('mapPreviewContainerTab1');
+                const iframe = document.getElementById('googleMapIframeTab1');
+                const coordLabel = document.getElementById('mapCoordLabelTab1');
+                const extLink = document.getElementById('mapExternalLinkTab1');
+
+                if (!container || !iframe) return;
+
+                if (coords && coords.lat && coords.lon) {
+                    const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
+                    const directUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}`;
+
+                    if (coordLabel) coordLabel.textContent = `📍 พิกัด: ${coords.lat}, ${coords.lon}`;
+                    if (extLink) extLink.href = directUrl;
+
+                    container.classList.remove('hidden');
+
+                    if (iframe.getAttribute('data-loaded-url') !== embedUrl) {
+                        iframe.src = embedUrl;
+                        iframe.setAttribute('data-loaded-url', embedUrl);
+                    }
+
+                    // 🌐 ส่งพิกัดไปแสดงแผนที่ใน "เว็บเบราว์เซอร์ฝั่งซ้าย" อัตโนมัติ (เมื่อเปิดบนจอคอมพิวเตอร์)
+                    const leftDock = document.getElementById('leftBrowserDock');
+                    if (leftDock && leftDock.classList.contains('hidden') && window.innerWidth >= 1024) {
+                        localStorage.setItem('elec_left_browser_last_url', embedUrl);
+                        openLeftWebBrowser();
+                    } else if (typeof loadLeftBrowserUrl === 'function') {
+                        loadLeftBrowserUrl(embedUrl);
+                    }
+                } else {
+                    iframe.src = 'about:blank';
+                    iframe.removeAttribute('data-loaded-url');
+                    container.classList.add('hidden');
+                }
+            }
+
             async function showLeftMapFromTab1Gps(rawVal) {
-                const coords = await resolveCoordsFromInputOrShortLink(rawVal);
-                if (!coords || !coords.lat || !coords.lon) return;
-                const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
-                const leftDock = document.getElementById('leftBrowserDock');
-                if (leftDock && leftDock.classList.contains('hidden') && window.innerWidth >= 1024) {
-                    localStorage.setItem('elec_left_browser_last_url', embedUrl);
-                    openLeftWebBrowser();
-                } else if (typeof loadLeftBrowserUrl === 'function') {
-                    loadLeftBrowserUrl(embedUrl);
+                const val = (rawVal || '').trim();
+                if (!val) {
+                    updateMapPreviewTab1(null);
+                    return;
+                }
+                const coords = await resolveCoordsFromInputOrShortLink(val);
+                if (coords && coords.lat && coords.lon) {
+                    updateMapPreviewTab1(coords);
+                } else {
+                    updateMapPreviewTab1(null);
                 }
             }
 
             if (gpsTab1InputEl) {
                 gpsTab1InputEl.addEventListener('input', function() {
                     clearTimeout(gpsTab1Timeout);
-                    const val = this.value;
-                    if (!val.trim()) return;
+                    const val = this.value.trim();
+                    if (!val) {
+                        updateMapPreviewTab1(null);
+                        return;
+                    }
                     gpsTab1Timeout = setTimeout(() => showLeftMapFromTab1Gps(val), 600);
                 });
             }
@@ -5874,6 +5981,22 @@
             editFaultItem = function(timestamp) {
                 _origEditFaultItemMap(timestamp);
                 if (gpsTab1InputEl && gpsTab1InputEl.value) {
+                    showLeftMapFromTab1Gps(gpsTab1InputEl.value);
+                } else {
+                    updateMapPreviewTab1(null);
+                }
+            };
+
+            const _origResetFaultFormMap = resetFaultForm;
+            resetFaultForm = function() {
+                _origResetFaultFormMap();
+                updateMapPreviewTab1(null);
+            };
+
+            const _origRestoreFaultDraftMap = restoreFaultDraft;
+            restoreFaultDraft = function() {
+                _origRestoreFaultDraftMap();
+                if (gpsTab1InputEl && gpsTab1InputEl.value.trim()) {
                     showLeftMapFromTab1Gps(gpsTab1InputEl.value);
                 }
             };
