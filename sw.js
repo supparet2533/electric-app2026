@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pea-electric-pwa-v35';
+const CACHE_NAME = 'pea-electric-pwa-v36';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
