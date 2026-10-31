@@ -5737,7 +5737,52 @@
                 });
             }
 
-                        // 2. เมื่อช่อง "พิกัด (GPS Link)" หน้า Tab 2 มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
+                        // ฟังก์ชันคลายลิงก์ย่อ maps.app.goo.gl เพื่อดึงพิกัด Lat/Lon อัตโนมัติ
+            async function resolveCoordsFromInputOrShortLink(rawVal) {
+                const val = (rawVal || '').trim();
+                if (!val) return null;
+
+                // 1. ลองดึงพิกัดจากข้อความโดยตรงก่อน
+                let coords = extractCoordsFromInput(val);
+                if (coords && coords.lat && coords.lon) return coords;
+
+                // 2. เช็กรูปแบบ !3d...!4d... ในลิงก์เต็มของ Google Maps
+                const match3d4d = val.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                if (match3d4d) return { lat: match3d4d[1], lon: match3d4d[2] };
+
+                // 3. หากเป็นลิงก์ย่อ maps.app.goo.gl หรือ goo.gl/maps ให้ดึงลิงก์จริงมาแกะพิกัด
+                if (/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/\S+/i.test(val)) {
+                    if (typeof showToast === 'function') showToast("⏳ กำลังดึงพิกัดจากลิงก์ย่อ Google Maps...");
+                    try {
+                        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(val)}`;
+                        const res = await fetch(proxyUrl);
+                        if (res.ok) {
+                            const data = await res.json();
+                            const finalUrl = decodeURIComponent(data?.status?.url || '');
+                            const htmlContent = decodeURIComponent(data?.contents || '');
+                            const combined = `${finalUrl} ${htmlContent}`;
+
+                            let c = extractCoordsFromInput(finalUrl);
+                            if (c && c.lat && c.lon) return c;
+
+                            const m3d = combined.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                            if (m3d) return { lat: m3d[1], lon: m3d[2] };
+
+                            const mCenter = combined.match(/center=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/i);
+                            if (mCenter) return { lat: mCenter[1], lon: mCenter[2] };
+
+                            c = extractCoordsFromInput(combined);
+                            if (c && c.lat && c.lon) return c;
+                        }
+                    } catch (e) {
+                        console.warn("Short link resolve error:", e);
+                    }
+                    if (typeof showToast === 'function') showToast("⚠️ ลิงก์ย่อนี้ต้องเปิดดึงพิกัดจากลิงก์เต็ม");
+                }
+                return null;
+            }
+
+            // 2. เมื่อช่อง "พิกัด (GPS Link)" หน้า Tab 2 มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
             if (gpsInputEl) {
                 gpsInputEl.addEventListener('input', function() {
                     clearTimeout(gpsTimeout);
@@ -5749,7 +5794,7 @@
                     }
                     
                     gpsTimeout = setTimeout(async () => {
-                        const coords = extractCoordsFromInput(inputValue);
+                        const coords = await resolveCoordsFromInputOrShortLink(inputValue);
                         if (coords) {
                             updateMapPreview(coords);
                             
@@ -5768,8 +5813,8 @@
             let gpsTab1Timeout;
             const gpsTab1InputEl = document.getElementById('gpsInput');
 
-            function showLeftMapFromTab1Gps(rawVal) {
-                const coords = extractCoordsFromInput((rawVal || '').trim());
+            async function showLeftMapFromTab1Gps(rawVal) {
+                const coords = await resolveCoordsFromInputOrShortLink(rawVal);
                 if (!coords || !coords.lat || !coords.lon) return;
                 const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
                 const leftDock = document.getElementById('leftBrowserDock');
