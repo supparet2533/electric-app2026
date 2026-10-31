@@ -495,10 +495,12 @@
         const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
         const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
         let lastSavedActivityTime = 0;
+        let lastTechLoginTimestamp = 0;
         let currentEditingJobKey = null;
         let currentEditingJobType = 'outage';
         let cachedCloudJobs = [];
         let isSyncingNow = false;
+        let isPushingToCloudNow = false;
 
         // ==========================================
         // 🔔 ระบบเสียงเตือนและสั่นเตือนเมื่อมีใบงานใหม่เข้าเครื่องช่าง
@@ -1026,8 +1028,28 @@
             updateRoleNavigationUI();
         }
 
-        function handleTechLogout() {
+        async function handleTechLogout() {
             stopRealtimeGpsWatch();
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            if (curUser) {
+                const locMap = getTechLocationsMap();
+                const nowIso = new Date().toISOString();
+                Object.keys(locMap).forEach(k => {
+                    if (isSameTechPerson(k, curUser) || isSameTechPerson(locMap[k]?.username, curUser)) {
+                        locMap[k] = {
+                            ...locMap[k],
+                            isOnline: false,
+                            gpsDisabled: true,
+                            lat: null,
+                            lon: null,
+                            lastSeenAt: nowIso,
+                            updatedAt: nowIso
+                        };
+                    }
+                });
+                localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                try { await pushAllJobsToCloud(true); } catch (e) {}
+            }
             localStorage.removeItem('elec_app_logged_in');
             localStorage.removeItem('elec_app_current_user');
             localStorage.removeItem('elec_app_current_group');
@@ -1059,6 +1081,7 @@
                 const boundGroup = getUserGroupName(fullCanonicalName);
 
                 const now = Date.now();
+                lastTechLoginTimestamp = now;
                 const newSessionToken = 'sess_' + now + '_' + Math.random().toString(36).substring(2, 8);
                 found.sessionToken = newSessionToken;
 
@@ -1070,17 +1093,19 @@
                 localStorage.setItem('elec_app_last_active', now.toString());
                 localStorage.setItem('elec_user_accounts', JSON.stringify(accounts));
 
+                btn.textContent = "⏳ กำลังซิงค์รหัสเครื่อง...";
                 try {
                     const payloadUsers = accounts.map(acc => ({
                         username: normalizeUsernameFormat(acc.username),
                         password: acc.password,
                         role: `${acc.role || 'user'}::${acc.sessionToken || ''}::${(acc.displayName || '').replace(/::/g, ' ').trim()}`
                     }));
-                    fetch(getActiveCloudApiUrl(), {
+                    await fetch(getActiveCloudApiUrl(), {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ action: 'saveUsers', users: payloadUsers })
                     });
+                    lastTechLoginTimestamp = Date.now();
                 } catch (e) {}
 
                 btn.disabled = false;
@@ -1111,7 +1136,7 @@
                         const parsedUsers = data.users.map(parseAccountRecord);
                         localStorage.setItem('elec_user_accounts', JSON.stringify(parsedUsers));
 
-                        if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                        if (localStorage.getItem('elec_app_logged_in') === 'true' && (Date.now() - lastTechLoginTimestamp > 8000)) {
                             const curUser = localStorage.getItem('elec_app_current_user') || '';
                             const localToken = localStorage.getItem('elec_app_session_token') || '';
                             const matched = parsedUsers.find(u => isUsernameMatchingAccount(curUser, u.username));
@@ -1171,6 +1196,8 @@
             }
             isSyncingNow = false;
         }
+        // ===== จบส่วนที่ 1 / 2 (นำโค้ดส่วนที่ 2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+                // ===== เริ่มส่วนที่ 2 / 2 (วางต่อจากส่วนที่ 1 จนจบไฟล์ได้เลยครับ) =====
 
         // ==========================================
         // 🛰️ ระบบนำทางเรียลไทม์ & ปุ่มเปิด/ปิดพิกัด GPS
@@ -1229,18 +1256,24 @@
                         lat: null,
                         lon: null,
                         gpsDisabled: true,
+                        isOnline: true,
+                        lastSeenAt: nowIso,
                         updatedAt: nowIso
                     };
                 }
             });
 
             locMap[curUser] = {
+                ...(locMap[curUser] || {}),
                 username: curUser,
                 role: localStorage.getItem('elec_app_current_role') || 'tech',
                 group: getCurrentUserGroup(),
                 lat: null,
                 lon: null,
                 gpsDisabled: true,
+                currentPage: '📱 หน้าช่าง',
+                isOnline: true,
+                lastSeenAt: nowIso,
                 updatedAt: nowIso
             };
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
@@ -1297,7 +1330,9 @@
                     return;
                 }
                 const lItem = localMap[uKey];
-                if (!lItem || (cItem.updatedAt && cItem.updatedAt >= (lItem.updatedAt || ''))) {
+                const cTime = new Date(cItem?.lastSeenAt || cItem?.updatedAt || 0).getTime();
+                const lTime = new Date(lItem?.lastSeenAt || lItem?.updatedAt || 0).getTime();
+                if (!lItem || cTime >= lTime) {
                     localMap[uKey] = cItem;
                 }
             });
@@ -1314,7 +1349,9 @@
             const curRole = localStorage.getItem('elec_app_current_role') || 'user';
             if (!curUser || curRole === 'admin') return;
 
+            const nowIso = new Date().toISOString();
             const locMap = getTechLocationsMap();
+            const existing = locMap[curUser] || {};
             Object.keys(locMap).forEach(k => {
                 if (k !== curUser && (isSameTechPerson(k, curUser) || isSameTechPerson(locMap[k]?.username, curUser))) {
                     delete locMap[k];
@@ -1322,13 +1359,17 @@
             });
 
             locMap[curUser] = {
+                ...existing,
                 username: curUser,
                 role: curRole,
                 group: getCurrentUserGroup(),
                 lat: parseFloat(lat),
                 lon: parseFloat(lon),
                 gpsDisabled: false,
-                updatedAt: new Date().toISOString()
+                currentPage: '📱 หน้าช่าง',
+                isOnline: true,
+                lastSeenAt: nowIso,
+                updatedAt: nowIso
             };
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
         }
@@ -1868,8 +1909,9 @@
             return (Date.now() - updatedMs) < 86400000; // เก็บสถานะงานที่ปิดแล้วไว้ซิงค์บน Cloud นาน 24 ชั่วโมง
         }
 
-        // ☁️ ฟังก์ชันส่งข้อมูลงาน สถานะเดินทาง และพิกัด GPS ของช่างขึ้น Cloud
-                async function pushAllJobsToCloud(silent = false) {
+        // ☁️ ฟังก์ชันส่งข้อมูลงาน สถานะเดินทาง และพิกัด GPS ของช่างขึ้น Cloud (ดึงข้อมูลล่าสุดมารวมก่อนส่งเสมอ)
+        async function pushAllJobsToCloud(silent = false) {
+            if (isPushingToCloudNow) return false;
             if (!navigator.onLine) {
                 localStorage.setItem('elec_tech_has_pending_push', 'true');
                 const statusEl = document.getElementById('cloudStatusText');
@@ -1877,14 +1919,35 @@
                 return false;
             }
 
-            if (!hasCompletedInitialCloudSync) {
-                await syncJobsFromCloud(true);
-            }
-
+            isPushingToCloudNow = true;
             const statusEl = document.getElementById('cloudStatusText');
             if (!silent && statusEl) statusEl.textContent = "⏳ กำลังอัปเดตข้อมูลใบงานขึ้นระบบ...";
 
             try {
+                // ดึงรายการล่าสุดจาก Cloud มารวมก่อนส่งเสมอ เพื่อไม่ให้เขียนทับใบงานที่เพิ่งสร้างจากหน้าหลัก
+                try {
+                    const preRes = await fetch(getActiveCloudApiUrl() + '?t=' + Date.now(), { cache: 'no-store' });
+                    const preData = await preRes.json();
+                    if (preData && preData.status === 'ok' && Array.isArray(preData.jobs)) {
+                        const locReg = preData.jobs.find(j => j.jobType === 'tech_loc');
+                        const delMap = locReg?.deletedJobsMap || {};
+                        if (locReg) {
+                            if (locReg.techLocations) mergeTechLocationsMap(locReg.techLocations);
+                            if (locReg.closedReports || locReg.closedJobsMap) {
+                                const localClosed = getClosedReportsRegistry();
+                                Object.assign(localClosed, locReg.closedReports || {}, locReg.closedJobsMap || {});
+                                saveClosedReportsRegistry(localClosed);
+                            }
+                            if (Object.keys(delMap).length > 0) {
+                                localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(delMap));
+                            }
+                        }
+                        const latestRealJobs = preData.jobs.filter(j => j.jobType !== 'tech_loc' && !delMap[j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved]);
+                        cachedCloudJobs = latestRealJobs;
+                        mergeCloudJobsToLocal(latestRealJobs);
+                    }
+                } catch (e) {}
+
                 const deletedMap = JSON.parse(localStorage.getItem('elec_deleted_jobs_registry') || '{}');
                 const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
                     .filter(item => !deletedMap[item.dateTimeSaved]);
@@ -1950,6 +2013,7 @@
                 });
 
                 const data = await res.json();
+                isPushingToCloudNow = false;
                 if (data && data.status === 'ok') {
                     localStorage.removeItem('elec_tech_has_pending_push');
                     if (statusEl) {
@@ -1961,6 +2025,7 @@
                     return false;
                 }
             } catch (e) {
+                isPushingToCloudNow = false;
                 localStorage.setItem('elec_tech_has_pending_push', 'true');
                 if (statusEl) statusEl.textContent = "🟠 บันทึกลงเครื่องแล้ว (รอส่งซ้ำเมื่อสัญญาณเสถียร)";
                 return false;
@@ -2181,7 +2246,7 @@
             return 0;
         }
 
-                // ดึงเวลาที่ลงข้อมูลใบงานมาแสดงผล (เช่น 21.15 น.)
+        // ดึงเวลาที่ลงข้อมูลใบงานมาแสดงผล (เช่น 21.15 น.)
         function getJobLoggedTimeDisplay(item, jobType) {
             if (jobType === 'fault') {
                 if (item?.time && item.time !== '-') return String(item.time).trim();
@@ -3015,7 +3080,7 @@
             syncJobsFromCloud = async function(...args) {
                 const res = await _origSyncCloud.apply(this, args);
                 updateTechOnlineHeartbeat();
-                if (Date.now() - lastTechHeartbeatPushMs > 15000 && localStorage.getItem('elec_app_logged_in') === 'true') {
+                if (!isPushingToCloudNow && Date.now() - lastTechHeartbeatPushMs > 20000 && localStorage.getItem('elec_app_logged_in') === 'true') {
                     lastTechHeartbeatPushMs = Date.now();
                     pushAllJobsToCloud(true);
                 }
