@@ -1565,7 +1565,7 @@
         แจ้งเตือนระบบ
     </div>
     <!-- ===== จบส่วนที่ 1 / 3 (นำโค้ดส่วนที่ 2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
-    <!-- ===== เริ่มส่วนที่ 2 / 3 (วางต่อจากส่วนที่ 1 ได้เลยครับ) ===== -->
+        <!-- ===== เริ่มส่วนที่ 2 / 3 (วางต่อจากส่วนที่ 1 ได้เลยครับ) ===== -->
     <script>
         // ==========================================
         //  🔐 LOGIN & CLOUD MULTI-USER AUTHENTICATION (SINGLE DEVICE / AUTO-KICK)
@@ -3443,7 +3443,7 @@
             }, "🗑️ ยืนยันการล้างข้อมูล");
         }
 
-                function resetOutageForm() {
+        function resetOutageForm() {
             const now = new Date();
             const day = String(now.getDate()).padStart(2, '0');
             const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -3603,7 +3603,7 @@
             if(el) el.remove();
         }
 
-                async function fetchGeminiChat(userText, apiKey) {
+        async function fetchGeminiChat(userText, apiKey) {
             const tempContents = [
                 ...chatContext,
                 { role: "user", parts: [{ text: userText }] }
@@ -3634,7 +3634,8 @@
                 }
             };
 
-            // รองรับ Gemini 3.8 Flash และรุ่นสำรองอัตโนมัติ
+            // ใช้รุ่นที่เสถียรและเปิดใช้งานจริงเป็นตัวแรก เพื่อไม่ให้ติด 404 จนหน่วง
+                        // เรียกใช้ Gemini 3.8 Flash เป็นตัวหลัก พร้อมรุ่นสำรองอัตโนมัติ
             const candidateModels = [
                 'gemini-3.8-flash',
                 'gemini-3.8-flash-preview',
@@ -4034,7 +4035,7 @@
             "หม้อแปลงมีเสียงดัง / มีประกายไฟ / ระเบิด", "เสาไฟฟ้าล้ม / เอียง",
             "ไฟช็อต / มีประกายไฟ", "กิ่งไม้แตะสายไฟ", "มิเตอร์ชำรุด",
             "ไฟดับหลายหลัง", "ไฟดับ หลังเดียว เช็คเบรคเกอร์แล้ว",
-            "สายสื่อสารขวางทาง", "ช๊อตที่หัวเสาไฟแรงต่ำ", "ไฟ2เส้นที่มิเตอร์",
+            "สายสื่อสารขวางทาง", "ช๊อตที่หัวเสาไฟแรงต่ำ","ไฟ2เส้นที่มิเตอร์",
             "ช๊อตตูดมิเตอร์", "มิเตอร์ไหม้", "LTมีประกายไฟ", "ฟิวส์แรงสูงขาด",
             "ไฟตก หลายหลัง", "รถชนเสาไฟ", "มิเตอร์น้ำเข้า", "ต้นไม้ล้มทับ/สายไฟ", "อื่นๆ"
         ];
@@ -4217,7 +4218,7 @@
         // ==========================================
         //  MISC & UTILITIES
         // ==========================================
-                function formatGpsInput(inputVal) {
+        function formatGpsInput(inputVal) {
             if (!inputVal) return '-';
             let val = inputVal.trim();
             
@@ -4408,7 +4409,7 @@
             }
         });
 
-                function switchTab(tabId) {
+        function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('[id^="btn-tab"]').forEach(el => {
                 el.classList.remove('bg-green-500', 'text-white', 'shadow');
@@ -4502,7 +4503,7 @@
             }
         }
         // ===== จบส่วนที่ 2 / 3 (นำโค้ดส่วนที่ 3 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-        // ===== เริ่มส่วนที่ 3 / 3 (วางต่อจากส่วนที่ 2 จนจบไฟล์ได้เลยครับ) =====
+                // ===== เริ่มส่วนที่ 3 / 3 (วางต่อจากส่วนที่ 2 จนจบไฟล์ได้เลยครับ) =====
 
         function openLineAppWithFallback(text) {
             copyTextToClipboard(text, "✅ บันทึกและคัดลอกข้อความเตรียมส่ง LINE แล้ว!");
@@ -4685,7 +4686,12 @@
                             `📞เบอร์โทร : ${phone}\n\n` +
                             `📌พิกัด  : ${gps}`;
 
-            if (issueType.toLowerCase().includes('มิเตอร์')) {
+            // ตรวจสอบคำว่า "มิเตอร์" และยกเว้นกรณี ต่อสายมิเตอร์, ต่อมิเตอร์, ต่อกลับมิเตอร์, ติดมิเตอร์, ใส่มิเตอร์
+            const excludeMeterKeywords = ['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'];
+            const normalizedIssue = issueType.toLowerCase().replace(/\s+/g, '');
+            const isExcludedMeterAction = excludeMeterKeywords.some(kw => normalizedIssue.includes(kw));
+
+            if (normalizedIssue.includes('มิเตอร์') && !isExcludedMeterAction) {
                 const currentMeterLink = localStorage.getItem('meter_form_link') || defaultMeterLink;
                 message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${currentMeterLink}`;
             }
@@ -5542,7 +5548,7 @@
             }
         }
 
-                function updateMapPreview(coords) {
+        function updateMapPreview(coords) {
             const container = document.getElementById('mapPreviewContainer');
             const iframe = document.getElementById('googleMapIframe');
             const coordLabel = document.getElementById('mapCoordLabel');
@@ -5792,7 +5798,7 @@
                 });
             }
 
-                                    // ฟังก์ชันช่วยแกะพิกัดจากข้อความหรือ URL ทุกรูปแบบ (รองรับ Base64 จาก Proxy และรหัสซ้อน %25)
+            // ฟังก์ชันช่วยแกะพิกัดจากข้อความหรือ URL ทุกรูปแบบ (รองรับ Base64 จาก Proxy และรหัสซ้อน %25)
             function parseCoordsFromAnyText(rawStr) {
                 if (!rawStr) return null;
                 let s = String(rawStr);
@@ -5956,7 +5962,7 @@
                 });
             }
 
-                        // 3. เมื่อช่อง "พิกัด GPS" หน้า TR/TL (Tab 1) มีข้อมูล ให้แสดงกรอบแผนที่บนมือถือและเว็บฝั่งซ้าย
+            // 3. เมื่อช่อง "พิกัด GPS" หน้า TR/TL (Tab 1) มีข้อมูล ให้แสดงกรอบแผนที่บนมือถือและเว็บฝั่งซ้าย
             let gpsTab1Timeout;
             const gpsTab1InputEl = document.getElementById('gpsInput');
 
@@ -6244,7 +6250,7 @@
             _origResetOutageForm();
         };
         
-                window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', () => {
             restoreFaultDraft();
             restoreOutageDraft();
             
@@ -6391,17 +6397,15 @@
                 }
             }
 
-            const isSameTechMain = (nameA, nameB) => {
-                if (!nameA || !nameB) return false;
-                if (isUsernameMatchingAccount(nameA, nameB)) return true;
-                const dA = formatTechDisplayName(nameA).toLowerCase().replace(/\s+/g, '');
-                const dB = formatTechDisplayName(nameB).toLowerCase().replace(/\s+/g, '');
-                return Boolean(dA && dB && dA === dB);
-            };
+            const nowMs = Date.now();
+            const ONLINE_LIMIT_MS = 180 * 1000; // นับเฉพาะช่างที่ออนไลน์ภายใน 3 นาทีล่าสุด
 
-            const isTechGpsOffMain = (targetName) => {
-                if (!targetName) return true;
-                return Object.values(locMap).some(l => l && isSameTechMain(l.username, targetName) && (l.gpsDisabled || !l.lat || !l.lon));
+            // เช็กว่าช่างกำลังออนไลน์และเปิด GPS อยู่จริงเท่านั้น
+            const isTechOnlineWithGps = (loc) => {
+                if (!loc || loc.isOnline === false || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return false;
+                const seenStr = loc.lastSeenAt || loc.updatedAt || '';
+                const seenMs = seenStr ? new Date(seenStr).getTime() : 0;
+                return seenMs > 0 && (nowMs - seenMs) <= ONLINE_LIMIT_MS;
             };
             
             if (coords && coords.lat && coords.lon) {
@@ -6411,8 +6415,7 @@
                 const candidates = [];
                 
                 Object.values(locMap).forEach(loc => {
-                    if (!loc || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return;
-                    if (isTechGpsOffMain(loc.username)) return;
+                    if (!isTechOnlineWithGps(loc)) return;
                     const tGroup = getUserGroupName(loc.username) || loc.group || '';
                     if (jobGroup && tGroup && jobGroup !== tGroup) return;
                     
@@ -6439,24 +6442,7 @@
                 }
             }
             
-            if (item.recommendedTech && item.recommendedTech.techName) {
-                const recName = item.recommendedTech.techName;
-                if (!isTechGpsOffMain(recName) && item.recommendedTech.hasGps) {
-                    return item.recommendedTech;
-                }
-            }
-            
-            const techInGroup = (userAccountsList || []).filter(a => {
-                if (a.role !== 'tech') return false;
-                const g = getUserGroupName(a.username);
-                return (!jobGroup || !g) ? true : (g === jobGroup);
-            });
-            if (techInGroup.length > 0) {
-                return {
-                    techName: techInGroup.map(t => t.username).join(', '),
-                    hasGps: false
-                };
-            }
+            // หากไม่มีช่างคนไหนออนไลน์และเปิด GPS อยู่เลย ให้คืนค่า null ทันที (ไม่ดึงรายชื่อทุกคนมาแสดง)
             return null;
         }
 
@@ -6848,24 +6834,25 @@
                                 banner.innerHTML = buildMainRealtimeNavHtml(item.techNav);
                             } else {
                                 const rec = findNearestTechForMainPage(item);
-                                if (rec) {
-                                    if (!banner) {
-                                        banner = document.createElement('div');
-                                        card.insertBefore(banner, card.lastElementChild);
-                                    }
+                                if (!banner) {
+                                    banner = document.createElement('div');
+                                    card.insertBefore(banner, card.lastElementChild);
+                                }
+                                if (rec && rec.hasGps) {
                                     banner.className = 'tech-nav-eta-banner p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex flex-wrap justify-between items-center gap-1 mt-1';
-                                    const distBadge = rec.hasGps
-                                        ? `<span class="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-700">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span>`
-                                        : `<span class="text-[10px] text-purple-600">(รอแก้ไข)</span>`;
                                     banner.innerHTML = `
                                         <span class="font-bold text-purple-800">🎯 แนะนำช่างใกล้สุด: ${formatTechDisplayName(rec.techName)}</span>
                                         <div class="flex items-center gap-1">
-                                            ${distBadge}
+                                            <span class="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-700">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span>
                                             <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
                                         </div>
                                     `;
-                                } else if (banner) {
-                                    banner.remove();
+                                } else {
+                                    banner.className = 'tech-nav-eta-banner p-2 bg-slate-100 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex flex-wrap justify-between items-center gap-1 mt-1';
+                                    banner.innerHTML = `
+                                        <span class="font-semibold text-slate-500">⏳ รอช่างออนไลน์ / เปิดพิกัด GPS (รอแก้ไข)</span>
+                                        <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
+                                    `;
                                 }
                             }
                         } else if (item && isDone) {
@@ -6892,7 +6879,6 @@
                 decorateCardList('#historyListFault > div', faults, 'timestamp', 'fault');
             } catch (e) {}
         }
-
         setInterval(renderNavEtaBadgesInMainHistory, 1000);
 
         const _origLoadOutageHistory = loadOutageHistory;
@@ -6946,6 +6932,14 @@
                 const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
                 const myGroup = getCurrentUserGroup();
 
+                // หากเพิ่งเปิดหน้าเว็บแล้วกดบันทึกทันที ให้ดึงข้อมูลบน Cloud ก่อน 1 ครั้งเพื่อไม่ให้ทับงานกลุ่มอื่น
+                if (!Array.isArray(cloudJobsSnapshot) && (!cachedCloudJobs || cachedCloudJobs.length === 0)) {
+                    try {
+                        const preRes = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
+                        const preData = await preRes.json();
+                        if (preData && Array.isArray(preData.jobs)) cachedCloudJobs = preData.jobs;
+                    } catch (e) {}
+                }
                 const baseCloudJobs = Array.isArray(cloudJobsSnapshot) ? cloudJobsSnapshot : cachedCloudJobs;
                 const techLocEntry = (baseCloudJobs || []).find(j => j.jobType === 'tech_loc');
                 const deletedReg = getDeletedJobsRegistry();
@@ -7069,10 +7063,22 @@
                 };
                 syncDeletedRegistryObject(mergedDeletedReg);
 
+                const localTechLocs = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                const cloudTechLocs = techLocEntry?.techLocations || {};
+                const mergedTechLocs = { ...cloudTechLocs };
+                Object.keys(localTechLocs).forEach(k => {
+                    const lItem = localTechLocs[k];
+                    const cItem = mergedTechLocs[k];
+                    const lTime = new Date(lItem?.lastSeenAt || lItem?.updatedAt || 0).getTime();
+                    const cTime = new Date(cItem?.lastSeenAt || cItem?.updatedAt || 0).getTime();
+                    if (!cItem || lTime >= cTime) mergedTechLocs[k] = lItem;
+                });
+                localStorage.setItem('elec_tech_locations_map', JSON.stringify(mergedTechLocs));
+
                 finalJobs.push({
                     jobType: 'tech_loc',
                     dateTimeSaved: 'TECH_LOC_REGISTRY',
-                    techLocations: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}'),
+                    techLocations: mergedTechLocs,
                     closedJobsMap: mergedClosedReg,
                     closedReports: mergedClosedReg,
                     deletedJobsMap: mergedDeletedReg,
@@ -7334,8 +7340,8 @@
                         renderNavEtaBadgesInMainHistory();
                     }
 
-                    const hasNewUnsyncedOutage = outages.some(o => o.pendingInitialUpload && !cloudOutageKeys.has(o.dateTimeSaved));
-                    const hasNewUnsyncedFault = faults.some(f => f.pendingInitialUpload && !cloudFaultKeys.has(f.timestamp));
+                                        const hasNewUnsyncedOutage = outages.some(o => !deletedReg[o.dateTimeSaved] && canCurrentUserSeeJob(o) && !shouldPurgeFinishedJobFromCloud(o) && !cloudOutageKeys.has(o.dateTimeSaved));
+                    const hasNewUnsyncedFault = faults.some(f => !deletedReg[f.timestamp] && canCurrentUserSeeJob(f) && !shouldPurgeFinishedJobFromCloud(f) && !cloudFaultKeys.has(f.timestamp));
                     
                     if (hasExpiredCompletedJobInCloud || hasNewUnsyncedOutage || hasNewUnsyncedFault) {
                         await syncJobsWithFieldPage(data.jobs);
@@ -7343,7 +7349,7 @@
                 }
             } catch (e) {}
         }
-        
+
         const _origSaveOutage = saveOutageData;
         saveOutageData = function(...args) {
             const targetKey = editingOutageId || args[0];
@@ -7359,8 +7365,9 @@
                 target.ownerUser = target.ownerUser || curUser;
                 target.pendingInitialUpload = true;
                 target.createdAtMs = target.createdAtMs || Date.now();
+                // รักษา ownerGroup เดิมไว้หากแอดมินเป็นคนแก้ไข
                 if (curGroup) target.ownerGroup = curGroup;
-                else delete target.ownerGroup;
+                else if (!target.ownerGroup) target.ownerGroup = 'กฟส.บึง';
                 target.recommendedTech = findNearestTechForMainPage(target);
                 localStorage.setItem('elecReportsComplete_all', JSON.stringify(list));
             }
@@ -7383,8 +7390,9 @@
                 target.ownerUser = target.ownerUser || curUser;
                 target.pendingInitialUpload = true;
                 target.createdAtMs = target.createdAtMs || Date.now();
+                // รักษา ownerGroup เดิมไว้หากแอดมินเป็นคนแก้ไข
                 if (curGroup) target.ownerGroup = curGroup;
-                else delete target.ownerGroup;
+                else if (!target.ownerGroup) target.ownerGroup = 'กฟส.บึง';
                 target.recommendedTech = findNearestTechForMainPage(target);
                 localStorage.setItem('fault_reports_all', JSON.stringify(list));
             }
@@ -7569,6 +7577,9 @@
                             updatedAt: new Date().toISOString()
                         }
                     ];
+
+                    // ถ้ามีการกดบันทึกใบงานหลักแทรกเข้ามา ให้ยกเลิกการส่ง Heartbeat รอบนี้ทันทีเพื่อไม่ให้ทับใบงานใหม่
+                    if (isUploadingFromMain) return;
 
                     cachedCloudJobs = payloadJobs;
 
@@ -7873,3 +7884,4 @@
     </script>
 </body>
 </html>
+
