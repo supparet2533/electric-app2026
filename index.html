@@ -3443,7 +3443,19 @@
             }, "🗑️ ยืนยันการล้างข้อมูล");
         }
 
-        function resetOutageForm() {
+                function resetOutageForm() {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear() + 543;
+            document.getElementById('reportDate').value = `${day}/${month}/${year}`;
+
+            const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+            let currentShift = "3";
+            if (currentTotalMinutes >= 30 && currentTotalMinutes < 510) currentShift = "1";
+            else if (currentTotalMinutes >= 510 && currentTotalMinutes < 990) currentShift = "2";
+            document.getElementById('shift').value = currentShift;
+
             document.getElementById('issueType').value = '';
             document.getElementById('workerName').value = '';
             document.getElementById('area').value = '';
@@ -3498,11 +3510,7 @@
             document.getElementById('gpsInput').value = '';
             
             updateCircuitDropdown();
-            
-            const now = new Date();
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            document.getElementById('timeInput').value = `${hours}.${minutes} น.`;
+            setTimeInputToNow(false);
         }
 
         // ==========================================
@@ -4400,7 +4408,7 @@
             }
         });
 
-        function switchTab(tabId) {
+                function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('[id^="btn-tab"]').forEach(el => {
                 el.classList.remove('bg-green-500', 'text-white', 'shadow');
@@ -4414,7 +4422,45 @@
             localStorage.setItem('last_active_tab', tabId);
             performAutoBackupSnapshot();
 
-            if (tabId === 'tab4') {
+            // ประมวลผลเฉพาะเมื่อสลับมาหน้า TR/TL (tab1) หรือ รับแจ้ง (tab2)
+            if (tabId === 'tab1' || tabId === 'tab2') {
+                const isTab1 = (tabId === 'tab1');
+                const gpsEl = document.getElementById(isTab1 ? 'gpsInput' : 'gps');
+                const container = document.getElementById(isTab1 ? 'mapPreviewContainerTab1' : 'mapPreviewContainer');
+                const iframe = document.getElementById(isTab1 ? 'googleMapIframeTab1' : 'googleMapIframe');
+                const label = document.getElementById(isTab1 ? 'mapCoordLabelTab1' : 'mapCoordLabel');
+                const extLink = document.getElementById(isTab1 ? 'mapExternalLinkTab1' : 'mapExternalLink');
+
+                const rawVal = gpsEl ? gpsEl.value.trim() : '';
+                const coords = extractCoordsFromInput(rawVal);
+
+                if (coords && coords.lat && coords.lon) {
+                    const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
+                    
+                    // โหลด Iframe ใหม่เฉพาะเมื่อพิกัดเปลี่ยนไปจากเดิมเท่านั้น (ประหยัด RAM/เน็ตสูงสุด)
+                    if (iframe && iframe.getAttribute('data-loaded-url') !== embedUrl) {
+                        iframe.src = embedUrl;
+                        iframe.setAttribute('data-loaded-url', embedUrl);
+                        if (label) label.textContent = `📍 พิกัด: ${coords.lat}, ${coords.lon}`;
+                        if (extLink) extLink.href = `https://www.google.com/maps?q=${coords.lat},${coords.lon}`;
+                    }
+                    if (container) container.classList.remove('hidden');
+
+                    // อัปเดตแผนที่ฝั่งซ้ายเฉพาะเมื่อเปิดหน้าต่างฝั่งซ้ายค้างไว้อยู่
+                    const leftDock = document.getElementById('leftBrowserDock');
+                    const leftIframe = document.getElementById('leftBrowserIframe');
+                    if (leftDock && !leftDock.classList.contains('hidden') && leftIframe && leftIframe.src !== embedUrl) {
+                        loadLeftBrowserUrl(embedUrl);
+                    }
+                } else if (rawVal) {
+                    // กรณีเป็นลิงก์ย่อ maps.app.goo.gl ที่ยังไม่ได้คลายลิงก์
+                    gpsEl.dispatchEvent(new Event('input'));
+                } else if (container && iframe) {
+                    iframe.src = 'about:blank';
+                    iframe.removeAttribute('data-loaded-url');
+                    container.classList.add('hidden');
+                }
+            } else if (tabId === 'tab4') {
                 loadAnalyticsData();
             }
         }
@@ -6198,9 +6244,13 @@
             _origResetOutageForm();
         };
         
-        window.addEventListener('DOMContentLoaded', () => {
+                window.addEventListener('DOMContentLoaded', () => {
             restoreFaultDraft();
             restoreOutageDraft();
+            
+            // ซิงค์พิกัดแผนที่ให้ตรงกับแท็บที่เปิดใช้งานอยู่จริงหลังดึงข้อมูลร่าง (Draft) เสร็จ
+            const currentTab = localStorage.getItem('last_active_tab') || 'tab1';
+            switchTab(currentTab);
             
             const tab1El = document.getElementById('sortable-tab1');
             if (tab1El) {
