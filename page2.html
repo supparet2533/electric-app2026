@@ -1463,29 +1463,28 @@
                     lat: lastKnownTechCoords.lat,
                     lon: lastKnownTechCoords.lon,
                     gpsDisabled: false,
+                    isOnline: true,
+                    lastSeenAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
             }
-            
-            const techAccountsInGroup = rawAccounts.filter(acc => {
-                if (acc.role !== 'tech') return false;
-                const accGroup = getUserGroupName(acc.username);
-                if (!jobGroup || !accGroup) return true;
-                return accGroup === jobGroup;
-            });
 
-            // ตรวจสอบว่าช่างคนนั้นมีคีย์ใดคีย์หนึ่งสั่งปิด GPS ไว้หรือไม่
-            const isTechGpsTurnedOff = (targetName) => {
-                if (!targetName) return true;
-                if (!isGpsTrackingEnabled && curUser && isSameTechPerson(targetName, curUser)) return true;
-                return Object.values(locMap).some(l => l && isSameTechPerson(l.username, targetName) && (l.gpsDisabled || !l.lat || !l.lon));
+            const nowMs = Date.now();
+            const ONLINE_LIMIT_MS = 180 * 1000; // นับเฉพาะช่างที่ออนไลน์ภายใน 3 นาทีล่าสุด
+
+            // เช็กว่าช่างคนนั้นกำลังออนไลน์และเปิด GPS อยู่จริงเท่านั้น
+            const isTechOnlineWithGps = (loc) => {
+                if (!loc || loc.isOnline === false || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return false;
+                if (!isGpsTrackingEnabled && curUser && isSameTechPerson(loc.username, curUser)) return false;
+                const seenStr = loc.lastSeenAt || loc.updatedAt || '';
+                const seenMs = seenStr ? new Date(seenStr).getTime() : 0;
+                return seenMs > 0 && (nowMs - seenMs) <= ONLINE_LIMIT_MS;
             };
             
             if (destCoord) {
                 const candidatesWithGps = [];
                 Object.values(locMap).forEach(loc => {
-                    if (!loc || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return;
-                    if (isTechGpsTurnedOff(loc.username)) return;
+                    if (!isTechOnlineWithGps(loc)) return;
 
                     const accMatch = rawAccounts.find(a => isUsernameMatchingAccount(loc.username, a.username));
                     const effectiveRole = accMatch ? accMatch.role : (loc.role || 'tech');
@@ -1522,34 +1521,14 @@
                 }
             }
             
-            if (item.recommendedTech && item.recommendedTech.techName) {
-                const recName = item.recommendedTech.techName;
-                if (!isTechGpsTurnedOff(recName) && item.recommendedTech.hasGps) {
-                    return {
-                        ...item.recommendedTech,
-                        isMe: Boolean(curUser && isSameTechPerson(recName, curUser))
-                    };
-                }
-            }
-            
-            if (techAccountsInGroup.length > 0) {
-                return {
-                    techName: techAccountsInGroup.map(t => t.username).join(', '),
-                    distanceKm: null,
-                    durationMin: null,
-                    hasGps: false,
-                    isMe: techAccountsInGroup.some(t => isSameTechPerson(t.username, curUser))
-                };
-            }
+            // หากไม่มีช่างที่ออนไลน์และเปิด GPS อยู่เลย ให้คืนค่า null ทันที (ไม่ดึงรายชื่อทุกคนมาแสดง)
             return null;
         }
 
         function buildRecommendedTechBadgeHtml(item) {
             const rec = findNearestTechForJob(item);
-            if (!rec) return '';
-            const friendlyTechName = formatTechDisplayName(rec.techName);
-
-            if (rec.hasGps && rec.distanceKm) {
+            if (rec && rec.hasGps && rec.distanceKm) {
+                const friendlyTechName = formatTechDisplayName(rec.techName);
                 return `
                     <div class="p-2 bg-purple-50/90 border border-purple-200 rounded-xl text-[11px] text-purple-950 flex flex-wrap items-center justify-between gap-1">
                         <div class="font-bold text-purple-800 flex items-center gap-1">
@@ -1564,13 +1543,13 @@
             }
 
             return `
-                <div class="p-2 bg-purple-50/70 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex items-center justify-between gap-1">
-                    <span class="font-bold text-purple-800">🎯 ช่างประจำกลุ่มแนะนำ: ${friendlyTechName}</span>
-                    <span class="text-[10px] text-purple-600">(ปิด GPS / รอจับพิกัด)</span>
+                <div class="p-2 bg-slate-100 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex items-center justify-between gap-1">
+                    <span class="font-semibold text-slate-500">⏳ รอช่างออนไลน์ / เปิดพิกัด GPS</span>
+                    <span class="text-[10px] text-slate-400">(รอแก้ไข)</span>
                 </div>
             `;
         }
-
+        
         function calculateInstantRouteFallback(startCoord, destCoord) {
             const straightKm = calcHaversineKm(startCoord.lat, startCoord.lon, destCoord.lat, destCoord.lon);
             if (straightKm <= 0.12) {
@@ -1890,7 +1869,7 @@
         }
 
         // ☁️ ฟังก์ชันส่งข้อมูลงาน สถานะเดินทาง และพิกัด GPS ของช่างขึ้น Cloud
-        async function pushAllJobsToCloud(silent = false) {
+                async function pushAllJobsToCloud(silent = false) {
             if (!navigator.onLine) {
                 localStorage.setItem('elec_tech_has_pending_push', 'true');
                 const statusEl = document.getElementById('cloudStatusText');
@@ -1905,7 +1884,7 @@
             const statusEl = document.getElementById('cloudStatusText');
             if (!silent && statusEl) statusEl.textContent = "⏳ กำลังอัปเดตข้อมูลใบงานขึ้นระบบ...";
 
-                        try {
+            try {
                 const deletedMap = JSON.parse(localStorage.getItem('elec_deleted_jobs_registry') || '{}');
                 const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
                     .filter(item => !deletedMap[item.dateTimeSaved]);
@@ -1917,14 +1896,38 @@
                         const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
                         return !isDone || isJobRecentlyCompleted(item) || (item.techReport && item.techReport.needsMainSync);
                     })
-                    .map(item => ({ ...item, jobType: 'outage' }));
+                    .map(item => {
+                        const copy = { ...item, jobType: 'outage' };
+                        if (copy.recommendedTech && !copy.recommendedTech.hasGps) delete copy.recommendedTech;
+                        return copy;
+                    });
 
                 const activeFaults = localFaults
                     .filter(item => {
                         const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
                         return !isDone || isJobRecentlyCompleted(item) || (item.techReport && item.techReport.needsMainSync);
                     })
-                    .map(item => ({ ...item, jobType: 'fault' }));
+                    .map(item => {
+                        const copy = { ...item, jobType: 'fault' };
+                        if (copy.recommendedTech && !copy.recommendedTech.hasGps) delete copy.recommendedTech;
+                        return copy;
+                    });
+
+                // รักษาใบงานเดิมบน Cloud ของกลุ่มอื่นไว้เสมอ แล้วอัปเดตเฉพาะใบงานจากเครื่องนี้ทับลงไป
+                const combinedMap = new Map();
+                (cachedCloudJobs || []).forEach(cj => {
+                    if (cj.jobType === 'tech_loc') return;
+                    const rawK = cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved;
+                    if (rawK && deletedMap[rawK]) return;
+                    const k = cj.jobType === 'fault' ? 'F_' + rawK : 'O_' + rawK;
+                    combinedMap.set(k, cj);
+                });
+
+                [...activeOutages, ...activeFaults].forEach(lj => {
+                    const rawK = lj.jobType === 'fault' ? lj.timestamp : lj.dateTimeSaved;
+                    const k = lj.jobType === 'fault' ? 'F_' + rawK : 'O_' + rawK;
+                    combinedMap.set(k, lj);
+                });
 
                 const closedRegData = getClosedReportsRegistry();
                 const locRegistryItem = {
@@ -1933,11 +1936,12 @@
                     techLocations: getTechLocationsMap(),
                     closedJobsMap: closedRegData,
                     closedReports: closedRegData,
-                    deletedJobsMap: JSON.parse(localStorage.getItem('elec_deleted_jobs_registry') || '{}'),
+                    deletedJobsMap: deletedMap,
                     updatedAt: new Date().toISOString()
                 };
 
-                const payloadJobs = [...activeOutages, ...activeFaults, locRegistryItem];
+                const payloadJobs = [...Array.from(combinedMap.values()), locRegistryItem];
+                cachedCloudJobs = Array.from(combinedMap.values());
 
                 const res = await fetch(getActiveCloudApiUrl(), {
                     method: 'POST',
