@@ -5487,7 +5487,7 @@
             }
         }
 
-        function updateMapPreview(coords) {
+                function updateMapPreview(coords) {
             const container = document.getElementById('mapPreviewContainer');
             const iframe = document.getElementById('googleMapIframe');
             const coordLabel = document.getElementById('mapCoordLabel');
@@ -5507,6 +5507,15 @@
                 if (iframe.getAttribute('data-loaded-url') !== embedUrl) {
                     iframe.src = embedUrl;
                     iframe.setAttribute('data-loaded-url', embedUrl);
+                }
+
+                // 🌐 ส่งพิกัดไปแสดงแผนที่ใน "เว็บเบราว์เซอร์ฝั่งซ้าย" อัตโนมัติ
+                const leftDock = document.getElementById('leftBrowserDock');
+                if (leftDock && leftDock.classList.contains('hidden') && window.innerWidth >= 1024) {
+                    localStorage.setItem('elec_left_browser_last_url', embedUrl);
+                    openLeftWebBrowser();
+                } else if (typeof loadLeftBrowserUrl === 'function') {
+                    loadLeftBrowserUrl(embedUrl);
                 }
             } else {
                 iframe.src = 'about:blank';
@@ -5728,7 +5737,7 @@
                 });
             }
 
-            // 2. เมื่อช่อง "พิกัด (GPS Link)" มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
+                        // 2. เมื่อช่อง "พิกัด (GPS Link)" หน้า Tab 2 มีข้อมูล ให้แสดงแผนที่และดึงชื่อสถานที่
             if (gpsInputEl) {
                 gpsInputEl.addEventListener('input', function() {
                     clearTimeout(gpsTimeout);
@@ -5754,6 +5763,40 @@
                     }, 800);
                 });
             }
+
+            // 3. เมื่อช่อง "พิกัด GPS" หน้า TR/TL (Tab 1) มีข้อมูล ให้แสดงแผนที่ในเว็บฝั่งซ้ายด้วย
+            let gpsTab1Timeout;
+            const gpsTab1InputEl = document.getElementById('gpsInput');
+
+            function showLeftMapFromTab1Gps(rawVal) {
+                const coords = extractCoordsFromInput((rawVal || '').trim());
+                if (!coords || !coords.lat || !coords.lon) return;
+                const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
+                const leftDock = document.getElementById('leftBrowserDock');
+                if (leftDock && leftDock.classList.contains('hidden') && window.innerWidth >= 1024) {
+                    localStorage.setItem('elec_left_browser_last_url', embedUrl);
+                    openLeftWebBrowser();
+                } else if (typeof loadLeftBrowserUrl === 'function') {
+                    loadLeftBrowserUrl(embedUrl);
+                }
+            }
+
+            if (gpsTab1InputEl) {
+                gpsTab1InputEl.addEventListener('input', function() {
+                    clearTimeout(gpsTab1Timeout);
+                    const val = this.value;
+                    if (!val.trim()) return;
+                    gpsTab1Timeout = setTimeout(() => showLeftMapFromTab1Gps(val), 600);
+                });
+            }
+
+            const _origEditFaultItemMap = editFaultItem;
+            editFaultItem = function(timestamp) {
+                _origEditFaultItemMap(timestamp);
+                if (gpsTab1InputEl && gpsTab1InputEl.value) {
+                    showLeftMapFromTab1Gps(gpsTab1InputEl.value);
+                }
+            };
         });
                     
         // ==========================================
