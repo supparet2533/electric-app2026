@@ -5738,46 +5738,81 @@
             }
 
                         // ฟังก์ชันคลายลิงก์ย่อ maps.app.goo.gl เพื่อดึงพิกัด Lat/Lon อัตโนมัติ
+                        // ฟังก์ชันช่วยแกะพิกัดจากข้อความหรือ URL ทุกรูปแบบ (ไม่ค้างเมื่อเจอเครื่องหมาย % หรือ +)
+            function parseCoordsFromAnyText(rawStr) {
+                if (!rawStr) return null;
+                let s = String(rawStr)
+                    .replace(/%2C/gi, ',')
+                    .replace(/%2B/gi, '+')
+                    .replace(/%20/gi, ' ')
+                    .replace(/%C2%B0/gi, '°')
+                    .replace(/%27/gi, "'")
+                    .replace(/%22/gi, '"');
+                try { s = decodeURIComponent(s); } catch (e) {}
+
+                // 1. รูปแบบ !3d(lat)!4d(lon)
+                const m3d = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+                if (m3d) return { lat: m3d[1], lon: m3d[2] };
+
+                // 2. รูปแบบ @lat,lon หรือ center=lat,lon หรือ q=lat,lon หรือ search/lat,+lon
+                const mUrl = s.match(/(?:@|center=|q=|ll=|search\/)(-?\d{1,2}\.\d+)[,\s+]+(-?\d{2,3}\.\d+)/i);
+                if (mUrl) return { lat: mUrl[1], lon: mUrl[2] };
+
+                // 3. รูปแบบพิกัด DMS เช่น 13°15'13.3"N+101°00'16.0"E
+                const sPlusToSpace = s.replace(/\+/g, ' ');
+                const cDms = extractCoordsFromInput(sPlusToSpace);
+                if (cDms && cDms.lat && cDms.lon) return cDms;
+
+                // 4. รูปแบบทศนิยมคู่ทั่วไป เช่น 13.253694, +101.004444
+                const mPair = s.match(/(-?\d{1,2}\.\d{3,})\s*,\s*\+?(-?\d{2,3}\.\d{3,})/);
+                if (mPair) return { lat: mPair[1], lon: mPair[2] };
+
+                return null;
+            }
+
+            // ฟังก์ชันคลายลิงก์ย่อ maps.app.goo.gl เพื่อดึงพิกัด Lat/Lon อัตโนมัติ
             async function resolveCoordsFromInputOrShortLink(rawVal) {
                 const val = (rawVal || '').trim();
                 if (!val) return null;
 
-                // 1. ลองดึงพิกัดจากข้อความโดยตรงก่อน
-                let coords = extractCoordsFromInput(val);
-                if (coords && coords.lat && coords.lon) return coords;
+                // 1. ลองดึงพิกัดจากข้อความหรือลิงก์เต็มโดยตรงก่อน
+                let directCoords = parseCoordsFromAnyText(val);
+                if (directCoords) return directCoords;
 
-                // 2. เช็กรูปแบบ !3d...!4d... ในลิงก์เต็มของ Google Maps
-                const match3d4d = val.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                if (match3d4d) return { lat: match3d4d[1], lon: match3d4d[2] };
-
-                // 3. หากเป็นลิงก์ย่อ maps.app.goo.gl หรือ goo.gl/maps ให้ดึงลิงก์จริงมาแกะพิกัด
+                // 2. หากเป็นลิงก์ย่อ maps.app.goo.gl หรือ goo.gl/maps ให้ดึงลิงก์ปลายทางมาแกะพิกัด
                 if (/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/\S+/i.test(val)) {
                     if (typeof showToast === 'function') showToast("⏳ กำลังดึงพิกัดจากลิงก์ย่อ Google Maps...");
+
+                    // ลองดึงผ่าน Proxy ตัวที่ 1 (AllOrigins)
                     try {
                         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(val)}`;
                         const res = await fetch(proxyUrl);
                         if (res.ok) {
                             const data = await res.json();
-                            const finalUrl = decodeURIComponent(data?.status?.url || '');
-                            const htmlContent = decodeURIComponent(data?.contents || '');
-                            const combined = `${finalUrl} ${htmlContent}`;
+                            const cFromUrl = parseCoordsFromAnyText(data?.status?.url || '');
+                            if (cFromUrl) return cFromUrl;
 
-                            let c = extractCoordsFromInput(finalUrl);
-                            if (c && c.lat && c.lon) return c;
-
-                            const m3d = combined.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-                            if (m3d) return { lat: m3d[1], lon: m3d[2] };
-
-                            const mCenter = combined.match(/center=(-?\d+\.\d+)[,%2C]+(-?\d+\.\d+)/i);
-                            if (mCenter) return { lat: mCenter[1], lon: mCenter[2] };
-
-                            c = extractCoordsFromInput(combined);
-                            if (c && c.lat && c.lon) return c;
+                            const cFromHtml = parseCoordsFromAnyText(data?.contents || '');
+                            if (cFromHtml) return cFromHtml;
                         }
                     } catch (e) {
-                        console.warn("Short link resolve error:", e);
+                        console.warn("Primary proxy error:", e);
                     }
-                    if (typeof showToast === 'function') showToast("⚠️ ลิงก์ย่อนี้ต้องเปิดดึงพิกัดจากลิงก์เต็ม");
+
+                    // สำรอง: ลองดึงผ่าน Proxy ตัวที่ 2 (CodeTabs) กรณีตัวแรกขัดข้อง
+                    try {
+                        const backupProxy = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(val)}`;
+                        const res2 = await fetch(backupProxy);
+                        if (res2.ok) {
+                            const textData = await res2.text();
+                            const cFromBackup = parseCoordsFromAnyText(textData);
+                            if (cFromBackup) return cFromBackup;
+                        }
+                    } catch (e2) {
+                        console.warn("Backup proxy error:", e2);
+                    }
+
+                    if (typeof showToast === 'function') showToast("⚠️ ไม่พบตัวเลขพิกัดในลิงก์ย่อนี้ กรุณาวางลิงก์เต็ม");
                 }
                 return null;
             }
