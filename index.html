@@ -3586,8 +3586,11 @@
             if(el) el.remove();
         }
 
-        async function fetchGeminiChat(userText, apiKey) {
-            chatContext.push({ role: "user", parts: [{ text: userText }] });
+                async function fetchGeminiChat(userText, apiKey) {
+            const tempContents = [
+                ...chatContext,
+                { role: "user", parts: [{ text: userText }] }
+            ];
 
             const systemInstruction = `คุณคือผู้ช่วย AI รับแจ้งเหตุไฟฟ้าขัดข้อง หน้าที่ของคุณ:
 1. สนทนากับผู้ใช้ด้วยความสุภาพและเป็นธรรมชาติ ตอบสั้นๆ กระชับ
@@ -3607,15 +3610,20 @@
 
             const requestBody = {
                 systemInstruction: { parts: [{ text: systemInstruction }] },
-                contents: chatContext,
+                contents: tempContents,
                 generationConfig: { 
                     responseMimeType: "application/json", 
                     temperature: 0.7
                 }
             };
 
-            // รองรับการสลับรุ่นโมเดลอัตโนมัติ เพื่อให้ใช้งานได้เสถียร 100%
-            const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+            // รองรับ Gemini 3.8 Flash และรุ่นสำรองอัตโนมัติ
+            const candidateModels = [
+                'gemini-3.8-flash',
+                'gemini-3.8-flash-preview',
+                'gemini-flash-latest',
+                'gemini-2.5-flash'
+            ];
             let response = null;
 
             for (const modelToUse of candidateModels) {
@@ -3630,6 +3638,29 @@
                 }
             }
 
+            // ค้นหาโมเดลตระกูล Flash ที่เปิดใช้งานในบัญชีอัตโนมัติหากชื่อรุ่นมีการเปลี่ยนแปลง
+            if (!response || !response.ok) {
+                try {
+                    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+                    if (listRes.ok) {
+                        const listData = await listRes.json();
+                        const availableFlash = (listData.models || [])
+                            .filter(m => m.name && m.name.includes('flash') && (m.supportedGenerationMethods || []).includes('generateContent'))
+                            .sort((a, b) => b.name.localeCompare(a.name));
+
+                        for (const mObj of availableFlash) {
+                            const modelId = mObj.name.replace('models/', '');
+                            response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(requestBody)
+                            });
+                            if (response.ok) break;
+                        }
+                    }
+                } catch (e) {}
+            }
+
             if (!response || !response.ok) {
                 if (response && (response.status === 400 || response.status === 401 || response.status === 403)) {
                     throw new Error("Invalid API Key");
@@ -3638,25 +3669,23 @@
             }
 
             const data = await response.json();
-            let aiResponseText = data.candidates[0].content.parts[0].text;
-            
-            if (aiResponseText.startsWith('```json')) {
-                aiResponseText = aiResponseText.replace(/^```json\n?/, '').replace(/```$/, '').trim();
-            }
+            let aiResponseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            aiResponseText = aiResponseText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
             try {
                 const parsed = JSON.parse(aiResponseText);
+                chatContext.push({ role: "user", parts: [{ text: userText }] });
                 chatContext.push({ role: "model", parts: [{ text: parsed.replyText || "รับทราบครับ" }] });
 
-                if(chatContext.length > 10) chatContext = chatContext.slice(chatContext.length - 10);
+                if (chatContext.length > 10) chatContext = chatContext.slice(chatContext.length - 10);
 
                 return {
                     text: parsed.replyText || "รับทราบครับ ดำเนินการอัปเดตข้อมูลให้ครับ",
                     extractedData: parsed.extractedData
                 };
-            } catch(e) {
+            } catch (e) {
                 console.error("JSON parse error:", e, aiResponseText);
-                return { text: "ขออภัยครับ ไม่สามารถประมวลผลข้อมูลรูปแบบที่ตอบกลับมาได้", extractedData: null };
+                return { text: aiResponseText || "รับทราบครับ", extractedData: null };
             }
         }
 
