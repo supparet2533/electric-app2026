@@ -664,28 +664,28 @@
         <!-- ================= ฝั่งขวา: ตัวแอปพลิเคชันเดิม ================= -->
         <div class="max-w-xl w-full mx-auto bg-white rounded-2xl shadow-xl overflow-visible mb-6 lg:mb-0 relative z-10">
 
-        <!-- Main Header & Tab Navigation -->
+                <!-- Main Header & Tab Navigation -->
         <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-4 text-white rounded-t-2xl">
-            <div class="flex justify-between items-center gap-2">
-                <div class="min-w-0">
-                    <h1 class="text-lg sm:text-xl font-bold flex items-center gap-1.5 truncate">
+            <div class="flex flex-col gap-3">
+                <div class="w-full">
+                    <h1 class="text-lg sm:text-xl font-bold flex items-center gap-1.5 leading-snug">
                         ⚡ ระบบเครื่องมือจัดการงานไฟฟ้า
                     </h1>
-                    <p class="text-[11px] sm:text-xs text-blue-100 mt-0.5 truncate">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
+                    <p class="text-[11px] sm:text-xs text-blue-100 mt-0.5">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
                 </div>
-                <!-- ปุ่มจัดการผู้ใช้ (เฉพาะ Admin), หน้าช่าง, สำรองข้อมูล และ ปุ่มออกจากระบบ -->
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" id="adminUserManageBtn" onclick="openUserManageModal()" class="hidden bg-amber-500/90 hover:bg-amber-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm items-center gap-1 font-semibold" title="จัดการบัญชีผู้ใช้ (เฉพาะแอดมิน)">
-                        👤 <span class="text-xs hidden sm:inline">ผู้ใช้</span>
+                <!-- ปุ่มจัดการผู้ใช้ (เฉพาะ Admin), หน้าช่าง, คลาวด์, สำรองข้อมูล และ ปุ่มออกจากระบบ -->
+                <div class="flex items-center gap-1.5 shrink-0 flex-wrap w-full justify-start sm:justify-end">
+                    <button type="button" id="adminUserManageBtn" onclick="openUserManageModal()" class="hidden bg-amber-500/90 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm items-center gap-1 font-semibold" title="จัดการบัญชีผู้ใช้ (เฉพาะแอดมิน)">
+                        👤 <span>ผู้ใช้</span>
                     </button>
-                    <a href="page2.html" class="bg-teal-500/90 hover:bg-teal-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="เปิดหน้าช่างตรวจสอบหน้างาน">
-                        🛠️ <span class="text-xs hidden sm:inline">หน้าช่าง</span>
+                    <a href="page2.html" class="bg-teal-500/90 hover:bg-teal-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold" title="เปิดหน้าช่างตรวจสอบหน้างาน">
+                        🛠️ <span>หน้าช่าง</span>
                     </a>
-                    <button type="button" onclick="openBackupModal()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="สำรองและกู้คืนข้อมูล">
-                        💾 <span class="text-xs hidden sm:inline">สำรอง</span>
+                    <button type="button" onclick="openBackupModal()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold" title="สำรองและกู้คืนข้อมูล">
+                        💾 <span>สำรอง</span>
                     </button>
-                    <button type="button" onclick="handleLogout()" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm flex items-center gap-1 font-semibold" title="ออกจากระบบ">
-                        🚪 <span class="text-xs hidden sm:inline">ออก</span>
+                    <button type="button" onclick="handleLogout()" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold" title="ออกจากระบบ">
+                        🚪 <span>ออก</span>
                     </button>
                 </div>
             </div>
@@ -706,7 +706,6 @@
                 </button>
             </div>
         </div>
-
 
         <!-- ================= TAB 1: ระบบรายงานเหตุไฟฟ้าขัดข้อง ================= -->
         <div id="tab1" class="tab-content p-6 space-y-4">
