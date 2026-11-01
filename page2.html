@@ -739,8 +739,9 @@
         // ==========================================
         // 🗂️ ทะเบียนงานที่ปิดเสร็จสิ้นแล้ว & ระบบป้องกันความจำมือถือช่างเต็ม
         // ==========================================
-        const MAX_TECH_CLOSED_REGISTRY_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 วัน
-        const MAX_TECH_CLOSED_REGISTRY_ITEMS = 150;
+        // ✅ [จุดแก้ไขที่ 1] ปรับอายุทะเบียนงานที่ปิดแล้วเป็น 30 วัน / 300 รายการ (ตรงกับหน้าหลัก index.html)
+        const MAX_TECH_CLOSED_REGISTRY_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 วัน
+        const MAX_TECH_CLOSED_REGISTRY_ITEMS = 300;
 
         function pruneTechClosedRegistry(rawMap) {
             if (!rawMap || typeof rawMap !== 'object') return {};
@@ -1900,16 +1901,14 @@
             });
         }
 
+        // ✅ [จุดแก้ไขที่ 2] คืนค่า true เสมอเพื่อรักษาประวัติเก่าทั้งหมดไว้บน Cloud ให้ตรงกับหน้าหลัก (ไม่ตัดทิ้งหลังครบ 24 ชม.)
         function isJobRecentlyCompleted(item) {
-            if (!item || !item.techReport) return false;
-            const isDone = String(item.techReport.status || '').includes('เสร็จสิ้น');
-            if (!isDone) return false;
-            const updatedMs = item.techReport.updatedAt ? new Date(item.techReport.updatedAt).getTime() : 0;
-            if (!updatedMs) return false;
-            return (Date.now() - updatedMs) < 86400000; // เก็บสถานะงานที่ปิดแล้วไว้ซิงค์บน Cloud นาน 24 ชั่วโมง
+            return true;
         }
 
         // ☁️ ฟังก์ชันส่งข้อมูลงาน สถานะเดินทาง และพิกัด GPS ของช่างขึ้น Cloud (ดึงข้อมูลล่าสุดมารวมก่อนส่งเสมอ)
+                let cachedCloudGroupBackups = null;
+
         async function pushAllJobsToCloud(silent = false) {
             if (isPushingToCloudNow) return false;
             if (!navigator.onLine) {
@@ -1932,6 +1931,10 @@
                         const locReg = preData.jobs.find(j => j.jobType === 'tech_loc');
                         const delMap = locReg?.deletedJobsMap || {};
                         if (locReg) {
+                            // ✅ เก็บค่าข้อมูลสำรองแยกกลุ่มจากหน้าหลักไว้ไม่ให้ถูกล้าง
+                            if (locReg.cloudGroupBackups) {
+                                cachedCloudGroupBackups = locReg.cloudGroupBackups;
+                            }
                             if (locReg.techLocations) mergeTechLocationsMap(locReg.techLocations);
                             if (locReg.closedReports || locReg.closedJobsMap) {
                                 const localClosed = getClosedReportsRegistry();
@@ -1986,7 +1989,8 @@
                     combinedMap.set(k, cj);
                 });
 
-                [...activeOutages, ...activeFaults].forEach(lj => {
+                // ขยายจำนวนซิงค์ประวัติเป็น 300 รายการต่อหมวดหมู่ให้ตรงกับหน้าหลัก
+                [...activeOutages.slice(0, 300), ...activeFaults.slice(0, 300)].forEach(lj => {
                     const rawK = lj.jobType === 'fault' ? lj.timestamp : lj.dateTimeSaved;
                     const k = lj.jobType === 'fault' ? 'F_' + rawK : 'O_' + rawK;
                     combinedMap.set(k, lj);
@@ -2000,6 +2004,8 @@
                     closedJobsMap: closedRegData,
                     closedReports: closedRegData,
                     deletedJobsMap: deletedMap,
+                    // ✅ แนบข้อมูลสำรองแยกกลุ่มกลับขึ้น Cloud ไปด้วยเสมอ
+                    ...(cachedCloudGroupBackups ? { cloudGroupBackups: cachedCloudGroupBackups } : {}),
                     updatedAt: new Date().toISOString()
                 };
 
@@ -2196,8 +2202,13 @@
 
             hasCompletedInitialCloudSync = true;
             saveClosedReportsRegistry(closedMap);
-            localStorage.setItem('elecReportsComplete_all', JSON.stringify(Array.from(outageMap.values())));
-            localStorage.setItem('fault_reports_all', JSON.stringify(Array.from(faultMap.values())));
+
+            // ✅ [จุดแก้ไขที่ 4] เรียงลำดับข้อมูลจากใหม่สุดไปเก่าสุดเสมอหลังซิงค์ เพื่อให้ตรงกับหน้าหลัก
+            const sortedOutages = Array.from(outageMap.values()).sort((a, b) => getJobSortTimeMs(b, 'outage') - getJobSortTimeMs(a, 'outage'));
+            const sortedFaults = Array.from(faultMap.values()).sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
+            localStorage.setItem('elecReportsComplete_all', JSON.stringify(sortedOutages));
+            localStorage.setItem('fault_reports_all', JSON.stringify(sortedFaults));
         }
 
         // ==========================================
