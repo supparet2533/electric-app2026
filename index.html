@@ -139,6 +139,18 @@
             border-radius: 4px;
             font-weight: 600;
         }
+
+        /* ป้องกันกล่องประวัติเลื่อนซ้าย-ขวาและบังคับตัดบรรทัดลิงก์ยาวๆ */
+        #historyListFault, #historyListOutage {
+            overflow-x: hidden !important;
+            max-width: 100%;
+        }
+        #historyListFault > div, #historyListOutage > div {
+            max-width: 100%;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen py-6 px-4 lg:py-10 flex items-start justify-center">
@@ -861,23 +873,24 @@
                     </div>
                 </div>
 
-                <!-- ฟิลด์พื้นที่ & สภาพอากาศ -->
-                <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100 relative z-20">
-                    <div class="drag-handle flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move w-max">
-                        <div class="flex items-center gap-2">
-                            <span class="text-slate-400 text-lg leading-none">≡</span> <span>🌤️ พื้นที่ & สภาพอากาศ (Rain Alarm Stream)</span>
+                <!-- ฟิลด์พื้นที่ & สภาพอากาศ (แก้ไขไม่ให้ข้อความตกกรอบ) -->
+                <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100 relative z-20 overflow-hidden">
+                    <div class="drag-handle flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move w-full min-w-0">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-slate-400 text-lg leading-none shrink-0">≡</span>
+                            <span class="truncate">🌤️ พื้นที่ & สภาพอากาศ <span class="text-xs font-normal text-slate-500">(Rain Alarm)</span></span>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-2 px-2 pb-1">
-                        <div class="relative">
-                            <div class="flex items-center justify-between h-6 mb-1">
-                                <label class="text-xs font-semibold text-slate-600">ตำบล</label>
-                                <button type="button" onclick="openTambonManageModal()" class="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded font-semibold transition">⚙️ จัดการ</button>
+                        <div class="relative min-w-0">
+                            <div class="flex items-center justify-between h-6 mb-1 gap-1">
+                                <label class="text-xs font-semibold text-slate-600 truncate">ตำบล</label>
+                                <button type="button" onclick="openTambonManageModal()" class="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded font-semibold transition shrink-0">⚙️ จัดการ</button>
                             </div>
                             
                             <input type="hidden" id="tambonSelect" value="">
                             
-                            <button type="button" id="tambonTypeBtn" onclick="toggleTambonDropdown()" class="w-full px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-sm text-left flex justify-between items-center focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm">
+                            <button type="button" id="tambonTypeBtn" onclick="toggleTambonDropdown()" class="w-full px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-sm text-left flex justify-between items-center focus:ring-2 focus:ring-blue-500 focus:outline-none shadow-sm min-w-0">
                                 <span id="tambonTypeDisplay" class="text-slate-400 truncate">-- เลือกตำบล --</span>
                                 <span class="text-slate-500 text-xs ml-1 shrink-0">▼</span>
                             </button>
@@ -889,11 +902,11 @@
                                 <ul id="tambonSortableList" class="py-1"></ul>
                             </div>
                         </div>
-                        <div>
-                            <div class="flex items-center h-6 mb-1">
-                                <label class="text-xs font-semibold text-slate-600">สภาพอากาศ (อัปเดตอัตโนมัติ)</label>
+                        <div class="min-w-0">
+                            <div class="flex items-center h-6 mb-1 min-w-0">
+                                <label class="text-xs font-semibold text-slate-600 truncate">สภาพอากาศ <span class="text-[10px] font-normal text-slate-400">(อัตโนมัติ)</span></label>
                             </div>
-                            <select id="weatherSelect" onchange="onWeatherManualChange()" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm font-semibold text-blue-800 transition-colors">
+                            <select id="weatherSelect" onchange="onWeatherManualChange()" class="w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm font-semibold text-blue-800 transition-colors truncate">
                                 <option value="" disabled selected hidden>-- เลือกอากาศ --</option>
                                 <option value="ปกติ">ปกติ</option>
                                 <option value="ครึ้มฟ้าครึ้มฝน">ครึ้มฟ้าครึ้มฝน</option>
@@ -906,9 +919,9 @@
                             </select>
                         </div>
                     </div>
-                    <div class="px-2 mt-2 flex items-center justify-between text-[11px] text-slate-500 bg-blue-50/80 p-2 rounded-lg border border-blue-100">
-                        <span id="liveWeatherStatus" class="flex items-center gap-1 font-medium text-blue-700">🟢 Rain Alarm Stream ทำงาน (อัปเดตทุก 5 นาที)</span>
-                        <button type="button" onclick="manualRefreshWeather()" class="text-blue-600 hover:text-blue-800 font-bold underline">รีเฟรชทันที</button>
+                    <div class="mx-2 mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500 bg-blue-50/80 px-2.5 py-2 rounded-lg border border-blue-100 overflow-hidden">
+                        <span id="liveWeatherStatus" class="flex items-center gap-1 font-medium text-blue-700 min-w-0 break-words leading-snug">🟢 Rain Alarm Stream ทำงาน (อัปเดตทุก 5 นาที)</span>
+                        <button type="button" onclick="manualRefreshWeather()" class="text-blue-600 hover:text-blue-800 font-bold underline shrink-0 whitespace-nowrap">รีเฟรชทันที</button>
                     </div>
                 </div>
 
@@ -1015,11 +1028,11 @@
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center pt-2">
-                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">📜 ประวัติ (รายงานเหตุ)</h2>
-                    <div class="flex gap-2 items-center">
-                        <input type="date" id="exportDateTab1" onchange="loadFaultHistory()" class="text-[11px] px-2 py-1.5 border border-slate-300 rounded focus:outline-none">
-                        <button onclick="exportData('fault')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1.5 rounded text-xs font-semibold flex items-center gap-1 shadow-sm transition whitespace-nowrap">
+                <div class="flex flex-wrap justify-between items-center gap-2 pt-2">
+                    <h2 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-1.5 whitespace-nowrap">📜 ประวัติ (รายงานเหตุ)</h2>
+                    <div class="flex gap-1.5 items-center shrink-0">
+                        <input type="date" id="exportDateTab1" onchange="loadFaultHistory()" class="text-[11px] px-2 py-1.5 border border-slate-300 rounded-lg focus:outline-none">
+                        <button onclick="exportData('fault')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition whitespace-nowrap">
                             📊 ส่งออก Excel
                         </button>
                     </div>
@@ -1029,7 +1042,7 @@
                     <input type="text" id="searchFaultInput" oninput="loadFaultHistory()" placeholder="🔍 ค้นหา (วงจร, สถานี, ระบบ, ผู้แจ้ง ฯลฯ)..." class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
 
-                <div id="historyListFault" class="space-y-3 max-h-80 overflow-y-auto">
+                <div id="historyListFault" class="space-y-3 max-h-80 overflow-y-auto overflow-x-hidden">
                     <p class="text-sm text-slate-500 text-center py-4">ยังไม่มีประวัติการบันทึก</p>
                 </div>
             </div>
@@ -1217,11 +1230,11 @@
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center pt-2">
-                    <h3 class="font-bold text-slate-800 text-base">📜 ประวัติรับแจ้ง</h3>
-                    <div class="flex gap-2 items-center">
-                        <input type="date" id="exportDateTab2" onchange="loadOutageHistory()" class="text-[11px] px-2 py-1.5 border border-slate-300 rounded focus:outline-none">
-                        <button onclick="exportData('outage')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1.5 rounded text-xs font-semibold flex items-center gap-1 shadow-sm transition whitespace-nowrap">
+                <div class="flex flex-wrap justify-between items-center gap-2 pt-2">
+                    <h3 class="font-bold text-slate-800 text-sm sm:text-base whitespace-nowrap">📜 ประวัติรับแจ้ง</h3>
+                    <div class="flex gap-1.5 items-center shrink-0">
+                        <input type="date" id="exportDateTab2" onchange="loadOutageHistory()" class="text-[11px] px-2 py-1.5 border border-slate-300 rounded-lg focus:outline-none">
+                        <button onclick="exportData('outage')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shadow-sm transition whitespace-nowrap">
                             📊 ส่งออก Excel
                         </button>
                     </div>
@@ -1237,7 +1250,7 @@
                     </select>
                 </div>
 
-                <div id="historyListOutage" class="space-y-3 max-h-80 overflow-y-auto">
+                <div id="historyListOutage" class="space-y-3 max-h-80 overflow-y-auto overflow-x-hidden">
                     <p class="text-sm text-slate-500 text-center py-4">ยังไม่มีประวัติการบันทึก</p>
                 </div>
             </div>
@@ -1563,8 +1576,8 @@
     <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none text-sm z-[70]">
         แจ้งเตือนระบบ
     </div>
-    <!-- ===== จบส่วนที่ 1 / 3 (นำโค้ดส่วนที่ 2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
-        <!-- ===== เริ่มส่วนที่ 2 / 3 (พาส 2.1 - วางต่อจากส่วนที่ 1 ได้เลยครับ) ===== -->
+    <!-- ===== จบส่วนที่ 1 / 5 (นำโค้ดส่วนที่ 2 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
+        <!-- ===== เริ่มส่วนที่ 2 / 5 (วางต่อจากส่วนที่ 1 ได้เลยครับ) ===== -->
     <script>
         // ==========================================
         //  🔐 LOGIN & CLOUD MULTI-USER AUTHENTICATION (SINGLE DEVICE / AUTO-KICK)
@@ -2688,7 +2701,7 @@
         function applyWeatherSelectColor(weatherStr) {
             const weatherSelect = document.getElementById('weatherSelect');
             if (!weatherSelect) return;
-            weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold transition-colors ";
+            weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm font-bold transition-colors truncate ";
             if (weatherStr === "ปกติ") weatherSelect.classList.add("text-emerald-600");
             else if (weatherStr === "ครึ้มฟ้าครึ้มฝน" || weatherStr === "ฝนเพิ่งหยุดตก") weatherSelect.classList.add("text-slate-600");
             else if (weatherStr === "ฝนตกเล็กน้อย") weatherSelect.classList.add("text-blue-500");
@@ -2703,7 +2716,7 @@
             applyWeatherSelectColor(weatherSelect.value);
             if (statusEl) {
                 statusEl.innerHTML = `🔒 ล็อกสภาพอากาศตามหน้างานจริง (${weatherSelect.value})`;
-                statusEl.className = "flex items-center gap-1 font-medium text-amber-700";
+                statusEl.className = "flex items-center gap-1 font-medium text-amber-700 min-w-0 break-words leading-snug";
             }
             if (typeof saveFaultDraft === 'function') saveFaultDraft();
         }
@@ -2773,7 +2786,7 @@
                 if (statusEl) {
                     const timeStr = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
                     statusEl.innerHTML = `🟢 ${locationLabel}: ฝน ${precipMm.toFixed(1)} มม. (${timeStr} น.)`;
-                    statusEl.className = "flex items-center gap-1 font-medium text-emerald-700";
+                    statusEl.className = "flex items-center gap-1 font-medium text-emerald-700 min-w-0 break-words leading-snug";
                 }
                 
                 if (!isSilent) {
@@ -2784,7 +2797,7 @@
                 weatherSelect.disabled = false;
                 if (statusEl) {
                     statusEl.innerHTML = `🔴 ดึงข้อมูลอากาศไม่สำเร็จ (เลือกเองได้ตามหน้างาน)`;
-                    statusEl.className = "flex items-center gap-1 font-medium text-rose-600";
+                    statusEl.className = "flex items-center gap-1 font-medium text-rose-600 min-w-0 break-words leading-snug";
                 }
                 if (!isSilent) showToast("❌ ไม่สามารถอัปเดตสภาพอากาศได้");
             }
@@ -3399,8 +3412,8 @@
                 showCustomAlert("❌ เกิดข้อผิดพลาดในการกู้คืนอัตโนมัติ", "🛡️ ระบบสำรองอัตโนมัติ");
             }
         }
-        // ===== จบพาส 2.1 (นำโค้ดพาส 2.2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-                // ===== เริ่มส่วนที่ 2 / 3 (พาส 2.2 - วางต่อจากพาส 2.1 ได้เลยครับ) =====
+        // ===== จบส่วนที่ 2 / 5 (นำโค้ดส่วนที่ 3 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+                // ===== เริ่มส่วนที่ 3 / 5 (วางต่อจากส่วนที่ 2 ได้เลยครับ) =====
 
         // ==========================================
         //  METER FORM LINK SETTINGS
@@ -3499,7 +3512,7 @@
             const weatherSelect = document.getElementById('weatherSelect');
             if (weatherSelect) {
                 weatherSelect.value = '';
-                weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm transition-colors";
+                weatherSelect.className = "w-full px-2 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-slate-700 text-sm transition-colors truncate";
             }
             
             document.getElementById('presentCurrInput').value = '';
@@ -4502,8 +4515,6 @@
                 presentCurrField.classList.remove('hidden');
             }
         }
-        // ===== จบส่วนที่ 2 / 3 (นำโค้ดพาส 3.1 และ 3.2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-            // ===== เริ่มส่วนที่ 3 / 3 (พาส 3.1 - วางต่อจากส่วนที่ 2 ได้เลยครับ) =====
 
         function openLineAppWithFallback(text) {
             copyTextToClipboard(text, "✅ บันทึกและคัดลอกข้อความเตรียมส่ง LINE แล้ว!");
@@ -4748,7 +4759,7 @@
         }
 
         // ==========================================
-        //  UI / RENDER FUNCTIONS & EXPORT
+        //  UI / RENDER FUNCTIONS & EXPORT (แก้ไขป้องกันการ์ดประวัติเลื่อนซ้าย-ขวา)
         // ==========================================
         function loadOutageHistory() {
             const historyList = document.getElementById('historyListOutage');
@@ -4815,18 +4826,18 @@
                     else pInfo = { level: 'normal', label: 'ปกติ', color: 'text-emerald-600', emoji: '🟢' };
                 }
 
-                div.className = `bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1 border-l-4 ${pInfo.level === 'critical' ? 'border-l-rose-500' : pInfo.level === 'urgent' ? 'border-l-amber-500' : 'border-l-emerald-500'}`;
+                div.className = `bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full border-l-4 ${pInfo.level === 'critical' ? 'border-l-rose-500' : pInfo.level === 'urgent' ? 'border-l-amber-500' : 'border-l-emerald-500'}`;
                 const highlightedText = highlightMatch(item.formattedText, searchQuery);
 
                 div.innerHTML = `
-                    <div class="flex justify-between font-bold text-slate-700">
-                        <span>${pInfo.emoji} งานที่ ${item.jobNo} (กะ ${item.shift}) - ${item.issueType}</span>
-                        <span class="text-slate-400">📅 ${item.reportDate}</span>
+                    <div class="flex justify-between items-start gap-2 font-bold text-slate-700">
+                        <span class="min-w-0 break-words">${pInfo.emoji} งานที่ ${item.jobNo} (กะ ${item.shift}) - ${item.issueType}</span>
+                        <span class="text-slate-400 shrink-0 whitespace-nowrap">📅 ${item.reportDate}</span>
                     </div>
-                    <div class="text-slate-600 whitespace-pre-line font-mono bg-slate-50 p-2 rounded">${highlightedText}</div>
-                    <div class="flex justify-between items-center pt-2 gap-1">
-                        <span class="text-[10px] text-slate-400 truncate">บันทึกเมื่อ: ${item.dateTimeSaved}</span>
-                        <div class="flex gap-1 shrink-0">
+                    <div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightedText}</div>
+                    <div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5">
+                        <span class="text-[10px] text-slate-400 truncate max-w-full">บันทึกเมื่อ: ${item.dateTimeSaved}</span>
+                        <div class="flex gap-1 shrink-0 ml-auto">
                             <button type="button" onclick="editOutageItem('${item.dateTimeSaved}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📝 แก้ไข</button>
                             <button type="button" onclick="copyOutageAgain('${item.dateTimeSaved}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📋 คัดลอก</button>
                             <button type="button" onclick="deleteOutageItem('${item.dateTimeSaved}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">🗑️ ลบ</button>
@@ -4941,18 +4952,18 @@
             historyList.innerHTML = '';
             history.forEach((item) => {
                 const div = document.createElement('div');
-                div.className = "bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1";
+                div.className = "bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full";
                 const highlightedText = highlightMatch(item.formattedText, searchQuery);
 
                 div.innerHTML = `
-                    <div class="flex justify-between font-bold text-slate-700">
-                        <span>⚡ ${item.circuit} - 🏭 ${item.station} (${item.system})</span>
-                        <span class="text-slate-400">⏰ ${item.time}</span>
+                    <div class="flex justify-between items-start gap-2 font-bold text-slate-700">
+                        <span class="min-w-0 break-words">⚡ ${item.circuit} - 🏭 ${item.station} (${item.system})</span>
+                        <span class="text-slate-400 shrink-0 whitespace-nowrap">⏰ ${item.time}</span>
                     </div>
-                    <div class="text-slate-600 whitespace-pre-line font-mono bg-slate-50 p-2 rounded">${highlightedText}</div>
-                    <div class="flex justify-between items-center pt-2 gap-1">
-                        <span class="text-[10px] text-slate-400 truncate">${new Date(item.timestamp).toLocaleString('th-TH')}</span>
-                        <div class="flex gap-1 shrink-0">
+                    <div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightedText}</div>
+                    <div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5">
+                        <span class="text-[10px] text-slate-400 truncate max-w-full">${new Date(item.timestamp).toLocaleString('th-TH')}</span>
+                        <div class="flex gap-1 shrink-0 ml-auto">
                             <button type="button" onclick="editFaultItem('${item.timestamp}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📝 แก้ไข</button>
                             <button type="button" onclick="copyFaultAgain('${item.timestamp}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">📋 คัดลอก</button>
                             <button type="button" onclick="deleteFaultItem('${item.timestamp}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium transition whitespace-nowrap">🗑️ ลบ</button>
@@ -5056,6 +5067,8 @@
                 showToast("🗑️ ลบรายการเรียบร้อยแล้ว");
             }, "🗑️ ยืนยันการลบประวัติ");
         }
+        // ===== จบส่วนที่ 3 / 5 (นำโค้ดส่วนที่ 4 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+                // ===== เริ่มส่วนที่ 4 / 5 (วางต่อจากส่วนที่ 3 ได้เลยครับ) =====
 
         // โหลดไลบรารี SheetJS อัตโนมัติสำหรับสร้างไฟล์ Excel (.xlsx) แท้ที่เปิดบนมือถือและ Google Sheets ได้ 100%
         function ensureXlsxLibraryLoaded() {
@@ -6270,9 +6283,6 @@
                 tab2El.addEventListener('change', saveOutageDraft);
             }
         });
-        // ===== จบพาส 3.1 (นำโค้ดพาส 3.2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-        
-                // ===== เริ่มส่วนที่ 3 / 3 (พาส 3.2 จนจบไฟล์ - วางต่อจากพาส 3.1 ได้เลยครับ) =====
 
         // ==========================================
         // 🔄 ระบบซิงค์ใบงานเชื่อมหน้า 1 <-> หน้า 2 (Fast Cloud Sync Every 5s)
@@ -6454,20 +6464,20 @@
             const nowMs = Date.now();
             const isGpsFresh = nav.updatedAt && (nowMs - new Date(nav.updatedAt).getTime() < 45000);
             const liveBadge = isGpsFresh ?
-                `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>GPS สด</span>` :
-                `<span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">⏱️ เรียลไทม์</span>`;
+                `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>GPS สด</span>` :
+                `<span class="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0">⏱️ เรียลไทม์</span>`;
             const friendlyTech = formatTechDisplayName(nav.techName || '-');
             
             if (nav.isArrived) {
                 return `
-                    <div class="flex justify-between items-center">
-                        <div class="font-bold text-emerald-700">📍 ช่างถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)</div>
+                    <div class="flex justify-between items-center gap-1">
+                        <div class="font-bold text-emerald-700 min-w-0 break-words">📍 ช่างถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)</div>
                         ${liveBadge}
                     </div>
                     <div class="w-full bg-emerald-200 h-1.5 rounded-full overflow-hidden my-1">
                         <div class="bg-emerald-600 h-full w-full"></div>
                     </div>
-                    <div class="text-[10px] text-emerald-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                    <div class="text-[10px] text-emerald-800 break-words">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
                 `;
             }
             
@@ -6485,14 +6495,14 @@
                 
                 if (remainSec <= 0) {
                     return `
-                        <div class="flex justify-between items-center">
-                            <div class="font-bold text-emerald-700">📍 คาดว่าช่างถึงจุดเกิดเหตุแล้ว (ครบกำหนด ${nav.etaTime || ''})</div>
+                        <div class="flex justify-between items-center gap-1">
+                            <div class="font-bold text-emerald-700 min-w-0 break-words">📍 คาดว่าช่างถึงจุดเกิดเหตุแล้ว (ครบกำหนด ${nav.etaTime || ''})</div>
                             ${liveBadge}
                         </div>
                         <div class="w-full bg-emerald-200 h-1.5 rounded-full overflow-hidden my-1">
                             <div class="bg-emerald-600 h-full w-full"></div>
                         </div>
-                        <div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                        <div class="text-[10px] text-blue-800 break-words">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
                     `;
                 }
                 
@@ -6501,13 +6511,13 @@
                 
                 return `
                     <div class="flex justify-between items-center gap-1">
-                        <div class="font-bold text-blue-700">🚗 ช่างกำลังเดินทาง: อีก ${mins} นาที ${secs} วินาที (ถึง ~${nav.etaTime || '-'})</div>
+                        <div class="font-bold text-blue-700 min-w-0 break-words">🚗 ช่างกำลังเดินทาง: อีก ${mins} นาที ${secs} วินาที (ถึง ~${nav.etaTime || '-'})</div>
                         ${liveBadge}
                     </div>
                     <div class="w-full bg-blue-200/80 h-1.5 rounded-full overflow-hidden my-1">
                         <div class="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-700" style="width: ${progressPct}%"></div>
                     </div>
-                    <div class="flex justify-between items-center text-[10px] text-blue-800">
+                    <div class="flex flex-wrap justify-between items-center text-[10px] text-blue-800 gap-1">
                         <span>📏 เหลือระยะทาง: ~${estRemainDist} กม. (${progressPct}%)</span>
                         <span>👷 ${friendlyTech} (ออก ${nav.departTime || '-'})</span>
                     </div>
@@ -6515,8 +6525,8 @@
             }
             
             return `
-                <div class="font-bold text-blue-700">🚗 ช่างกำลังเดินทาง: ${nav.statusText || '-'}</div>
-                <div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
+                <div class="font-bold text-blue-700 break-words">🚗 ช่างกำลังเดินทาง: ${nav.statusText || '-'}</div>
+                <div class="text-[10px] text-blue-800 break-words">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${nav.departTime || '-'})</div>
             `;
         }
 
@@ -6833,7 +6843,7 @@
                                     banner = document.createElement('div');
                                     card.insertBefore(banner, card.lastElementChild);
                                 }
-                                banner.className = 'tech-nav-eta-banner p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-900 space-y-1 mt-1';
+                                banner.className = 'tech-nav-eta-banner p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-900 space-y-1 mt-1 overflow-hidden max-w-full';
                                 banner.innerHTML = buildMainRealtimeNavHtml(item.techNav);
                             } else {
                                 const rec = findNearestTechForMainPage(item);
@@ -6842,19 +6852,19 @@
                                     card.insertBefore(banner, card.lastElementChild);
                                 }
                                 if (rec && rec.hasGps) {
-                                    banner.className = 'tech-nav-eta-banner p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex flex-wrap justify-between items-center gap-1 mt-1';
+                                    banner.className = 'tech-nav-eta-banner p-2 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 flex flex-wrap justify-between items-center gap-1 mt-1 overflow-hidden max-w-full';
                                     banner.innerHTML = `
-                                        <span class="font-bold text-purple-800">🎯 แนะนำช่างใกล้สุด: ${formatTechDisplayName(rec.techName)}</span>
-                                        <div class="flex items-center gap-1">
+                                        <span class="font-bold text-purple-800 break-words">🎯 แนะนำช่างใกล้สุด: ${formatTechDisplayName(rec.techName)}</span>
+                                        <div class="flex flex-wrap items-center gap-1">
                                             <span class="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-purple-200 text-purple-700">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span>
-                                            <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
+                                            <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition shrink-0" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
                                         </div>
                                     `;
                                 } else {
-                                    banner.className = 'tech-nav-eta-banner p-2 bg-slate-100 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex flex-wrap justify-between items-center gap-1 mt-1';
+                                    banner.className = 'tech-nav-eta-banner p-2 bg-slate-100 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex flex-wrap justify-between items-center gap-1 mt-1 overflow-hidden max-w-full';
                                     banner.innerHTML = `
-                                        <span class="font-semibold text-slate-500">⏳ รอช่างออนไลน์ / เปิดพิกัด GPS (รอแก้ไข)</span>
-                                        <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
+                                        <span class="font-semibold text-slate-500 break-words">⏳ รอช่างออนไลน์ / เปิดพิกัด GPS (รอแก้ไข)</span>
+                                        <button type="button" onclick="quickCloseJobFromMainHistory('${jobKey}', '${jobType}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm transition shrink-0" title="กดเพื่อปิดงานนี้">✅ ปิดงาน</button>
                                     `;
                                 }
                             }
@@ -6864,10 +6874,10 @@
                                 banner = document.createElement('div');
                                 card.insertBefore(banner, card.lastElementChild);
                             }
-                            banner.className = 'tech-nav-eta-banner p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex flex-wrap justify-between items-center gap-1 mt-1';
+                            banner.className = 'tech-nav-eta-banner p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 flex flex-wrap justify-between items-center gap-1 mt-1 overflow-hidden max-w-full';
                             banner.innerHTML = `
-                                <span class="font-bold text-emerald-700">✅ ปิดงานแก้ไขเสร็จสิ้นแล้ว (${tr?.actionTaken || tr?.realCause || 'จ่ายไฟคืนปกติ'})</span>
-                                <span class="text-[10px] text-emerald-600">👷 ${formatTechDisplayName(tr?.inspector || '-')} ${tr?.finishTime ? `• ⏰ ${tr.finishTime}` : ''}</span>
+                                <span class="font-bold text-emerald-700 break-words">✅ ปิดงานแก้ไขเสร็จสิ้นแล้ว (${tr?.actionTaken || tr?.realCause || 'จ่ายไฟคืนปกติ'})</span>
+                                <span class="text-[10px] text-emerald-600 break-words">👷 ${formatTechDisplayName(tr?.inspector || '-')} ${tr?.finishTime ? `• ⏰ ${tr.finishTime}` : ''}</span>
                             `;
                         } else if (banner) {
                             banner.remove();
@@ -6916,12 +6926,10 @@
             return Boolean(job.techReport && String(job.techReport.status || '').includes('เสร็จสิ้น') && !isAutoGeneratedFakeClosureMain(job.techReport));
         }
 
-        // ✅ [จุดแก้ไขที่ 1] ปิดการลบประวัติเก่าออกจาก Cloud เพื่อให้เครื่องอื่นดึงประวัติเก่าไปแสดงผลได้ตลอด
         function shouldPurgeFinishedJobFromCloud(job) {
             return false;
         }
 
-        // ฟังก์ชันช่วยแปลงวันเวลาของประวัติรับแจ้ง (วว/ดด/ปปปป HH:mm:ss) เพื่อใช้เรียงลำดับจากใหม่ไปเก่า
         function parseOutageDateTimeToMs(item) {
             if (!item) return 0;
             if (item.createdAtMs) return Number(item.createdAtMs);
@@ -6955,7 +6963,6 @@
                 tagUntaggedLocalJobsWithCurrentGroup();
                 const myGroup = getCurrentUserGroup();
 
-                // หากเพิ่งเปิดหน้าเว็บแล้วกดบันทึกทันที ให้ดึงข้อมูลบน Cloud ก่อน 1 ครั้งเพื่อไม่ให้ทับงานเก่าบน Cloud
                 if (!Array.isArray(cloudJobsSnapshot) && (!cachedCloudJobs || cachedCloudJobs.length === 0)) {
                     try {
                         const preRes = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
@@ -6976,7 +6983,6 @@
                     cloudLookupMap.set(k, cj);
                 });
 
-                // ✅ [จุดแก้ไขที่ 2] รักษาใบงานเก่าทั้งหมดบน Cloud ที่ไม่ได้ถูกกดลบในทะเบียนลบ (ป้องกันเครื่องใหม่เขียนทับประวัติเก่า)
                 const preservedCloudJobs = (baseCloudJobs || []).filter(cJob => {
                     if (cJob.jobType === 'tech_loc') return false;
                     const rawK = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
@@ -7061,7 +7067,6 @@
                     const k = (j.jobType === 'fault' ? 'F_' + j.timestamp : 'O_' + j.dateTimeSaved);
                     combinedMap.set(k, j);
                 });
-                // ✅ [จุดแก้ไขที่ 3] ขยายจำนวนซิงค์ประวัติเป็น 300 รายการต่อหมวดหมู่ เพื่อให้ข้อมูลเก่าซิงค์ไปเครื่องอื่นครบถ้วน
                 [...myActiveOutages.slice(0, 300), ...myActiveFaults.slice(0, 300)].forEach(j => {
                     const k = (j.jobType === 'fault' ? 'F_' + j.timestamp : 'O_' + j.dateTimeSaved);
                     combinedMap.set(k, j);
@@ -7174,7 +7179,6 @@
                     let navUpdated = false;
                     let hasDeletedJobInCloud = false;
 
-                    // กรองงานที่อยู่ในทะเบียนลบออกจากเครื่องอัตโนมัติ
                     const beforeOutageLen = outages.length;
                     outages = outages.filter(o => !deletedReg[o.dateTimeSaved]);
                     if (outages.length !== beforeOutageLen) changed = true;
@@ -7345,7 +7349,6 @@
                     });
                     
                     if (changed) {
-                        // ✅ [จุดแก้ไขที่ 4] เรียงลำดับประวัติจากใหม่สุดไปเก่าสุดเสมอ เพื่อให้ทุกเครื่องแสดงผลตรงกัน
                         faults.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
                         outages.sort((a, b) => parseOutageDateTimeToMs(b) - parseOutageDateTimeToMs(a));
 
@@ -7360,8 +7363,6 @@
                         renderNavEtaBadgesInMainHistory();
                     }
 
-                    // ตรวจสอบว่ามีประวัติเก่าในเครื่องที่ยังไม่ได้ขึ้น Cloud หรือไม่ ถ้ามีให้ส่งขึ้น Cloud อัตโนมัติ
-                                       // ตรวจสอบเฉพาะ 300 รายการล่าสุดให้ตรงกับลิมิตการอัปโหลด ป้องกันการยิงซิงค์ซ้ำเมื่อประวัติเกิน 300 รายการ
                     const hasNewUnsyncedOutage = outages
                         .filter(o => !deletedReg[o.dateTimeSaved] && canCurrentUserSeeJob(o))
                         .slice(0, 300)
@@ -7371,7 +7372,6 @@
                         .slice(0, 300)
                         .some(f => !cloudFaultKeys.has(f.timestamp));
 
-                    
                     if (hasDeletedJobInCloud || hasNewUnsyncedOutage || hasNewUnsyncedFault) {
                         await syncJobsWithFieldPage(data.jobs);
                     }
@@ -7394,7 +7394,6 @@
                 target.ownerUser = target.ownerUser || curUser;
                 target.pendingInitialUpload = true;
                 target.createdAtMs = target.createdAtMs || Date.now();
-                // รักษา ownerGroup เดิมไว้หากแอดมินเป็นคนแก้ไข
                 if (curGroup) target.ownerGroup = curGroup;
                 else if (!target.ownerGroup) target.ownerGroup = 'กฟส.บึง';
                 target.recommendedTech = findNearestTechForMainPage(target);
@@ -7419,7 +7418,6 @@
                 target.ownerUser = target.ownerUser || curUser;
                 target.pendingInitialUpload = true;
                 target.createdAtMs = target.createdAtMs || Date.now();
-                // รักษา ownerGroup เดิมไว้หากแอดมินเป็นคนแก้ไข
                 if (curGroup) target.ownerGroup = curGroup;
                 else if (!target.ownerGroup) target.ownerGroup = 'กฟส.บึง';
                 target.recommendedTech = findNearestTechForMainPage(target);
@@ -7453,7 +7451,9 @@
         });
         
         window.addEventListener('focus', pullFieldReportsFromCloud);
-    </script>   
+    </script>
+    <!-- ===== จบส่วนที่ 4 / 5 (นำโค้ดส่วนที่ 5 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
+        <!-- ===== เริ่มส่วนที่ 5 / 5 (ส่วนสุดท้าย - วางต่อจากส่วนที่ 4 จนจบไฟล์ได้เลยครับ) ===== -->
 
     <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
     <script>
@@ -7497,9 +7497,9 @@
                     btn.type = 'button';
                     btn.id = 'onlineUsersBtn';
                     btn.onclick = openOnlineUsersModal;
-                    btn.className = 'hidden bg-emerald-500/90 hover:bg-emerald-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm items-center gap-1 font-semibold';
+                    btn.className = 'hidden bg-emerald-500/90 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm items-center gap-1 font-semibold';
                     btn.title = 'ดูรายชื่อผู้ที่กำลังออนไลน์ (เฉพาะแอดมิน)';
-                    btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-200 animate-ping"></span><span class="text-xs">ออนไลน์ (<span id="onlineCountBadge">1</span>)</span>`;
+                    btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-200 animate-ping"></span><span>ออนไลน์ (<span id="onlineCountBadge">1</span>)</span>`;
                     headerBtnGroup.insertBefore(btn, headerBtnGroup.firstChild);
                 }
 
@@ -7607,7 +7607,6 @@
                         }
                     ];
 
-                    // ถ้ามีการกดบันทึกใบงานหลักแทรกเข้ามา ให้ยกเลิกการส่ง Heartbeat รอบนี้ทันทีเพื่อไม่ให้ทับใบงานใหม่
                     if (isUploadingFromMain) return;
 
                     cachedCloudJobs = payloadJobs;
@@ -7836,7 +7835,6 @@
                 setTimeout(pushOnlineHeartbeatDirectToCloud, 1500);
 
                 if (presenceInterval) clearInterval(presenceInterval);
-                // ยิงสถานะออนไลน์ขึ้น Cloud อัตโนมัติทุกๆ 20 วินาที
                 presenceInterval = setInterval(() => {
                     if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                         pushOnlineHeartbeatDirectToCloud();
@@ -7849,7 +7847,6 @@
     <!-- 📲 ระบบติดตั้งแอป PWA เต็มจอ & ทำงานออฟไลน์ -->
     <script>
         (function() {
-            // 1. เชื่อมไฟล์ manifest-main.json เพื่อให้ Chrome ซ่อนแถบ URL ด้านบน 100%
             let manifestEl = document.getElementById('webManifestLink') || document.querySelector('link[rel="manifest"]');
             if (!manifestEl) {
                 manifestEl = document.createElement('link');
@@ -7858,20 +7855,17 @@
             }
             manifestEl.href = 'manifest-main.json';
 
-            // 2. ลงทะเบียน Service Worker (sw.js)
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                     navigator.serviceWorker.register('./sw.js').catch(() => {});
                 });
             }
 
-            // 3. ตรวจสอบว่าเปิดจากแอปที่ติดตั้งแล้วหรือยัง (ถ้าเปิดแบบเต็มจอแล้ว ไม่ต้องแสดงปุ่มติดตั้งซ้ำ)
             const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
             if (isStandalone) return;
 
             let deferredInstallPrompt = null;
 
-            // สร้างแถบปุ่ม "📲 ติดตั้งแอปลงมือถือ" ด้านบนสุด
             const installBanner = document.createElement('div');
             installBanner.id = 'pwaInstallBanner';
             installBanner.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[180] hidden items-center gap-2 bg-slate-900/95 text-white px-4 py-2 rounded-full shadow-2xl border border-emerald-400/50 text-xs font-bold backdrop-blur-md';
@@ -7910,7 +7904,8 @@
             });
         })();
     </script>
-        <!-- ☁️ ระบบสำรองข้อมูลบนคลาวด์แยกกลุ่ม & จัดการแก้ไข/ส่งออก Excel ข้อมูลบนคลาวด์ -->
+
+    <!-- ☁️ ระบบสำรองข้อมูลบนคลาวด์แยกกลุ่ม & จัดการแก้ไข/ส่งออก Excel ข้อมูลบนคลาวด์ -->
     <script>
         (function() {
             const CLOUD_BACKUP_STORAGE_KEY = 'elec_cloud_group_backups_map';
@@ -7919,9 +7914,6 @@
             let currentEditingCloudKey = null;
             let currentEditingCloudType = null;
 
-            // ==========================================
-            // 🔐 ตรวจสอบสิทธิ์การเข้าถึง (Admin / User / Block Tech)
-            // ==========================================
             function getUserRole() {
                 return localStorage.getItem('elec_app_current_role') || 'user';
             }
@@ -7961,9 +7953,6 @@
                 return Array.from(groups).sort((a, b) => a.localeCompare(b, 'th'));
             }
 
-            // ==========================================
-            // 📦 จัดการข้อมูลสำรองแยกตามกลุ่มสังกัด (Cloud Group Backups)
-            // ==========================================
             function getCloudGroupBackupsMap() {
                 try {
                     return JSON.parse(_origLocalStorageGetItem.call(localStorage, CLOUD_BACKUP_STORAGE_KEY) || '{}');
@@ -8046,9 +8035,6 @@
                 };
             }
 
-            // ==========================================
-            // 📊 ฟังก์ชันสร้างตารางและส่งออกไฟล์ Excel (.xlsx) แยกตามกลุ่มสังกัด
-            // ==========================================
             const OUTAGE_EXCEL_HEADERS = [
                 'กลุ่มสังกัด', 'วันที่บันทึก', 'วันที่แจ้ง', 'งานที่', 'กะ', 'ลักษณะอาการ',
                 'ผู้ปฏิบัติงาน/ผู้รับแจ้ง', 'บริเวณ', 'ที่อยู่', 'เบอร์โทรศัพท์', 'พิกัด GPS',
@@ -8148,7 +8134,6 @@
                 XLSX.utils.book_append_sheet(wb, ws, sheetName);
             }
 
-            // ส่งออก Excel จากหน้าต่างจัดการข้อมูลคลาวด์ (รองรับแยกกลุ่ม หรือส่งออกเฉพาะที่ติ๊กเลือก)
             window.exportCloudManagerToExcel = async function() {
                 if (!canAccessCloudManager()) return;
                 const role = getUserRole();
@@ -8182,7 +8167,6 @@
                     const usedSheetNames = new Set();
 
                     if (role === 'admin' && groupFilter === 'all') {
-                        // 1. ชีตรวมทุกกลุ่ม
                         if (outages.length > 0) {
                             appendSheetWithAutoWidth(
                                 wb,
@@ -8202,7 +8186,6 @@
                             );
                         }
 
-                        // 2. แตกชีตแยกตามกลุ่มสังกัดให้อัตโนมัติ
                         const distinctGroups = Array.from(new Set(targetItems.map(i => i.ownerGroup || 'กฟส.บึง')));
                         distinctGroups.forEach(grp => {
                             const grpOutages = outages.filter(o => (o.ownerGroup || 'กฟส.บึง') === grp);
@@ -8228,7 +8211,6 @@
                             }
                         });
                     } else {
-                        // กรณีผู้ใช้ทั่วไป หรือแอดมินเลือกกรองเฉพาะกลุ่ม
                         const activeGrp = groupFilter === 'all' ? myGroup : groupFilter;
                         if (outages.length > 0) {
                             appendSheetWithAutoWidth(
@@ -8253,7 +8235,6 @@
                     XLSX.writeFile(wb, filename);
                     showToast(`📊 ส่งออกไฟล์ Excel แยกกลุ่ม (${targetItems.length} รายการ) สำเร็จ!`);
                 } else {
-                    // Fallback CSV กรณีออฟไลน์
                     if (outages.length >= faults.length) {
                         downloadCsvFallback(OUTAGE_EXCEL_HEADERS, outages.map(o => formatOutageRowForExcel(o, closedReg)), filename);
                     } else {
@@ -8263,7 +8244,6 @@
                 }
             };
 
-            // ส่งออก Excel จากการ์ดสำรองข้อมูลของแต่ละกลุ่มในหน้าต่าง 💾 สำรอง
             window.exportGroupBackupToExcel = async function(groupName) {
                 if (!canAccessCloudManager()) return;
                 const role = getUserRole();
@@ -8318,9 +8298,6 @@
                 }
             };
 
-            // ==========================================
-            // 🌐 ดักจับการซิงค์ Fetch เพื่อให้ข้อมูลสำรองแยกกลุ่มและการแก้ไขบนคลาวด์ไม่ถูกเขียนทับ
-            // ==========================================
             const _nativeFetch = window.fetch;
             window.fetch = async function(input, init) {
                 const urlStr = typeof input === 'string' ? input : (input?.url || '');
@@ -8382,9 +8359,6 @@
                 return response;
             };
 
-            // ==========================================
-            // 🔘 เพิ่มปุ่ม "☁️ คลาวด์" บนแถบเมนูด้านบน (ซ่อนสำหรับช่าง)
-            // ==========================================
             function injectCloudManagerHeaderButton() {
                 const headerBtnGroup = document.querySelector('#mainAppContent .bg-gradient-to-r .flex.items-center.gap-1\\.5.shrink-0');
                 if (!headerBtnGroup) return;
@@ -8395,9 +8369,9 @@
                     btn.type = 'button';
                     btn.id = 'cloudDataManageBtn';
                     btn.onclick = openCloudDataManagerModal;
-                    btn.className = 'hidden bg-sky-500/90 hover:bg-sky-600 text-white px-2.5 py-2 rounded-xl text-sm transition shadow-sm items-center gap-1 font-semibold';
+                    btn.className = 'hidden bg-sky-500/90 hover:bg-sky-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm items-center gap-1 font-semibold';
                     btn.title = 'จัดการ/แก้ไข/ลบ/ส่งออก Excel ข้อมูลบนคลาวด์ (แยกตามกลุ่ม)';
-                    btn.innerHTML = `☁️ <span class="text-xs hidden sm:inline">คลาวด์</span>`;
+                    btn.innerHTML = `☁️ <span>คลาวด์</span>`;
 
                     const backupBtn = headerBtnGroup.querySelector('button[onclick="openBackupModal()"]');
                     if (backupBtn) {
@@ -8418,9 +8392,6 @@
                 }
             }
 
-            // ==========================================
-            // 💾 อัปเกรดหน้าต่าง #backupModal ให้รองรับสำรองบนคลาวด์แยกกลุ่ม + ปุ่ม Excel
-            // ==========================================
             function injectCloudBackupSectionIntoBackupModal() {
                 const modal = document.getElementById('backupModal');
                 if (!modal) return;
@@ -8667,9 +8638,6 @@
                 }, '🗑️ ลบชุดสำรองบนคลาวด์');
             };
 
-            // ==========================================
-            // 🛠️ ระบบจัดการ/แก้ไข/ลบ/ส่งออก Excel ข้อมูลบนคลาวด์ (Cloud Data Manager)
-            // ==========================================
             function ensureCloudDataManagerModal() {
                 let modal = document.getElementById('cloudDataManagerModal');
                 if (modal) return modal;
@@ -8679,7 +8647,6 @@
                 modal.className = 'fixed inset-0 bg-slate-950/65 hidden z-[170] flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm';
                 modal.innerHTML = `
                     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200">
-                        <!-- Header -->
                         <div class="px-5 py-3.5 bg-gradient-to-r from-sky-600 via-blue-700 to-indigo-800 text-white flex justify-between items-center">
                             <div>
                                 <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
@@ -8690,7 +8657,6 @@
                             <button type="button" onclick="closeCloudDataManagerModal()" class="text-white/80 hover:text-white text-2xl font-bold leading-none px-1">&times;</button>
                         </div>
 
-                        <!-- แถบตัวกรองกลุ่ม ประเภท และค้นหา -->
                         <div class="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5">
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 <div id="cloudGroupFilterContainer"></div>
@@ -8710,7 +8676,6 @@
                                 </div>
                             </div>
 
-                            <!-- แถบจัดการหลายตัวเลือก + ปุ่มส่งออก Excel แยกกลุ่ม -->
                             <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/80">
                                 <div class="flex items-center gap-2">
                                     <label class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none bg-white px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 transition">
@@ -8736,10 +8701,8 @@
                             </div>
                         </div>
 
-                        <!-- รายการข้อมูลบนคลาวด์ -->
                         <div id="cloudManagerListContainer" class="p-4 overflow-y-auto space-y-2.5 flex-1 bg-slate-100/70"></div>
 
-                        <!-- Footer -->
                         <div class="px-4 py-3 bg-white border-t border-slate-200 flex justify-between items-center text-xs">
                             <span id="cloudManagerTotalSummary" class="text-slate-500 font-semibold">ทั้งหมด 0 รายการ</span>
                             <div class="flex gap-2">
@@ -8973,8 +8936,8 @@
                                 <span class="text-[10px] text-slate-400 font-mono">${dateDisplay}</span>
                             </div>
                             <div class="text-xs font-bold text-slate-800 truncate">${titleText}</div>
-                            <div class="text-[11px] text-slate-600 line-clamp-2">${subDetail}</div>
-                            ${tr ? `<div class="text-[10px] text-emerald-700 bg-emerald-50/80 px-2 py-1 rounded border border-emerald-100">🛠️ ผลช่าง: ${tr.actionTaken || tr.realCause || '-'} (ผู้ตรวจ: ${formatTechDisplayName(tr.inspector || '-')})</div>` : ''}
+                            <div class="text-[11px] text-slate-600 line-clamp-2 break-words">${subDetail}</div>
+                            ${tr ? `<div class="text-[10px] text-emerald-700 bg-emerald-50/80 px-2 py-1 rounded border border-emerald-100 break-words">🛠️ ผลช่าง: ${tr.actionTaken || tr.realCause || '-'} (ผู้ตรวจ: ${formatTechDisplayName(tr.inspector || '-')})</div>` : ''}
                         </div>
                         <div class="flex flex-col gap-1.5 shrink-0">
                             <button type="button" onclick="openCloudItemEditModal('${item._uniqueKey.replace(/'/g, "\\'")}')" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap">
@@ -8989,9 +8952,6 @@
                 });
             };
 
-            // ==========================================
-            // ☑️ ฟังก์ชันเลือกหลายรายการและสั่งลบพร้อมกัน (Multi-Select Delete)
-            // ==========================================
             window.toggleCloudItemSelection = function(uniqueKey, isChecked) {
                 if (isChecked) selectedCloudItemKeys.add(uniqueKey);
                 else selectedCloudItemKeys.delete(uniqueKey);
@@ -9089,9 +9049,6 @@
                 }, '🗑️ ยืนยันการลบข้อมูลบนคลาวด์');
             };
 
-            // ==========================================
-            // ✏️ หน้าต่างแก้ไขข้อมูลบนคลาวด์ (Cloud Record Editor Modal)
-            // ==========================================
             function ensureCloudItemEditModal() {
                 let modal = document.getElementById('cloudItemEditModal');
                 if (modal) return modal;
@@ -9533,12 +9490,12 @@
             });
         })();
     </script>
-        <!-- 👥 ระบบจัดกลุ่มรายชื่อบัญชีในระบบ (User Account Grouping & Filter สำหรับ Admin) -->
+
+    <!-- 👥 ระบบจัดกลุ่มรายชื่อบัญชีในระบบ (User Account Grouping & Filter สำหรับ Admin) -->
     <script>
         (function() {
             let collapsedUserGroups = new Set();
 
-            // ดึงรายชื่อกลุ่มสังกัดทั้งหมดที่มีในระบบบัญชี
             function getAllUserAccountGroups() {
                 const groups = new Set();
                 (userAccountsList || []).forEach(acc => {
@@ -9548,7 +9505,6 @@
                 return Array.from(groups).sort((a, b) => a.localeCompare(b, 'th'));
             }
 
-            // อัปเกรด UI หน้าต่าง #userManageModal ให้มีช่องเลือกกลุ่มตอนเพิ่มผู้ใช้ และแถบกรองกลุ่ม
             function upgradeUserManageModalForGrouping() {
                 const modal = ensureUserManageModalExists();
                 if (!modal || modal.dataset.groupUpgraded === 'true') {
@@ -9556,7 +9512,6 @@
                     return;
                 }
 
-                // 1. เพิ่มช่องเลือก/พิมพ์กลุ่มสังกัดในฟอร์ม "เพิ่มบัญชีผู้ใช้งานใหม่"
                 const newUsernameInput = document.getElementById('newAccountUsername');
                 if (newUsernameInput && newUsernameInput.parentElement) {
                     newUsernameInput.placeholder = "รหัสพนักงาน เช่น 502775";
@@ -9571,7 +9526,6 @@
                     newUsernameInput.parentElement.appendChild(groupSelectWrap);
                 }
 
-                // 2. เพิ่มแถบค้นหาและตัวกรองกลุ่มเหนือรายการบัญชี
                 const listContainer = document.getElementById('userAccountListContainer');
                 if (listContainer && listContainer.parentElement) {
                     const filterBar = document.createElement('div');
@@ -9613,7 +9567,6 @@
             function refreshUserGroupSelectOptions() {
                 const groups = getAllUserAccountGroups();
 
-                // อัปเดต Dropdown เลือกกลุ่มตอนเพิ่มบัญชีใหม่
                 const newGrpSelect = document.getElementById('newAccountGroupSelect');
                 if (newGrpSelect) {
                     const curVal = newGrpSelect.value;
@@ -9621,7 +9574,6 @@
                         groups.map(g => `<option value="${g}" ${curVal === g ? 'selected' : ''}>🏢 ${g}</option>`).join('');
                 }
 
-                // อัปเดต Dropdown กรองกลุ่มในรายการ
                 const filterGrpSelect = document.getElementById('filterUserGroupSelect');
                 if (filterGrpSelect) {
                     const curFilter = filterGrpSelect.value || 'all';
@@ -9634,7 +9586,6 @@
                 }
             }
 
-            // สลับย่อ/ขยายรายกลุ่ม
             window.toggleUserGroupSection = function(groupKey) {
                 if (collapsedUserGroups.has(groupKey)) {
                     collapsedUserGroups.delete(groupKey);
@@ -9644,7 +9595,6 @@
                 renderUserAccountList();
             };
 
-            // สลับย่อ/ขยายทั้งหมด
             window.toggleCollapseAllUserGroups = function() {
                 const allKeys = Array.from(document.querySelectorAll('[data-user-group-key]')).map(el => el.getAttribute('data-user-group-key'));
                 if (collapsedUserGroups.size < allKeys.length) {
@@ -9655,7 +9605,6 @@
                 renderUserAccountList();
             };
 
-            // ปุ่มลัด "+ เพิ่มคนเข้ากลุ่มนี้"
             window.prefillGroupForNewAccount = function(groupName) {
                 const grpSelect = document.getElementById('newAccountGroupSelect');
                 const grpCustom = document.getElementById('newAccountCustomGroupInput');
@@ -9669,7 +9618,6 @@
                 }
             };
 
-            // ปุ่มเปลี่ยนชื่อกลุ่มสังกัดพร้อมกันทั้งกลุ่ม
             window.renameEntireUserGroup = function(oldGroupName) {
                 if (!oldGroupName) return;
                 showCustomPrompt(`เปลี่ยนชื่อกลุ่ม "${oldGroupName}" สำหรับทุกบัญชีในกลุ่มนี้เป็น:`, oldGroupName, function(newGroupRaw) {
@@ -9695,7 +9643,6 @@
                 }, "✏️ เปลี่ยนชื่อกลุ่มสังกัด");
             };
 
-            // เขียนทับฟังก์ชัน addUserAccount เพื่อรองรับการรวมรหัสพนักงาน + ชื่อกลุ่มจากช่องเลือกกลุ่ม
             const _origAddUserAccount = addUserAccount;
             addUserAccount = function() {
                 const userEl = document.getElementById('newAccountUsername');
@@ -9705,7 +9652,6 @@
                 let rawU = (userEl?.value || '').trim();
                 const chosenGrp = (customGrpEl?.value || selectGrpEl?.value || '').trim();
 
-                // ถ้ารหัสที่กรอกยังไม่มีชื่อกลุ่มต่อท้าย ให้ต่อท้ายด้วยกลุ่มที่เลือกอัตโนมัติ
                 if (rawU && chosenGrp && !getUserGroupName(rawU) && rawU.toLowerCase() !== 'admin') {
                     userEl.value = `${rawU} ${chosenGrp}`;
                 }
@@ -9715,7 +9661,6 @@
                 renderUserAccountList();
             };
 
-            // เขียนทับฟังก์ชัน openUserManageModal เพื่อติดตั้ง UI จัดกลุ่มก่อนเปิด
             const _origOpenUserManageModal = openUserManageModal;
             openUserManageModal = function() {
                 upgradeUserManageModalForGrouping();
@@ -9724,7 +9669,6 @@
                 renderUserAccountList();
             };
 
-            // เขียนทับฟังก์ชัน renderUserAccountList เพื่อแสดงผลแยกตามกลุ่มสังกัดอย่างชัดเจน
             renderUserAccountList = function() {
                 const container = document.getElementById('userAccountListContainer');
                 const badge = document.getElementById('userAccountCountBadge');
@@ -9737,7 +9681,6 @@
                 const searchQ = (document.getElementById('searchUserAccountInput')?.value || '').toLowerCase().trim();
                 const currentLoggedUser = localStorage.getItem('elec_app_current_user') || '';
 
-                // แนบ index จริงของ userAccountsList ไว้กับทุกรายการเพื่อให้ปุ่ม แก้ไข/ลบ/ดูรหัส ทำงานตรงตำแหน่ง 100%
                 const indexedAccounts = (userAccountsList || []).map((acc, idx) => {
                     const grp = getUserGroupName(acc.username);
                     let groupKey = grp;
@@ -9752,7 +9695,6 @@
                     };
                 });
 
-                // กรองรายการตามเงื่อนไขที่เลือก
                 const filteredAccounts = indexedAccounts.filter(item => {
                     if (groupFilter !== 'all' && item._groupKey !== groupFilter) return false;
                     if (roleFilter !== 'all' && (item.role || 'user') !== roleFilter) return false;
@@ -9780,7 +9722,6 @@
                     return;
                 }
 
-                // จัดกลุ่มบัญชีตาม _groupKey
                 const groupedMap = new Map();
                 filteredAccounts.forEach(item => {
                     if (!groupedMap.has(item._groupKey)) {
@@ -9789,7 +9730,6 @@
                     groupedMap.get(item._groupKey).push(item);
                 });
 
-                // เรียงลำดับกลุ่ม: แอดมินส่วนกลาง -> กลุ่มตามตัวอักษร -> ไม่ระบุกลุ่ม
                 const sortedGroupKeys = Array.from(groupedMap.keys()).sort((a, b) => {
                     if (a === '__ADMIN_CENTRAL__') return -1;
                     if (b === '__ADMIN_CENTRAL__') return 1;
@@ -9832,7 +9772,6 @@
                     section.className = 'rounded-xl border border-slate-200 overflow-hidden bg-slate-100/80 shadow-sm mb-3';
                     section.setAttribute('data-user-group-key', gKey);
 
-                    // ส่วนหัวของแต่ละกลุ่ม
                     const headerEl = document.createElement('div');
                     headerEl.className = `bg-gradient-to-r ${headerBgClass} px-3 py-2 flex items-center justify-between gap-2 select-none`;
                     headerEl.innerHTML = `
@@ -9855,7 +9794,6 @@
                     `;
                     section.appendChild(headerEl);
 
-                    // ส่วนรายการสมาชิกภายในกลุ่ม
                     const bodyEl = document.createElement('div');
                     bodyEl.className = isCollapsed ? 'hidden' : 'p-2 space-y-1.5';
 
