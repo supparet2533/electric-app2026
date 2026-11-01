@@ -5710,17 +5710,14 @@
             initOverdueCaData();
 
             // 1. ตรวจหา "CA : ************", "ชื่อผู้ใช้ไฟฟ้า", "เบอร์โทร", "พิกัด" และคำว่า "ที่อยู่ :" ในช่อง "ที่อยู่"
-            if (addressInputEl && gpsInputEl) {
-                addressInputEl.addEventListener('input', function() {
-                    let addrText = this.value;
-                    let isModified = false;
-
-                    // 1.0 ตรวจจับรูปแบบ "CA : ************" (ตัวเลข 0-9 จำนวน 12 หลัก)
+                        if (addressInputEl && gpsInputEl) {
+                // 1.0 ฟังก์ชันตรวจจับรูปแบบ "CA : ************" (ตัวเลข 0-9 จำนวน 12 หลัก)
+                function checkCaOverdue(addrText) {
                     const caRegex = /CA\s*[:：]?\s*(\d{12})/i;
-                    const matchCa = addrText.match(caRegex);
+                    const matchCa = String(addrText || '').match(caRegex);
                     const bannerEl = document.getElementById('caOverdueBanner');
                     const bannerTextEl = document.getElementById('caOverdueText');
-
+                    
                     if (matchCa) {
                         const detectedCa = matchCa[1];
                         if (overdueCaList.includes(detectedCa)) {
@@ -5740,77 +5737,114 @@
                         if (bannerEl) bannerEl.classList.add('hidden');
                         lastAlertedCa = "";
                     }
-
-                    // 1.1 ลบ "ชื่อผู้ใช้ไฟฟ้า : ชื่อ นามสกุล" หรือ "ชื่อ : ชื่อ นามสกุล" (ยกเว้นกรณีที่มีคำว่า "บริษัท" ตามหลัง)
-                    const customerNameRegex = /(?:ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ชื่อ)\s*[:：]\s*(?:\r?\n\s*)?(?!บริษัท)(?:(?:นาย|นางสาว|นาง|น\.ส\.|คุณ|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙a-zA-Z.]+(?:[ \t]+ณ)?[ \t]+[ก-๙a-zA-Z.]+[ \t]*\r?\n?/gi;
+                }
+                
+                // ฟังก์ชันสกัดและย้ายพิกัดไปช่อง GPS (รองรับทั้ง "พิกัด (Lat, Long)13.037934, 101.125977" และ "Lat: XX Long: YY")
+                function extractAndMoveGps(text) {
+                    let updatedText = text;
+                    let foundCoords = null;
                     
-                    if (customerNameRegex.test(addrText)) {
-                        addrText = addrText.replace(customerNameRegex, '');
-                        isModified = true;
-                        showToast("✂️ ลบชื่อผู้ใช้ไฟฟ้าออกจากช่องที่อยู่แล้ว");
+                    // รูปแบบใหม่: พิกัด (Lat, Long)13.037934, 101.125977
+                    const latLongParenRegex = /พิกัด\s*\(\s*Lat\s*,\s*Long?\s*\)\s*[:：]?\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/gi;
+                    const matchParen = [...updatedText.matchAll(latLongParenRegex)];
+                    if (matchParen.length > 0) {
+                        const last = matchParen[matchParen.length - 1];
+                        foundCoords = `${last[1]}, ${last[2]}`;
+                        updatedText = updatedText.replace(latLongParenRegex, '');
                     }
-
-                    // 1.2 ลบ "เบอร์โทร : [ตัวเลข]" และ "เบอร์โทร : -"
-                    const phoneRegex = /(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)[ \t]*[:：]?[ \t]*(?:\r?\n[ \t]*)?(?:[0-9\-\(\) \t]{8,20}|-+|ไม่มี)[ \t]*\r?\n?/gi;
                     
-                    if (phoneRegex.test(addrText)) {
-                        addrText = addrText.replace(phoneRegex, '');
-                        isModified = true;
-                        showToast("✂️ ลบเบอร์โทรออกจากช่องที่อยู่แล้ว");
+                    // รูปแบบเดิม (1.3): พิกัดLat: XX.XXXXXX Long: YY.YYYYYY
+                    const latLongOldRegex = /(?:พิกัด\s*[:=]?\s*)?Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/gi;
+                    const matchOld = [...updatedText.matchAll(latLongOldRegex)];
+                    if (matchOld.length > 0) {
+                        const last = matchOld[matchOld.length - 1];
+                        foundCoords = `${last[1]}, ${last[2]}`;
+                        updatedText = updatedText.replace(latLongOldRegex, '');
                     }
-
-                    // 1.3 ตรวจจับรูปแบบ พิกัดLat: XX.XXXXXX Long: YY.YYYYYY
-                    const latLongRegex = /(?:พิกัด\s*[:=]?\s*)?Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
-                    const matchGps = addrText.match(latLongRegex);
-
-                    if (matchGps) {
-                        const extractedGps = `Lat: ${matchGps[1]} Long: ${matchGps[2]}`;
-                        
-                        gpsInputEl.value = extractedGps;
+                    
+                    if (foundCoords) {
+                        gpsInputEl.value = foundCoords;
                         gpsInputEl.dispatchEvent(new Event('input'));
-                        
-                        addrText = addrText.replace(matchGps[0], '');
-                        isModified = true;
                         showToast("📌 ย้ายพิกัดไปช่อง GPS อัตโนมัติแล้ว");
                     }
-
-                    // 1.4 ตัดคำว่า "ที่อยู่" หรือ "ที่อยู่ :" ออกทั้งหมด และดึงบ้านเลขที่ขึ้นบรรทัดบนสุดชิดซ้าย
+                    
+                    return updatedText;
+                }
+                
+                // ทำงานทันทีเมื่อกดวางจากก๊อปปี้ (Paste) -> คัดกรองเฉพาะข้อมูลที่กำหนด และลบข้อความที่ไม่เกี่ยวข้องออก
+                addressInputEl.addEventListener('paste', function(e) {
+                    const pastedData = (e.clipboardData || window.clipboardData)?.getData('text');
+                    if (!pastedData) return;
+                    
+                    e.preventDefault();
+                    
+                    // 1. ดึงพิกัดไปใส่ช่อง GPS ก่อน
+                    let text = extractAndMoveGps(pastedData);
+                    
+                    // 2. จัดระเบียบบรรทัดกรณีข้อมูลที่ก๊อปปี้มาติดกันหรือหัวข้อแยกบรรทัดกับตัวเลข
+                    text = text.replace(/[ \t]*(?=(?:รหัสอุปกรณ์|มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|CA\s*[:：]?\s*\d{9,15}|ชื่อเจ้าของ|ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ที่อยู่\s*[:：]?|เบอร์โทรศัพท์|เบอร์โทร))/gi, '\n');
+                    text = text.replace(/(รหัสอุปกรณ์\s*[:：]?|มิเตอร์\s*-\s*PEA\s*No\.?\s*[:：]?|PEA\s*No\.?\s*[:：]?|CA\s*[:：]?|ชื่อเจ้าของ\s*[:：]?|ชื่อผู้ใช้ไฟฟ้า\s*[:：]?|ชื่อผู้ใช้ไฟ\s*[:：]?|ที่อยู่\s*[:：]?)[ \t]*\r?\n[ \t]*/gi, '$1 ');
+                    
+                    // 3. เงื่อนไขบรรทัดที่อนุญาตให้คงไว้
+                    const allowedPatterns = [
+                        /^รหัสอุปกรณ์\s*[:：]?\s*[A-Za-z0-9\-]+/i,
+                        /^(?:มิเตอร์\s*-\s*)?PEA\s*No\.?\s*[:：]?\s*[A-Za-z0-9\-]+/i,
+                        /^CA\s*[:：]?\s*\d{9,15}\b/i,
+                        /^(?:ชื่อเจ้าของ|ชื่อผู้ใช้ไฟฟ้า|ชื่อผู้ใช้ไฟ|ชื่อ)\s*[:：]?\s*บริษัท\s*.+/i,
+                        /^ที่อยู่\s*[:：]?\s*.+/i
+                    ];
+                    
                     let extractedTopAddress = '';
-                    const addressExtractRegex = /ที่อยู่\s*[:：]?\s*(\d+(?:\/\d+)?\s*(?:หมู่ที่|หมู่|ม\.)?\s*\d*\s*ต\.[ก-๙a-zA-Z]+\s*อ\.[ก-๙a-zA-Z]+\s*จ\.[ก-๙a-zA-Z]+|[^\r\n]+)/i;
-                    const matchAddr = addrText.match(addressExtractRegex);
-
-                    if (matchAddr) {
-                        extractedTopAddress = matchAddr[1].replace(/ที่อยู่\s*[:：]?\s*/gi, '').trim();
-                        addrText = addrText.replace(matchAddr[0], '');
-                        addrText = addrText.replace(/ที่อยู่\s*[:：]?\s*/gi, '');
-                        isModified = true;
-                        showToast("🏠 ตัดคำว่า 'ที่อยู่' และจัดชิดซ้ายบนสุดแล้ว");
-                    } else if (/ที่อยู่\s*[:：]?\s*/i.test(addrText)) {
-                        addrText = addrText.replace(/ที่อยู่\s*[:：]?\s*/gi, '');
-                        isModified = true;
-                        showToast("✂️ ตัดคำว่า 'ที่อยู่' ออกจากช่องที่อยู่แล้ว");
-                    }
-
-                    if (isModified) {
-                        const remainingLines = addrText
-                            .split(/\r?\n/)
-                            .map(line => line.replace(/[ \t]{2,}/g, ' ').trim())
-                            .filter(line => line !== '')
-                            .join('\n');
-
-                        if (extractedTopAddress) {
-                            this.value = remainingLines
-                                ? `${extractedTopAddress}\n${remainingLines}`
-                                : extractedTopAddress;
-                        } else {
-                            this.value = remainingLines;
+                    const keptLines = [];
+                    
+                    text.split(/\r?\n/).forEach(rawLine => {
+                        let line = rawLine.replace(/^[-•\s]+/, '').trim();
+                        if (!line) return;
+                        
+                        // ลบเบอร์โทรหากติดมาท้ายบรรทัด
+                        line = line.replace(/[ \t]+(?:เบอร์โทรศัพท์|เบอร์โทร|โทรศัพท์|โทร)[ \t]*[:：]?.*/i, '').trim();
+                        
+                        if (allowedPatterns.some(regex => regex.test(line))) {
+                            // 1.4 หากเป็นบรรทัด "ที่อยู่" หรือ "ที่อยู่ :" ให้ตัดคำว่าที่อยู่ออกและดึงบ้านเลขที่ขึ้นบรรทัดบนสุดชิดซ้าย
+                            if (/^ที่อยู่\s*[:：]?/i.test(line)) {
+                                const cleanAddr = line.replace(/^ที่อยู่\s*[:：]?\s*/i, '').trim();
+                                if (cleanAddr) extractedTopAddress = cleanAddr;
+                            } else {
+                                keptLines.push(line);
+                            }
                         }
-                        this.style.height = 'auto';
-                        this.style.height = (this.scrollHeight) + 'px';
+                    });
+                    
+                    const filteredBlock = [extractedTopAddress, ...keptLines].filter(Boolean).join('\n');
+                    
+                    // เก็บข้อความที่ผู้ใช้พิมพ์เองไว้ก่อนหน้า (ถ้ามี) โดยไม่ลบออก
+                    const startPos = this.selectionStart ?? this.value.length;
+                    const endPos = this.selectionEnd ?? this.value.length;
+                    const userBefore = this.value.substring(0, startPos).trim();
+                    const userAfter = this.value.substring(endPos).trim();
+                    
+                    this.value = [userBefore, filteredBlock, userAfter].filter(Boolean).join('\n');
+                    this.style.height = 'auto';
+                    this.style.height = (this.scrollHeight) + 'px';
+                    
+                    checkCaOverdue(this.value);
+                    if (typeof saveOutageDraft === 'function') saveOutageDraft();
+                });
+                
+                // ทำงานเมื่อผู้ใช้พิมพ์เพิ่มเอง (Input) -> ไม่ลบข้อความที่ผู้ใช้พิมพ์เพิ่ม
+                addressInputEl.addEventListener('input', function() {
+                    const beforeGpsCheck = this.value;
+                    const afterGpsCheck = extractAndMoveGps(beforeGpsCheck);
+                    
+                    if (afterGpsCheck !== beforeGpsCheck) {
+                        this.value = afterGpsCheck.replace(/\n{3,}/g, '\n\n').trim();
                     }
+                    
+                    checkCaOverdue(this.value);
+                    this.style.height = 'auto';
+                    this.style.height = (this.scrollHeight) + 'px';
                 });
             }
-
             // ฟังก์ชันช่วยแกะพิกัดจากข้อความหรือ URL ทุกรูปแบบ (รองรับ Base64 จาก Proxy และรหัสซ้อน %25)
             function parseCoordsFromAnyText(rawStr) {
                 if (!rawStr) return null;
