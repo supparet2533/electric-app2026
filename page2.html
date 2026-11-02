@@ -2316,6 +2316,123 @@
             return 0;
         }
 
+                // ==========================================
+        // 🎨 ฟังก์ชันแยกสีกรอบงานและอิโมจิหน้างานตามความเร่งด่วน (ตรงกับข้อความส่ง LINE)
+        // ==========================================
+        function getJobUrgencyInfo(item, jobType) {
+            const STYLES = {
+                red: {
+                    dot: '🔴',
+                    label: 'ด่วนมาก',
+                    cardBorder: 'border-rose-300 border-l-[6px] border-l-rose-600 ring-1 ring-rose-100',
+                    tagClass: 'bg-rose-50 text-rose-700 border-rose-200',
+                    titleColor: 'text-rose-950'
+                },
+                orange: {
+                    dot: '🟠',
+                    label: 'ด่วน',
+                    cardBorder: 'border-orange-300 border-l-[6px] border-l-orange-500 ring-1 ring-orange-100',
+                    tagClass: 'bg-orange-50 text-orange-700 border-orange-200',
+                    titleColor: 'text-slate-900'
+                },
+                yellow: {
+                    dot: '🟡',
+                    label: 'ปานกลาง',
+                    cardBorder: 'border-amber-300 border-l-[6px] border-l-amber-400 ring-1 ring-amber-100',
+                    tagClass: 'bg-amber-50 text-amber-800 border-amber-200',
+                    titleColor: 'text-slate-800'
+                },
+                green: {
+                    dot: '🟢',
+                    label: 'ทั่วไป',
+                    cardBorder: 'border-emerald-300 border-l-[6px] border-l-emerald-500 ring-1 ring-emerald-100',
+                    tagClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    titleColor: 'text-slate-800'
+                },
+                blue: {
+                    dot: '🔵',
+                    label: 'ทั่วไป',
+                    cardBorder: 'border-sky-300 border-l-[6px] border-l-sky-500 ring-1 ring-sky-100',
+                    tagClass: 'bg-sky-50 text-sky-700 border-sky-200',
+                    titleColor: 'text-slate-800'
+                },
+                purple: {
+                    dot: '🟣',
+                    label: 'พิเศษ',
+                    cardBorder: 'border-purple-300 border-l-[6px] border-l-purple-500 ring-1 ring-purple-100',
+                    tagClass: 'bg-purple-50 text-purple-700 border-purple-200',
+                    titleColor: 'text-slate-800'
+                }
+            };
+
+            // 1. งานเหตุสถานี TR/TL (แท็บ 1) ให้เป็นสีแดง (ด่วนมาก) เสมอ
+            if (jobType === 'fault') {
+                return STYLES.red;
+            }
+
+            // 2. ตรวจหาอิโมจิสีที่อยู่หน้างานจากข้อความส่ง LINE (formattedText) ก่อนเพื่อให้สีตรงกับใน LINE 100%
+            const baseLineText = String((item?.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0] || '');
+            const jobLineMatch = baseLineText.match(/([🔴🟠🟡🟢🔵🟣])\s*(?:📋\s*)?(?:งานที่|ใบงาน|แจ้ง)/u) ||
+                                 baseLineText.match(/^[^\n]*([🔴🟠🟡🟢🔵🟣])/u);
+            if (jobLineMatch) {
+                const emoji = jobLineMatch[1];
+                if (emoji === '🔴') return STYLES.red;
+                if (emoji === '🟠') return STYLES.orange;
+                if (emoji === '🟡') return STYLES.yellow;
+                if (emoji === '🟢') return STYLES.green;
+                if (emoji === '🔵') return STYLES.blue;
+                if (emoji === '🟣') return STYLES.purple;
+            }
+
+            // 3. ตรวจสอบจากค่า priorityLevel (ถ้ามีการระบุระดับความสำคัญมาโดยตรง)
+            const pLevel = String(item?.priorityLevel || item?.priority || item?.urgency || '').toLowerCase().trim();
+            if (['critical', 'danger', 'red', 'high', 'ด่วนมาก', 'วิกฤต'].includes(pLevel)) {
+                return STYLES.red;
+            }
+            if (['urgent', 'orange', 'ด่วน'].includes(pLevel)) {
+                return STYLES.orange;
+            }
+            if (['warning', 'medium', 'yellow', 'ปานกลาง'].includes(pLevel)) {
+                return STYLES.yellow;
+            }
+
+            // 4. ตรวจสอบจากคำสำคัญของอาการรับแจ้ง (issueType)
+            const symptomText = `${item?.issueType || ''} ${item?.cause || ''}`.toLowerCase();
+
+            const redKeywords = [
+                'ไฟไหม้', 'มิเตอร์ไหม้', 'หม้อแปลงระเบิด', 'หม้อแปลงไหม้', 'ระเบิด',
+                'สายไฟขาด', 'สายแรงสูงขาด', 'สายเมนขาด', 'เสาไฟล้ม', 'เสาไฟหัก',
+                'ไฟช็อต', 'ประกายไฟ', 'ไฟดูด', 'ดับบริเวณกว้าง', 'ดับทั้งหมู่บ้าน',
+                'ดับหลายหลัง', 'โรงพยาบาล', 'ฉุกเฉิน'
+            ];
+            if (redKeywords.some(k => symptomText.includes(k))) {
+                return STYLES.red;
+            }
+
+            const orangeKeywords = [
+                'ไฟดับ', 'ไฟตกไฟดับ', 'กระแสไฟขัดข้อง', 'เฟสขาด', 'ไม่ครบเฟส',
+                'ฟิวส์ขาด', 'ฟิวส์แรงสูง', 'เบรกเกอร์', 'ทริป', 'ต้นไม้', 'กิ่งไม้',
+                'สัตว์', 'งู', 'นก', 'กระรอก'
+            ];
+            if (orangeKeywords.some(k => symptomText.includes(k))) {
+                return STYLES.orange;
+            }
+
+            const yellowKeywords = [
+                'ไฟตก', 'ไฟกระพริบ', 'ไฟเกิน', 'มิเตอร์ชำรุด', 'ขั้วมิเตอร์',
+                'สายหลวม', 'สายเมนหลวม'
+            ];
+            if (yellowKeywords.some(k => symptomText.includes(k))) {
+                return STYLES.yellow;
+            }
+
+            if (['normal', 'low', 'green', 'ทั่วไป', 'ปกติ'].includes(pLevel)) {
+                return STYLES.green;
+            }
+
+            return STYLES.green;
+        }
+
         function renderJobCards() {
             const jobType = document.getElementById('filterJobType').value;
             const statusFilter = document.getElementById('filterJobStatus').value;
@@ -2510,6 +2627,9 @@
                 const jobGroup = getJobGroupName(item);
                 const loggedTimeStr = getJobLoggedTimeDisplay(item, jobType);
 
+                // ดึงสีกรอบงานและอิโมจิหน้างานตามระดับความเร่งด่วน
+                const urgency = getJobUrgencyInfo(item, jobType);
+
                 const badgeClass = isDone
                     ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
                     : (tr ? 'bg-amber-100 text-amber-700 border-amber-300'
@@ -2526,9 +2646,13 @@
                     ? `<span class="inline-block bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-md mr-1">⏰ ${loggedTimeStr}</span>`
                     : '';
 
+                const urgencyBadgeHtml = `<span class="inline-block border text-[10px] font-bold px-2 py-0.5 rounded-md mr-1 ${urgency.tagClass}">${urgency.dot} ${urgency.label}</span>`;
+
                 const titleHtml = jobType === 'outage'
-                    ? `${groupBadgeHtml}${shiftBadgeHtml}${timeBadgeHtml}งานที่ ${item.jobNo || '-'} • ${item.issueType || '-'}`
-                    : `${groupBadgeHtml}${shiftBadgeHtml}${timeBadgeHtml}⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+                    ? `<div class="mb-1 flex flex-wrap items-center gap-y-1">${groupBadgeHtml}${shiftBadgeHtml}${timeBadgeHtml}${urgencyBadgeHtml}</div>
+                       <div class="${urgency.titleColor} text-sm font-extrabold flex items-center gap-1"><span>${urgency.dot}</span><span>งานที่ ${item.jobNo || '-'} • ${item.issueType || '-'}</span></div>`
+                    : `<div class="mb-1 flex flex-wrap items-center gap-y-1">${groupBadgeHtml}${shiftBadgeHtml}${timeBadgeHtml}${urgencyBadgeHtml}</div>
+                       <div class="${urgency.titleColor} text-sm font-extrabold flex items-center gap-1"><span>${urgency.dot}</span><span>⚡ ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})</span></div>`;
 
                 const subHtml = jobType === 'outage'
                     ? `📍 บริเวณ: ${item.area || '-'} | 🏠 ที่อยู่: ${item.address || '-'}`
@@ -2552,10 +2676,10 @@
                     : (!isDone ? `<button type="button" onclick="handleStartNavigation('${key}', '${jobType}', '')" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition">🚗 ${nav ? 'อัปเดตเดินทาง' : 'กดออกเดินทาง'}</button>` : '');
 
                 const card = document.createElement('div');
-                card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 border-l-4 ${isDone ? 'border-l-emerald-500' : (nav ? 'border-l-blue-500' : 'border-l-amber-500')}`;
+                card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 ${urgency.cardBorder}`;
                 card.innerHTML = `
                     <div class="flex justify-between items-start gap-2">
-                        <div class="font-bold text-slate-800 text-xs sm:text-sm leading-snug">${titleHtml}</div>
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm leading-snug min-w-0 flex-1">${titleHtml}</div>
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${badgeClass}">${badgeLabel}</span>
                     </div>
                     <div class="text-xs text-slate-600">${subHtml}</div>
@@ -2600,12 +2724,13 @@
             if (!item) return;
 
             const loggedTimeModal = getJobLoggedTimeDisplay(item, jobType);
+            const urgency = getJobUrgencyInfo(item, jobType);
 
             document.getElementById('modalJobSummary').innerHTML = jobType === 'outage'
-                ? `<div>📌 <strong>งานที่ ${item.jobNo} (กะ ${item.shift})</strong> วันที่ ${item.reportDate} <span class="text-amber-700 font-bold">(⏰ ลงข้อมูล ${loggedTimeModal})</span></div>
-                   <div>⚡ อาการรับแจ้ง: ${item.issueType}</div>
+                ? `<div>${urgency.dot} <strong>งานที่ ${item.jobNo} (กะ ${item.shift})</strong> วันที่ ${item.reportDate} <span class="text-amber-700 font-bold">(⏰ ลงข้อมูล ${loggedTimeModal})</span></div>
+                   <div>⚡ อาการรับแจ้ง: ${item.issueType} <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${urgency.tagClass}">${urgency.dot} ${urgency.label}</span></div>
                    <div>🏠 บริเวณ/ที่อยู่: ${item.area} (${item.address})</div>`
-                : `<div>📌 <strong>วงจร ${item.circuit} สถานี${item.station}</strong> เวลา ${item.time}</div>
+                : `<div>${urgency.dot} <strong>วงจร ${item.circuit} สถานี${item.station}</strong> เวลา ${item.time}</div>
                    <div>🚨 เหตุ: ${item.cause} เฟส ${item.phase}</div>`;
 
             const statusSelect = document.getElementById('techStatusInput');
@@ -2632,6 +2757,7 @@
 
             document.getElementById('inspectModal').classList.remove('hidden');
         }
+
         function closeInspectModal() {
             document.getElementById('inspectModal').classList.add('hidden');
         }
@@ -2734,9 +2860,10 @@
                 saveClosedReportsRegistry(closedMap);
             }
 
+            const urgency = getJobUrgencyInfo(item, currentEditingJobType);
             const jobHeaderLine = currentEditingJobType === 'outage'
-                ? `📋 งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'}`
-                : `📋 วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+                ? `${urgency.dot} งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'} (${item.issueType || '-'})`
+                : `${urgency.dot} วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
 
             const gpsLineText = fieldGps ? `\n📍 พิกัดหน้างาน : ${fieldGps}` : '';
             const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${jobHeaderLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}${gpsLineText}`;
@@ -2752,12 +2879,12 @@
                 copyTechText(techOnlyText, `✅ บันทึกและกำลังเปิดแอป LINE...`);
                 window.open('https://line.me/R/share?text=' + encodeURIComponent(techOnlyText), '_blank');
             } else {
-                copyTechText(techOnlyText, `✅ บันทึกและคัดลอกผลตรวจสอบ (${jobHeaderLine.replace('📋 ', '')}) แล้ว!`);
+                copyTechText(techOnlyText, `✅ บันทึกและคัดลอกผลตรวจสอบ (${jobHeaderLine}) แล้ว!`);
             }
 
             await pushAllJobsToCloud();
         }
-
+        
         function startVoice(inputId) {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SR) { showToast("เบราว์เซอร์ไม่รองรับสั่งงานด้วยเสียง"); return; }
