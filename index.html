@@ -10642,5 +10642,179 @@
             }
         })();
     </script>
+    <!-- 🔄 ระบบเปลี่ยน "กะ" อัตโนมัติ และรีเซ็ต "งานที่ = 1" เฉพาะหลังเปลี่ยนกะเท่านั้น (ฉบับสมบูรณ์ 100%) -->
+    <script>
+        (function() {
+            const LAST_SHIFT_STATE_KEY = 'elec_last_shift_state'; // เก็บรูปแบบ "วว/ดด/ปปปป_Sกะ"
+            const RESET_LOCK_KEY = 'elec_shift_job_reset_lock';
+            let isManualShiftOverride = false;
+
+            // คำนวณกะและวันที่ตามเวลาจริง (กะ 1: 00.30-08.30, กะ 2: 08.30-16.30, กะ 3: 16.30-00.30)
+            function getRealTimeShiftAndDate() {
+                const now = new Date();
+                const totalMinutes = now.getHours() * 60 + now.getMinutes();
+
+                let shiftStr = "3";
+                if (totalMinutes >= 30 && totalMinutes < 510) {
+                    shiftStr = "1";
+                } else if (totalMinutes >= 510 && totalMinutes < 990) {
+                    shiftStr = "2";
+                }
+
+                const day = String(now.getDate()).padStart(2, '0');
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const year = now.getFullYear() + 543;
+                const dateStr = `${day}/${month}/${year}`;
+
+                // สำหรับกะ 3 ช่วงหลังเที่ยงคืน (00.00 - 00.29 น.) ให้ถือเป็นรอบกะ 3 เดียวกับก่อนเที่ยงคืน
+                const cycleDate = new Date(now);
+                if (totalMinutes < 30) {
+                    cycleDate.setDate(cycleDate.getDate() - 1);
+                }
+                const cDay = String(cycleDate.getDate()).padStart(2, '0');
+                const cMonth = String(cycleDate.getMonth() + 1).padStart(2, '0');
+                const cYear = cycleDate.getFullYear() + 543;
+                const shiftStateId = `${cDay}/${cMonth}/${cYear}_S${shiftStr}`;
+
+                return { shiftStr, dateStr, shiftStateId };
+            }
+
+            // บังคับเปลี่ยนกะและรีเซ็ต งานที่ = 1 เท่านั้น
+            function applyShiftChangeReset(shiftStr, dateStr, shiftStateId, showAlert = true) {
+                const shiftEl = document.getElementById('shift');
+                const dateEl = document.getElementById('reportDate');
+                const jobNoEl = document.getElementById('jobNo');
+
+                if (dateEl && dateStr) dateEl.value = dateStr;
+                if (shiftEl && shiftStr) shiftEl.value = shiftStr;
+                if (jobNoEl) jobNoEl.value = 1;
+
+                isManualShiftOverride = false;
+                localStorage.setItem(LAST_SHIFT_STATE_KEY, shiftStateId);
+                localStorage.setItem(RESET_LOCK_KEY, 'true');
+
+                if (typeof saveOutageDraft === 'function') saveOutageDraft();
+                if (showAlert && typeof showToast === 'function') {
+                    showToast(`🔄 เปลี่ยนเป็น กะ ${shiftStr} (รีเซ็ตเริ่ม งานที่ 1)`);
+                }
+            }
+
+            // ตรวจสอบการเปลี่ยนกะตามเวลาจริงโดยไม่ต้องรีเฟรชหน้าจอ
+            function checkShiftTransition(isInitialLoad = false) {
+                const shiftEl = document.getElementById('shift');
+                const dateEl = document.getElementById('reportDate');
+                const jobNoEl = document.getElementById('jobNo');
+                if (!shiftEl || !dateEl || !jobNoEl) return;
+
+                // ข้ามหากกำลังอยู่ในโหมดแก้ไขประวัติเก่า หรือผู้ใช้กำลังพิมพ์ในช่องกะ/งานที่
+                if (typeof editingOutageId !== 'undefined' && editingOutageId) return;
+                if (document.activeElement === shiftEl || document.activeElement === jobNoEl) return;
+
+                const { shiftStr, dateStr, shiftStateId } = getRealTimeShiftAndDate();
+                const lastStateId = localStorage.getItem(LAST_SHIFT_STATE_KEY);
+                const prevDateVal = String(dateEl.value || '').trim();
+                const prevShiftVal = String(shiftEl.value || '').trim();
+
+                // กรณีเปิดใช้งานครั้งแรกสุด เช็กว่ากะหรือวันที่ค้างจาก Draft ต่างจากเวลาจริงหรือไม่
+                if (!lastStateId) {
+                    localStorage.setItem(LAST_SHIFT_STATE_KEY, shiftStateId);
+                    if (prevShiftVal !== shiftStr || (prevDateVal && prevDateVal !== dateStr)) {
+                        applyShiftChangeReset(shiftStr, dateStr, shiftStateId, false);
+                    } else if (dateEl.value !== dateStr) {
+                        dateEl.value = dateStr;
+                    }
+                    return;
+                }
+
+                // เมื่อเวลาจริงตัดเข้าสู่รอบกะใหม่ -> เปลี่ยนกะและรีเซ็ต "งานที่ = 1" ทันที
+                if (lastStateId !== shiftStateId) {
+                    applyShiftChangeReset(shiftStr, dateStr, shiftStateId, !isInitialLoad);
+                    return;
+                }
+
+                // อัปเดตวันที่แจ้งให้ตรงกับวันปัจจุบันเสมอ
+                if (dateEl.value !== dateStr) {
+                    dateEl.value = dateStr;
+                }
+
+                // หากยังอยู่ในสถานะล็อกเลข 1 หลังเปลี่ยนกะ (ยังไม่ได้บันทึกงานแรก) ให้คงค่าเลข 1 ไว้
+                if (localStorage.getItem(RESET_LOCK_KEY) === 'true') {
+                    if (!isManualShiftOverride && shiftEl.value !== shiftStr) {
+                        shiftEl.value = shiftStr;
+                    }
+                    if (String(jobNoEl.value) !== '1') {
+                        jobNoEl.value = 1;
+                    }
+                }
+            }
+
+            window.addEventListener('DOMContentLoaded', () => {
+                const shiftEl = document.getElementById('shift');
+                const jobNoEl = document.getElementById('jobNo');
+
+                // 1. ล็อก autoFillJobNo ไม่ให้เปลี่ยนเลขงานเป็นเลขอื่น หากเพิ่งเปลี่ยนกะใหม่
+                if (typeof window.autoFillJobNo === 'function') {
+                    const _origAutoFillJobNo = window.autoFillJobNo;
+                    window.autoFillJobNo = function(...args) {
+                        if (typeof editingOutageId !== 'undefined' && editingOutageId) return;
+                        if (localStorage.getItem(RESET_LOCK_KEY) === 'true') {
+                            if (jobNoEl) jobNoEl.value = 1;
+                            return;
+                        }
+                        return _origAutoFillJobNo.apply(this, args);
+                    };
+                }
+
+                // 2. หากผู้ใช้เปลี่ยนเลข "กะ" ด้วยตัวเอง ให้รีเซ็ต "งานที่ = 1" ทันที และไม่เด้งเลขกะกลับจนกว่าจะตัดรอบกะจริง
+                if (shiftEl) {
+                    shiftEl.removeAttribute('onchange');
+                    shiftEl.removeAttribute('oninput');
+                    shiftEl.addEventListener('input', (e) => {
+                        if (e.isTrusted && shiftEl.value) {
+                            const { shiftStateId } = getRealTimeShiftAndDate();
+                            isManualShiftOverride = true;
+                            if (jobNoEl) jobNoEl.value = 1;
+                            localStorage.setItem(LAST_SHIFT_STATE_KEY, shiftStateId);
+                            localStorage.setItem(RESET_LOCK_KEY, 'true');
+                            if (typeof saveOutageDraft === 'function') saveOutageDraft();
+                        }
+                    });
+                }
+
+                // 3. หากผู้ใช้พิมพ์เปลี่ยนช่อง "งานที่" เองโดยตรง ให้ปลดล็อกเพื่อใช้เลขที่พิมพ์เอง
+                if (jobNoEl) {
+                    jobNoEl.addEventListener('input', (e) => {
+                        if (e.isTrusted && jobNoEl.value) {
+                            localStorage.removeItem(RESET_LOCK_KEY);
+                        }
+                    });
+                }
+
+                // 4. ปลดล็อกเลข 1 เมื่อมีการบันทึก "งานใหม่" ครั้งแรกของกะเสร็จสิ้น
+                if (typeof window.saveOutageData === 'function') {
+                    const _origSaveOutageData = window.saveOutageData;
+                    window.saveOutageData = function(...args) {
+                        const wasEditingOldItem = Boolean(typeof editingOutageId !== 'undefined' && editingOutageId);
+                        if (!wasEditingOldItem) {
+                            localStorage.removeItem(RESET_LOCK_KEY);
+                            isManualShiftOverride = false;
+                        }
+                        return _origSaveOutageData.apply(this, args);
+                    };
+                }
+
+                // รันตรวจสอบทันทีหลัง restoreOutageDraft ทำงานเสร็จ และเช็กซ้ำทุกๆ 5 วินาที
+                setTimeout(() => checkShiftTransition(true), 60);
+                setInterval(() => {
+                    if (!document.hidden) checkShiftTransition(false);
+                }, 5000);
+
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) checkShiftTransition(false);
+                });
+                window.addEventListener('focus', () => checkShiftTransition(false));
+            });
+        })();
+    </script>
 </body>
 </html>
