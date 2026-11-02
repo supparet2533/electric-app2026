@@ -9817,7 +9817,7 @@
             };
         })();
     </script>
-    <!-- 📋 ระบบวางข้อมูลผู้ใช้ไฟกรอกอัตโนมัติ + ย้ายปุ่มฐานข้อมูล CA + ตรวจจับเลข 02 นำหน้า 12 หลัก (รุ่นสมบูรณ์ 100%) -->
+    <!-- 📋 ระบบวางข้อมูลผู้ใช้ไฟกรอกอัตโนมัติ + ย้ายปุ่มฐานข้อมูล CA + ตรวจจับเลข 02 นำหน้า + ดึงและลบ GoogleMap:https://... ออกจากช่องที่อยู่ -->
     <script>
         (function() {
             const STRIP_WORDS_STORAGE_KEY = 'elec_paste_strip_words';
@@ -9889,6 +9889,33 @@
                 if (!badge) return;
                 const activeRulesCount = Object.values(stripRules).filter(Boolean).length;
                 badge.textContent = stripWordsList.length + activeRulesCount;
+            }
+
+            // ==========================================
+            // 📌 ฟังก์ชันดึงลิงก์ GoogleMap:https://... ไปใส่ช่อง GPS และลบออกจากข้อความที่อยู่ทันที
+            // ==========================================
+            function extractAndRemoveGoogleMapLinks(rawStr) {
+                if (!rawStr) return { cleanedText: '', extractedUrl: '' };
+                let cleaned = String(rawStr);
+                let foundUrl = '';
+
+                // จับทั้งคำนำหน้า (เช่น GoogleMap:, Google Maps:, พิกัด:, แผนที่:) และตัวลิงก์ URL
+                const fullMapPattern = /(?:(?:📌|📍)\s*)?(?:(?:Google\s*Maps?|Maps?|แผนที่|พิกัด(?:\s*GPS)?|GPS(?:\s*Link)?)\s*[:：=]?\s*)*(https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(?:www\.)?google\.[a-z.]+\/maps)[^\s"'<>]+)/gi;
+
+                cleaned = cleaned.replace(fullMapPattern, function(fullMatch, urlPart) {
+                    if (!foundUrl && urlPart) {
+                        foundUrl = urlPart.trim();
+                    }
+                    return ''; // ลบทั้งคำว่า GoogleMap: และตัวลิงก์ออกทั้งหมด
+                });
+
+                // ลบคำว่า GoogleMap: หรือ Google Maps: ที่อาจตกค้างอยู่ลอยๆ
+                cleaned = cleaned.replace(/(?:📌|📍)?\s*(?:Google\s*Maps?)\s*[:：=]?/gi, '');
+
+                return {
+                    cleanedText: cleaned,
+                    extractedUrl: foundUrl
+                };
             }
 
             // ==========================================
@@ -10010,15 +10037,33 @@
                     });
                 }
 
+                // ดักจับในช่อง "ที่อยู่" (#address) ด้วย หากมีข้อความ GoogleMap:https://... ค้างหรือถูกวางในช่องที่อยู่ ให้ย้ายไปช่อง GPS และลบออกจากช่องที่อยู่ทันที
                 const addressEl = document.getElementById('address');
                 if (addressEl) {
                     addressEl.addEventListener('input', function() {
+                        const res = extractAndRemoveGoogleMapLinks(this.value);
+                        if (res.extractedUrl) {
+                            const gpsEl = document.getElementById('gps');
+                            if (gpsEl) {
+                                gpsEl.value = res.extractedUrl;
+                                gpsEl.dispatchEvent(new Event('input'));
+                            }
+                            this.value = res.cleanedText
+                                .split(/\r?\n/)
+                                .map(l => l.trim())
+                                .filter(Boolean)
+                                .join('\n');
+                            this.style.height = 'auto';
+                            this.style.height = this.scrollHeight + 'px';
+                            if (typeof showToast === 'function') {
+                                showToast("📌 ย้ายลิงก์ GoogleMap ไปช่องพิกัดและลบออกจากช่องที่อยู่แล้ว");
+                            }
+                        }
                         setTimeout(() => checkCaOverdueEnhanced(false), 15);
                     });
                 }
 
                 updateStripWordsCountBadge();
-                // ตรวจสอบ CA ค้างจ่ายจากข้อมูลร่าง (Draft) ที่ค้างอยู่ในช่องที่อยู่เมื่อเปิดหน้าเว็บ
                 setTimeout(() => checkCaOverdueEnhanced(true), 200);
             }
 
@@ -10252,23 +10297,28 @@
                 return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             }
 
-            // ตรวจสอบว่าคำใน stripWordsList เป็นหัวข้อโครงสร้างหลักที่ไม่ควรลบทั้งบรรทัดหรือไม่
             function isProtectedStructuralKeyword(word) {
-                return /^(?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่|มิเตอร์|PEA\s*No|CA|เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|พิกัด)\s*[:：=]?$/i.test(word.trim());
+                return /^(?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่|มิเตอร์|PEA\s*No|CA|เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|พิกัด|Google\s*Maps?|แผนที่)\s*[:：=]?$/i.test(word.trim());
             }
 
-            // 3. ฟังก์ชันหลัก: รวมบรรทัดหลัง : + ตรวจจับ CA/เลข 02 นำหน้า + ตัดชื่อคน + กรอกลงช่องอัตโนมัติ
+            // 3. ฟังก์ชันหลัก: ดึงและลบ GoogleMap:https://... ทันที + ตัดชื่อคน + เรียงบ้านเลขที่ขึ้นก่อน
             window.processCustomerPasteData = function(rawText) {
                 if (!rawText || !rawText.trim()) return;
 
                 let text = String(rawText);
                 const wholeLineMode = isStripWholeLineMode();
 
-                // ขั้นตอนที่ 1: ดึงบรรทัดถัดไปที่อยู่ใต้เครื่องหมาย : ขึ้นมารวมกับหัวข้อ
-                text = text.replace(/([:：])\s*\r?\n+\s*(?![^\n]*?(?:มิเตอร์|PEA\s*No|CA\s*[:：]|ชื่อผู้ใช้ไฟ|ที่อยู่|เบอร์โทร|พิกัด|Lat\s*:))/gi, '$1 ');
+                // ขั้นตอนที่ 1: ดึงและลบข้อความ "GoogleMap:https://maps.google.com/?q=..." ออกจากข้อความทั้งหมดเป็นอันดับแรก
+                // เพื่อไม่ให้ติดไปอยู่ในบรรทัดที่อยู่เด็ดขาด
+                const mapExtractResult = extractAndRemoveGoogleMapLinks(text);
+                text = mapExtractResult.cleanedText;
+                let extractedGps = mapExtractResult.extractedUrl;
+
+                // ขั้นตอนที่ 2: ดึงบรรทัดถัดไปที่อยู่ใต้เครื่องหมาย : ขึ้นมารวมกับหัวข้อ
+                text = text.replace(/([:：])\s*\r?\n+\s*(?![^\n]*?(?:มิเตอร์|PEA\s*No|CA\s*[:：]|ชื่อผู้ใช้ไฟ|ที่อยู่|เบอร์โทร|พิกัด|Google\s*Maps?|Lat\s*:))/gi, '$1 ');
                 text = text.replace(/^(\s*(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|เบอร์โทร(?:ศัพท์)?|ที่อยู่)\s*)\r?\n+\s*/gim, '$1 : ');
 
-                // ขั้นตอนที่ 2: แยกหัวข้อที่อยู่ติดกันในบรรทัดเดียว (รวมถึงเลข 12 หลักที่ขึ้นต้นด้วย 02 แม้ไม่มีคำว่า CA นำหน้า)
+                // ขั้นตอนที่ 3: แยกหัวข้อที่อยู่ติดกันในบรรทัดเดียวให้ขึ้นบรรทัดใหม่
                 text = text
                     .replace(/([^\n])\s+(มิเตอร์\s*-\s*PEA\s*No\.?\s*[:：=])/gi, '$1\n$2')
                     .replace(/([^\n\-])\s+(PEA\s*No\.?\s*[:：=])/gi, '$1\n$2')
@@ -10282,7 +10332,7 @@
                     .replace(/([^\n])\s+((?:ผู้ปฏิบัติงาน|ช่างผู้ปฏิบัติงาน|ผู้รับแจ้ง)\s*[:：=])/gi, '$1\n$2')
                     .replace(/([^\n])\s+(พิกัด\s*(?:\(Lat|Lat|[:：=])|Lat\s*[:：=])/gi, '$1\n$2');
 
-                // ขั้นตอนที่ 3: ตัดทั้งหัวข้อ "ชื่อผู้ใช้ไฟฟ้า :" และตัวชื่อคนออกพร้อมกันทันที
+                // ขั้นตอนที่ 4: ตัดทั้งหัวข้อ "ชื่อผู้ใช้ไฟฟ้า :" และตัวชื่อคนออกพร้อมกันทันที
                 const hasCustNameInStripList = stripWordsList.some(w => /ชื่อผู้ใช้ไฟ|ชื่อลูกค้า|ชื่อผู้แจ้ง/.test(w));
                 if (stripRules.stripCustomerName || hasCustNameInStripList) {
                     text = text.replace(/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|ชื่อ-นามสกุล|ชื่อ-สกุล)\s*[:：=]?\s*([^\n]*)$/gim, function(fullMatch, namePart) {
@@ -10291,7 +10341,7 @@
                     });
                 }
 
-                // ขั้นตอนที่ 4: ตัดคำทั่วไปใน stripWordsList (ป้องกันไม่ให้โหมดตัดทั้งบรรทัดเผลอลบบรรทัดที่เป็น ที่อยู่/CA/มิเตอร์)
+                // ขั้นตอนที่ 5: ตัดคำทั่วไปใน stripWordsList
                 stripWordsList.forEach(word => {
                     const w = (word || '').trim();
                     if (!w) return;
@@ -10311,7 +10361,7 @@
                     }
                 });
 
-                // ขั้นตอนที่ 5: หากเปิดสวิตช์ "ตัดเบอร์โทรศัพท์ออกทั้งหมด"
+                // ขั้นตอนที่ 6: หากเปิดสวิตช์ "ตัดเบอร์โทรศัพท์ออกทั้งหมด"
                 if (stripRules.stripPhoneTextAndNum) {
                     text = text.replace(/(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ|ติดต่อ|Tel\.?)\s*[:：=]?\s*[0-9\-\s,\/()]{8,}/gi, '');
                     text = text.replace(/(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ)\s*[:：=]?/gi, '');
@@ -10320,13 +10370,12 @@
                     if (phoneEl) phoneEl.value = '';
                 }
 
-                // ขั้นตอนที่ 6: หากเปิดสวิตช์ "ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด"
+                // ขั้นตอนที่ 7: หากเปิดสวิตช์ "ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด"
                 if (stripRules.stripAllDigits) {
                     text = text.replace(/\d+/g, '');
                 }
 
                 let extractedPhone = '';
-                let extractedGps = '';
                 let extractedIssue = '';
                 let extractedArea = '';
                 let extractedWorker = '';
@@ -10337,13 +10386,7 @@
                 let peaMeterLines = [];
                 let otherAddressLines = [];
 
-                // ดึงลิงก์ Google Maps หรือพิกัด GPS
-                const mapUrlMatch = text.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.com\/maps)[^\s"']+/i);
-                if (mapUrlMatch) {
-                    extractedGps = mapUrlMatch[0];
-                    text = text.replace(mapUrlMatch[0], '');
-                }
-
+                // ดึงพิกัด GPS รูปแบบตัวเลข Lat, Long
                 const latLongParenRegex = /(?:พิกัด\s*)?\(\s*Lat\s*,\s*Long?\s*\)\s*[:：=]?\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i;
                 const matchParen = text.match(latLongParenRegex);
                 if (matchParen) {
@@ -10363,8 +10406,12 @@
                 lines.forEach(line => {
                     let workingLine = line;
 
+                    if (/^(?:📌|📍)?\s*(?:Google\s*Maps?|Maps?|แผนที่|พิกัด(?:\s*GPS)?|GPS(?:\s*Link)?)\s*[:：=]?$/i.test(workingLine)) {
+                        return;
+                    }
+
                     // 1) พิกัด GPS ตัวเลขทศนิยมคู่
-                    const coordOnlyMatch = workingLine.match(/^(?:📌\s*)?(?:พิกัด(?:\s*GPS)?\s*[:：=]?\s*)?(-?\d{1,2}\.\d{4,}\s*,\s*-?\d{2,3}\.\d{4,})$/i);
+                    const coordOnlyMatch = workingLine.match(/^(?:📌\s*)?(?:(?:Google\s*Maps?|พิกัด(?:\s*GPS)?)\s*[:：=]?\s*)?(-?\d{1,2}\.\d{4,}\s*,\s*-?\d{2,3}\.\d{4,})$/i);
                     if (coordOnlyMatch) {
                         if (!extractedGps) extractedGps = coordOnlyMatch[1].trim();
                         return;
@@ -10526,14 +10573,15 @@
                     }
                 }
 
-                // เรียงบ้านเลขที่ขึ้นก่อน ตามด้วย CA และ มิเตอร์ - PEA No.
+                // เรียงบ้านเลขที่ขึ้นก่อน ตามด้วย CA และ มิเตอร์ - PEA No. พร้อมกรองลิงก์ GoogleMap ออกซ้ำอีกครั้งเพื่อความชัวร์ 100%
                 const orderedAddressParts = [
                     ...houseNumberLines,
                     ...otherAddressLines,
                     ...customerNameLines,
                     ...caLines,
                     ...peaMeterLines
-                ].filter(Boolean);
+                ].map(part => extractAndRemoveGoogleMapLinks(part).cleanedText.trim())
+                 .filter(Boolean);
 
                 const addrEl = document.getElementById('address');
                 if (addrEl) {
@@ -10545,7 +10593,7 @@
 
                 checkCaOverdueEnhanced(false);
                 if (typeof saveOutageDraft === 'function') saveOutageDraft();
-                showToast("✨ แยกข้อมูลและตรวจสอบ CA เรียบร้อยแล้ว");
+                showToast("✨ แยกข้อมูลและย้ายลิงก์พิกัดเรียบร้อยแล้ว");
             };
 
             const wrapCaModalActions = function() {
