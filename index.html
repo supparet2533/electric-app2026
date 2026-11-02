@@ -9817,5 +9817,782 @@
             };
         })();
     </script>
+    <!-- 📋 ระบบวางข้อมูลผู้ใช้ไฟกรอกอัตโนมัติ + ย้ายปุ่มฐานข้อมูล CA + ตรวจจับเลข 02 นำหน้า 12 หลัก (รุ่นสมบูรณ์ 100%) -->
+    <script>
+        (function() {
+            const STRIP_WORDS_STORAGE_KEY = 'elec_paste_strip_words';
+            const STRIP_LINE_MODE_KEY = 'elec_paste_strip_whole_line';
+            const STRIP_RULES_STORAGE_KEY = 'elec_paste_strip_rules';
+
+            const DEFAULT_STRIP_WORDS = [
+                "ข้อมูลผู้ใช้ไฟฟ้า",
+                "รายละเอียดผู้แจ้ง"
+            ];
+
+            const DEFAULT_STRIP_RULES = {
+                stripCustomerName: true,       // ตัด "ชื่อผู้ใช้ไฟฟ้า" และชื่อคน (ทั้งบรรทัดเดียวกันและคนละบรรทัด)
+                stripPhoneTextAndNum: false,   // ตัดข้อความเบอร์โทรและตัวเลขเบอร์โทรออกทั้งหมด
+                stripStandaloneNumbers: false, // ตัดตัวเลขลอยๆ ที่ไม่เกี่ยวข้องออก
+                stripAllDigits: false          // ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด
+            };
+
+            let stripWordsList = [];
+            let stripRules = { ...DEFAULT_STRIP_RULES };
+            let lastAlertedCaNumber = "";
+
+            function initStripSettings() {
+                const savedWords = localStorage.getItem(STRIP_WORDS_STORAGE_KEY);
+                if (savedWords) {
+                    try {
+                        const parsed = JSON.parse(savedWords);
+                        stripWordsList = Array.isArray(parsed) ? parsed : [...DEFAULT_STRIP_WORDS];
+                    } catch (e) {
+                        stripWordsList = [...DEFAULT_STRIP_WORDS];
+                    }
+                } else {
+                    stripWordsList = [...DEFAULT_STRIP_WORDS];
+                    localStorage.setItem(STRIP_WORDS_STORAGE_KEY, JSON.stringify(stripWordsList));
+                }
+
+                const savedRules = localStorage.getItem(STRIP_RULES_STORAGE_KEY);
+                if (savedRules) {
+                    try {
+                        stripRules = { ...DEFAULT_STRIP_RULES, ...JSON.parse(savedRules) };
+                    } catch (e) {
+                        stripRules = { ...DEFAULT_STRIP_RULES };
+                    }
+                } else {
+                    localStorage.setItem(STRIP_RULES_STORAGE_KEY, JSON.stringify(stripRules));
+                }
+
+                updateStripWordsCountBadge();
+            }
+
+            function saveStripWords() {
+                localStorage.setItem(STRIP_WORDS_STORAGE_KEY, JSON.stringify(stripWordsList));
+                updateStripWordsCountBadge();
+                if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
+            }
+
+            function saveStripRules() {
+                localStorage.setItem(STRIP_RULES_STORAGE_KEY, JSON.stringify(stripRules));
+                updateStripWordsCountBadge();
+                if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
+            }
+
+            function isStripWholeLineMode() {
+                return localStorage.getItem(STRIP_LINE_MODE_KEY) === 'true';
+            }
+
+            function updateStripWordsCountBadge() {
+                const badge = document.getElementById('stripWordsCountBadge');
+                if (!badge) return;
+                const activeRulesCount = Object.values(stripRules).filter(Boolean).length;
+                badge.textContent = stripWordsList.length + activeRulesCount;
+            }
+
+            // ==========================================
+            // 💳 ฟังก์ชันตรวจจับเลข CA ค้างจ่าย (รองรับทั้งมีคำว่า CA และเลข 12 หลักที่ขึ้นต้นด้วย 02)
+            // ==========================================
+            function extractAllCandidateCaNumbers(text) {
+                if (!text) return [];
+                const found = new Set();
+                const s = String(text);
+
+                // 1. กรณีมีคำว่า CA นำหน้า (ตัวเลข 12 หลัก)
+                const caPrefixRegex = /CA\s*(?:No\.?)?\s*[:：=]?\s*(\d{12})/gi;
+                for (const m of s.matchAll(caPrefixRegex)) {
+                    if (m[1]) found.add(m[1]);
+                }
+
+                // 2. กรณีไม่มีคำว่า CA นำหน้า ให้ตรวจจากตัวเลข 12 หลักที่ขึ้นต้นด้วย "02"
+                const zeroTwoRegex = /(?:^|[^\d])(02\d{10})(?!\d)/g;
+                for (const m of s.matchAll(zeroTwoRegex)) {
+                    if (m[1]) found.add(m[1]);
+                }
+
+                return Array.from(found);
+            }
+
+            window.checkCaOverdueEnhanced = function(silentAlert = false) {
+                const pasteText = document.getElementById('rawCustomerPasteInput')?.value || '';
+                const addrText = document.getElementById('address')?.value || '';
+                const combinedText = `${pasteText}\n${addrText}`;
+
+                let overdueList = [];
+                try {
+                    overdueList = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]');
+                } catch (e) {
+                    overdueList = [];
+                }
+
+                const candidates = extractAllCandidateCaNumbers(combinedText);
+                const matchedOverdueCa = candidates.find(ca => overdueList.includes(ca));
+
+                const bannerEl = document.getElementById('caOverdueBanner');
+                const bannerTextEl = document.getElementById('caOverdueText');
+
+                if (matchedOverdueCa) {
+                    if (bannerEl && bannerTextEl) {
+                        bannerTextEl.textContent = `🚨 มียอดค่าบริการค้างจ่าย (CA: ${matchedOverdueCa})`;
+                        bannerEl.classList.remove('hidden');
+                    }
+                    if (!silentAlert && lastAlertedCaNumber !== matchedOverdueCa) {
+                        lastAlertedCaNumber = matchedOverdueCa;
+                        if (typeof showCustomAlert === 'function') {
+                            showCustomAlert(`หมายเลข CA : ${matchedOverdueCa}\nมียอดค่าบริการค้างจ่ายในระบบ`, "🚨 มียอดค่าบริการค้างจ่าย");
+                        }
+                    }
+                } else {
+                    if (bannerEl) bannerEl.classList.add('hidden');
+                    lastAlertedCaNumber = "";
+                }
+            };
+
+            // 1. สร้างกล่องวางข้อมูลผู้ใช้ไฟใต้กล่องผู้ช่วย AI และจัดเรียงปุ่ม 3 ช่องพอดีกรอบ
+            function injectAutoFillPasteBox() {
+                const chatbotEl = document.getElementById('geminiChatbot');
+                if (!chatbotEl || document.getElementById('autoFillCustomerContainer')) return;
+
+                // ลบปุ่มฐานข้อมูล CA เดิมออกจากหัวข้อ "ที่อยู่"
+                const oldCaBtn = document.querySelector('[data-id="address"] button[onclick="openCaManageModal()"]');
+                if (oldCaBtn) oldCaBtn.remove();
+
+                let currentCaCount = 0;
+                try {
+                    currentCaCount = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]').length;
+                } catch (e) {}
+
+                const container = document.createElement('div');
+                container.id = 'autoFillCustomerContainer';
+                container.className = 'mb-4 p-3.5 bg-gradient-to-br from-blue-50/90 to-indigo-50/90 border border-blue-200 rounded-xl shadow-sm space-y-2.5 overflow-hidden';
+                container.innerHTML = `
+                    <div class="space-y-2 w-full overflow-hidden">
+                        <label for="rawCustomerPasteInput" class="block text-xs sm:text-sm font-bold text-blue-900 leading-snug">
+                            📋 วางข้อมูลผู้ใช้ไฟทั้งหมดในช่องนี้ระบบจะกรอกอัตโนมัติ
+                        </label>
+                        <div class="grid grid-cols-3 gap-1.5 w-full">
+                            <button type="button" onclick="openCaManageModal()" class="w-full text-[11px] text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-1.5 py-1.5 rounded-lg font-semibold transition shadow-sm flex items-center justify-center gap-1 truncate" title="จัดการฐานข้อมูล CA ค้างจ่าย (12 หลัก)">
+                                💳 <span class="truncate">ฐานข้อมูล CA (<span id="caCountBadge">${currentCaCount}</span>)</span>
+                            </button>
+                            <button type="button" onclick="openStripWordsModal()" class="w-full text-[11px] bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-1.5 rounded-lg font-semibold shadow-sm transition flex items-center justify-center gap-1 truncate" title="ตั้งค่าคำที่ต้องการตัดออกเมื่อวางข้อมูล">
+                                ✂️ <span class="truncate">ตั้งค่าตัดคำ (<span id="stripWordsCountBadge">0</span>)</span>
+                            </button>
+                            <button type="button" onclick="clearAutoFillPasteBox(true)" class="w-full text-[11px] bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-1.5 rounded-lg font-semibold shadow-sm transition flex items-center justify-center gap-1 truncate" title="ล้างข้อความในช่องนี้">
+                                🧹 <span class="truncate">ล้างช่องนี้</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="relative">
+                        <textarea id="rawCustomerPasteInput" rows="3" 
+                            class="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"
+                            placeholder="วางข้อมูลผู้ใช้ไฟทั้งหมดที่นี่ (ตรวจจับ CA ค้างจ่ายทั้งแบบมีคำว่า CA: และเลข 12 หลักที่ขึ้นต้นด้วย 02 อัตโนมัติ)..."></textarea>
+                    </div>
+                    <div id="autoFillCaBannerSlot"></div>
+                `;
+
+                chatbotEl.insertAdjacentElement('afterend', container);
+
+                // ย้ายแถบแจ้งเตือนยอดค้างจ่าย (#caOverdueBanner) มาแสดงในกล่องวางข้อมูลอัตโนมัติ
+                const existingBanner = document.getElementById('caOverdueBanner');
+                const bannerSlot = document.getElementById('autoFillCaBannerSlot');
+                if (existingBanner && bannerSlot) {
+                    bannerSlot.appendChild(existingBanner);
+                }
+
+                const pasteInput = document.getElementById('rawCustomerPasteInput');
+                if (pasteInput) {
+                    pasteInput.addEventListener('input', function() {
+                        this.style.height = 'auto';
+                        this.style.height = Math.max(76, this.scrollHeight) + 'px';
+                        processCustomerPasteData(this.value);
+                        checkCaOverdueEnhanced(false);
+                    });
+                }
+
+                const addressEl = document.getElementById('address');
+                if (addressEl) {
+                    addressEl.addEventListener('input', function() {
+                        setTimeout(() => checkCaOverdueEnhanced(false), 15);
+                    });
+                }
+
+                updateStripWordsCountBadge();
+                // ตรวจสอบ CA ค้างจ่ายจากข้อมูลร่าง (Draft) ที่ค้างอยู่ในช่องที่อยู่เมื่อเปิดหน้าเว็บ
+                setTimeout(() => checkCaOverdueEnhanced(true), 200);
+            }
+
+            // 2. หน้าต่าง Modal ตั้งค่าตัดคำ + สวิตช์ตัดชื่อผู้ใช้ไฟ/เบอร์โทร/ตัวเลข
+            function ensureStripWordsModal() {
+                let modal = document.getElementById('stripWordsModal');
+                if (modal) return modal;
+
+                modal = document.createElement('div');
+                modal.id = 'stripWordsModal';
+                modal.className = 'fixed inset-0 bg-slate-900/55 hidden z-[175] flex items-center justify-center p-4 backdrop-blur-sm transition-opacity';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
+                        <div class="px-4 py-3 border-b flex justify-between items-center bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
+                            <h3 class="font-bold text-sm flex items-center gap-2">✂️ ตั้งค่าตัดข้อความออกอัตโนมัติ</h3>
+                            <button type="button" onclick="closeStripWordsModal()" class="text-blue-100 hover:text-white text-xl font-bold leading-none">&times;</button>
+                        </div>
+
+                        <div class="p-3.5 bg-white border-b space-y-2.5 overflow-y-auto">
+                            <div class="p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+                                <div class="text-[11px] font-bold text-indigo-900">⚡ ตัวเลือกตัดข้อมูลอัตโนมัติ (รองรับชื่อ/ข้อมูลที่อยู่คนละบรรทัด)</div>
+                                
+                                <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                                    <input type="checkbox" id="ruleStripCustName" onchange="onChangeStripRule('stripCustomerName', this.checked)" class="mt-0.5 w-4 h-4 accent-indigo-600 rounded cursor-pointer">
+                                    <span><b>ตัด "ชื่อผู้ใช้ไฟฟ้า" และชื่อคนออก</b> <span class="text-[10px] text-slate-500 block">(ลบทั้งหัวข้อและชื่อคน แม้ชื่อจะตกลงไปอยู่อีกบรรทัด)</span></span>
+                                </label>
+
+                                <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                                    <input type="checkbox" id="ruleStripPhone" onchange="onChangeStripRule('stripPhoneTextAndNum', this.checked)" class="mt-0.5 w-4 h-4 accent-indigo-600 rounded cursor-pointer">
+                                    <span><b>ตัดข้อความเบอร์โทรและตัวเลขเบอร์โทรออก</b> <span class="text-[10px] text-slate-500 block">(ลบคำว่า เบอร์โทร/โทร และหมายเลข 08x-xxx-xxxx ทิ้งทั้งหมด)</span></span>
+                                </label>
+
+                                <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                                    <input type="checkbox" id="ruleStripStandaloneNum" onchange="onChangeStripRule('stripStandaloneNumbers', this.checked)" class="mt-0.5 w-4 h-4 accent-indigo-600 rounded cursor-pointer">
+                                    <span><b>ตัดตัวเลขลอยๆ ที่ไม่เกี่ยวข้องออก</b> <span class="text-[10px] text-slate-500 block">(ยังเก็บ บ้านเลขที่, หมู่, CA, มิเตอร์ PEA No. ไว้ตามปกติ)</span></span>
+                                </label>
+
+                                <label class="flex items-start gap-2 text-xs text-rose-700 cursor-pointer select-none">
+                                    <input type="checkbox" id="ruleStripAllDigits" onchange="onChangeStripRule('stripAllDigits', this.checked)" class="mt-0.5 w-4 h-4 accent-rose-600 rounded cursor-pointer">
+                                    <span><b>ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด</b></span>
+                                </label>
+                            </div>
+
+                            <div class="pt-1">
+                                <div class="text-[11px] font-bold text-slate-700 mb-1">➕ เพิ่มคำที่ต้องการตัดออกเพิ่มเติม</div>
+                                <div class="flex gap-2">
+                                    <input type="text" id="newStripWordInput" placeholder="พิมพ์คำที่ต้องการตัดออก..." 
+                                        onkeypress="if(event.key === 'Enter') addStripWordItem()"
+                                        class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <button type="button" onclick="addStripWordItem()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm transition shrink-0">
+                                        เพิ่มคำ
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-between pt-1">
+                                <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer select-none">
+                                    <input type="checkbox" id="stripWholeLineToggle" onchange="toggleStripWholeLineMode(this.checked)" class="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer">
+                                    <span>ตัดออกทั้งบรรทัดหากพบคำในรายการด้านล่าง</span>
+                                </label>
+                                <input type="text" id="searchStripWordInput" oninput="renderStripWordsList()" placeholder="🔍 ค้นหาคำ..." class="w-32 px-2.5 py-1 border border-slate-200 rounded-lg text-[11px] bg-slate-50 focus:outline-none">
+                            </div>
+                        </div>
+
+                        <div id="stripWordsListContainer" class="p-3.5 flex-1 overflow-y-auto space-y-1.5 bg-slate-50 min-h-[120px]"></div>
+
+                        <div class="p-3 border-t bg-white flex justify-between items-center">
+                            <button type="button" onclick="clearAllStripWords()" class="text-xs text-rose-600 hover:underline font-semibold">🗑️ ล้างคำทั้งหมด</button>
+                            <button type="button" onclick="closeStripWordsModal()" class="px-4 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition">ปิดหน้าต่าง</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                return modal;
+            }
+
+            window.openStripWordsModal = function() {
+                const modal = ensureStripWordsModal();
+                const toggleEl = document.getElementById('stripWholeLineToggle');
+                if (toggleEl) toggleEl.checked = isStripWholeLineMode();
+
+                const rCust = document.getElementById('ruleStripCustName');
+                const rPhone = document.getElementById('ruleStripPhone');
+                const rStandNum = document.getElementById('ruleStripStandaloneNum');
+                const rAllDig = document.getElementById('ruleStripAllDigits');
+
+                if (rCust) rCust.checked = !!stripRules.stripCustomerName;
+                if (rPhone) rPhone.checked = !!stripRules.stripPhoneTextAndNum;
+                if (rStandNum) rStandNum.checked = !!stripRules.stripStandaloneNumbers;
+                if (rAllDig) rAllDig.checked = !!stripRules.stripAllDigits;
+
+                renderStripWordsList();
+                modal.classList.remove('hidden');
+            };
+
+            window.closeStripWordsModal = function() {
+                const modal = document.getElementById('stripWordsModal');
+                if (modal) modal.classList.add('hidden');
+            };
+
+            window.onChangeStripRule = function(ruleKey, isChecked) {
+                stripRules[ruleKey] = !!isChecked;
+                saveStripRules();
+
+                const rawInput = document.getElementById('rawCustomerPasteInput');
+                if (rawInput && rawInput.value.trim()) {
+                    processCustomerPasteData(rawInput.value);
+                    checkCaOverdueEnhanced(false);
+                }
+                showToast("✅ อัปเดตเงื่อนไขการตัดข้อมูลแล้ว");
+            };
+
+            window.toggleStripWholeLineMode = function(checked) {
+                localStorage.setItem(STRIP_LINE_MODE_KEY, checked ? 'true' : 'false');
+                const rawInput = document.getElementById('rawCustomerPasteInput');
+                if (rawInput && rawInput.value.trim()) {
+                    processCustomerPasteData(rawInput.value);
+                    checkCaOverdueEnhanced(false);
+                }
+                showToast(checked ? "✂️ ตั้งค่า: ตัดออกทั้งบรรทัดเมื่อพบคำ" : "✂️ ตั้งค่า: ตัดเฉพาะคำที่ตรงกัน");
+            };
+
+            window.addStripWordItem = function() {
+                const input = document.getElementById('newStripWordInput');
+                const val = (input?.value || '').trim();
+                if (!val) {
+                    showToast("⚠️ กรุณาพิมพ์คำที่ต้องการตัดออก");
+                    return;
+                }
+                if (stripWordsList.includes(val)) {
+                    showToast("⚠️ มีคำนี้อยู่ในรายการแล้ว");
+                    return;
+                }
+                stripWordsList.unshift(val);
+                saveStripWords();
+                renderStripWordsList();
+                input.value = '';
+                showToast(`✅ เพิ่มคำตัดออก "${val}" แล้ว`);
+
+                const rawInput = document.getElementById('rawCustomerPasteInput');
+                if (rawInput && rawInput.value.trim()) {
+                    processCustomerPasteData(rawInput.value);
+                    checkCaOverdueEnhanced(false);
+                }
+            };
+
+            window.deleteStripWordItem = function(index) {
+                const removed = stripWordsList.splice(index, 1);
+                saveStripWords();
+                renderStripWordsList();
+                showToast(`🗑️ ลบคำว่า "${removed[0] || ''}" แล้ว`);
+
+                const rawInput = document.getElementById('rawCustomerPasteInput');
+                if (rawInput && rawInput.value.trim()) {
+                    processCustomerPasteData(rawInput.value);
+                    checkCaOverdueEnhanced(false);
+                }
+            };
+
+            window.editStripWordItem = function(index) {
+                const oldVal = stripWordsList[index];
+                if (oldVal === undefined) return;
+                showCustomPrompt("แก้ไขคำที่ต้องการตัดออก:", oldVal, function(newVal) {
+                    const trimmed = (newVal || '').trim();
+                    if (trimmed && trimmed !== oldVal) {
+                        stripWordsList[index] = trimmed;
+                        saveStripWords();
+                        renderStripWordsList();
+                        showToast("✅ แก้ไขคำตัดออกเรียบร้อย");
+
+                        const rawInput = document.getElementById('rawCustomerPasteInput');
+                        if (rawInput && rawInput.value.trim()) {
+                            processCustomerPasteData(rawInput.value);
+                            checkCaOverdueEnhanced(false);
+                        }
+                    }
+                }, "✏️ แก้ไขคำตัดออก");
+            };
+
+            window.clearAllStripWords = function() {
+                showCustomConfirm("ต้องการล้างคำตัดออกทั้งหมดใช่หรือไม่?", function() {
+                    stripWordsList = [];
+                    saveStripWords();
+                    renderStripWordsList();
+                    showToast("🗑️ ล้างรายการคำตัดออกทั้งหมดแล้ว");
+                }, "✂️ ยืนยันการล้างรายการคำตัดออก");
+            };
+
+            window.renderStripWordsList = function() {
+                const container = document.getElementById('stripWordsListContainer');
+                const searchQ = (document.getElementById('searchStripWordInput')?.value || '').toLowerCase().trim();
+                if (!container) return;
+
+                const indexed = stripWordsList.map((w, idx) => ({ word: w, idx }))
+                    .filter(item => !searchQ || item.word.toLowerCase().includes(searchQ));
+
+                if (indexed.length === 0) {
+                    container.innerHTML = `<div class="text-center text-slate-400 text-xs py-6">ไม่มีรายการคำตัดออก</div>`;
+                    return;
+                }
+
+                container.innerHTML = '';
+                indexed.forEach(({ word, idx }) => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm text-xs';
+                    const safeWord = word.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    div.innerHTML = `
+                        <span class="font-medium text-slate-700 break-all pr-2">✂️ "${safeWord}"</span>
+                        <div class="flex gap-1 shrink-0">
+                            <button type="button" onclick="editStripWordItem(${idx})" class="text-amber-600 hover:bg-amber-50 px-2 py-1 rounded border border-amber-100 transition">✏️ แก้ไข</button>
+                            <button type="button" onclick="deleteStripWordItem(${idx})" class="text-rose-600 hover:bg-rose-50 px-2 py-1 rounded border border-rose-100 transition">🗑️ ลบ</button>
+                        </div>
+                    `;
+                    container.appendChild(div);
+                });
+            };
+
+            window.clearAutoFillPasteBox = function(showNotification = false) {
+                const pasteInput = document.getElementById('rawCustomerPasteInput');
+                if (pasteInput) {
+                    pasteInput.value = '';
+                    pasteInput.style.height = 'auto';
+                }
+                checkCaOverdueEnhanced(true);
+                if (showNotification && typeof showToast === 'function') {
+                    showToast("🧹 ล้างช่องวางข้อมูลอัตโนมัติแล้ว");
+                }
+            };
+
+            function escapeRegExp(str) {
+                return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            // ตรวจสอบว่าคำใน stripWordsList เป็นหัวข้อโครงสร้างหลักที่ไม่ควรลบทั้งบรรทัดหรือไม่
+            function isProtectedStructuralKeyword(word) {
+                return /^(?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่|มิเตอร์|PEA\s*No|CA|เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|พิกัด)\s*[:：=]?$/i.test(word.trim());
+            }
+
+            // 3. ฟังก์ชันหลัก: รวมบรรทัดหลัง : + ตรวจจับ CA/เลข 02 นำหน้า + ตัดชื่อคน + กรอกลงช่องอัตโนมัติ
+            window.processCustomerPasteData = function(rawText) {
+                if (!rawText || !rawText.trim()) return;
+
+                let text = String(rawText);
+                const wholeLineMode = isStripWholeLineMode();
+
+                // ขั้นตอนที่ 1: ดึงบรรทัดถัดไปที่อยู่ใต้เครื่องหมาย : ขึ้นมารวมกับหัวข้อ
+                text = text.replace(/([:：])\s*\r?\n+\s*(?![^\n]*?(?:มิเตอร์|PEA\s*No|CA\s*[:：]|ชื่อผู้ใช้ไฟ|ที่อยู่|เบอร์โทร|พิกัด|Lat\s*:))/gi, '$1 ');
+                text = text.replace(/^(\s*(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|เบอร์โทร(?:ศัพท์)?|ที่อยู่)\s*)\r?\n+\s*/gim, '$1 : ');
+
+                // ขั้นตอนที่ 2: แยกหัวข้อที่อยู่ติดกันในบรรทัดเดียว (รวมถึงเลข 12 หลักที่ขึ้นต้นด้วย 02 แม้ไม่มีคำว่า CA นำหน้า)
+                text = text
+                    .replace(/([^\n])\s+(มิเตอร์\s*-\s*PEA\s*No\.?\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n\-])\s+(PEA\s*No\.?\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+((?:หมายเลขผู้ใช้ไฟ(?:ฟ้า)?\s*\(?CA\)?|CA\s*(?:No\.?)?)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n:：=])\s+\b(02\d{10})\b/g, '$1\n$2')
+                    .replace(/([^\n])\s+((?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+((?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+((?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|ติดต่อ)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+((?:ลักษณะอาการ|อาการ(?:เสีย|ขัดข้อง)?|สาเหตุที่แจ้ง)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+((?:บริเวณ(?:ที่เกิดเหตุ)?|สถานที่เกิดเหตุ|จุดเกิดเหตุ|จุดสังเกต)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+((?:ผู้ปฏิบัติงาน|ช่างผู้ปฏิบัติงาน|ผู้รับแจ้ง)\s*[:：=])/gi, '$1\n$2')
+                    .replace(/([^\n])\s+(พิกัด\s*(?:\(Lat|Lat|[:：=])|Lat\s*[:：=])/gi, '$1\n$2');
+
+                // ขั้นตอนที่ 3: ตัดทั้งหัวข้อ "ชื่อผู้ใช้ไฟฟ้า :" และตัวชื่อคนออกพร้อมกันทันที
+                const hasCustNameInStripList = stripWordsList.some(w => /ชื่อผู้ใช้ไฟ|ชื่อลูกค้า|ชื่อผู้แจ้ง/.test(w));
+                if (stripRules.stripCustomerName || hasCustNameInStripList) {
+                    text = text.replace(/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|ชื่อ-นามสกุล|ชื่อ-สกุล)\s*[:：=]?\s*([^\n]*)$/gim, function(fullMatch, namePart) {
+                        const addrTail = (namePart || '').match(/(\d+(?:\/\d+)?\s*(?:ม\.|หมู่(?:ที่)?|ต\.|ตำบล|ซ\.|ซอย|ถ\.|ถนน).*)$/);
+                        return addrTail ? `ที่อยู่ : ${addrTail[1].trim()}` : '';
+                    });
+                }
+
+                // ขั้นตอนที่ 4: ตัดคำทั่วไปใน stripWordsList (ป้องกันไม่ให้โหมดตัดทั้งบรรทัดเผลอลบบรรทัดที่เป็น ที่อยู่/CA/มิเตอร์)
+                stripWordsList.forEach(word => {
+                    const w = (word || '').trim();
+                    if (!w) return;
+                    if (w.endsWith('*') && w.length > 1) {
+                        const baseWord = escapeRegExp(w.slice(0, -1).trim());
+                        const wildcardRegex = new RegExp(`${baseWord}[^\\n]*`, 'gi');
+                        text = text.replace(wildcardRegex, '');
+                    } else {
+                        const escaped = escapeRegExp(w);
+                        if (wholeLineMode && !isProtectedStructuralKeyword(w)) {
+                            const lineRegex = new RegExp(`^.*${escaped}.*(?:\\r?\\n|$)`, 'gim');
+                            text = text.replace(lineRegex, '');
+                        } else {
+                            const wordRegex = new RegExp(escaped, 'gi');
+                            text = text.replace(wordRegex, '');
+                        }
+                    }
+                });
+
+                // ขั้นตอนที่ 5: หากเปิดสวิตช์ "ตัดเบอร์โทรศัพท์ออกทั้งหมด"
+                if (stripRules.stripPhoneTextAndNum) {
+                    text = text.replace(/(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ|ติดต่อ|Tel\.?)\s*[:：=]?\s*[0-9\-\s,\/()]{8,}/gi, '');
+                    text = text.replace(/(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ)\s*[:：=]?/gi, '');
+                    text = text.replace(/\b0[2689]\d[\-\s]?\d{3,4}[\-\s]?\d{3,4}\b/g, '');
+                    const phoneEl = document.getElementById('phone');
+                    if (phoneEl) phoneEl.value = '';
+                }
+
+                // ขั้นตอนที่ 6: หากเปิดสวิตช์ "ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด"
+                if (stripRules.stripAllDigits) {
+                    text = text.replace(/\d+/g, '');
+                }
+
+                let extractedPhone = '';
+                let extractedGps = '';
+                let extractedIssue = '';
+                let extractedArea = '';
+                let extractedWorker = '';
+
+                let houseNumberLines = [];
+                let customerNameLines = [];
+                let caLines = [];
+                let peaMeterLines = [];
+                let otherAddressLines = [];
+
+                // ดึงลิงก์ Google Maps หรือพิกัด GPS
+                const mapUrlMatch = text.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.com\/maps)[^\s"']+/i);
+                if (mapUrlMatch) {
+                    extractedGps = mapUrlMatch[0];
+                    text = text.replace(mapUrlMatch[0], '');
+                }
+
+                const latLongParenRegex = /(?:พิกัด\s*)?\(\s*Lat\s*,\s*Long?\s*\)\s*[:：=]?\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i;
+                const matchParen = text.match(latLongParenRegex);
+                if (matchParen) {
+                    if (!extractedGps) extractedGps = `${matchParen[1]}, ${matchParen[2]}`;
+                    text = text.replace(matchParen[0], '');
+                }
+
+                const latLongLabelRegex = /(?:พิกัด\s*[:：=]?\s*)?Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i;
+                const matchLatLong = text.match(latLongLabelRegex);
+                if (matchLatLong) {
+                    if (!extractedGps) extractedGps = `${matchLatLong[1]}, ${matchLatLong[2]}`;
+                    text = text.replace(matchLatLong[0], '');
+                }
+
+                const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+                lines.forEach(line => {
+                    let workingLine = line;
+
+                    // 1) พิกัด GPS ตัวเลขทศนิยมคู่
+                    const coordOnlyMatch = workingLine.match(/^(?:📌\s*)?(?:พิกัด(?:\s*GPS)?\s*[:：=]?\s*)?(-?\d{1,2}\.\d{4,}\s*,\s*-?\d{2,3}\.\d{4,})$/i);
+                    if (coordOnlyMatch) {
+                        if (!extractedGps) extractedGps = coordOnlyMatch[1].trim();
+                        return;
+                    }
+
+                    // 2) มิเตอร์ - PEA No. / PEA No.
+                    const peaMeterRegex = /^(?:📟\s*)?(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์|รหัสมิเตอร์|เครื่องวัด(?:หน่วยไฟฟ้า)?|มิเตอร์|Meter\s*No\.?)\s*[:：=]?\s*(.+)$/i;
+                    const mPea = workingLine.match(peaMeterRegex);
+                    if (mPea) {
+                        const val = mPea[1].trim();
+                        if (/มิเตอร์\s*-\s*PEA/i.test(workingLine)) {
+                            peaMeterLines.push(`มิเตอร์ - PEA No. : ${val}`);
+                        } else if (/PEA\s*No/i.test(workingLine)) {
+                            peaMeterLines.push(`PEA No. : ${val}`);
+                        } else {
+                            peaMeterLines.push(`มิเตอร์ - PEA No. : ${val}`);
+                        }
+                        return;
+                    }
+
+                    // 3) ตรวจจับ CA ทั้งแบบมีคำว่า "CA :" และแบบตัวเลข 12 หลักที่ขึ้นต้นด้วย "02" ล้วนๆ
+                    const caRegex = /^(?:💳\s*)?(?:(?:หมายเลขผู้ใช้ไฟ(?:ฟ้า)?\s*\(?CA\)?|CA\s*(?:No\.?)?|รหัสผู้ใช้ไฟ(?:ฟ้า)?|เลขที่ผู้ใช้ไฟ(?:ฟ้า)?|บัญชีแสดงสัญญา)\s*[:：=]?\s*(\d{9,15}.*)|(02\d{10}))$/i;
+                    const mCa = workingLine.match(caRegex);
+                    if (mCa) {
+                        const caVal = (mCa[1] || mCa[2] || '').trim();
+                        caLines.push(`CA : ${caVal}`);
+                        return;
+                    }
+
+                    // 4) ชื่อผู้ใช้ไฟฟ้า (กรณีไม่ได้เปิดตัดชื่อคน)
+                    const custNameRegex = /^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|ชื่อ-นามสกุล|ชื่อ-สกุล)\s*[:：=]?\s*(.*)$/i;
+                    const mCust = workingLine.match(custNameRegex);
+                    if (mCust) {
+                        let custVal = mCust[1].trim();
+                        const trailingAddrMatch = custVal.match(/^(.*?)\s+(\d+(?:\/\d+)?\s*(?:ม\.|หมู่(?:ที่)?|ต\.|ตำบล|ซ\.|ซอย|ถ\.|ถนน).*)$/);
+                        if (trailingAddrMatch) {
+                            custVal = trailingAddrMatch[1].trim();
+                            houseNumberLines.push(trailingAddrMatch[2].trim());
+                        }
+                        if (!stripRules.stripCustomerName && custVal) {
+                            customerNameLines.push(`ชื่อผู้ใช้ไฟฟ้า : ${custVal}`);
+                        }
+                        return;
+                    }
+
+                    // 5) เบอร์โทรศัพท์
+                    if (!stripRules.stripPhoneTextAndNum) {
+                        const phoneLabelRegex = /^(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ|ติดต่อ|Tel\.?)\s*[:：=]?\s*([0-9\-\s,\/()]{9,})$/i;
+                        const mPhoneLabel = workingLine.match(phoneLabelRegex);
+                        if (mPhoneLabel) {
+                            if (!extractedPhone) extractedPhone = mPhoneLabel[1].trim();
+                            return;
+                        }
+                        const standalonePhoneRegex = /^(?:0[2689]\d[\-\s]?\d{3,4}[\-\s]?\d{3,4})$/;
+                        if (standalonePhoneRegex.test(workingLine)) {
+                            if (!extractedPhone) extractedPhone = workingLine.replace(/[\-\s]/g, '');
+                            return;
+                        }
+                    }
+
+                    // 6) ลักษณะอาการ
+                    const issueLabelRegex = /^(?:⚡\s*)?(?:ลักษณะอาการ|อาการ(?:เสีย|ขัดข้อง)?|สาเหตุ(?:ที่แจ้ง)?|เรื่องที่รับแจ้ง)\s*[:：=]\s*(.+)$/i;
+                    const mIssue = workingLine.match(issueLabelRegex);
+                    if (mIssue) {
+                        if (!extractedIssue) extractedIssue = mIssue[1].trim();
+                        return;
+                    }
+
+                    // 7) บริเวณ
+                    const areaLabelRegex = /^(?:🗺️|🏠)?\s*(?:บริเวณ(?:ที่เกิดเหตุ)?|สถานที่เกิดเหตุ|จุดเกิดเหตุ|จุดสังเกต)\s*[:：=]\s*(.+)$/i;
+                    const mArea = workingLine.match(areaLabelRegex);
+                    if (mArea) {
+                        if (!extractedArea) extractedArea = mArea[1].trim();
+                        return;
+                    }
+
+                    // 8) ผู้ปฏิบัติงาน
+                    const workerLabelRegex = /^(?:👷\s*)?(?:ผู้ปฏิบัติงาน|ช่างผู้ปฏิบัติงาน|ผู้รับแจ้ง|ผู้จ่ายงาน)\s*[:：=]?\s*(.+)$/i;
+                    const mWorker = workingLine.match(workerLabelRegex);
+                    if (mWorker) {
+                        if (!extractedWorker) extractedWorker = mWorker[1].trim();
+                        return;
+                    }
+
+                    // 9) ที่อยู่ / บ้านเลขที่
+                    const addrLabelRegex = /^(?:🏠|📍)?\s*(?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่)\s*[:：=]?\s*(.+)$/i;
+                    const mAddr = workingLine.match(addrLabelRegex);
+                    if (mAddr) {
+                        houseNumberLines.push(mAddr[1].trim());
+                        return;
+                    }
+
+                    const looksLikeHouseAddr = /(?:\b\d+(?:\/\d+)?\s*(?:ม\.|หมู่(?:ที่)?\s*\d+|ต\.|ตำบล|อ\.|อำเภอ|ซ\.|ซอย|ถ\.|ถนน))|(?:(?:ม\.|หมู่(?:ที่)?)\s*\d+.*(?:ต\.|ตำบล))/i.test(workingLine);
+                    if (looksLikeHouseAddr) {
+                        const inlinePhone = workingLine.match(/\b(0[2689]\d[\-\s]?\d{3,4}[\-\s]?\d{4})\b/);
+                        if (inlinePhone) {
+                            if (!stripRules.stripPhoneTextAndNum && !extractedPhone) {
+                                extractedPhone = inlinePhone[1].replace(/[\-\s]/g, '');
+                            }
+                            workingLine = workingLine.replace(inlinePhone[0], '').replace(/(?:โทร\.?|เบอร์โทร\.?)\s*[:：]?\s*$/i, '').trim();
+                        }
+                        houseNumberLines.push(workingLine);
+                        return;
+                    }
+
+                    // ตัดบรรทัดที่เป็นชื่อคนไทยลอยๆ เมื่อเปิดสวิตช์ตัดชื่อผู้ใช้ไฟ
+                    if (stripRules.stripCustomerName) {
+                        const isThaiFullNameOnly = /^(?:(?:คุณ|นาย|นาง|น\.ส\.|นางสาว|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙]{2,25}\s+[ก-๙]{2,30}$/.test(workingLine);
+                        const hasAddressOrElecWords = /(?:ม\.|หมู่|ต\.|ตำบล|อ\.|อำเภอ|จ\.|จังหวัด|ซอย|ถนน|บ้าน|ไฟ|ดับ|ตก|ช็อต|สาย|เสา|มิเตอร์|หม้อแปลง)/.test(workingLine);
+                        if (isThaiFullNameOnly && !hasAddressOrElecWords) {
+                            return;
+                        }
+                    }
+
+                    // 10) หากเปิดสวิตช์ "ตัดตัวเลขลอยๆ ที่ไม่เกี่ยวข้องออก"
+                    if (stripRules.stripStandaloneNumbers && /^[\d\-\s\/#.,:]+$/.test(workingLine)) {
+                        return;
+                    }
+
+                    if (!extractedIssue && typeof issueList !== 'undefined' && Array.isArray(issueList)) {
+                        const matchedKnownIssue = issueList.find(it => it !== 'อื่นๆ' && workingLine === it);
+                        if (matchedKnownIssue) {
+                            extractedIssue = matchedKnownIssue;
+                            return;
+                        }
+                    }
+
+                    if (stripRules.stripStandaloneNumbers) {
+                        workingLine = workingLine.replace(/\b\d{4,}\b/g, '').trim();
+                    }
+
+                    if (!workingLine || /^[:：=\-\s]+$/.test(workingLine)) return;
+
+                    otherAddressLines.push(workingLine);
+                });
+
+                // กรอกข้อมูลลงฟอร์มอัตโนมัติ
+                if (extractedIssue) {
+                    const issueEl = document.getElementById('issueType');
+                    if (issueEl) issueEl.value = extractedIssue;
+                }
+                if (extractedWorker) {
+                    const workerEl = document.getElementById('workerName');
+                    if (workerEl) workerEl.value = extractedWorker;
+                }
+                if (extractedArea) {
+                    const areaEl = document.getElementById('area');
+                    if (areaEl) areaEl.value = extractedArea;
+                }
+                if (extractedPhone && !stripRules.stripPhoneTextAndNum) {
+                    const phoneEl = document.getElementById('phone');
+                    if (phoneEl) phoneEl.value = extractedPhone;
+                }
+                if (extractedGps) {
+                    const gpsEl = document.getElementById('gps');
+                    if (gpsEl) {
+                        gpsEl.value = extractedGps;
+                        gpsEl.dispatchEvent(new Event('input'));
+                    }
+                }
+
+                // เรียงบ้านเลขที่ขึ้นก่อน ตามด้วย CA และ มิเตอร์ - PEA No.
+                const orderedAddressParts = [
+                    ...houseNumberLines,
+                    ...otherAddressLines,
+                    ...customerNameLines,
+                    ...caLines,
+                    ...peaMeterLines
+                ].filter(Boolean);
+
+                const addrEl = document.getElementById('address');
+                if (addrEl) {
+                    addrEl.value = orderedAddressParts.join('\n');
+                    addrEl.style.height = 'auto';
+                    addrEl.style.height = addrEl.scrollHeight + 'px';
+                    addrEl.dispatchEvent(new Event('input'));
+                }
+
+                checkCaOverdueEnhanced(false);
+                if (typeof saveOutageDraft === 'function') saveOutageDraft();
+                showToast("✨ แยกข้อมูลและตรวจสอบ CA เรียบร้อยแล้ว");
+            };
+
+            const wrapCaModalActions = function() {
+                ['addCaNumber', 'deleteCaNumber', 'clearAllCaNumbers'].forEach(fnName => {
+                    const origFn = window[fnName];
+                    if (typeof origFn === 'function' && !origFn._wrappedFor02) {
+                        const wrapped = function(...args) {
+                            const res = origFn.apply(this, args);
+                            checkCaOverdueEnhanced(false);
+                            return res;
+                        };
+                        wrapped._wrappedFor02 = true;
+                        window[fnName] = wrapped;
+                    }
+                });
+            };
+
+            const _prevGenerateOutageMessage = window.generateOutageMessage;
+            if (typeof _prevGenerateOutageMessage === 'function') {
+                window.generateOutageMessage = function(...args) {
+                    const res = _prevGenerateOutageMessage.apply(this, args);
+                    clearAutoFillPasteBox(false);
+                    return res;
+                };
+            }
+
+            const _prevResetOutageForm = window.resetOutageForm;
+            if (typeof _prevResetOutageForm === 'function') {
+                window.resetOutageForm = function(...args) {
+                    const res = _prevResetOutageForm.apply(this, args);
+                    clearAutoFillPasteBox(false);
+                    return res;
+                };
+            }
+
+            window.addEventListener('DOMContentLoaded', () => {
+                initStripSettings();
+                injectAutoFillPasteBox();
+                wrapCaModalActions();
+            });
+
+            if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                initStripSettings();
+                injectAutoFillPasteBox();
+                wrapCaModalActions();
+            }
+        })();
+    </script>
 </body>
 </html>
