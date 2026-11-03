@@ -3228,16 +3228,16 @@
         }
 
         // ==========================================
-        //  BACKUP & RESTORE SYSTEM
+        //  BACKUP & RESTORE SYSTEM (รวมหมุดอุปกรณ์ไฟฟ้า & ตั้งค่าตัดคำอัตโนมัติ)
         // ==========================================
         function openBackupModal() {
             document.getElementById('backupModal').classList.remove('hidden');
         }
-
+        
         function closeBackupModal() {
             document.getElementById('backupModal').classList.add('hidden');
         }
-
+        
         function checkAndPerformAutoBackup() {
             try {
                 const lastAutoBackup = localStorage.getItem('last_auto_backup_time');
@@ -3249,7 +3249,7 @@
                 console.error("Auto backup check error:", e);
             }
         }
-
+        
         function performAutoBackupSnapshot() {
             try {
                 const snapshot = {
@@ -3263,6 +3263,14 @@
                     equipmentHistory: localStorage.getItem('equipmentHistory') || '[]',
                     workerHistory: localStorage.getItem('workerHistory') || '[]',
                     areaHistory: localStorage.getItem('areaHistory') || '[]',
+                    // หมุดแผนที่อุปกรณ์ไฟฟ้า (หน้าช่าง)
+                    elec_labeled_places_list: localStorage.getItem('elec_labeled_places_list') || '[]',
+                    elec_deleted_labeled_places_map: localStorage.getItem('elec_deleted_labeled_places_map') || '{}',
+                    // ตั้งค่าตัดคำอัตโนมัติและเงื่อนไขการวางข้อมูลผู้ใช้ไฟ
+                    elec_paste_strip_words: localStorage.getItem('elec_paste_strip_words') || '[]',
+                    elec_paste_strip_rules: localStorage.getItem('elec_paste_strip_rules') || '{}',
+                    elec_paste_strip_whole_line: localStorage.getItem('elec_paste_strip_whole_line') || 'false',
+                    // ตั้งค่าหน้าจอและอื่นๆ
                     tab1_order: localStorage.getItem('tab1-order') || '',
                     tab2_order: localStorage.getItem('tab2-order') || '',
                     fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
@@ -3276,7 +3284,7 @@
                 console.error("Auto snapshot failed:", e);
             }
         }
-
+        
         function exportBackupJson() {
             try {
                 const backupData = {
@@ -3293,6 +3301,14 @@
                         equipmentHistory: JSON.parse(localStorage.getItem('equipmentHistory') || '[]'),
                         workerHistory: JSON.parse(localStorage.getItem('workerHistory') || '[]'),
                         areaHistory: JSON.parse(localStorage.getItem('areaHistory') || '[]'),
+                        // หมุดแผนที่อุปกรณ์ไฟฟ้า (หน้าช่าง)
+                        elec_labeled_places_list: JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]'),
+                        elec_deleted_labeled_places_map: JSON.parse(localStorage.getItem('elec_deleted_labeled_places_map') || '{}'),
+                        // ตั้งค่าตัดคำอัตโนมัติและเงื่อนไขการวางข้อมูลผู้ใช้ไฟ
+                        elec_paste_strip_words: JSON.parse(localStorage.getItem('elec_paste_strip_words') || '[]'),
+                        elec_paste_strip_rules: JSON.parse(localStorage.getItem('elec_paste_strip_rules') || '{}'),
+                        elec_paste_strip_whole_line: localStorage.getItem('elec_paste_strip_whole_line') || 'false',
+                        // ตั้งค่าหน้าจอและอื่นๆ
                         tab1_order: localStorage.getItem('tab1-order') || '',
                         tab2_order: localStorage.getItem('tab2-order') || '',
                         fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
@@ -3301,7 +3317,7 @@
                         last_active_tab: localStorage.getItem('last_active_tab') || 'tab1'
                     }
                 };
-
+                
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
                 const downloadAnchor = document.createElement('a');
                 const dateStr = new Date().toISOString().split('T')[0];
@@ -3310,24 +3326,24 @@
                 document.body.appendChild(downloadAnchor);
                 downloadAnchor.click();
                 downloadAnchor.remove();
-                showToast("📦 ดาวน์โหลดไฟล์สำรองสำเร็จ!");
+                showToast("📦 ดาวน์โหลดไฟล์สำรอง (รวมหมุดอุปกรณ์ & คำตัดออก) สำเร็จ!");
             } catch (e) {
                 console.error(e);
                 showCustomAlert("เกิดข้อผิดพลาดในการสำรองข้อมูล", "💾 ระบบสำรองข้อมูล");
             }
         }
-
+        
         function importBackupJson(event) {
             const file = event.target.files[0];
             if (!file) return;
-
+            
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
                     const parsed = JSON.parse(e.target.result);
                     const data = parsed.data || parsed;
-
-                    showCustomConfirm("⚠️ คำเตือน: การกู้คืนข้อมูลจะแทนที่ข้อมูลและประวัติทั้งหมดในเบราว์เซอร์ปัจจุบัน คุณต้องการดำเนินการต่อใช่หรือไม่?", function() {
+                    
+                    showCustomConfirm("⚠️ คำเตือน: การกู้คืนข้อมูลจะแทนที่ข้อมูลและประวัติทั้งหมดในเบราว์เซอร์ปัจจุบัน คุณต้องการดำเนินการต่อใช่หรือไม่?", async function() {
                         if (data.fault_reports_all) localStorage.setItem('fault_reports_all', JSON.stringify(data.fault_reports_all));
                         if (data.elecReportsComplete_all) localStorage.setItem('elecReportsComplete_all', JSON.stringify(data.elecReportsComplete_all));
                         if (data.overdue_ca_list && Array.isArray(data.overdue_ca_list)) {
@@ -3337,11 +3353,11 @@
                         if (data.stationList_custom && Array.isArray(data.stationList_custom)) {
                             localStorage.setItem('stationList_custom', JSON.stringify(data.stationList_custom));
                         }
-
+                        
                         if (data.tambonCoordinates_custom) {
                             localStorage.setItem('tambonCoordinates_custom', JSON.stringify(data.tambonCoordinates_custom));
                         }
-
+                        
                         if (data.issueList_custom && Array.isArray(data.issueList_custom)) {
                             localStorage.setItem('issueList_custom', JSON.stringify(data.issueList_custom));
                         } else if (data.issueTypeOrder) {
@@ -3352,15 +3368,37 @@
                         if (data.workerHistory) localStorage.setItem('workerHistory', JSON.stringify(data.workerHistory));
                         if (data.areaHistory) localStorage.setItem('areaHistory', JSON.stringify(data.areaHistory));
                         
+                        // กู้คืนหมุดแผนที่อุปกรณ์ไฟฟ้า (หน้าช่าง)
+                        if (Array.isArray(data.elec_labeled_places_list)) {
+                            localStorage.setItem('elec_labeled_places_list', JSON.stringify(data.elec_labeled_places_list));
+                        }
+                        if (data.elec_deleted_labeled_places_map && typeof data.elec_deleted_labeled_places_map === 'object') {
+                            localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(data.elec_deleted_labeled_places_map));
+                        }
+                        
+                        // กู้คืนตั้งค่าตัดคำอัตโนมัติและเงื่อนไขการวางข้อมูลผู้ใช้ไฟ
+                        if (Array.isArray(data.elec_paste_strip_words)) {
+                            localStorage.setItem('elec_paste_strip_words', JSON.stringify(data.elec_paste_strip_words));
+                        }
+                        if (data.elec_paste_strip_rules && typeof data.elec_paste_strip_rules === 'object') {
+                            localStorage.setItem('elec_paste_strip_rules', JSON.stringify(data.elec_paste_strip_rules));
+                        }
+                        if (data.elec_paste_strip_whole_line !== undefined) {
+                            localStorage.setItem('elec_paste_strip_whole_line', String(data.elec_paste_strip_whole_line));
+                        }
+                        
                         if (data.tab1_order) localStorage.setItem('tab1-order', data.tab1_order);
                         if (data.tab2_order) localStorage.setItem('tab2-order', data.tab2_order);
                         if (data.fuse_multiplier) localStorage.setItem('fuse_multiplier', data.fuse_multiplier);
                         if (data.gemini_api_key) localStorage.setItem('gemini_api_key', data.gemini_api_key);
                         if (data.meter_form_link) localStorage.setItem('meter_form_link', data.meter_form_link);
                         if (data.last_active_tab) localStorage.setItem('last_active_tab', data.last_active_tab);
-
-                        showToast("✅ กู้คืนข้อมูลสำเร็จ กำลังโหลดใหม่...");
-                        setTimeout(() => { location.reload(); }, 1200);
+                        
+                        showToast("✅ กู้คืนข้อมูลสำเร็จ กำลังซิงค์และโหลดใหม่...");
+                        if (typeof syncJobsWithFieldPage === 'function') {
+                            try { await syncJobsWithFieldPage(); } catch (err) {}
+                        }
+                        setTimeout(() => { location.reload(); }, 1000);
                     }, "📂 ยืนยันการกู้คืนข้อมูล");
                 } catch (err) {
                     console.error(err);
@@ -3370,7 +3408,7 @@
             };
             reader.readAsText(file);
         }
-
+        
         function restoreFromAutoBackup() {
             try {
                 const snapshotStr = localStorage.getItem('elec_app_auto_backup_snapshot');
@@ -3380,8 +3418,8 @@
                 }
                 const snapshot = JSON.parse(snapshotStr);
                 const backupDate = new Date(snapshot.timestamp).toLocaleString('th-TH');
-
-                showCustomConfirm(`⚠️ ยืนยันการกู้คืนข้อมูลจากตัวสำรองอัตโนมัติล่าสุด (${backupDate}) ใช่หรือไม่?`, function() {
+                
+                showCustomConfirm(`⚠️ ยืนยันการกู้คืนข้อมูลจากตัวสำรองอัตโนมัติล่าสุด (${backupDate}) ใช่หรือไม่?`, async function() {
                     if (snapshot.fault_reports_all) localStorage.setItem('fault_reports_all', snapshot.fault_reports_all);
                     if (snapshot.elecReportsComplete_all) localStorage.setItem('elecReportsComplete_all', snapshot.elecReportsComplete_all);
                     if (snapshot.overdue_ca_list) localStorage.setItem('overdue_ca_list', snapshot.overdue_ca_list);
@@ -3391,10 +3429,29 @@
                     
                     if (snapshot.issueList_custom) localStorage.setItem('issueList_custom', snapshot.issueList_custom);
                     else if (snapshot.issueTypeOrder) localStorage.setItem('issueType-order', snapshot.issueTypeOrder);
-
+                    
                     if (snapshot.equipmentHistory) localStorage.setItem('equipmentHistory', snapshot.equipmentHistory);
                     if (snapshot.workerHistory) localStorage.setItem('workerHistory', snapshot.workerHistory);
                     if (snapshot.areaHistory) localStorage.setItem('areaHistory', snapshot.areaHistory);
+                    
+                    // กู้คืนหมุดแผนที่อุปกรณ์ไฟฟ้า (หน้าช่าง)
+                    if (snapshot.elec_labeled_places_list) {
+                        localStorage.setItem('elec_labeled_places_list', snapshot.elec_labeled_places_list);
+                    }
+                    if (snapshot.elec_deleted_labeled_places_map) {
+                        localStorage.setItem('elec_deleted_labeled_places_map', snapshot.elec_deleted_labeled_places_map);
+                    }
+                    
+                    // กู้คืนตั้งค่าตัดคำอัตโนมัติและเงื่อนไขการวางข้อมูลผู้ใช้ไฟ
+                    if (snapshot.elec_paste_strip_words) {
+                        localStorage.setItem('elec_paste_strip_words', snapshot.elec_paste_strip_words);
+                    }
+                    if (snapshot.elec_paste_strip_rules) {
+                        localStorage.setItem('elec_paste_strip_rules', snapshot.elec_paste_strip_rules);
+                    }
+                    if (snapshot.elec_paste_strip_whole_line !== undefined) {
+                        localStorage.setItem('elec_paste_strip_whole_line', snapshot.elec_paste_strip_whole_line);
+                    }
                     
                     if (snapshot.tab1_order) localStorage.setItem('tab1-order', snapshot.tab1_order);
                     if (snapshot.tab2_order) localStorage.setItem('tab2-order', snapshot.tab2_order);
@@ -3402,9 +3459,12 @@
                     if (snapshot.gemini_api_key) localStorage.setItem('gemini_api_key', snapshot.gemini_api_key);
                     if (snapshot.meter_form_link) localStorage.setItem('meter_form_link', snapshot.meter_form_link);
                     if (snapshot.last_active_tab) localStorage.setItem('last_active_tab', snapshot.last_active_tab);
-
-                    showToast("✅ กู้คืนข้อมูลอัตโนมัติสำเร็จ กำลังโหลดใหม่...");
-                    setTimeout(() => { location.reload(); }, 1200);
+                    
+                    showToast("✅ กู้คืนข้อมูลอัตโนมัติสำเร็จ กำลังซิงค์และโหลดใหม่...");
+                    if (typeof syncJobsWithFieldPage === 'function') {
+                        try { await syncJobsWithFieldPage(); } catch (err) {}
+                    }
+                    setTimeout(() => { location.reload(); }, 1000);
                 }, "🛡️ ยืนยันการกู้คืนอัตโนมัติ");
             } catch (e) {
                 console.error(e);
@@ -7955,15 +8015,15 @@
                 return merged;
             }
 
-            function buildGroupBackupSnapshot(targetGroup) {
+                       function buildGroupBackupSnapshot(targetGroup) {
                 const groupName = (targetGroup || getMyGroupStrict()).trim();
                 const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
                 const rawOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                 const rawFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
-
+                
                 const outageMap = new Map();
                 const faultMap = new Map();
-
+                
                 (cachedCloudJobs || []).forEach(cj => {
                     if (!cj || cj.jobType === 'tech_loc') return;
                     if (getJobGroupName(cj) !== groupName) return;
@@ -7973,23 +8033,23 @@
                         outageMap.set(cj.dateTimeSaved, cj);
                     }
                 });
-
+                
                 rawOutages.forEach(o => {
                     if (o && o.dateTimeSaved && !deletedReg[o.dateTimeSaved] && getJobGroupName(o) === groupName) {
                         outageMap.set(o.dateTimeSaved, { ...o, ownerGroup: groupName, jobType: 'outage' });
                     }
                 });
-
+                
                 rawFaults.forEach(f => {
                     if (f && f.timestamp && !deletedReg[f.timestamp] && getJobGroupName(f) === groupName) {
                         faultMap.set(f.timestamp, { ...f, ownerGroup: groupName, jobType: 'fault' });
                     }
                 });
-
+                
                 const groupOutages = Array.from(outageMap.values()).slice(0, 200);
                 const groupFaults = Array.from(faultMap.values()).slice(0, 200);
                 const curUser = localStorage.getItem('elec_app_current_user') || 'ระบบอัตโนมัติ';
-
+                
                 return {
                     groupName,
                     updatedAt: new Date().toISOString(),
@@ -8004,7 +8064,13 @@
                         tambonCoordinates_custom: typeof targetTambonCoordinates !== 'undefined' ? targetTambonCoordinates : {},
                         issueList_custom: (typeof issueList !== 'undefined' && issueList.length > 0) ? issueList : defaultIssueTypes,
                         fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
-                        meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink
+                        meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
+                        // เพิ่มหมุดอุปกรณ์เฉพาะของกลุ่ม และคำตัดออกอัตโนมัติ
+                        elec_labeled_places_list: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]')
+                            .filter(p => (p.ownerGroup || 'กฟส.บึง') === groupName),
+                        elec_paste_strip_words: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_paste_strip_words') || '[]'),
+                        elec_paste_strip_rules: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_paste_strip_rules') || '{}'),
+                        elec_paste_strip_whole_line: localStorage.getItem('elec_paste_strip_whole_line') || 'false'
                     }
                 };
             }
@@ -8272,67 +8338,93 @@
                 }
             };
 
-            const _nativeFetch = window.fetch;
+                        const _nativeFetch = window.fetch;
             window.fetch = async function(input, init) {
-                const urlStr = typeof input === 'string' ? input : (input?.url || '');
-                const apiUrl = typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '';
-
-                if (apiUrl && urlStr.startsWith(apiUrl) && init && init.method === 'POST' && init.body) {
-                    try {
-                        const bodyData = JSON.parse(init.body);
-                        if (bodyData && bodyData.action === 'saveJobs' && Array.isArray(bodyData.jobs)) {
-                            const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
-                            const groupBackups = getCloudGroupBackupsMap();
-
-                            bodyData.jobs = bodyData.jobs.filter(j => {
-                                if (!j) return false;
-                                if (j.jobType === 'tech_loc') return true;
-                                const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-                                return !(rk && deletedReg[rk]);
-                            }).map(j => {
-                                if (j.jobType === 'tech_loc') {
-                                    return {
-                                        ...j,
-                                        cloudGroupBackups: groupBackups
-                                    };
-                                }
-                                const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-                                const mapKey = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
-                                if (window.cloudEditedJobsOverrideMap[mapKey]) {
-                                    return { ...j, ...window.cloudEditedJobsOverrideMap[mapKey] };
-                                }
-                                return {
-                                    ...j,
-                                    ownerGroup: getJobGroupName(j) || 'กฟส.บึง'
-                                };
-                            });
-
-                            init.body = JSON.stringify(bodyData);
-                        }
-                    } catch (e) {}
-                }
-
-                const response = await _nativeFetch.apply(this, arguments);
-
-                if (apiUrl && urlStr.startsWith(apiUrl) && (!init || !init.method || init.method === 'GET')) {
-                    try {
-                        const cloned = response.clone();
-                        cloned.json().then(data => {
-                            if (data && Array.isArray(data.jobs)) {
-                                const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
-                                if (locEntry && locEntry.cloudGroupBackups) {
-                                    const merged = mergeCloudGroupBackups(getCloudGroupBackupsMap(), locEntry.cloudGroupBackups);
-                                    saveCloudGroupBackupsMap(merged);
-                                    renderCloudBackupSectionInModal();
-                                }
-                            }
-                        }).catch(() => {});
-                    } catch (e) {}
-                }
-
-                return response;
+            const urlStr = typeof input === 'string' ? input : (input?.url || '');
+            const apiUrl = typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '';
+            
+            if (apiUrl && urlStr.startsWith(apiUrl) && init && init.method === 'POST' && init.body) {
+            try {
+            const bodyData = JSON.parse(init.body);
+            if (bodyData && bodyData.action === 'saveJobs' && Array.isArray(bodyData.jobs)) {
+            const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
+            const groupBackups = getCloudGroupBackupsMap();
+            const savedEquipPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+            const savedDeletedEquipMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+            
+            bodyData.jobs = bodyData.jobs.filter(j => {
+            if (!j) return false;
+            if (j.jobType === 'tech_loc') return true;
+            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+            return !(rk && deletedReg[rk]);
+            }).map(j => {
+            if (j.jobType === 'tech_loc') {
+            return {
+            ...j,
+            cloudGroupBackups: groupBackups,
+            electricEquipmentPins: savedEquipPins.length > 0 ? savedEquipPins : (j.electricEquipmentPins || []),
+            deletedElectricEquipmentMap: Object.keys(savedDeletedEquipMap).length > 0 ? savedDeletedEquipMap : (j.deletedElectricEquipmentMap || {})
             };
-
+            }
+            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+            const mapKey = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
+            if (window.cloudEditedJobsOverrideMap[mapKey]) {
+            return { ...j, ...window.cloudEditedJobsOverrideMap[mapKey] };
+            }
+            return {
+            ...j,
+            ownerGroup: getJobGroupName(j) || 'กฟส.บึง'
+            };
+            });
+            
+            init.body = JSON.stringify(bodyData);
+            }
+            } catch (e) {}
+            }
+            
+            const response = await _nativeFetch.apply(this, arguments);
+            
+            if (apiUrl && urlStr.startsWith(apiUrl) && (!init || !init.method || init.method === 'GET')) {
+            try {
+            const cloned = response.clone();
+            const data = await cloned.json();
+            if (data && Array.isArray(data.jobs)) {
+            const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
+            if (locEntry) {
+            // 1. รวมข้อมูลสำรองแยกกลุ่ม
+            if (locEntry.cloudGroupBackups) {
+            const merged = mergeCloudGroupBackups(getCloudGroupBackupsMap(), locEntry.cloudGroupBackups);
+            saveCloudGroupBackupsMap(merged);
+            renderCloudBackupSectionInModal();
+            }
+            // 2. รวมข้อมูลหมุดอุปกรณ์ไฟฟ้าจากหน้าช่างเก็บไว้ในเครื่องหลักด้วย
+            const localDelEquip = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+            if (locEntry.deletedElectricEquipmentMap && typeof locEntry.deletedElectricEquipmentMap === 'object') {
+            Object.assign(localDelEquip, locEntry.deletedElectricEquipmentMap);
+            localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(localDelEquip));
+            }
+            if (Array.isArray(locEntry.electricEquipmentPins)) {
+            const localPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+            const pinMap = new Map();
+            localPins.forEach(p => {
+            if (p && p.id && !localDelEquip[p.id]) pinMap.set(p.id, p);
+            });
+            locEntry.electricEquipmentPins.forEach(cp => {
+            if (!cp || !cp.id || localDelEquip[cp.id]) return;
+            const ex = pinMap.get(cp.id);
+            if (!ex || (cp.updatedAt || '') >= (ex.updatedAt || '')) {
+            pinMap.set(cp.id, cp);
+            }
+            });
+            localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
+            }
+            }
+            }
+            } catch (e) {}
+            }
+            
+            return response;
+            };            
             function injectCloudManagerHeaderButton() {
                 const headerBtnGroup = document.querySelector('#mainAppContent .bg-gradient-to-r .flex.items-center.gap-1\\.5.shrink-0');
                 if (!headerBtnGroup) return;
@@ -8522,7 +8614,7 @@
                 }
             };
 
-            window.restoreGroupBackupFromCloud = function(groupName) {
+                        window.restoreGroupBackupFromCloud = function(groupName) {
                 if (!canAccessCloudManager()) return;
                 const role = getUserRole();
                 const myGroup = getMyGroupStrict();
@@ -8530,51 +8622,61 @@
                     showCustomAlert('⛔ คุณสามารถกู้คืนข้อมูลได้เฉพาะกลุ่มสังกัดของตนเองเท่านั้น', '🔒 จำกัดสิทธิ์ตามกลุ่ม');
                     return;
                 }
-
+                
                 const backupsMap = getCloudGroupBackupsMap();
                 const groupBackup = backupsMap[groupName];
                 if (!groupBackup) {
                     showCustomAlert(`ไม่พบข้อมูลสำรองของกลุ่ม "${groupName}" บนคลาวด์`, '☁️ กู้คืนข้อมูลจากคลาวด์');
                     return;
                 }
-
+                
                 const dateStr = groupBackup.updatedAt ? new Date(groupBackup.updatedAt).toLocaleString('th-TH') : '-';
                 showCustomConfirm(`ยืนยันการกู้คืนข้อมูลของกลุ่ม "${groupName}" (สำรองเมื่อ ${dateStr})\nจำนวนงานรับแจ้ง ${groupBackup.outageCount || 0} รายการ และ TR/TL ${groupBackup.faultCount || 0} รายการ ใช่หรือไม่?`, async function() {
                     const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
                     const restoredOutages = Array.isArray(groupBackup.outages) ? groupBackup.outages : [];
                     const restoredFaults = Array.isArray(groupBackup.faults) ? groupBackup.faults : [];
-
+                    
                     restoredOutages.forEach(o => { if (o.dateTimeSaved) delete deletedReg[o.dateTimeSaved]; });
                     restoredFaults.forEach(f => { if (f.timestamp) delete deletedReg[f.timestamp]; });
                     syncDeletedRegistryObject(deletedReg);
-
+                    
                     let currentOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                     let currentFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
-
+                    
                     const outMap = new Map(currentOutages.map(o => [o.dateTimeSaved, o]));
                     restoredOutages.forEach(o => {
                         if (o && o.dateTimeSaved) outMap.set(o.dateTimeSaved, { ...o, ownerGroup: groupName });
                     });
-
+                    
                     const fltMap = new Map(currentFaults.map(f => [f.timestamp, f]));
                     restoredFaults.forEach(f => {
                         if (f && f.timestamp) fltMap.set(f.timestamp, { ...f, ownerGroup: groupName });
                     });
-
+                    
                     const mergedOutages = Array.from(outMap.values()).sort((a, b) => parseOutageDateTimeToMs(b) - parseOutageDateTimeToMs(a));
                     const mergedFaults = Array.from(fltMap.values()).sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-
+                    
                     localStorage.setItem('elecReportsComplete_all', JSON.stringify(mergedOutages));
                     localStorage.setItem('fault_reports_all', JSON.stringify(mergedFaults));
-
+                    
                     if (groupBackup.settings) {
                         const s = groupBackup.settings;
                         if (Array.isArray(s.overdue_ca_list)) localStorage.setItem('overdue_ca_list', JSON.stringify(s.overdue_ca_list));
                         if (Array.isArray(s.stationList_custom)) localStorage.setItem('stationList_custom', JSON.stringify(s.stationList_custom));
                         if (s.tambonCoordinates_custom) localStorage.setItem('tambonCoordinates_custom', JSON.stringify(s.tambonCoordinates_custom));
                         if (Array.isArray(s.issueList_custom)) localStorage.setItem('issueList_custom', JSON.stringify(s.issueList_custom));
+                        // กู้คืนหมุดอุปกรณ์ของกลุ่ม และคำตัดออกอัตโนมัติ
+                        if (Array.isArray(s.elec_labeled_places_list)) {
+                            const existingPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+                            const pinMap = new Map(existingPins.map(p => [p.id, p]));
+                            s.elec_labeled_places_list.forEach(p => { if (p && p.id) pinMap.set(p.id, p); });
+                            localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
+                        }
+                        if (Array.isArray(s.elec_paste_strip_words)) localStorage.setItem('elec_paste_strip_words', JSON.stringify(s.elec_paste_strip_words));
+                        if (s.elec_paste_strip_rules) localStorage.setItem('elec_paste_strip_rules', JSON.stringify(s.elec_paste_strip_rules));
+                        if (s.elec_paste_strip_whole_line !== undefined) localStorage.setItem('elec_paste_strip_whole_line', String(s.elec_paste_strip_whole_line));
                     }
-
+                    
                     loadOutageHistory();
                     loadFaultHistory();
                     autoFillJobNo();
@@ -8582,7 +8684,6 @@
                     showToast(`✅ กู้คืนข้อมูลกลุ่ม "${groupName}" จากคลาวด์สำเร็จ!`);
                 }, '☁️ ยืนยันการกู้คืนข้อมูลกลุ่ม');
             };
-
             window.downloadGroupBackupJson = function(groupName) {
                 const backupsMap = getCloudGroupBackupsMap();
                 const groupBackup = backupsMap[groupName] || buildGroupBackupSnapshot(groupName);
