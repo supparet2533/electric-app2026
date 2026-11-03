@@ -7487,7 +7487,7 @@
         window.addEventListener('focus', pullFieldReportsFromCloud);
     </script>
     <!-- ===== จบส่วนที่ 4 / 5 (นำโค้ดส่วนที่ 5 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
-        <!-- ===== เริ่มส่วนที่ 5 / 5 (ส่วนสุดท้าย - วางต่อจากส่วนที่ 4 จนจบไฟล์ได้เลยครับ) ===== -->
+        <!-- ===== เริ่มส่วนที่ 5 / 5 (พาทที่ 5.1 / 2 - วางต่อจากส่วนที่ 4 ได้เลยครับ) ===== -->
 
     <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์ (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
     <script>
@@ -7578,7 +7578,9 @@
                     lat: existing.lat || null,
                     lon: existing.lon || null,
                     gpsDisabled: existing.gpsDisabled !== undefined ? existing.gpsDisabled : true,
-                    currentPage: '💻 หน้าหลัก',
+                    currentPage: existing.currentPage && existing.currentPage.includes('เปิดคู่หน้าช่าง')
+                        ? '💻 หน้าหลัก (เปิดคู่หน้าช่าง)'
+                        : '💻 หน้าหลัก',
                     isOnline: !isLoggingOut,
                     lastSeenAt: nowIso,
                     updatedAt: nowIso
@@ -7631,6 +7633,7 @@
                     const payloadJobs = [
                         ...otherJobs,
                         {
+                            ...(cloudLocEntry || {}),
                             jobType: 'tech_loc',
                             dateTimeSaved: 'TECH_LOC_REGISTRY',
                             techLocations: updatedMap,
@@ -7716,7 +7719,7 @@
                         isMe,
                         lastSeenMs,
                         diffMs,
-                        currentPage: isMe ? '💻 หน้าหลัก' : (matchedLoc?.currentPage || (acc.role === 'tech' ? '📱 หน้าช่าง' : '💻 หน้าหลัก')),
+                        currentPage: isMe ? (matchedLoc?.currentPage || '💻 หน้าหลัก') : (matchedLoc?.currentPage || (acc.role === 'tech' ? '📱 หน้าช่าง' : '💻 หน้าหลัก')),
                         hasGps: Boolean(matchedLoc && !matchedLoc.gpsDisabled && matchedLoc.lat && matchedLoc.lon)
                     });
                 });
@@ -7939,7 +7942,7 @@
         })();
     </script>
 
-    <!-- ☁️ ระบบสำรองข้อมูลบนคลาวด์แยกกลุ่ม & จัดการแก้ไข/ส่งออก Excel ข้อมูลบนคลาวด์ -->
+    <!-- ☁️ ระบบสำรองข้อมูลบนคลาวด์แยกกลุ่ม & จัดการแก้ไข/ส่งออก Excel ข้อมูลบนคลาวด์ (เชื่อมหมุดอุปกรณ์ + ประวัติผู้ลบหมุด 100%) -->
     <script>
         (function() {
             const CLOUD_BACKUP_STORAGE_KEY = 'elec_cloud_group_backups_map';
@@ -8015,11 +8018,12 @@
                 return merged;
             }
 
-                       function buildGroupBackupSnapshot(targetGroup) {
+            function buildGroupBackupSnapshot(targetGroup) {
                 const groupName = (targetGroup || getMyGroupStrict()).trim();
                 const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
                 const rawOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                 const rawFaults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
+                const delEquipMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
                 
                 const outageMap = new Map();
                 const faultMap = new Map();
@@ -8050,6 +8054,17 @@
                 const groupFaults = Array.from(faultMap.values()).slice(0, 200);
                 const curUser = localStorage.getItem('elec_app_current_user') || 'ระบบอัตโนมัติ';
                 
+                const activeGroupPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]')
+                    .filter(p => {
+                        if (!p || !p.id || (p.ownerGroup || 'กฟส.บึง') !== groupName) return false;
+                        if (delEquipMap[p.id]) {
+                            const delMs = new Date(delEquipMap[p.id]).getTime() || 0;
+                            const pinMs = new Date(p.updatedAt || 0).getTime() || 0;
+                            if (pinMs <= delMs) return false;
+                        }
+                        return true;
+                    });
+
                 return {
                     groupName,
                     updatedAt: new Date().toISOString(),
@@ -8065,9 +8080,10 @@
                         issueList_custom: (typeof issueList !== 'undefined' && issueList.length > 0) ? issueList : defaultIssueTypes,
                         fuse_multiplier: localStorage.getItem('fuse_multiplier') || '1.5',
                         meter_form_link: localStorage.getItem('meter_form_link') || defaultMeterLink,
-                        // เพิ่มหมุดอุปกรณ์เฉพาะของกลุ่ม และคำตัดออกอัตโนมัติ
-                        elec_labeled_places_list: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]')
-                            .filter(p => (p.ownerGroup || 'กฟส.บึง') === groupName),
+                        elec_labeled_places_list: activeGroupPins,
+                        elec_deleted_labeled_places_map: delEquipMap,
+                        elec_deleted_equip_audit_logs: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_equip_audit_logs') || '[]'),
+                        elec_cleared_audit_logs_ts: parseInt(_origLocalStorageGetItem.call(localStorage, 'elec_cleared_audit_logs_ts') || '0', 10),
                         elec_paste_strip_words: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_paste_strip_words') || '[]'),
                         elec_paste_strip_rules: JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_paste_strip_rules') || '{}'),
                         elec_paste_strip_whole_line: localStorage.getItem('elec_paste_strip_whole_line') || 'false'
@@ -8338,93 +8354,144 @@
                 }
             };
 
-                        const _nativeFetch = window.fetch;
+            // 🔗 ตัวดักจับ Fetch ซิงค์ข้อมูลหมุดอุปกรณ์ + รายการหมุดที่ลบ + ประวัติชื่อผู้ลบหมุด + การปลดล็อกเมื่อแอดมินกู้คืนหมุด
+            const _nativeFetch = window.fetch;
             window.fetch = async function(input, init) {
-            const urlStr = typeof input === 'string' ? input : (input?.url || '');
-            const apiUrl = typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '';
-            
-            if (apiUrl && urlStr.startsWith(apiUrl) && init && init.method === 'POST' && init.body) {
-            try {
-            const bodyData = JSON.parse(init.body);
-            if (bodyData && bodyData.action === 'saveJobs' && Array.isArray(bodyData.jobs)) {
-            const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
-            const groupBackups = getCloudGroupBackupsMap();
-            const savedEquipPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
-            const savedDeletedEquipMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
-            
-            bodyData.jobs = bodyData.jobs.filter(j => {
-            if (!j) return false;
-            if (j.jobType === 'tech_loc') return true;
-            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-            return !(rk && deletedReg[rk]);
-            }).map(j => {
-            if (j.jobType === 'tech_loc') {
-            return {
-            ...j,
-            cloudGroupBackups: groupBackups,
-            electricEquipmentPins: savedEquipPins.length > 0 ? savedEquipPins : (j.electricEquipmentPins || []),
-            deletedElectricEquipmentMap: Object.keys(savedDeletedEquipMap).length > 0 ? savedDeletedEquipMap : (j.deletedElectricEquipmentMap || {})
+                const urlStr = typeof input === 'string' ? input : (input?.url || '');
+                const apiUrl = typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '';
+                
+                if (apiUrl && urlStr.startsWith(apiUrl) && init && init.method === 'POST' && init.body) {
+                    try {
+                        const bodyData = JSON.parse(init.body);
+                        if (bodyData && bodyData.action === 'saveJobs' && Array.isArray(bodyData.jobs)) {
+                            const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
+                            const groupBackups = getCloudGroupBackupsMap();
+                            const savedEquipPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+                            const savedDeletedEquipMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+                            const savedDeletedAuditLogs = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_equip_audit_logs') || '[]');
+                            const savedClearedAuditTs = parseInt(_origLocalStorageGetItem.call(localStorage, 'elec_cleared_audit_logs_ts') || '0', 10);
+                            
+                            bodyData.jobs = bodyData.jobs.filter(j => {
+                                if (!j) return false;
+                                if (j.jobType === 'tech_loc') return true;
+                                const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+                                return !(rk && deletedReg[rk]);
+                            }).map(j => {
+                                if (j.jobType === 'tech_loc') {
+                                    return {
+                                        ...j,
+                                        cloudGroupBackups: groupBackups,
+                                        electricEquipmentPins: savedEquipPins.length > 0 ? savedEquipPins : (j.electricEquipmentPins || []),
+                                        deletedElectricEquipmentMap: Object.keys(savedDeletedEquipMap).length > 0 ? savedDeletedEquipMap : (j.deletedElectricEquipmentMap || {}),
+                                        deletedEquipAuditLogs: savedDeletedAuditLogs.length > 0 ? savedDeletedAuditLogs : (j.deletedEquipAuditLogs || []),
+                                        clearedAuditLogsTimestamp: savedClearedAuditTs || j.clearedAuditLogsTimestamp || 0
+                                    };
+                                }
+                                const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+                                const mapKey = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
+                                if (window.cloudEditedJobsOverrideMap[mapKey]) {
+                                    return { ...j, ...window.cloudEditedJobsOverrideMap[mapKey] };
+                                }
+                                return {
+                                    ...j,
+                                    ownerGroup: getJobGroupName(j) || 'กฟส.บึง'
+                                };
+                            });
+                            
+                            init.body = JSON.stringify(bodyData);
+                        }
+                    } catch (e) {}
+                }
+                
+                const response = await _nativeFetch.apply(this, arguments);
+                
+                if (apiUrl && urlStr.startsWith(apiUrl) && (!init || !init.method || init.method === 'GET')) {
+                    try {
+                        const cloned = response.clone();
+                        const data = await cloned.json();
+                        if (data && Array.isArray(data.jobs)) {
+                            const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
+                            if (locEntry) {
+                                // 1. รวมข้อมูลสำรองแยกกลุ่ม
+                                if (locEntry.cloudGroupBackups) {
+                                    const merged = mergeCloudGroupBackups(getCloudGroupBackupsMap(), locEntry.cloudGroupBackups);
+                                    saveCloudGroupBackupsMap(merged);
+                                    renderCloudBackupSectionInModal();
+                                }
+                                // 2. ซิงค์เวลาล้างประวัติผู้ลบหมุดล่าสุด
+                                if (locEntry.clearedAuditLogsTimestamp) {
+                                    const curCleared = parseInt(_origLocalStorageGetItem.call(localStorage, 'elec_cleared_audit_logs_ts') || '0', 10);
+                                    if (locEntry.clearedAuditLogsTimestamp > curCleared) {
+                                        localStorage.setItem('elec_cleared_audit_logs_ts', String(locEntry.clearedAuditLogsTimestamp));
+                                    }
+                                }
+                                // 3. ซิงค์รายการประวัติชื่อผู้ลบหมุด (เฉพาะรายการหลังเวลาล้างประวัติ)
+                                if (Array.isArray(locEntry.deletedEquipAuditLogs)) {
+                                    const curCleared = parseInt(_origLocalStorageGetItem.call(localStorage, 'elec_cleared_audit_logs_ts') || '0', 10);
+                                    const restoredIds = new Set(JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_restored_audit_log_ids') || '[]'));
+                                    const localLogs = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_equip_audit_logs') || '[]');
+                                    const logMap = new Map();
+                                    [...localLogs, ...locEntry.deletedEquipAuditLogs].forEach(item => {
+                                        if (!item || !item.logId || restoredIds.has(item.logId)) return;
+                                        const t = new Date(item.deletedAt || 0).getTime() || 0;
+                                        if (curCleared > 0 && t <= curCleared) return;
+                                        logMap.set(item.logId, item);
+                                    });
+                                    const sortedLogs = Array.from(logMap.values())
+                                        .sort((a, b) => (new Date(b.deletedAt || 0).getTime() || 0) - (new Date(a.deletedAt || 0).getTime() || 0))
+                                        .slice(0, 200);
+                                    localStorage.setItem('elec_deleted_equip_audit_logs', JSON.stringify(sortedLogs));
+                                }
+                                // 4. รวมข้อมูลหมุดอุปกรณ์ไฟฟ้าและปลดล็อกหมุดที่แอดมินกดกู้คืนในหน้า 2
+                                const localDelEquip = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+                                if (locEntry.deletedElectricEquipmentMap && typeof locEntry.deletedElectricEquipmentMap === 'object') {
+                                    Object.assign(localDelEquip, locEntry.deletedElectricEquipmentMap);
+                                }
+                                if (Array.isArray(locEntry.electricEquipmentPins)) {
+                                    const localPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+                                    const pinMap = new Map();
+                                    localPins.forEach(p => {
+                                        if (!p || !p.id) return;
+                                        if (localDelEquip[p.id]) {
+                                            const delMs = new Date(localDelEquip[p.id]).getTime() || 0;
+                                            const pinMs = new Date(p.updatedAt || 0).getTime() || 0;
+                                            if (pinMs > delMs) {
+                                                delete localDelEquip[p.id];
+                                            } else {
+                                                return;
+                                            }
+                                        }
+                                        pinMap.set(p.id, p);
+                                    });
+                                    locEntry.electricEquipmentPins.forEach(cp => {
+                                        if (!cp || !cp.id) return;
+                                        if (localDelEquip[cp.id]) {
+                                            const delMs = new Date(localDelEquip[cp.id]).getTime() || 0;
+                                            const pinMs = new Date(cp.updatedAt || 0).getTime() || 0;
+                                            if (pinMs > delMs) {
+                                                delete localDelEquip[cp.id];
+                                            } else {
+                                                return;
+                                            }
+                                        }
+                                        const ex = pinMap.get(cp.id);
+                                        if (!ex || (cp.updatedAt || '') >= (ex.updatedAt || '')) {
+                                            pinMap.set(cp.id, cp);
+                                        }
+                                    });
+                                    localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(localDelEquip));
+                                    localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
+                                } else {
+                                    localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(localDelEquip));
+                                }
+                            }
+                        }
+                    } catch (e) {}
+                }
+                
+                return response;
             };
-            }
-            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-            const mapKey = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
-            if (window.cloudEditedJobsOverrideMap[mapKey]) {
-            return { ...j, ...window.cloudEditedJobsOverrideMap[mapKey] };
-            }
-            return {
-            ...j,
-            ownerGroup: getJobGroupName(j) || 'กฟส.บึง'
-            };
-            });
-            
-            init.body = JSON.stringify(bodyData);
-            }
-            } catch (e) {}
-            }
-            
-            const response = await _nativeFetch.apply(this, arguments);
-            
-            if (apiUrl && urlStr.startsWith(apiUrl) && (!init || !init.method || init.method === 'GET')) {
-            try {
-            const cloned = response.clone();
-            const data = await cloned.json();
-            if (data && Array.isArray(data.jobs)) {
-            const locEntry = data.jobs.find(j => j.jobType === 'tech_loc');
-            if (locEntry) {
-            // 1. รวมข้อมูลสำรองแยกกลุ่ม
-            if (locEntry.cloudGroupBackups) {
-            const merged = mergeCloudGroupBackups(getCloudGroupBackupsMap(), locEntry.cloudGroupBackups);
-            saveCloudGroupBackupsMap(merged);
-            renderCloudBackupSectionInModal();
-            }
-            // 2. รวมข้อมูลหมุดอุปกรณ์ไฟฟ้าจากหน้าช่างเก็บไว้ในเครื่องหลักด้วย
-            const localDelEquip = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
-            if (locEntry.deletedElectricEquipmentMap && typeof locEntry.deletedElectricEquipmentMap === 'object') {
-            Object.assign(localDelEquip, locEntry.deletedElectricEquipmentMap);
-            localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(localDelEquip));
-            }
-            if (Array.isArray(locEntry.electricEquipmentPins)) {
-            const localPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
-            const pinMap = new Map();
-            localPins.forEach(p => {
-            if (p && p.id && !localDelEquip[p.id]) pinMap.set(p.id, p);
-            });
-            locEntry.electricEquipmentPins.forEach(cp => {
-            if (!cp || !cp.id || localDelEquip[cp.id]) return;
-            const ex = pinMap.get(cp.id);
-            if (!ex || (cp.updatedAt || '') >= (ex.updatedAt || '')) {
-            pinMap.set(cp.id, cp);
-            }
-            });
-            localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
-            }
-            }
-            }
-            } catch (e) {}
-            }
-            
-            return response;
-            };            
+
             function injectCloudManagerHeaderButton() {
                 const headerBtnGroup = document.querySelector('#mainAppContent .bg-gradient-to-r .flex.items-center.gap-1\\.5.shrink-0');
                 if (!headerBtnGroup) return;
@@ -8614,7 +8681,7 @@
                 }
             };
 
-                        window.restoreGroupBackupFromCloud = function(groupName) {
+            window.restoreGroupBackupFromCloud = function(groupName) {
                 if (!canAccessCloudManager()) return;
                 const role = getUserRole();
                 const myGroup = getMyGroupStrict();
@@ -8665,11 +8732,18 @@
                         if (Array.isArray(s.stationList_custom)) localStorage.setItem('stationList_custom', JSON.stringify(s.stationList_custom));
                         if (s.tambonCoordinates_custom) localStorage.setItem('tambonCoordinates_custom', JSON.stringify(s.tambonCoordinates_custom));
                         if (Array.isArray(s.issueList_custom)) localStorage.setItem('issueList_custom', JSON.stringify(s.issueList_custom));
-                        // กู้คืนหมุดอุปกรณ์ของกลุ่ม และคำตัดออกอัตโนมัติ
                         if (Array.isArray(s.elec_labeled_places_list)) {
                             const existingPins = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+                            const delEquipMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
                             const pinMap = new Map(existingPins.map(p => [p.id, p]));
-                            s.elec_labeled_places_list.forEach(p => { if (p && p.id) pinMap.set(p.id, p); });
+                            const nowIso = new Date().toISOString();
+                            s.elec_labeled_places_list.forEach(p => {
+                                if (p && p.id) {
+                                    delete delEquipMap[p.id];
+                                    pinMap.set(p.id, { ...p, updatedAt: nowIso });
+                                }
+                            });
+                            localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(delEquipMap));
                             localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
                         }
                         if (Array.isArray(s.elec_paste_strip_words)) localStorage.setItem('elec_paste_strip_words', JSON.stringify(s.elec_paste_strip_words));
@@ -8684,6 +8758,7 @@
                     showToast(`✅ กู้คืนข้อมูลกลุ่ม "${groupName}" จากคลาวด์สำเร็จ!`);
                 }, '☁️ ยืนยันการกู้คืนข้อมูลกลุ่ม');
             };
+
             window.downloadGroupBackupJson = function(groupName) {
                 const backupsMap = getCloudGroupBackupsMap();
                 const groupBackup = backupsMap[groupName] || buildGroupBackupSnapshot(groupName);
@@ -8712,6 +8787,8 @@
                     showToast(`🗑️ ลบข้อมูลสำรองคลาวด์ของกลุ่ม "${groupName}" แล้ว`);
                 }, '🗑️ ลบชุดสำรองบนคลาวด์');
             };
+        //-- ===== จบพาทที่ 5.1 / 2 (นำโค้ดพาทที่ 5.2 / 2 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====//
+                    // ===== เริ่มพาทที่ 5.2 / 2 (วางต่อจาก window.deleteGroupBackupOnCloud จนจบไฟล์ index.html ได้เลยครับ) =====
 
             function ensureCloudDataManagerModal() {
                 let modal = document.getElementById('cloudDataManagerModal');
@@ -8724,18 +8801,14 @@
                     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] border border-slate-200">
                         <div class="px-5 py-3.5 bg-gradient-to-r from-sky-600 via-blue-700 to-indigo-800 text-white flex justify-between items-center">
                             <div>
-                                <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
-                                    ☁️ จัดการและแก้ไขข้อมูลบนคลาวด์ (แยกตามกลุ่มสังกัด)
-                                </h3>
+                                <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">☁️ จัดการและแก้ไขข้อมูลบนคลาวด์ (แยกตามกลุ่มสังกัด)</h3>
                                 <p id="cloudManagerPermissionSubtitle" class="text-[11px] text-sky-100 mt-0.5"></p>
                             </div>
                             <button type="button" onclick="closeCloudDataManagerModal()" class="text-white/80 hover:text-white text-2xl font-bold leading-none px-1">&times;</button>
                         </div>
-
                         <div class="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5">
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 <div id="cloudGroupFilterContainer"></div>
-
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-500 mb-1">📂 ประเภทข้อมูลบนคลาวด์</label>
                                     <select id="cloudTypeFilterSelect" onchange="renderCloudManagerItems()" class="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white font-semibold text-slate-700 focus:outline-none">
@@ -8744,49 +8817,32 @@
                                         <option value="fault">🚨 เฉพาะรายงานเหตุ (TR/TL)</option>
                                     </select>
                                 </div>
-
                                 <div>
                                     <label class="block text-[10px] font-bold text-slate-500 mb-1">🔍 ค้นหาข้อมูล</label>
                                     <input type="text" id="cloudSearchInput" oninput="renderCloudManagerItems()" placeholder="ค้นหา อาการ, วงจร, สถานี, ที่อยู่, ช่าง..." class="w-full text-xs px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none">
                                 </div>
                             </div>
-
                             <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-slate-200/80">
                                 <div class="flex items-center gap-2">
                                     <label class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none bg-white px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-100 transition">
                                         <input type="checkbox" id="cloudSelectAllCheckbox" onchange="toggleSelectAllCloudItems(this.checked)" class="w-4 h-4 accent-blue-600 rounded cursor-pointer">
                                         <span>เลือกทั้งหมดที่แสดง</span>
                                     </label>
-                                    <span id="cloudSelectedCountBadge" class="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">
-                                        เลือกแล้ว 0 รายการ
-                                    </span>
+                                    <span id="cloudSelectedCountBadge" class="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-lg">เลือกแล้ว 0 รายการ</span>
                                 </div>
-
                                 <div class="flex flex-wrap items-center gap-1.5">
-                                    <button type="button" onclick="refreshCloudDataInManager()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1">
-                                        🔄 ซิงค์คลาวด์
-                                    </button>
-                                    <button type="button" id="btnExportCloudExcel" onclick="exportCloudManagerToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition flex items-center gap-1">
-                                        📊 ส่งออก Excel แยกกลุ่ม
-                                    </button>
-                                    <button type="button" id="btnBulkDeleteCloud" onclick="deleteSelectedCloudItems()" disabled class="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition flex items-center gap-1">
-                                        🗑️ ลบที่เลือก (0)
-                                    </button>
+                                    <button type="button" onclick="refreshCloudDataInManager()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1">🔄 ซิงค์คลาวด์</button>
+                                    <button type="button" id="btnExportCloudExcel" onclick="exportCloudManagerToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition flex items-center gap-1">📊 ส่งออก Excel แยกกลุ่ม</button>
+                                    <button type="button" id="btnBulkDeleteCloud" onclick="deleteSelectedCloudItems()" disabled class="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition flex items-center gap-1">🗑️ ลบที่เลือก (0)</button>
                                 </div>
                             </div>
                         </div>
-
                         <div id="cloudManagerListContainer" class="p-4 overflow-y-auto space-y-2.5 flex-1 bg-slate-100/70"></div>
-
                         <div class="px-4 py-3 bg-white border-t border-slate-200 flex justify-between items-center text-xs">
                             <span id="cloudManagerTotalSummary" class="text-slate-500 font-semibold">ทั้งหมด 0 รายการ</span>
                             <div class="flex gap-2">
-                                <button type="button" onclick="backupToCloudByGroup(false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-3 py-1.5 rounded-xl font-bold transition">
-                                    ☁️ สำรองแยกกลุ่มเดี๋ยวนี้
-                                </button>
-                                <button type="button" onclick="closeCloudDataManagerModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-1.5 rounded-xl font-bold transition">
-                                    ปิดหน้าต่าง
-                                </button>
+                                <button type="button" onclick="backupToCloudByGroup(false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-3 py-1.5 rounded-xl font-bold transition">☁️ สำรองแยกกลุ่มเดี๋ยวนี้</button>
+                                <button type="button" onclick="closeCloudDataManagerModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-1.5 rounded-xl font-bold transition">ปิดหน้าต่าง</button>
                             </div>
                         </div>
                     </div>
@@ -8800,13 +8856,11 @@
                     showCustomAlert('⛔ บัญชีช่าง (Tech) หรือผู้ที่ยังไม่ได้เข้าสู่ระบบ ไม่ได้รับอนุญาตให้เข้าดูหรือแก้ไขข้อมูลบนคลาวด์', '🔒 จำกัดสิทธิ์การเข้าถึง');
                     return;
                 }
-
                 const modal = ensureCloudDataManagerModal();
                 selectedCloudItemKeys.clear();
                 setupCloudGroupFilterUI();
                 renderCloudManagerItems();
                 modal.classList.remove('hidden');
-
                 await refreshCloudDataInManager(true);
             };
 
@@ -8862,13 +8916,10 @@
             function getFilteredCloudRecords() {
                 const role = getUserRole();
                 const myGroup = getMyGroupStrict();
-                const groupFilter = role === 'admin'
-                    ? (document.getElementById('cloudGroupFilterSelect')?.value || 'all')
-                    : myGroup;
+                const groupFilter = role === 'admin' ? (document.getElementById('cloudGroupFilterSelect')?.value || 'all') : myGroup;
                 const typeFilter = document.getElementById('cloudTypeFilterSelect')?.value || 'all';
                 const searchQ = (document.getElementById('cloudSearchInput')?.value || '').toLowerCase().trim();
                 const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : {};
-
                 const combinedMap = new Map();
 
                 (cachedCloudJobs || []).forEach(cj => {
@@ -8877,13 +8928,7 @@
                     const rawKey = isFault ? cj.timestamp : cj.dateTimeSaved;
                     if (!rawKey || deletedReg[rawKey]) return;
                     const uKey = (isFault ? 'F_' : 'O_') + rawKey;
-                    combinedMap.set(uKey, {
-                        ...cj,
-                        jobType: isFault ? 'fault' : 'outage',
-                        ownerGroup: getJobGroupName(cj) || 'กฟส.บึง',
-                        _uniqueKey: uKey,
-                        _rawKey: rawKey
-                    });
+                    combinedMap.set(uKey, { ...cj, jobType: isFault ? 'fault' : 'outage', ownerGroup: getJobGroupName(cj) || 'กฟส.บึง', _uniqueKey: uKey, _rawKey: rawKey });
                 });
 
                 const localOutages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
@@ -8891,13 +8936,7 @@
                     if (!o || !o.dateTimeSaved || deletedReg[o.dateTimeSaved]) return;
                     const uKey = 'O_' + o.dateTimeSaved;
                     if (!combinedMap.has(uKey)) {
-                        combinedMap.set(uKey, {
-                            ...o,
-                            jobType: 'outage',
-                            ownerGroup: getJobGroupName(o) || 'กฟส.บึง',
-                            _uniqueKey: uKey,
-                            _rawKey: o.dateTimeSaved
-                        });
+                        combinedMap.set(uKey, { ...o, jobType: 'outage', ownerGroup: getJobGroupName(o) || 'กฟส.บึง', _uniqueKey: uKey, _rawKey: o.dateTimeSaved });
                     }
                 });
 
@@ -8906,13 +8945,7 @@
                     if (!f || !f.timestamp || deletedReg[f.timestamp]) return;
                     const uKey = 'F_' + f.timestamp;
                     if (!combinedMap.has(uKey)) {
-                        combinedMap.set(uKey, {
-                            ...f,
-                            jobType: 'fault',
-                            ownerGroup: getJobGroupName(f) || 'กฟส.บึง',
-                            _uniqueKey: uKey,
-                            _rawKey: f.timestamp
-                        });
+                        combinedMap.set(uKey, { ...f, jobType: 'fault', ownerGroup: getJobGroupName(f) || 'กฟส.บึง', _uniqueKey: uKey, _rawKey: f.timestamp });
                     }
                 });
 
@@ -8933,7 +8966,6 @@
                     const tB = b.jobType === 'fault' ? new Date(b.timestamp || 0).getTime() : parseOutageDateTimeToMs(b);
                     return tB - tA;
                 });
-
                 return list;
             }
 
@@ -8947,19 +8979,12 @@
                 if (summaryEl) summaryEl.textContent = `แสดงข้อมูลคลาวด์ ${items.length} รายการ`;
 
                 const visibleKeySet = new Set(items.map(i => i._uniqueKey));
-                Array.from(selectedCloudItemKeys).forEach(k => {
-                    if (!visibleKeySet.has(k)) selectedCloudItemKeys.delete(k);
-                });
-
+                Array.from(selectedCloudItemKeys).forEach(k => { if (!visibleKeySet.has(k)) selectedCloudItemKeys.delete(k); });
                 updateBulkDeleteButtonState(items.length);
 
                 if (items.length === 0) {
                     if (selectAllCb) selectAllCb.checked = false;
-                    container.innerHTML = `
-                        <div class="bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-300 text-xs">
-                            ☁️ ไม่พบข้อมูลบนคลาวด์ตามเงื่อนไขที่เลือก
-                        </div>
-                    `;
+                    container.innerHTML = `<div class="bg-white rounded-2xl p-8 text-center text-slate-400 border border-dashed border-slate-300 text-xs">☁️ ไม่พบข้อมูลบนคลาวด์ตามเงื่อนไขที่เลือก</div>`;
                     return;
                 }
 
@@ -8974,26 +8999,14 @@
                     const typeBadge = isFault
                         ? `<span class="bg-purple-100 text-purple-800 border border-purple-200 text-[10px] font-bold px-2 py-0.5 rounded-md">🚨 TR/TL (${item.system || '-'})</span>`
                         : `<span class="bg-blue-100 text-blue-800 border border-blue-200 text-[10px] font-bold px-2 py-0.5 rounded-md">📞 รับแจ้ง</span>`;
-
                     const groupBadge = `<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">🏢 ${item.ownerGroup || 'กฟส.บึง'}</span>`;
-
                     const statusBadge = isDone
                         ? `<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-md">✅ เสร็จสิ้น</span>`
-                        : (item.techNav
-                            ? `<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md">🚗 กำลังเดินทาง</span>`
-                            : `<span class="bg-slate-100 text-slate-600 text-[10px] font-semibold px-2 py-0.5 rounded-md">⏳ รอแก้ไข</span>`);
+                        : (item.techNav ? `<span class="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md">🚗 กำลังเดินทาง</span>` : `<span class="bg-slate-100 text-slate-600 text-[10px] font-semibold px-2 py-0.5 rounded-md">⏳ รอแก้ไข</span>`);
 
-                    const titleText = isFault
-                        ? `วงจร ${item.circuit || '-'} • สถานี ${item.station || '-'} (เวลา ${item.time || '-'})`
-                        : `งานที่ ${item.jobNo || '-'} (กะ ${item.shift || '-'}) • ${item.issueType || '-'}`;
-
-                    const subDetail = isFault
-                        ? `เหตุ: ${item.cause || '-'} ${item.count || 1} ครั้ง | เฟส: ${item.phase || '-'} | ผู้แจ้ง: ${item.reporter || '-'}`
-                        : `บริเวณ: ${item.area || '-'} | ที่อยู่: ${item.address || '-'} | โทร: ${item.phone || '-'}`;
-
-                    const dateDisplay = isFault
-                        ? (item.timestamp ? new Date(item.timestamp).toLocaleString('th-TH') : '-')
-                        : (item.dateTimeSaved || item.reportDate || '-');
+                    const titleText = isFault ? `วงจร ${item.circuit || '-'} • สถานี ${item.station || '-'} (เวลา ${item.time || '-'})` : `งานที่ ${item.jobNo || '-'} (กะ ${item.shift || '-'}) • ${item.issueType || '-'}`;
+                    const subDetail = isFault ? `เหตุ: ${item.cause || '-'} ${item.count || 1} ครั้ง | เฟส: ${item.phase || '-'} | ผู้แจ้ง: ${item.reporter || '-'}` : `บริเวณ: ${item.area || '-'} | ที่อยู่: ${item.address || '-'} | โทร: ${item.phone || '-'}`;
+                    const dateDisplay = isFault ? (item.timestamp ? new Date(item.timestamp).toLocaleString('th-TH') : '-') : (item.dateTimeSaved || item.reportDate || '-');
 
                     const card = document.createElement('div');
                     card.className = `bg-white rounded-xl p-3 border transition shadow-sm flex items-start gap-3 ${isChecked ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/20' : 'border-slate-200'}`;
@@ -9003,11 +9016,7 @@
                         </div>
                         <div class="flex-1 min-w-0 space-y-1">
                             <div class="flex flex-wrap items-center justify-between gap-1.5">
-                                <div class="flex flex-wrap items-center gap-1.5">
-                                    ${groupBadge}
-                                    ${typeBadge}
-                                    ${statusBadge}
-                                </div>
+                                <div class="flex flex-wrap items-center gap-1.5">${groupBadge}${typeBadge}${statusBadge}</div>
                                 <span class="text-[10px] text-slate-400 font-mono">${dateDisplay}</span>
                             </div>
                             <div class="text-xs font-bold text-slate-800 truncate">${titleText}</div>
@@ -9015,12 +9024,8 @@
                             ${tr ? `<div class="text-[10px] text-emerald-700 bg-emerald-50/80 px-2 py-1 rounded border border-emerald-100 break-words">🛠️ ผลช่าง: ${tr.actionTaken || tr.realCause || '-'} (ผู้ตรวจ: ${formatTechDisplayName(tr.inspector || '-')})</div>` : ''}
                         </div>
                         <div class="flex flex-col gap-1.5 shrink-0">
-                            <button type="button" onclick="openCloudItemEditModal('${item._uniqueKey.replace(/'/g, "\\'")}')" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap">
-                                ✏️ แก้ไข
-                            </button>
-                            <button type="button" onclick="deleteSingleCloudItem('${item._uniqueKey.replace(/'/g, "\\'")}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap">
-                                🗑️ ลบ
-                            </button>
+                            <button type="button" onclick="openCloudItemEditModal('${item._uniqueKey.replace(/'/g, "\\'")}')" class="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap">✏️ แก้ไข</button>
+                            <button type="button" onclick="deleteSingleCloudItem('${item._uniqueKey.replace(/'/g, "\\'")}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap">🗑️ ลบ</button>
                         </div>
                     `;
                     container.appendChild(card);
@@ -9035,11 +9040,7 @@
 
             window.toggleSelectAllCloudItems = function(isChecked) {
                 const items = getFilteredCloudRecords();
-                if (isChecked) {
-                    items.forEach(i => selectedCloudItemKeys.add(i._uniqueKey));
-                } else {
-                    items.forEach(i => selectedCloudItemKeys.delete(i._uniqueKey));
-                }
+                items.forEach(i => { if (isChecked) selectedCloudItemKeys.add(i._uniqueKey); else selectedCloudItemKeys.delete(i._uniqueKey); });
                 renderCloudManagerItems();
             };
 
@@ -9051,18 +9052,9 @@
                 const selectAllCb = document.getElementById('cloudSelectAllCheckbox');
 
                 if (badge) badge.textContent = `เลือกแล้ว ${count} รายการ`;
-                if (btn) {
-                    btn.disabled = count === 0;
-                    btn.innerHTML = `🗑️ ลบที่เลือก (${count})`;
-                }
-                if (exportBtn) {
-                    exportBtn.innerHTML = count > 0
-                        ? `📊 ส่งออก Excel ที่เลือก (${count})`
-                        : `📊 ส่งออก Excel แยกกลุ่ม`;
-                }
-                if (selectAllCb) {
-                    selectAllCb.checked = totalVisibleCount > 0 && count === totalVisibleCount;
-                }
+                if (btn) { btn.disabled = count === 0; btn.innerHTML = `🗑️ ลบที่เลือก (${count})`; }
+                if (exportBtn) { exportBtn.innerHTML = count > 0 ? `📊 ส่งออก Excel ที่เลือก (${count})` : `📊 ส่งออก Excel แยกกลุ่ม`; }
+                if (selectAllCb) { selectAllCb.checked = totalVisibleCount > 0 && count === totalVisibleCount; }
             }
 
             window.deleteSingleCloudItem = function(uniqueKey) {
@@ -9074,7 +9066,6 @@
 
             window.deleteSelectedCloudItems = function() {
                 if (!canAccessCloudManager() || selectedCloudItemKeys.size === 0) return;
-
                 const visibleItems = getFilteredCloudRecords();
                 const targets = visibleItems.filter(i => selectedCloudItemKeys.has(i._uniqueKey));
                 if (targets.length === 0) return;
@@ -9082,7 +9073,6 @@
                 showCustomConfirm(`คุณต้องการลบข้อมูลที่เลือกจำนวน ${targets.length} รายการ ออกจากคลาวด์และในเครื่องอย่างถาวรใช่หรือไม่?`, async function() {
                     const role = getUserRole();
                     const myGroup = getMyGroupStrict();
-
                     let outages = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elecReportsComplete_all') || '[]');
                     let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
                     const closedReg = typeof getClosedJobsRegistry === 'function' ? getClosedJobsRegistry() : {};
@@ -9093,12 +9083,8 @@
                         recordDeletedJobToRegistry(rawKey);
                         delete closedReg[rawKey];
                         delete window.cloudEditedJobsOverrideMap[t._uniqueKey];
-
-                        if (t.jobType === 'fault') {
-                            faults = faults.filter(f => f.timestamp !== rawKey);
-                        } else {
-                            outages = outages.filter(o => o.dateTimeSaved !== rawKey);
-                        }
+                        if (t.jobType === 'fault') faults = faults.filter(f => f.timestamp !== rawKey);
+                        else outages = outages.filter(o => o.dateTimeSaved !== rawKey);
                     });
 
                     const rawKeyRemoveSet = new Set(targets.map(t => t._rawKey));
@@ -9134,19 +9120,13 @@
                 modal.innerHTML = `
                     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
                         <div class="px-5 py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 text-white flex justify-between items-center">
-                            <h3 id="cloudEditModalTitle" class="font-bold text-sm sm:text-base flex items-center gap-2">
-                                ✏️ แก้ไขข้อมูลบนคลาวด์
-                            </h3>
+                            <h3 id="cloudEditModalTitle" class="font-bold text-sm sm:text-base flex items-center gap-2">✏️ แก้ไขข้อมูลบนคลาวด์</h3>
                             <button type="button" onclick="closeCloudItemEditModal()" class="text-white/80 hover:text-white text-2xl font-bold leading-none">&times;</button>
                         </div>
                         <div id="cloudEditModalFormBody" class="p-4 overflow-y-auto space-y-3 bg-slate-50 text-xs flex-1"></div>
                         <div class="px-4 py-3 bg-white border-t border-slate-200 flex justify-end gap-2">
-                            <button type="button" onclick="closeCloudItemEditModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition">
-                                ยกเลิก
-                            </button>
-                            <button type="button" id="btnSaveCloudItemEdit" onclick="saveCloudItemEdit()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow transition">
-                                💾 บันทึกขึ้นคลาวด์ทันที
-                            </button>
+                            <button type="button" onclick="closeCloudItemEditModal()" class="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition">ยกเลิก</button>
+                            <button type="button" id="btnSaveCloudItemEdit" onclick="saveCloudItemEdit()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow transition">💾 บันทึกขึ้นคลาวด์ทันที</button>
                         </div>
                     </div>
                 `;
@@ -9173,65 +9153,31 @@
                 const modal = ensureCloudItemEditModal();
                 const bodyEl = document.getElementById('cloudEditModalFormBody');
                 const titleEl = document.getElementById('cloudEditModalTitle');
-
                 const closedReg = typeof getClosedJobsRegistry === 'function' ? getClosedJobsRegistry() : {};
                 const tr = target.techReport || closedReg[target._rawKey] || {};
                 const curStatus = tr.status || (target.techNav ? 'กำลังดำเนินการ' : 'รอแก้ไข');
 
                 const groupFieldHtml = role === 'admin'
-                    ? `<div>
-                            <label class="block font-bold text-indigo-800 mb-1">🏢 กลุ่มสังกัด (Admin ย้ายหรือแก้ไขกลุ่มได้)</label>
-                            <input type="text" id="ce_ownerGroup" value="${target.ownerGroup || 'กฟส.บึง'}" class="w-full px-3 py-2 border border-indigo-300 rounded-xl bg-white font-bold text-indigo-900">
-                       </div>`
-                    : `<div>
-                            <label class="block font-bold text-slate-600 mb-1">🏢 กลุ่มสังกัด</label>
-                            <input type="text" id="ce_ownerGroup" value="${myGroup}" disabled class="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-100 font-bold text-slate-500">
-                       </div>`;
+                    ? `<div><label class="block font-bold text-indigo-800 mb-1">🏢 กลุ่มสังกัด (Admin ย้ายหรือแก้ไขกลุ่มได้)</label><input type="text" id="ce_ownerGroup" value="${target.ownerGroup || 'กฟส.บึง'}" class="w-full px-3 py-2 border border-indigo-300 rounded-xl bg-white font-bold text-indigo-900"></div>`
+                    : `<div><label class="block font-bold text-slate-600 mb-1">🏢 กลุ่มสังกัด</label><input type="text" id="ce_ownerGroup" value="${myGroup}" disabled class="w-full px-3 py-2 border border-slate-200 rounded-xl bg-slate-100 font-bold text-slate-500"></div>`;
 
                 if (target.jobType === 'outage') {
                     titleEl.textContent = `✏️ แก้ไขข้อมูลรับแจ้งบนคลาวด์ (งานที่ ${target.jobNo || '-'})`;
                     bodyEl.innerHTML = `
                         ${groupFieldHtml}
                         <div class="grid grid-cols-3 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">วันที่แจ้ง</label>
-                                <input type="text" id="ce_reportDate" value="${target.reportDate || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">งานที่</label>
-                                <input type="text" id="ce_jobNo" value="${target.jobNo || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">กะ</label>
-                                <input type="text" id="ce_shift" value="${target.shift || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">วันที่แจ้ง</label><input type="text" id="ce_reportDate" value="${target.reportDate || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">งานที่</label><input type="text" id="ce_jobNo" value="${target.jobNo || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">กะ</label><input type="text" id="ce_shift" value="${target.shift || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
                         </div>
-                        <div>
-                            <label class="block font-semibold text-slate-700 mb-1">⚡ ลักษณะอาการ</label>
-                            <input type="text" id="ce_issueType" value="${target.issueType || ''}" class="w-full px-3 py-2 border rounded-xl bg-white">
-                        </div>
+                        <div><label class="block font-semibold text-slate-700 mb-1">⚡ ลักษณะอาการ</label><input type="text" id="ce_issueType" value="${target.issueType || ''}" class="w-full px-3 py-2 border rounded-xl bg-white"></div>
                         <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">👷 ผู้ปฏิบัติงาน / ผู้รับแจ้ง</label>
-                                <input type="text" id="ce_workerName" value="${target.workerName || ''}" class="w-full px-3 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">📞 เบอร์โทรศัพท์</label>
-                                <input type="text" id="ce_phone" value="${target.phone || ''}" class="w-full px-3 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">👷 ผู้ปฏิบัติงาน / ผู้รับแจ้ง</label><input type="text" id="ce_workerName" value="${target.workerName || ''}" class="w-full px-3 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">📞 เบอร์โทรศัพท์</label><input type="text" id="ce_phone" value="${target.phone || ''}" class="w-full px-3 py-2 border rounded-xl bg-white"></div>
                         </div>
-                        <div>
-                            <label class="block font-semibold text-slate-700 mb-1">🗺️ บริเวณ</label>
-                            <input type="text" id="ce_area" value="${target.area || ''}" class="w-full px-3 py-2 border rounded-xl bg-white">
-                        </div>
-                        <div>
-                            <label class="block font-semibold text-slate-700 mb-1">🏠 ที่อยู่</label>
-                            <textarea id="ce_address" rows="2" class="w-full px-3 py-2 border rounded-xl bg-white">${target.address || ''}</textarea>
-                        </div>
-                        <div>
-                            <label class="block font-semibold text-slate-700 mb-1">📌 พิกัด GPS</label>
-                            <input type="text" id="ce_gps" value="${target.gps || ''}" class="w-full px-3 py-2 border rounded-xl bg-white">
-                        </div>
+                        <div><label class="block font-semibold text-slate-700 mb-1">🗺️ บริเวณ</label><input type="text" id="ce_area" value="${target.area || ''}" class="w-full px-3 py-2 border rounded-xl bg-white"></div>
+                        <div><label class="block font-semibold text-slate-700 mb-1">🏠 ที่อยู่</label><textarea id="ce_address" rows="2" class="w-full px-3 py-2 border rounded-xl bg-white">${target.address || ''}</textarea></div>
+                        <div><label class="block font-semibold text-slate-700 mb-1">📌 พิกัด GPS</label><input type="text" id="ce_gps" value="${target.gps || ''}" class="w-full px-3 py-2 border rounded-xl bg-white"></div>
                         <div class="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
                             <div class="font-bold text-emerald-800">🛠️ สถานะหน้างานและผลตรวจสอบช่าง</div>
                             <div>
@@ -9243,22 +9189,10 @@
                                 </select>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">สาเหตุจริง</label>
-                                    <input type="text" id="ce_realCause" value="${tr.realCause || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">การแก้ไข</label>
-                                    <input type="text" id="ce_actionTaken" value="${tr.actionTaken || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">เวลาเสร็จ</label>
-                                    <input type="text" id="ce_finishTime" value="${tr.finishTime || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">ช่างผู้ตรวจสอบ</label>
-                                    <input type="text" id="ce_inspector" value="${tr.inspector || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">สาเหตุจริง</label><input type="text" id="ce_realCause" value="${tr.realCause || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">การแก้ไข</label><input type="text" id="ce_actionTaken" value="${tr.actionTaken || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">เวลาเสร็จ</label><input type="text" id="ce_finishTime" value="${tr.finishTime || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">ช่างผู้ตรวจสอบ</label><input type="text" id="ce_inspector" value="${tr.inspector || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
                             </div>
                         </div>
                     `;
@@ -9267,69 +9201,27 @@
                     bodyEl.innerHTML = `
                         ${groupFieldHtml}
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">⏰ เวลา</label>
-                                <input type="text" id="ce_time" value="${target.time || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">🔌 ระบบ</label>
-                                <select id="ce_system" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                                    <option value="22kV" ${target.system === '22kV' ? 'selected' : ''}>22kV</option>
-                                    <option value="115kV" ${target.system === '115kV' ? 'selected' : ''}>115kV</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">⚡ วงจร</label>
-                                <input type="text" id="ce_circuit" value="${target.circuit || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">🏭 สถานี</label>
-                                <input type="text" id="ce_station" value="${target.station || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">⏰ เวลา</label><input type="text" id="ce_time" value="${target.time || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">🔌 ระบบ</label><select id="ce_system" class="w-full px-2.5 py-2 border rounded-xl bg-white"><option value="22kV" ${target.system === '22kV' ? 'selected' : ''}>22kV</option><option value="115kV" ${target.system === '115kV' ? 'selected' : ''}>115kV</option></select></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">⚡ วงจร</label><input type="text" id="ce_circuit" value="${target.circuit || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">🏭 สถานี</label><input type="text" id="ce_station" value="${target.station || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
                         </div>
                         <div class="grid grid-cols-3 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">🚨 เหตุ</label>
-                                <input type="text" id="ce_cause" value="${target.cause || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">จำนวนครั้ง</label>
-                                <input type="text" id="ce_count" value="${target.count || '1'}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">🔴 โชว์เฟส</label>
-                                <input type="text" id="ce_phase" value="${target.phase || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">🚨 เหตุ</label><input type="text" id="ce_cause" value="${target.cause || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">จำนวนครั้ง</label><input type="text" id="ce_count" value="${target.count || '1'}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">🔴 โชว์เฟส</label><input type="text" id="ce_phase" value="${target.phase || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">🌤️ สภาพอากาศ</label>
-                                <input type="text" id="ce_weather" value="${target.weather || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">📟 อุปกรณ์เห็นฟอลต์</label>
-                                <input type="text" id="ce_device" value="${target.device || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">🌤️ สภาพอากาศ</label><input type="text" id="ce_weather" value="${target.weather || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">📟 อุปกรณ์เห็นฟอลต์</label><input type="text" id="ce_device" value="${target.device || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">🔌 ปัจจุบันปลดอุปกรณ์</label>
-                                <input type="text" id="ce_disconnectDevice" value="${target.disconnectDevice || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">⚡ จ่ายไฟมาชนอุปกรณ์</label>
-                                <input type="text" id="ce_powerUpToDevice" value="${target.powerUpToDevice || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">🔌 ปัจจุบันปลดอุปกรณ์</label><input type="text" id="ce_disconnectDevice" value="${target.disconnectDevice || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">⚡ จ่ายไฟมาชนอุปกรณ์</label><input type="text" id="ce_powerUpToDevice" value="${target.powerUpToDevice || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">📞 สาเหตุ/รับแจ้งจาก</label>
-                                <input type="text" id="ce_reporter" value="${target.reporter || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">📍 พิกัด GPS</label>
-                                <input type="text" id="ce_gps" value="${target.gps || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white">
-                            </div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">📞 สาเหตุ/รับแจ้งจาก</label><input type="text" id="ce_reporter" value="${target.reporter || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
+                            <div><label class="block font-semibold text-slate-700 mb-1">📍 พิกัด GPS</label><input type="text" id="ce_gps" value="${target.gps || ''}" class="w-full px-2.5 py-2 border rounded-xl bg-white"></div>
                         </div>
                         <div class="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
                             <div class="font-bold text-emerald-800">🛠️ สถานะหน้างานและผลตรวจสอบช่าง</div>
@@ -9342,27 +9234,14 @@
                                 </select>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">สาเหตุจริง</label>
-                                    <input type="text" id="ce_realCause" value="${tr.realCause || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">การแก้ไข</label>
-                                    <input type="text" id="ce_actionTaken" value="${tr.actionTaken || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">เวลาเสร็จ</label>
-                                    <input type="text" id="ce_finishTime" value="${tr.finishTime || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
-                                <div>
-                                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">ช่างผู้ตรวจสอบ</label>
-                                    <input type="text" id="ce_inspector" value="${tr.inspector || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white">
-                                </div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">สาเหตุจริง</label><input type="text" id="ce_realCause" value="${tr.realCause || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">การแก้ไข</label><input type="text" id="ce_actionTaken" value="${tr.actionTaken || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">เวลาเสร็จ</label><input type="text" id="ce_finishTime" value="${tr.finishTime || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
+                                <div><label class="block text-[11px] font-semibold text-slate-600 mb-1">ช่างผู้ตรวจสอบ</label><input type="text" id="ce_inspector" value="${tr.inspector || ''}" class="w-full px-2.5 py-1.5 border rounded-lg bg-white"></div>
                             </div>
                         </div>
                     `;
                 }
-
                 modal.classList.remove('hidden');
             };
 
@@ -9375,9 +9254,7 @@
                 if (!canAccessCloudManager() || !currentEditingCloudKey) return;
                 const role = getUserRole();
                 const myGroup = getMyGroupStrict();
-                const newOwnerGroup = role === 'admin'
-                    ? ((document.getElementById('ce_ownerGroup')?.value || '').trim() || myGroup)
-                    : myGroup;
+                const newOwnerGroup = role === 'admin' ? ((document.getElementById('ce_ownerGroup')?.value || '').trim() || myGroup) : myGroup;
 
                 const techStatus = document.getElementById('ce_techStatus')?.value || 'รอแก้ไข';
                 const realCause = (document.getElementById('ce_realCause')?.value || '').trim() || '-';
@@ -9406,48 +9283,22 @@
                     const pInfo = getIssuePriority(issueType);
 
                     let msg = `${pInfo.emoji} งานที่${jobNo} กะ${shift}  รับแจ้งไฟฟ้าขัดข้อง วันที่${reportDate}\n` +
-                              `🛠️***อย่าลืมทำ*** We safe \n` +
-                              `⚡ลักษณะอาการ :  ${issueType}\n` +
-                              `👷ผู้ปฏิบัติงาน ${workerName}\n` +
-                              `🗺️ บริเวณ :  ${area}\n\n` +
-                              `🏠ที่อยู่ : ${address}\n` +
-                              `📞เบอร์โทร : ${phone}\n\n` +
-                              `📌พิกัด  : ${gps}`;
+                              `🛠️***อย่าลืมทำ*** We safe \n⚡ลักษณะอาการ :  ${issueType}\n👷ผู้ปฏิบัติงาน ${workerName}\n🗺️ บริเวณ :  ${area}\n\n🏠ที่อยู่ : ${address}\n📞เบอร์โทร : ${phone}\n\n📌พิกัด  : ${gps}`;
 
-                    updatedRecord = {
-                        ...baseObj,
-                        jobType: 'outage',
-                        ownerGroup: newOwnerGroup,
-                        reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps,
-                        priorityLevel: pInfo.level
-                    };
+                    updatedRecord = { ...baseObj, jobType: 'outage', ownerGroup: newOwnerGroup, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, priorityLevel: pInfo.level };
 
                     if (techStatus !== 'รอแก้ไข') {
-                        const repObj = {
-                            status: techStatus,
-                            realCause,
-                            actionTaken,
-                            fieldGps: gps,
-                            finishTime,
-                            inspector,
-                            updatedAt: new Date().toISOString()
-                        };
+                        const repObj = { status: techStatus, realCause, actionTaken, fieldGps: gps, finishTime, inspector, updatedAt: new Date().toISOString() };
                         updatedRecord.techReport = repObj;
                         msg += `\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---\n📋 งานที่ ${jobNo} กะ ${shift}\n🚦 สถานะ : ${techStatus}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}`;
-                        if (techStatus.includes('เสร็จสิ้น')) {
-                            closedReg[currentEditingCloudKey] = repObj;
-                            delete updatedRecord.techNav;
-                        }
+                        if (techStatus.includes('เสร็จสิ้น')) { closedReg[currentEditingCloudKey] = repObj; delete updatedRecord.techNav; }
                     } else {
                         delete updatedRecord.techReport;
                         delete closedReg[currentEditingCloudKey];
                         updatedRecord.reopenedAt = new Date().toISOString();
                     }
-
                     updatedRecord.formattedText = msg;
-
-                    if (idx !== -1) outages[idx] = updatedRecord;
-                    else outages.unshift(updatedRecord);
+                    if (idx !== -1) outages[idx] = updatedRecord; else outages.unshift(updatedRecord);
                     localStorage.setItem('elecReportsComplete_all', JSON.stringify(outages));
                 } else {
                     let faults = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'fault_reports_all') || '[]');
@@ -9480,49 +9331,27 @@
                         ? `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n📍 ระยะทาง : ${baseObj.distance || '-'}\n🎯 โซน : ${baseObj.zone || '-'}\n📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`
                         : `⏰ เวลา : ${time}\n🔌 ระบบ : ${system}\n⚡ วงจร : ${circuit}\n🏭 สถานี : ${station}\n🌤️ สภาพอากาศ : ${weather}\n🚨 เหตุ : ${causeStr}\n🔴 โชว์เฟส : ${phase}\n💥 กระแส : ${currentDisplay}\n🔄 ปัจจุบันกระแส : ${baseObj.presentCurr || '-'}\n📟 อุปกรณ์เห็นฟอลต์ : ${device}\n🔌 ปัจจุบันปลดอุปกรณ์ : ${disconnectDevice}\n⚡ จ่ายไฟมาชนอุปกรณ์ : ${powerUpToDevice}\n📞 สาเหตุ/เบื้องต้นมีรับแจ้งจาก : ${reporter}\n📍 พิกัด GPS : ${gps}`;
 
-                    updatedRecord = {
-                        ...baseObj,
-                        jobType: 'fault',
-                        ownerGroup: newOwnerGroup,
-                        time, system, circuit, station, cause, count, phase, weather,
-                        device, disconnectDevice, powerUpToDevice, reporter, gps
-                    };
+                    updatedRecord = { ...baseObj, jobType: 'fault', ownerGroup: newOwnerGroup, time, system, circuit, station, cause, count, phase, weather, device, disconnectDevice, powerUpToDevice, reporter, gps };
 
                     if (techStatus !== 'รอแก้ไข') {
-                        const repObj = {
-                            status: techStatus,
-                            realCause,
-                            actionTaken,
-                            fieldGps: gps,
-                            finishTime,
-                            inspector,
-                            updatedAt: new Date().toISOString()
-                        };
+                        const repObj = { status: techStatus, realCause, actionTaken, fieldGps: gps, finishTime, inspector, updatedAt: new Date().toISOString() };
                         updatedRecord.techReport = repObj;
                         msg += `\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---\n📋 วงจร ${circuit} สถานี${station} (${system})\n🚦 สถานะ : ${techStatus}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}`;
-                        if (techStatus.includes('เสร็จสิ้น')) {
-                            closedReg[currentEditingCloudKey] = repObj;
-                            delete updatedRecord.techNav;
-                        }
+                        if (techStatus.includes('เสร็จสิ้น')) { closedReg[currentEditingCloudKey] = repObj; delete updatedRecord.techNav; }
                     } else {
                         delete updatedRecord.techReport;
                         delete closedReg[currentEditingCloudKey];
                         updatedRecord.reopenedAt = new Date().toISOString();
                     }
-
                     updatedRecord.formattedText = msg;
-
-                    if (idx !== -1) faults[idx] = updatedRecord;
-                    else faults.unshift(updatedRecord);
+                    if (idx !== -1) faults[idx] = updatedRecord; else faults.unshift(updatedRecord);
                     localStorage.setItem('fault_reports_all', JSON.stringify(faults));
                 }
 
                 syncClosedRegistryObject(closedReg);
                 window.cloudEditedJobsOverrideMap[mapKey] = updatedRecord;
 
-                const cIdx = (cachedCloudJobs || []).findIndex(cj =>
-                    (currentEditingCloudType === 'fault' ? cj.timestamp : cj.dateTimeSaved) === currentEditingCloudKey
-                );
+                const cIdx = (cachedCloudJobs || []).findIndex(cj => (currentEditingCloudType === 'fault' ? cj.timestamp : cj.dateTimeSaved) === currentEditingCloudKey);
                 if (cIdx !== -1) cachedCloudJobs[cIdx] = updatedRecord;
                 else if (Array.isArray(cachedCloudJobs)) cachedCloudJobs.unshift(updatedRecord);
 
@@ -9557,11 +9386,7 @@
             window.addEventListener('DOMContentLoaded', () => {
                 injectCloudManagerHeaderButton();
                 injectCloudBackupSectionIntoBackupModal();
-                setTimeout(() => {
-                    if (canAccessCloudManager()) {
-                        backupToCloudByGroup(true);
-                    }
-                }, 4000);
+                setTimeout(() => { if (canAccessCloudManager()) backupToCloudByGroup(true); }, 4000);
             });
         })();
     </script>
@@ -9620,9 +9445,7 @@
                         </div>
                         <div class="flex gap-1.5 items-center">
                             <input type="text" id="searchUserAccountInput" oninput="renderUserAccountList()" placeholder="🔍 ค้นหารหัสพนักงาน, ชื่อช่าง, หรือกลุ่ม..." class="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:outline-none">
-                            <button type="button" onclick="toggleCollapseAllUserGroups()" class="shrink-0 bg-white hover:bg-slate-50 text-slate-600 border border-slate-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition" title="ย่อหรือขยายกลุ่มทั้งหมด">
-                                📂 ย่อ/ขยาย
-                            </button>
+                            <button type="button" onclick="toggleCollapseAllUserGroups()" class="shrink-0 bg-white hover:bg-slate-50 text-slate-600 border border-slate-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition" title="ย่อหรือขยายกลุ่มทั้งหมด">📂 ย่อ/ขยาย</button>
                         </div>
                     `;
                     listContainer.parentElement.insertBefore(filterBar, listContainer);
@@ -9634,21 +9457,16 @@
 
             window.onNewAccountGroupSelectChange = function(val) {
                 const customInp = document.getElementById('newAccountCustomGroupInput');
-                if (customInp && val) {
-                    customInp.value = val;
-                }
+                if (customInp && val) customInp.value = val;
             };
 
             function refreshUserGroupSelectOptions() {
                 const groups = getAllUserAccountGroups();
-
                 const newGrpSelect = document.getElementById('newAccountGroupSelect');
                 if (newGrpSelect) {
                     const curVal = newGrpSelect.value;
-                    newGrpSelect.innerHTML = `<option value="">🏢 เลือกกลุ่มที่มีอยู่...</option>` +
-                        groups.map(g => `<option value="${g}" ${curVal === g ? 'selected' : ''}>🏢 ${g}</option>`).join('');
+                    newGrpSelect.innerHTML = `<option value="">🏢 เลือกกลุ่มที่มีอยู่...</option>` + groups.map(g => `<option value="${g}" ${curVal === g ? 'selected' : ''}>🏢 ${g}</option>`).join('');
                 }
-
                 const filterGrpSelect = document.getElementById('filterUserGroupSelect');
                 if (filterGrpSelect) {
                     const curFilter = filterGrpSelect.value || 'all';
@@ -9662,21 +9480,15 @@
             }
 
             window.toggleUserGroupSection = function(groupKey) {
-                if (collapsedUserGroups.has(groupKey)) {
-                    collapsedUserGroups.delete(groupKey);
-                } else {
-                    collapsedUserGroups.add(groupKey);
-                }
+                if (collapsedUserGroups.has(groupKey)) collapsedUserGroups.delete(groupKey);
+                else collapsedUserGroups.add(groupKey);
                 renderUserAccountList();
             };
 
             window.toggleCollapseAllUserGroups = function() {
                 const allKeys = Array.from(document.querySelectorAll('[data-user-group-key]')).map(el => el.getAttribute('data-user-group-key'));
-                if (collapsedUserGroups.size < allKeys.length) {
-                    allKeys.forEach(k => collapsedUserGroups.add(k));
-                } else {
-                    collapsedUserGroups.clear();
-                }
+                if (collapsedUserGroups.size < allKeys.length) allKeys.forEach(k => collapsedUserGroups.add(k));
+                else collapsedUserGroups.clear();
                 renderUserAccountList();
             };
 
@@ -9684,7 +9496,6 @@
                 const grpSelect = document.getElementById('newAccountGroupSelect');
                 const grpCustom = document.getElementById('newAccountCustomGroupInput');
                 const userInp = document.getElementById('newAccountUsername');
-
                 if (grpSelect) grpSelect.value = groupName;
                 if (grpCustom) grpCustom.value = groupName;
                 if (userInp) {
@@ -9698,17 +9509,14 @@
                 showCustomPrompt(`เปลี่ยนชื่อกลุ่ม "${oldGroupName}" สำหรับทุกบัญชีในกลุ่มนี้เป็น:`, oldGroupName, function(newGroupRaw) {
                     const newGrp = (newGroupRaw || '').trim();
                     if (!newGrp || newGrp === oldGroupName) return;
-
                     let updatedCount = 0;
                     userAccountsList.forEach(acc => {
-                        const g = getUserGroupName(acc.username);
-                        if (g === oldGroupName) {
+                        if (getUserGroupName(acc.username) === oldGroupName) {
                             const baseId = getUserBaseId(acc.username);
                             acc.username = normalizeUsernameFormat(`${baseId} ${newGrp}`);
                             updatedCount++;
                         }
                     });
-
                     if (updatedCount > 0) {
                         saveUserAccounts();
                         refreshUserGroupSelectOptions();
@@ -9723,14 +9531,11 @@
                 const userEl = document.getElementById('newAccountUsername');
                 const customGrpEl = document.getElementById('newAccountCustomGroupInput');
                 const selectGrpEl = document.getElementById('newAccountGroupSelect');
-
                 let rawU = (userEl?.value || '').trim();
                 const chosenGrp = (customGrpEl?.value || selectGrpEl?.value || '').trim();
-
                 if (rawU && chosenGrp && !getUserGroupName(rawU) && rawU.toLowerCase() !== 'admin') {
                     userEl.value = `${rawU} ${chosenGrp}`;
                 }
-
                 _origAddUserAccount();
                 refreshUserGroupSelectOptions();
                 renderUserAccountList();
@@ -9750,7 +9555,6 @@
                 if (!container) return;
 
                 refreshUserGroupSelectOptions();
-
                 const groupFilter = document.getElementById('filterUserGroupSelect')?.value || 'all';
                 const roleFilter = document.getElementById('filterUserRoleSelect')?.value || 'all';
                 const searchQ = (document.getElementById('searchUserAccountInput')?.value || '').toLowerCase().trim();
@@ -9758,16 +9562,8 @@
 
                 const indexedAccounts = (userAccountsList || []).map((acc, idx) => {
                     const grp = getUserGroupName(acc.username);
-                    let groupKey = grp;
-                    if (!groupKey) {
-                        groupKey = (acc.role === 'admin') ? '__ADMIN_CENTRAL__' : '__UNGROUPED__';
-                    }
-                    return {
-                        ...acc,
-                        _origIdx: idx,
-                        _groupName: grp,
-                        _groupKey: groupKey
-                    };
+                    let groupKey = grp || ((acc.role === 'admin') ? '__ADMIN_CENTRAL__' : '__UNGROUPED__');
+                    return { ...acc, _origIdx: idx, _groupName: grp, _groupKey: groupKey };
                 });
 
                 const filteredAccounts = indexedAccounts.filter(item => {
@@ -9781,27 +9577,18 @@
                 });
 
                 if (badge) {
-                    badge.textContent = filteredAccounts.length === userAccountsList.length
-                        ? `${userAccountsList.length} บัญชี`
-                        : `แสดง ${filteredAccounts.length} / ${userAccountsList.length} บัญชี`;
+                    badge.textContent = filteredAccounts.length === userAccountsList.length ? `${userAccountsList.length} บัญชี` : `แสดง ${filteredAccounts.length} / ${userAccountsList.length} บัญชี`;
                 }
 
                 container.innerHTML = '';
-
                 if (filteredAccounts.length === 0) {
-                    container.innerHTML = `
-                        <div class="text-center text-slate-400 text-xs py-8 bg-white rounded-xl border border-dashed border-slate-300">
-                            ไม่พบบัญชีผู้ใช้ที่ตรงกับเงื่อนไขการค้นหา
-                        </div>
-                    `;
+                    container.innerHTML = `<div class="text-center text-slate-400 text-xs py-8 bg-white rounded-xl border border-dashed border-slate-300">ไม่พบบัญชีผู้ใช้ที่ตรงกับเงื่อนไขการค้นหา</div>`;
                     return;
                 }
 
                 const groupedMap = new Map();
                 filteredAccounts.forEach(item => {
-                    if (!groupedMap.has(item._groupKey)) {
-                        groupedMap.set(item._groupKey, []);
-                    }
+                    if (!groupedMap.has(item._groupKey)) groupedMap.set(item._groupKey, []);
                     groupedMap.get(item._groupKey).push(item);
                 });
 
@@ -9816,7 +9603,6 @@
                 sortedGroupKeys.forEach(gKey => {
                     const members = groupedMap.get(gKey);
                     const isCollapsed = collapsedUserGroups.has(gKey) && !searchQ;
-
                     let groupTitle = `🏢 กลุ่มสังกัด: ${gKey}`;
                     let headerBgClass = 'from-indigo-600 to-blue-700 text-white';
                     let isRealNamedGroup = true;
@@ -9834,7 +9620,6 @@
                     const countAdmin = members.filter(m => m.role === 'admin').length;
                     const countUser = members.filter(m => m.role === 'user' || !m.role).length;
                     const countTech = members.filter(m => m.role === 'tech').length;
-
                     const roleSummaryBadges = [
                         countAdmin > 0 ? `<span class="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">👑 ${countAdmin}</span>` : '',
                         countUser > 0 ? `<span class="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">👷 ${countUser}</span>` : '',
@@ -9842,7 +9627,6 @@
                     ].filter(Boolean).join('');
 
                     const safeGKey = gKey.replace(/'/g, "\\'");
-
                     const section = document.createElement('div');
                     section.className = 'rounded-xl border border-slate-200 overflow-hidden bg-slate-100/80 shadow-sm mb-3';
                     section.setAttribute('data-user-group-key', gKey);
@@ -9858,12 +9642,8 @@
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
                             ${isRealNamedGroup ? `
-                                <button type="button" onclick="prefillGroupForNewAccount('${safeGKey}')" class="bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-2 py-1 rounded-md transition" title="เพิ่มพนักงานใหม่เข้ากลุ่มนี้">
-                                    ➕ เพิ่มคน
-                                </button>
-                                <button type="button" onclick="renameEntireUserGroup('${safeGKey}')" class="bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-1.5 py-1 rounded-md transition" title="เปลี่ยนชื่อกลุ่มนี้">
-                                    ✏️
-                                </button>
+                                <button type="button" onclick="prefillGroupForNewAccount('${safeGKey}')" class="bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-2 py-1 rounded-md transition" title="เพิ่มพนักงานใหม่เข้ากลุ่มนี้">➕ เพิ่มคน</button>
+                                <button type="button" onclick="renameEntireUserGroup('${safeGKey}')" class="bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-1.5 py-1 rounded-md transition" title="เปลี่ยนชื่อกลุ่มนี้">✏️</button>
                             ` : ''}
                         </div>
                     `;
@@ -9878,14 +9658,9 @@
                         const role = acc.role || 'user';
                         const roleIcon = role === 'admin' ? '👑' : (role === 'tech' ? '🛠️' : '👷');
                         const roleLabel = role === 'admin' ? 'แอดมิน' : (role === 'tech' ? 'ผู้ใช้งานช่าง' : 'ผู้ใช้ทั่วไป');
-                        const roleBadgeClass = role === 'admin'
-                            ? 'bg-purple-100 text-purple-700'
-                            : (role === 'tech' ? 'bg-teal-100 text-teal-800' : 'bg-blue-50 text-blue-600');
-
+                        const roleBadgeClass = role === 'admin' ? 'bg-purple-100 text-purple-700' : (role === 'tech' ? 'bg-teal-100 text-teal-800' : 'bg-blue-50 text-blue-600');
                         const baseId = getUserBaseId(acc.username);
-                        const displayNameBadge = acc.displayName
-                            ? `<span class="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded font-bold">🏷️ ${acc.displayName}</span>`
-                            : '';
+                        const displayNameBadge = acc.displayName ? `<span class="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded font-bold">🏷️ ${acc.displayName}</span>` : '';
 
                         const card = document.createElement('div');
                         card.className = 'flex items-center justify-between bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm text-xs hover:border-indigo-300 transition';
@@ -9894,9 +9669,7 @@
                                 <div class="flex items-center gap-1.5 flex-wrap">
                                     <span class="font-bold text-slate-800 truncate text-xs sm:text-sm">${roleIcon} ${baseId || acc.username}</span>
                                     ${displayNameBadge}
-                                    <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold ${roleBadgeClass}">
-                                        ${roleLabel}
-                                    </span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold ${roleBadgeClass}">${roleLabel}</span>
                                     ${isMe ? '<span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">เครื่องนี้</span>' : ''}
                                 </div>
                                 <div class="text-[11px] text-slate-500 flex items-center gap-1.5">
@@ -9918,23 +9691,19 @@
             };
         })();
     </script>
+
     <!-- 📋 ระบบวางข้อมูลผู้ใช้ไฟกรอกอัตโนมัติ + ย้ายปุ่มฐานข้อมูล CA + ตรวจจับเลข 02 นำหน้า + ดึงและลบ GoogleMap:https://... ออกจากช่องที่อยู่ -->
     <script>
         (function() {
             const STRIP_WORDS_STORAGE_KEY = 'elec_paste_strip_words';
             const STRIP_LINE_MODE_KEY = 'elec_paste_strip_whole_line';
             const STRIP_RULES_STORAGE_KEY = 'elec_paste_strip_rules';
-
-            const DEFAULT_STRIP_WORDS = [
-                "ข้อมูลผู้ใช้ไฟฟ้า",
-                "รายละเอียดผู้แจ้ง"
-            ];
-
+            const DEFAULT_STRIP_WORDS = ["ข้อมูลผู้ใช้ไฟฟ้า", "รายละเอียดผู้แจ้ง"];
             const DEFAULT_STRIP_RULES = {
-                stripCustomerName: true,       // ตัด "ชื่อผู้ใช้ไฟฟ้า" และชื่อคน (ทั้งบรรทัดเดียวกันและคนละบรรทัด)
-                stripPhoneTextAndNum: false,   // ตัดข้อความเบอร์โทรและตัวเลขเบอร์โทรออกทั้งหมด
-                stripStandaloneNumbers: false, // ตัดตัวเลขลอยๆ ที่ไม่เกี่ยวข้องออก
-                stripAllDigits: false          // ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด
+                stripCustomerName: true,
+                stripPhoneTextAndNum: false,
+                stripStandaloneNumbers: false,
+                stripAllDigits: false
             };
 
             let stripWordsList = [];
@@ -9947,9 +9716,7 @@
                     try {
                         const parsed = JSON.parse(savedWords);
                         stripWordsList = Array.isArray(parsed) ? parsed : [...DEFAULT_STRIP_WORDS];
-                    } catch (e) {
-                        stripWordsList = [...DEFAULT_STRIP_WORDS];
-                    }
+                    } catch (e) { stripWordsList = [...DEFAULT_STRIP_WORDS]; }
                 } else {
                     stripWordsList = [...DEFAULT_STRIP_WORDS];
                     localStorage.setItem(STRIP_WORDS_STORAGE_KEY, JSON.stringify(stripWordsList));
@@ -9957,15 +9724,11 @@
 
                 const savedRules = localStorage.getItem(STRIP_RULES_STORAGE_KEY);
                 if (savedRules) {
-                    try {
-                        stripRules = { ...DEFAULT_STRIP_RULES, ...JSON.parse(savedRules) };
-                    } catch (e) {
-                        stripRules = { ...DEFAULT_STRIP_RULES };
-                    }
+                    try { stripRules = { ...DEFAULT_STRIP_RULES, ...JSON.parse(savedRules) }; }
+                    catch (e) { stripRules = { ...DEFAULT_STRIP_RULES }; }
                 } else {
                     localStorage.setItem(STRIP_RULES_STORAGE_KEY, JSON.stringify(stripRules));
                 }
-
                 updateStripWordsCountBadge();
             }
 
@@ -9992,53 +9755,28 @@
                 badge.textContent = stripWordsList.length + activeRulesCount;
             }
 
-            // ==========================================
-            // 📌 ฟังก์ชันดึงลิงก์ GoogleMap:https://... ไปใส่ช่อง GPS และลบออกจากข้อความที่อยู่ทันที
-            // ==========================================
             function extractAndRemoveGoogleMapLinks(rawStr) {
                 if (!rawStr) return { cleanedText: '', extractedUrl: '' };
                 let cleaned = String(rawStr);
                 let foundUrl = '';
-
-                // จับทั้งคำนำหน้า (เช่น GoogleMap:, Google Maps:, พิกัด:, แผนที่:) และตัวลิงก์ URL
                 const fullMapPattern = /(?:(?:📌|📍)\s*)?(?:(?:Google\s*Maps?|Maps?|แผนที่|พิกัด(?:\s*GPS)?|GPS(?:\s*Link)?)\s*[:：=]?\s*)*(https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|(?:www\.)?google\.[a-z.]+\/maps)[^\s"'<>]+)/gi;
 
                 cleaned = cleaned.replace(fullMapPattern, function(fullMatch, urlPart) {
-                    if (!foundUrl && urlPart) {
-                        foundUrl = urlPart.trim();
-                    }
-                    return ''; // ลบทั้งคำว่า GoogleMap: และตัวลิงก์ออกทั้งหมด
+                    if (!foundUrl && urlPart) foundUrl = urlPart.trim();
+                    return '';
                 });
-
-                // ลบคำว่า GoogleMap: หรือ Google Maps: ที่อาจตกค้างอยู่ลอยๆ
                 cleaned = cleaned.replace(/(?:📌|📍)?\s*(?:Google\s*Maps?)\s*[:：=]?/gi, '');
-
-                return {
-                    cleanedText: cleaned,
-                    extractedUrl: foundUrl
-                };
+                return { cleanedText: cleaned, extractedUrl: foundUrl };
             }
 
-            // ==========================================
-            // 💳 ฟังก์ชันตรวจจับเลข CA ค้างจ่าย (รองรับทั้งมีคำว่า CA และเลข 12 หลักที่ขึ้นต้นด้วย 02)
-            // ==========================================
             function extractAllCandidateCaNumbers(text) {
                 if (!text) return [];
                 const found = new Set();
                 const s = String(text);
-
-                // 1. กรณีมีคำว่า CA นำหน้า (ตัวเลข 12 หลัก)
                 const caPrefixRegex = /CA\s*(?:No\.?)?\s*[:：=]?\s*(\d{12})/gi;
-                for (const m of s.matchAll(caPrefixRegex)) {
-                    if (m[1]) found.add(m[1]);
-                }
-
-                // 2. กรณีไม่มีคำว่า CA นำหน้า ให้ตรวจจากตัวเลข 12 หลักที่ขึ้นต้นด้วย "02"
+                for (const m of s.matchAll(caPrefixRegex)) { if (m[1]) found.add(m[1]); }
                 const zeroTwoRegex = /(?:^|[^\d])(02\d{10})(?!\d)/g;
-                for (const m of s.matchAll(zeroTwoRegex)) {
-                    if (m[1]) found.add(m[1]);
-                }
-
+                for (const m of s.matchAll(zeroTwoRegex)) { if (m[1]) found.add(m[1]); }
                 return Array.from(found);
             }
 
@@ -10048,15 +9786,10 @@
                 const combinedText = `${pasteText}\n${addrText}`;
 
                 let overdueList = [];
-                try {
-                    overdueList = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]');
-                } catch (e) {
-                    overdueList = [];
-                }
+                try { overdueList = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]'); } catch (e) { overdueList = []; }
 
                 const candidates = extractAllCandidateCaNumbers(combinedText);
                 const matchedOverdueCa = candidates.find(ca => overdueList.includes(ca));
-
                 const bannerEl = document.getElementById('caOverdueBanner');
                 const bannerTextEl = document.getElementById('caOverdueText');
 
@@ -10077,19 +9810,15 @@
                 }
             };
 
-            // 1. สร้างกล่องวางข้อมูลผู้ใช้ไฟใต้กล่องผู้ช่วย AI และจัดเรียงปุ่ม 3 ช่องพอดีกรอบ
             function injectAutoFillPasteBox() {
                 const chatbotEl = document.getElementById('geminiChatbot');
                 if (!chatbotEl || document.getElementById('autoFillCustomerContainer')) return;
 
-                // ลบปุ่มฐานข้อมูล CA เดิมออกจากหัวข้อ "ที่อยู่"
                 const oldCaBtn = document.querySelector('[data-id="address"] button[onclick="openCaManageModal()"]');
                 if (oldCaBtn) oldCaBtn.remove();
 
                 let currentCaCount = 0;
-                try {
-                    currentCaCount = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]').length;
-                } catch (e) {}
+                try { currentCaCount = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]').length; } catch (e) {}
 
                 const container = document.createElement('div');
                 container.id = 'autoFillCustomerContainer';
@@ -10121,12 +9850,9 @@
 
                 chatbotEl.insertAdjacentElement('afterend', container);
 
-                // ย้ายแถบแจ้งเตือนยอดค้างจ่าย (#caOverdueBanner) มาแสดงในกล่องวางข้อมูลอัตโนมัติ
                 const existingBanner = document.getElementById('caOverdueBanner');
                 const bannerSlot = document.getElementById('autoFillCaBannerSlot');
-                if (existingBanner && bannerSlot) {
-                    bannerSlot.appendChild(existingBanner);
-                }
+                if (existingBanner && bannerSlot) bannerSlot.appendChild(existingBanner);
 
                 const pasteInput = document.getElementById('rawCustomerPasteInput');
                 if (pasteInput) {
@@ -10138,7 +9864,6 @@
                     });
                 }
 
-                // ดักจับในช่อง "ที่อยู่" (#address) ด้วย หากมีข้อความ GoogleMap:https://... ค้างหรือถูกวางในช่องที่อยู่ ให้ย้ายไปช่อง GPS และลบออกจากช่องที่อยู่ทันที
                 const addressEl = document.getElementById('address');
                 if (addressEl) {
                     addressEl.addEventListener('input', function() {
@@ -10149,16 +9874,10 @@
                                 gpsEl.value = res.extractedUrl;
                                 gpsEl.dispatchEvent(new Event('input'));
                             }
-                            this.value = res.cleanedText
-                                .split(/\r?\n/)
-                                .map(l => l.trim())
-                                .filter(Boolean)
-                                .join('\n');
+                            this.value = res.cleanedText.split(/\r?\n/).map(l => l.trim()).filter(Boolean).join('\n');
                             this.style.height = 'auto';
                             this.style.height = this.scrollHeight + 'px';
-                            if (typeof showToast === 'function') {
-                                showToast("📌 ย้ายลิงก์ GoogleMap ไปช่องพิกัดและลบออกจากช่องที่อยู่แล้ว");
-                            }
+                            if (typeof showToast === 'function') showToast("📌 ย้ายลิงก์ GoogleMap ไปช่องพิกัดและลบออกจากช่องที่อยู่แล้ว");
                         }
                         setTimeout(() => checkCaOverdueEnhanced(false), 15);
                     });
@@ -10168,7 +9887,6 @@
                 setTimeout(() => checkCaOverdueEnhanced(true), 200);
             }
 
-            // 2. หน้าต่าง Modal ตั้งค่าตัดคำ + สวิตช์ตัดชื่อผู้ใช้ไฟ/เบอร์โทร/ตัวเลข
             function ensureStripWordsModal() {
                 let modal = document.getElementById('stripWordsModal');
                 if (modal) return modal;
@@ -10182,44 +9900,33 @@
                             <h3 class="font-bold text-sm flex items-center gap-2">✂️ ตั้งค่าตัดข้อความออกอัตโนมัติ</h3>
                             <button type="button" onclick="closeStripWordsModal()" class="text-blue-100 hover:text-white text-xl font-bold leading-none">&times;</button>
                         </div>
-
                         <div class="p-3.5 bg-white border-b space-y-2.5 overflow-y-auto">
                             <div class="p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
                                 <div class="text-[11px] font-bold text-indigo-900">⚡ ตัวเลือกตัดข้อมูลอัตโนมัติ (รองรับชื่อ/ข้อมูลที่อยู่คนละบรรทัด)</div>
-                                
                                 <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer select-none">
                                     <input type="checkbox" id="ruleStripCustName" onchange="onChangeStripRule('stripCustomerName', this.checked)" class="mt-0.5 w-4 h-4 accent-indigo-600 rounded cursor-pointer">
                                     <span><b>ตัด "ชื่อผู้ใช้ไฟฟ้า" และชื่อคนออก</b> <span class="text-[10px] text-slate-500 block">(ลบทั้งหัวข้อและชื่อคน แม้ชื่อจะตกลงไปอยู่อีกบรรทัด)</span></span>
                                 </label>
-
                                 <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer select-none">
                                     <input type="checkbox" id="ruleStripPhone" onchange="onChangeStripRule('stripPhoneTextAndNum', this.checked)" class="mt-0.5 w-4 h-4 accent-indigo-600 rounded cursor-pointer">
                                     <span><b>ตัดข้อความเบอร์โทรและตัวเลขเบอร์โทรออก</b> <span class="text-[10px] text-slate-500 block">(ลบคำว่า เบอร์โทร/โทร และหมายเลข 08x-xxx-xxxx ทิ้งทั้งหมด)</span></span>
                                 </label>
-
                                 <label class="flex items-start gap-2 text-xs text-slate-700 cursor-pointer select-none">
                                     <input type="checkbox" id="ruleStripStandaloneNum" onchange="onChangeStripRule('stripStandaloneNumbers', this.checked)" class="mt-0.5 w-4 h-4 accent-indigo-600 rounded cursor-pointer">
                                     <span><b>ตัดตัวเลขลอยๆ ที่ไม่เกี่ยวข้องออก</b> <span class="text-[10px] text-slate-500 block">(ยังเก็บ บ้านเลขที่, หมู่, CA, มิเตอร์ PEA No. ไว้ตามปกติ)</span></span>
                                 </label>
-
                                 <label class="flex items-start gap-2 text-xs text-rose-700 cursor-pointer select-none">
                                     <input type="checkbox" id="ruleStripAllDigits" onchange="onChangeStripRule('stripAllDigits', this.checked)" class="mt-0.5 w-4 h-4 accent-rose-600 rounded cursor-pointer">
                                     <span><b>ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด</b></span>
                                 </label>
                             </div>
-
                             <div class="pt-1">
                                 <div class="text-[11px] font-bold text-slate-700 mb-1">➕ เพิ่มคำที่ต้องการตัดออกเพิ่มเติม</div>
                                 <div class="flex gap-2">
-                                    <input type="text" id="newStripWordInput" placeholder="พิมพ์คำที่ต้องการตัดออก..." 
-                                        onkeypress="if(event.key === 'Enter') addStripWordItem()"
-                                        class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <button type="button" onclick="addStripWordItem()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm transition shrink-0">
-                                        เพิ่มคำ
-                                    </button>
+                                    <input type="text" id="newStripWordInput" placeholder="พิมพ์คำที่ต้องการตัดออก..." onkeypress="if(event.key === 'Enter') addStripWordItem()" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <button type="button" onclick="addStripWordItem()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm transition shrink-0">เพิ่มคำ</button>
                                 </div>
                             </div>
-
                             <div class="flex items-center justify-between pt-1">
                                 <label class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer select-none">
                                     <input type="checkbox" id="stripWholeLineToggle" onchange="toggleStripWholeLineMode(this.checked)" class="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer">
@@ -10228,9 +9935,7 @@
                                 <input type="text" id="searchStripWordInput" oninput="renderStripWordsList()" placeholder="🔍 ค้นหาคำ..." class="w-32 px-2.5 py-1 border border-slate-200 rounded-lg text-[11px] bg-slate-50 focus:outline-none">
                             </div>
                         </div>
-
                         <div id="stripWordsListContainer" class="p-3.5 flex-1 overflow-y-auto space-y-1.5 bg-slate-50 min-h-[120px]"></div>
-
                         <div class="p-3 border-t bg-white flex justify-between items-center">
                             <button type="button" onclick="clearAllStripWords()" class="text-xs text-rose-600 hover:underline font-semibold">🗑️ ล้างคำทั้งหมด</button>
                             <button type="button" onclick="closeStripWordsModal()" class="px-4 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg transition">ปิดหน้าต่าง</button>
@@ -10268,7 +9973,6 @@
             window.onChangeStripRule = function(ruleKey, isChecked) {
                 stripRules[ruleKey] = !!isChecked;
                 saveStripRules();
-
                 const rawInput = document.getElementById('rawCustomerPasteInput');
                 if (rawInput && rawInput.value.trim()) {
                     processCustomerPasteData(rawInput.value);
@@ -10290,14 +9994,8 @@
             window.addStripWordItem = function() {
                 const input = document.getElementById('newStripWordInput');
                 const val = (input?.value || '').trim();
-                if (!val) {
-                    showToast("⚠️ กรุณาพิมพ์คำที่ต้องการตัดออก");
-                    return;
-                }
-                if (stripWordsList.includes(val)) {
-                    showToast("⚠️ มีคำนี้อยู่ในรายการแล้ว");
-                    return;
-                }
+                if (!val) { showToast("⚠️ กรุณาพิมพ์คำที่ต้องการตัดออก"); return; }
+                if (stripWordsList.includes(val)) { showToast("⚠️ มีคำนี้อยู่ในรายการแล้ว"); return; }
                 stripWordsList.unshift(val);
                 saveStripWords();
                 renderStripWordsList();
@@ -10389,9 +10087,7 @@
                     pasteInput.style.height = 'auto';
                 }
                 checkCaOverdueEnhanced(true);
-                if (showNotification && typeof showToast === 'function') {
-                    showToast("🧹 ล้างช่องวางข้อมูลอัตโนมัติแล้ว");
-                }
+                if (showNotification && typeof showToast === 'function') showToast("🧹 ล้างช่องวางข้อมูลอัตโนมัติแล้ว");
             };
 
             function escapeRegExp(str) {
@@ -10402,24 +10098,18 @@
                 return /^(?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่|มิเตอร์|PEA\s*No|CA|เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|พิกัด|Google\s*Maps?|แผนที่)\s*[:：=]?$/i.test(word.trim());
             }
 
-            // 3. ฟังก์ชันหลัก: ดึงและลบ GoogleMap:https://... ทันที + ตัดชื่อคน + เรียงบ้านเลขที่ขึ้นก่อน
             window.processCustomerPasteData = function(rawText) {
                 if (!rawText || !rawText.trim()) return;
-
                 let text = String(rawText);
                 const wholeLineMode = isStripWholeLineMode();
 
-                // ขั้นตอนที่ 1: ดึงและลบข้อความ "GoogleMap:https://maps.google.com/?q=..." ออกจากข้อความทั้งหมดเป็นอันดับแรก
-                // เพื่อไม่ให้ติดไปอยู่ในบรรทัดที่อยู่เด็ดขาด
                 const mapExtractResult = extractAndRemoveGoogleMapLinks(text);
                 text = mapExtractResult.cleanedText;
                 let extractedGps = mapExtractResult.extractedUrl;
 
-                // ขั้นตอนที่ 2: ดึงบรรทัดถัดไปที่อยู่ใต้เครื่องหมาย : ขึ้นมารวมกับหัวข้อ
                 text = text.replace(/([:：])\s*\r?\n+\s*(?![^\n]*?(?:มิเตอร์|PEA\s*No|CA\s*[:：]|ชื่อผู้ใช้ไฟ|ที่อยู่|เบอร์โทร|พิกัด|Google\s*Maps?|Lat\s*:))/gi, '$1 ');
                 text = text.replace(/^(\s*(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|เบอร์โทร(?:ศัพท์)?|ที่อยู่)\s*)\r?\n+\s*/gim, '$1 : ');
 
-                // ขั้นตอนที่ 3: แยกหัวข้อที่อยู่ติดกันในบรรทัดเดียวให้ขึ้นบรรทัดใหม่
                 text = text
                     .replace(/([^\n])\s+(มิเตอร์\s*-\s*PEA\s*No\.?\s*[:：=])/gi, '$1\n$2')
                     .replace(/([^\n\-])\s+(PEA\s*No\.?\s*[:：=])/gi, '$1\n$2')
@@ -10433,7 +10123,6 @@
                     .replace(/([^\n])\s+((?:ผู้ปฏิบัติงาน|ช่างผู้ปฏิบัติงาน|ผู้รับแจ้ง)\s*[:：=])/gi, '$1\n$2')
                     .replace(/([^\n])\s+(พิกัด\s*(?:\(Lat|Lat|[:：=])|Lat\s*[:：=])/gi, '$1\n$2');
 
-                // ขั้นตอนที่ 4: ตัดทั้งหัวข้อ "ชื่อผู้ใช้ไฟฟ้า :" และตัวชื่อคนออกพร้อมกันทันที
                 const hasCustNameInStripList = stripWordsList.some(w => /ชื่อผู้ใช้ไฟ|ชื่อลูกค้า|ชื่อผู้แจ้ง/.test(w));
                 if (stripRules.stripCustomerName || hasCustNameInStripList) {
                     text = text.replace(/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|ชื่อ-นามสกุล|ชื่อ-สกุล)\s*[:：=]?\s*([^\n]*)$/gim, function(fullMatch, namePart) {
@@ -10442,7 +10131,6 @@
                     });
                 }
 
-                // ขั้นตอนที่ 5: ตัดคำทั่วไปใน stripWordsList
                 stripWordsList.forEach(word => {
                     const w = (word || '').trim();
                     if (!w) return;
@@ -10462,7 +10150,6 @@
                     }
                 });
 
-                // ขั้นตอนที่ 6: หากเปิดสวิตช์ "ตัดเบอร์โทรศัพท์ออกทั้งหมด"
                 if (stripRules.stripPhoneTextAndNum) {
                     text = text.replace(/(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ|ติดต่อ|Tel\.?)\s*[:：=]?\s*[0-9\-\s,\/()]{8,}/gi, '');
                     text = text.replace(/(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ)\s*[:：=]?/gi, '');
@@ -10471,23 +10158,18 @@
                     if (phoneEl) phoneEl.value = '';
                 }
 
-                // ขั้นตอนที่ 7: หากเปิดสวิตช์ "ตัดตัวเลข 0-9 ทุกชนิดออกทั้งหมด"
-                if (stripRules.stripAllDigits) {
-                    text = text.replace(/\d+/g, '');
-                }
+                if (stripRules.stripAllDigits) text = text.replace(/\d+/g, '');
 
                 let extractedPhone = '';
                 let extractedIssue = '';
                 let extractedArea = '';
                 let extractedWorker = '';
-
                 let houseNumberLines = [];
                 let customerNameLines = [];
                 let caLines = [];
                 let peaMeterLines = [];
                 let otherAddressLines = [];
 
-                // ดึงพิกัด GPS รูปแบบตัวเลข Lat, Long
                 const latLongParenRegex = /(?:พิกัด\s*)?\(\s*Lat\s*,\s*Long?\s*\)\s*[:：=]?\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i;
                 const matchParen = text.match(latLongParenRegex);
                 if (matchParen) {
@@ -10506,34 +10188,24 @@
 
                 lines.forEach(line => {
                     let workingLine = line;
+                    if (/^(?:📌|📍)?\s*(?:Google\s*Maps?|Maps?|แผนที่|พิกัด(?:\s*GPS)?|GPS(?:\s*Link)?)\s*[:：=]?$/i.test(workingLine)) return;
 
-                    if (/^(?:📌|📍)?\s*(?:Google\s*Maps?|Maps?|แผนที่|พิกัด(?:\s*GPS)?|GPS(?:\s*Link)?)\s*[:：=]?$/i.test(workingLine)) {
-                        return;
-                    }
-
-                    // 1) พิกัด GPS ตัวเลขทศนิยมคู่
                     const coordOnlyMatch = workingLine.match(/^(?:📌\s*)?(?:(?:Google\s*Maps?|พิกัด(?:\s*GPS)?)\s*[:：=]?\s*)?(-?\d{1,2}\.\d{4,}\s*,\s*-?\d{2,3}\.\d{4,})$/i);
                     if (coordOnlyMatch) {
                         if (!extractedGps) extractedGps = coordOnlyMatch[1].trim();
                         return;
                     }
 
-                    // 2) มิเตอร์ - PEA No. / PEA No.
                     const peaMeterRegex = /^(?:📟\s*)?(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์|รหัสมิเตอร์|เครื่องวัด(?:หน่วยไฟฟ้า)?|มิเตอร์|Meter\s*No\.?)\s*[:：=]?\s*(.+)$/i;
                     const mPea = workingLine.match(peaMeterRegex);
                     if (mPea) {
                         const val = mPea[1].trim();
-                        if (/มิเตอร์\s*-\s*PEA/i.test(workingLine)) {
-                            peaMeterLines.push(`มิเตอร์ - PEA No. : ${val}`);
-                        } else if (/PEA\s*No/i.test(workingLine)) {
-                            peaMeterLines.push(`PEA No. : ${val}`);
-                        } else {
-                            peaMeterLines.push(`มิเตอร์ - PEA No. : ${val}`);
-                        }
+                        if (/มิเตอร์\s*-\s*PEA/i.test(workingLine)) peaMeterLines.push(`มิเตอร์ - PEA No. : ${val}`);
+                        else if (/PEA\s*No/i.test(workingLine)) peaMeterLines.push(`PEA No. : ${val}`);
+                        else peaMeterLines.push(`มิเตอร์ - PEA No. : ${val}`);
                         return;
                     }
 
-                    // 3) ตรวจจับ CA ทั้งแบบมีคำว่า "CA :" และแบบตัวเลข 12 หลักที่ขึ้นต้นด้วย "02" ล้วนๆ
                     const caRegex = /^(?:💳\s*)?(?:(?:หมายเลขผู้ใช้ไฟ(?:ฟ้า)?\s*\(?CA\)?|CA\s*(?:No\.?)?|รหัสผู้ใช้ไฟ(?:ฟ้า)?|เลขที่ผู้ใช้ไฟ(?:ฟ้า)?|บัญชีแสดงสัญญา)\s*[:：=]?\s*(\d{9,15}.*)|(02\d{10}))$/i;
                     const mCa = workingLine.match(caRegex);
                     if (mCa) {
@@ -10542,7 +10214,6 @@
                         return;
                     }
 
-                    // 4) ชื่อผู้ใช้ไฟฟ้า (กรณีไม่ได้เปิดตัดชื่อคน)
                     const custNameRegex = /^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|ชื่อ-นามสกุล|ชื่อ-สกุล)\s*[:：=]?\s*(.*)$/i;
                     const mCust = workingLine.match(custNameRegex);
                     if (mCust) {
@@ -10552,13 +10223,10 @@
                             custVal = trailingAddrMatch[1].trim();
                             houseNumberLines.push(trailingAddrMatch[2].trim());
                         }
-                        if (!stripRules.stripCustomerName && custVal) {
-                            customerNameLines.push(`ชื่อผู้ใช้ไฟฟ้า : ${custVal}`);
-                        }
+                        if (!stripRules.stripCustomerName && custVal) customerNameLines.push(`ชื่อผู้ใช้ไฟฟ้า : ${custVal}`);
                         return;
                     }
 
-                    // 5) เบอร์โทรศัพท์
                     if (!stripRules.stripPhoneTextAndNum) {
                         const phoneLabelRegex = /^(?:📞\s*)?(?:เบอร์โทร(?:ศัพท์)?|โทร(?:ศัพท์)?|เบอร์ติดต่อ|ติดต่อ|Tel\.?)\s*[:：=]?\s*([0-9\-\s,\/()]{9,})$/i;
                         const mPhoneLabel = workingLine.match(phoneLabelRegex);
@@ -10573,7 +10241,6 @@
                         }
                     }
 
-                    // 6) ลักษณะอาการ
                     const issueLabelRegex = /^(?:⚡\s*)?(?:ลักษณะอาการ|อาการ(?:เสีย|ขัดข้อง)?|สาเหตุ(?:ที่แจ้ง)?|เรื่องที่รับแจ้ง)\s*[:：=]\s*(.+)$/i;
                     const mIssue = workingLine.match(issueLabelRegex);
                     if (mIssue) {
@@ -10581,7 +10248,6 @@
                         return;
                     }
 
-                    // 7) บริเวณ
                     const areaLabelRegex = /^(?:🗺️|🏠)?\s*(?:บริเวณ(?:ที่เกิดเหตุ)?|สถานที่เกิดเหตุ|จุดเกิดเหตุ|จุดสังเกต)\s*[:：=]\s*(.+)$/i;
                     const mArea = workingLine.match(areaLabelRegex);
                     if (mArea) {
@@ -10589,7 +10255,6 @@
                         return;
                     }
 
-                    // 8) ผู้ปฏิบัติงาน
                     const workerLabelRegex = /^(?:👷\s*)?(?:ผู้ปฏิบัติงาน|ช่างผู้ปฏิบัติงาน|ผู้รับแจ้ง|ผู้จ่ายงาน)\s*[:：=]?\s*(.+)$/i;
                     const mWorker = workingLine.match(workerLabelRegex);
                     if (mWorker) {
@@ -10597,7 +10262,6 @@
                         return;
                     }
 
-                    // 9) ที่อยู่ / บ้านเลขที่
                     const addrLabelRegex = /^(?:🏠|📍)?\s*(?:ที่อยู่(?:ผู้ใช้ไฟ(?:ฟ้า)?)?|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่)\s*[:：=]?\s*(.+)$/i;
                     const mAddr = workingLine.match(addrLabelRegex);
                     if (mAddr) {
@@ -10609,28 +10273,20 @@
                     if (looksLikeHouseAddr) {
                         const inlinePhone = workingLine.match(/\b(0[2689]\d[\-\s]?\d{3,4}[\-\s]?\d{4})\b/);
                         if (inlinePhone) {
-                            if (!stripRules.stripPhoneTextAndNum && !extractedPhone) {
-                                extractedPhone = inlinePhone[1].replace(/[\-\s]/g, '');
-                            }
+                            if (!stripRules.stripPhoneTextAndNum && !extractedPhone) extractedPhone = inlinePhone[1].replace(/[\-\s]/g, '');
                             workingLine = workingLine.replace(inlinePhone[0], '').replace(/(?:โทร\.?|เบอร์โทร\.?)\s*[:：]?\s*$/i, '').trim();
                         }
                         houseNumberLines.push(workingLine);
                         return;
                     }
 
-                    // ตัดบรรทัดที่เป็นชื่อคนไทยลอยๆ เมื่อเปิดสวิตช์ตัดชื่อผู้ใช้ไฟ
                     if (stripRules.stripCustomerName) {
                         const isThaiFullNameOnly = /^(?:(?:คุณ|นาย|นาง|น\.ส\.|นางสาว|ด\.ช\.|ด\.ญ\.)\s*)?[ก-๙]{2,25}\s+[ก-๙]{2,30}$/.test(workingLine);
                         const hasAddressOrElecWords = /(?:ม\.|หมู่|ต\.|ตำบล|อ\.|อำเภอ|จ\.|จังหวัด|ซอย|ถนน|บ้าน|ไฟ|ดับ|ตก|ช็อต|สาย|เสา|มิเตอร์|หม้อแปลง)/.test(workingLine);
-                        if (isThaiFullNameOnly && !hasAddressOrElecWords) {
-                            return;
-                        }
+                        if (isThaiFullNameOnly && !hasAddressOrElecWords) return;
                     }
 
-                    // 10) หากเปิดสวิตช์ "ตัดตัวเลขลอยๆ ที่ไม่เกี่ยวข้องออก"
-                    if (stripRules.stripStandaloneNumbers && /^[\d\-\s\/#.,:]+$/.test(workingLine)) {
-                        return;
-                    }
+                    if (stripRules.stripStandaloneNumbers && /^[\d\-\s\/#.,:]+$/.test(workingLine)) return;
 
                     if (!extractedIssue && typeof issueList !== 'undefined' && Array.isArray(issueList)) {
                         const matchedKnownIssue = issueList.find(it => it !== 'อื่นๆ' && workingLine === it);
@@ -10640,32 +10296,16 @@
                         }
                     }
 
-                    if (stripRules.stripStandaloneNumbers) {
-                        workingLine = workingLine.replace(/\b\d{4,}\b/g, '').trim();
-                    }
-
+                    if (stripRules.stripStandaloneNumbers) workingLine = workingLine.replace(/\b\d{4,}\b/g, '').trim();
                     if (!workingLine || /^[:：=\-\s]+$/.test(workingLine)) return;
 
                     otherAddressLines.push(workingLine);
                 });
 
-                // กรอกข้อมูลลงฟอร์มอัตโนมัติ
-                if (extractedIssue) {
-                    const issueEl = document.getElementById('issueType');
-                    if (issueEl) issueEl.value = extractedIssue;
-                }
-                if (extractedWorker) {
-                    const workerEl = document.getElementById('workerName');
-                    if (workerEl) workerEl.value = extractedWorker;
-                }
-                if (extractedArea) {
-                    const areaEl = document.getElementById('area');
-                    if (areaEl) areaEl.value = extractedArea;
-                }
-                if (extractedPhone && !stripRules.stripPhoneTextAndNum) {
-                    const phoneEl = document.getElementById('phone');
-                    if (phoneEl) phoneEl.value = extractedPhone;
-                }
+                if (extractedIssue) { const issueEl = document.getElementById('issueType'); if (issueEl) issueEl.value = extractedIssue; }
+                if (extractedWorker) { const workerEl = document.getElementById('workerName'); if (workerEl) workerEl.value = extractedWorker; }
+                if (extractedArea) { const areaEl = document.getElementById('area'); if (areaEl) areaEl.value = extractedArea; }
+                if (extractedPhone && !stripRules.stripPhoneTextAndNum) { const phoneEl = document.getElementById('phone'); if (phoneEl) phoneEl.value = extractedPhone; }
                 if (extractedGps) {
                     const gpsEl = document.getElementById('gps');
                     if (gpsEl) {
@@ -10674,15 +10314,9 @@
                     }
                 }
 
-                // เรียงบ้านเลขที่ขึ้นก่อน ตามด้วย CA และ มิเตอร์ - PEA No. พร้อมกรองลิงก์ GoogleMap ออกซ้ำอีกครั้งเพื่อความชัวร์ 100%
-                const orderedAddressParts = [
-                    ...houseNumberLines,
-                    ...otherAddressLines,
-                    ...customerNameLines,
-                    ...caLines,
-                    ...peaMeterLines
-                ].map(part => extractAndRemoveGoogleMapLinks(part).cleanedText.trim())
-                 .filter(Boolean);
+                const orderedAddressParts = [...houseNumberLines, ...otherAddressLines, ...customerNameLines, ...caLines, ...peaMeterLines]
+                    .map(part => extractAndRemoveGoogleMapLinks(part).cleanedText.trim())
+                    .filter(Boolean);
 
                 const addrEl = document.getElementById('address');
                 if (addrEl) {
@@ -10743,35 +10377,29 @@
             }
         })();
     </script>
+
     <!-- 🔄 ระบบเปลี่ยน "กะ" อัตโนมัติ และรีเซ็ต "งานที่ = 1" เฉพาะหลังเปลี่ยนกะเท่านั้น (ฉบับสมบูรณ์ 100%) -->
     <script>
         (function() {
-            const LAST_SHIFT_STATE_KEY = 'elec_last_shift_state'; // เก็บรูปแบบ "วว/ดด/ปปปป_Sกะ"
+            const LAST_SHIFT_STATE_KEY = 'elec_last_shift_state';
             const RESET_LOCK_KEY = 'elec_shift_job_reset_lock';
             let isManualShiftOverride = false;
 
-            // คำนวณกะและวันที่ตามเวลาจริง (กะ 1: 00.30-08.30, กะ 2: 08.30-16.30, กะ 3: 16.30-00.30)
             function getRealTimeShiftAndDate() {
                 const now = new Date();
                 const totalMinutes = now.getHours() * 60 + now.getMinutes();
 
                 let shiftStr = "3";
-                if (totalMinutes >= 30 && totalMinutes < 510) {
-                    shiftStr = "1";
-                } else if (totalMinutes >= 510 && totalMinutes < 990) {
-                    shiftStr = "2";
-                }
+                if (totalMinutes >= 30 && totalMinutes < 510) shiftStr = "1";
+                else if (totalMinutes >= 510 && totalMinutes < 990) shiftStr = "2";
 
                 const day = String(now.getDate()).padStart(2, '0');
                 const month = String(now.getMonth() + 1).padStart(2, '0');
                 const year = now.getFullYear() + 543;
                 const dateStr = `${day}/${month}/${year}`;
 
-                // สำหรับกะ 3 ช่วงหลังเที่ยงคืน (00.00 - 00.29 น.) ให้ถือเป็นรอบกะ 3 เดียวกับก่อนเที่ยงคืน
                 const cycleDate = new Date(now);
-                if (totalMinutes < 30) {
-                    cycleDate.setDate(cycleDate.getDate() - 1);
-                }
+                if (totalMinutes < 30) cycleDate.setDate(cycleDate.getDate() - 1);
                 const cDay = String(cycleDate.getDate()).padStart(2, '0');
                 const cMonth = String(cycleDate.getMonth() + 1).padStart(2, '0');
                 const cYear = cycleDate.getFullYear() + 543;
@@ -10780,7 +10408,6 @@
                 return { shiftStr, dateStr, shiftStateId };
             }
 
-            // บังคับเปลี่ยนกะและรีเซ็ต งานที่ = 1 เท่านั้น
             function applyShiftChangeReset(shiftStr, dateStr, shiftStateId, showAlert = true) {
                 const shiftEl = document.getElementById('shift');
                 const dateEl = document.getElementById('reportDate');
@@ -10800,14 +10427,12 @@
                 }
             }
 
-            // ตรวจสอบการเปลี่ยนกะตามเวลาจริงโดยไม่ต้องรีเฟรชหน้าจอ
             function checkShiftTransition(isInitialLoad = false) {
                 const shiftEl = document.getElementById('shift');
                 const dateEl = document.getElementById('reportDate');
                 const jobNoEl = document.getElementById('jobNo');
                 if (!shiftEl || !dateEl || !jobNoEl) return;
 
-                // ข้ามหากกำลังอยู่ในโหมดแก้ไขประวัติเก่า หรือผู้ใช้กำลังพิมพ์ในช่องกะ/งานที่
                 if (typeof editingOutageId !== 'undefined' && editingOutageId) return;
                 if (document.activeElement === shiftEl || document.activeElement === jobNoEl) return;
 
@@ -10816,7 +10441,6 @@
                 const prevDateVal = String(dateEl.value || '').trim();
                 const prevShiftVal = String(shiftEl.value || '').trim();
 
-                // กรณีเปิดใช้งานครั้งแรกสุด เช็กว่ากะหรือวันที่ค้างจาก Draft ต่างจากเวลาจริงหรือไม่
                 if (!lastStateId) {
                     localStorage.setItem(LAST_SHIFT_STATE_KEY, shiftStateId);
                     if (prevShiftVal !== shiftStr || (prevDateVal && prevDateVal !== dateStr)) {
@@ -10827,25 +10451,16 @@
                     return;
                 }
 
-                // เมื่อเวลาจริงตัดเข้าสู่รอบกะใหม่ -> เปลี่ยนกะและรีเซ็ต "งานที่ = 1" ทันที
                 if (lastStateId !== shiftStateId) {
                     applyShiftChangeReset(shiftStr, dateStr, shiftStateId, !isInitialLoad);
                     return;
                 }
 
-                // อัปเดตวันที่แจ้งให้ตรงกับวันปัจจุบันเสมอ
-                if (dateEl.value !== dateStr) {
-                    dateEl.value = dateStr;
-                }
+                if (dateEl.value !== dateStr) dateEl.value = dateStr;
 
-                // หากยังอยู่ในสถานะล็อกเลข 1 หลังเปลี่ยนกะ (ยังไม่ได้บันทึกงานแรก) ให้คงค่าเลข 1 ไว้
                 if (localStorage.getItem(RESET_LOCK_KEY) === 'true') {
-                    if (!isManualShiftOverride && shiftEl.value !== shiftStr) {
-                        shiftEl.value = shiftStr;
-                    }
-                    if (String(jobNoEl.value) !== '1') {
-                        jobNoEl.value = 1;
-                    }
+                    if (!isManualShiftOverride && shiftEl.value !== shiftStr) shiftEl.value = shiftStr;
+                    if (String(jobNoEl.value) !== '1') jobNoEl.value = 1;
                 }
             }
 
@@ -10853,7 +10468,6 @@
                 const shiftEl = document.getElementById('shift');
                 const jobNoEl = document.getElementById('jobNo');
 
-                // 1. ล็อก autoFillJobNo ไม่ให้เปลี่ยนเลขงานเป็นเลขอื่น หากเพิ่งเปลี่ยนกะใหม่
                 if (typeof window.autoFillJobNo === 'function') {
                     const _origAutoFillJobNo = window.autoFillJobNo;
                     window.autoFillJobNo = function(...args) {
@@ -10866,7 +10480,6 @@
                     };
                 }
 
-                // 2. หากผู้ใช้เปลี่ยนเลข "กะ" ด้วยตัวเอง ให้รีเซ็ต "งานที่ = 1" ทันที และไม่เด้งเลขกะกลับจนกว่าจะตัดรอบกะจริง
                 if (shiftEl) {
                     shiftEl.removeAttribute('onchange');
                     shiftEl.removeAttribute('oninput');
@@ -10882,16 +10495,12 @@
                     });
                 }
 
-                // 3. หากผู้ใช้พิมพ์เปลี่ยนช่อง "งานที่" เองโดยตรง ให้ปลดล็อกเพื่อใช้เลขที่พิมพ์เอง
                 if (jobNoEl) {
                     jobNoEl.addEventListener('input', (e) => {
-                        if (e.isTrusted && jobNoEl.value) {
-                            localStorage.removeItem(RESET_LOCK_KEY);
-                        }
+                        if (e.isTrusted && jobNoEl.value) localStorage.removeItem(RESET_LOCK_KEY);
                     });
                 }
 
-                // 4. ปลดล็อกเลข 1 เมื่อมีการบันทึก "งานใหม่" ครั้งแรกของกะเสร็จสิ้น
                 if (typeof window.saveOutageData === 'function') {
                     const _origSaveOutageData = window.saveOutageData;
                     window.saveOutageData = function(...args) {
@@ -10904,18 +10513,19 @@
                     };
                 }
 
-                // รันตรวจสอบทันทีหลัง restoreOutageDraft ทำงานเสร็จ และเช็กซ้ำทุกๆ 5 วินาที
                 setTimeout(() => checkShiftTransition(true), 60);
-                setInterval(() => {
-                    if (!document.hidden) checkShiftTransition(false);
-                }, 5000);
-
-                document.addEventListener('visibilitychange', () => {
-                    if (!document.hidden) checkShiftTransition(false);
-                });
+                setInterval(() => { if (!document.hidden) checkShiftTransition(false); }, 5000);
+                document.addEventListener('visibilitychange', () => { if (!document.hidden) checkShiftTransition(false); });
                 window.addEventListener('focus', () => checkShiftTransition(false));
             });
         })();
+        window.addEventListener('storage', (e) => {
+    if (e.key === 'elecReportsComplete_all' || e.key === 'elec_closed_jobs_registry') {
+        if (typeof loadOutageHistory === 'function') loadOutageHistory();
+    } else if (e.key === 'fault_reports_all') {
+        if (typeof loadFaultHistory === 'function') loadFaultHistory();
+    }
+});
     </script>
 </body>
 </html>
