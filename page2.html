@@ -987,9 +987,14 @@
         }
 
         function switchStatusTab(tabValue) {
+            // ✅ [แก้ไขจุดที่ 1] หากเปิดหน้าแผนที่อุปกรณ์ไฟฟ้าอยู่ ให้สลับกลับมาหน้ารายการใบงานอัตโนมัติ
+            if (typeof window.switchTechMainTab === 'function') {
+                window.switchTechMainTab('jobs');
+            }
+            
             const selectEl = document.getElementById('filterJobStatus');
             if (selectEl) selectEl.value = tabValue;
-
+            
             const tabs = ['all', 'pending', 'traveling', 'done'];
             tabs.forEach(t => {
                 const btn = document.getElementById('tabBox-' + t);
@@ -1002,7 +1007,7 @@
                     btn.classList.add('border-transparent');
                 }
             });
-
+            
             const badge = document.getElementById('currentViewBadge');
             if (badge) {
                 if (tabValue === 'pending') {
@@ -1019,7 +1024,7 @@
                     badge.className = 'text-xs font-bold text-slate-700 bg-slate-100 border border-slate-300 px-3 py-1 rounded-full';
                 }
             }
-
+            
             renderJobCards();
         }
 
@@ -3301,6 +3306,1656 @@
             window.addEventListener('appinstalled', () => {
                 installBanner.classList.add('hidden');
                 if (typeof showToast === 'function') showToast("🎉 ติดตั้งแอปเรียบร้อยแล้ว! เปิดจากไอคอนบนหน้าจอมือถือได้เลย");
+            });
+        })();
+    </script>
+    <!-- ================= ⚡ ระบบแท็บแผนที่ อุปกรณ์ ไฟฟ้า (Autocomplete เต็มชื่อ + แชร์ LINE + แยกกลุ่ม กฟส./กฟจ.) ================= -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        .labeled-pin-tooltip {
+            background: rgba(15, 23, 42, 0.92);
+            color: #fff;
+            border: 1px solid #14b8a6;
+            border-radius: 0.5rem;
+            padding: 2px 7px;
+            font-family: 'Prompt', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+            white-space: nowrap;
+        }
+        .labeled-pin-tooltip::before {
+            border-top-color: rgba(15, 23, 42, 0.92) !important;
+        }
+    </style>
+
+    <!-- ⚡ Modal เพิ่ม / แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า -->
+    <div id="equipPinModal" class="fixed inset-0 bg-slate-900/60 hidden z-[160] flex items-center justify-center p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center">
+                <h3 id="equipPinModalTitle" class="font-bold text-sm flex items-center gap-1.5">⚡ เพิ่มข้อมูลอุปกรณ์ไฟฟ้า</h3>
+                <button type="button" onclick="closeEquipPinModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+            </div>
+            <div class="p-4 space-y-3.5 text-xs">
+                <div class="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 flex items-center justify-between">
+                    <span class="font-bold">🏢 กลุ่มผู้ใช้งานที่มีสิทธิ์เห็นข้อมูลนี้:</span>
+                    <span id="equipModalGroupBadge" class="bg-teal-700 text-white font-extrabold px-2.5 py-0.5 rounded-lg text-[11px]">-</span>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อรหัส / ชื่ออุปกรณ์ไฟฟ้า <span class="text-rose-500">*</span></label>
+                    <input type="text" id="equipCodeNameInput" placeholder="เช่น BNF05VS-107, TR-0125, หม้อแปลง..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800">
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="block font-bold text-slate-700">📍 พิกัด หรือ ลิงก์ GPS (Google Maps) <span class="text-rose-500">*</span></label>
+                        <button type="button" onclick="fillEquipCurrentGps()" class="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 shadow-sm">
+                            📍 ดึงพิกัดมือถือปัจจุบัน
+                        </button>
+                    </div>
+                    <input type="text" id="equipCoordInput" placeholder="วางพิกัด เช่น 13.1361, 101.0322 หรือวางลิงก์ Google Maps..." class="w-full px-3.5 py-2 text-xs font-medium text-slate-800">
+                    <p class="text-[10px] text-slate-400 mt-1">รองรับทั้งตัวเลขละติจูด/ลองจิจูด และลิงก์แชร์จาก Google Maps</p>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">📝 รายละเอียดเพิ่มเติม / บริเวณ (ถ้ามี)</label>
+                    <input type="text" id="equipNoteInput" placeholder="เช่น ขนาด 160 kVA, เสาต้นที่ 12, จุดสังเกต..." class="w-full px-3.5 py-2 text-xs text-slate-700">
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t flex gap-2">
+                <button type="button" onclick="closeEquipPinModal()" class="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition">
+                    ยกเลิก
+                </button>
+                <button type="button" onclick="saveEquipPinModal()" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl shadow text-xs sm:text-sm transition">
+                    💾 บันทึกข้อมูลอุปกรณ์ไฟฟ้า
+                </button>
+            </div>
+        </div>
+    </div>
+
+        <!-- 🔒 Modal ยืนยันรหัสผ่าน 1234 เพื่อล้างข้อมูลทั้งหมด -->
+    <div id="clearEquipPasswordModal" class="fixed inset-0 bg-slate-900/60 hidden z-[170] flex items-center justify-center p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-rose-600 to-red-700 text-white flex justify-between items-center">
+                <h3 class="font-bold text-sm flex items-center gap-1.5">🗑️ ยืนยันการล้างข้อมูลอุปกรณ์ไฟฟ้า</h3>
+                <button type="button" onclick="closeClearEquipModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+            </div>
+            <div class="p-4 space-y-3 text-xs">
+                <p id="clearEquipWarningText" class="text-slate-600 leading-relaxed font-medium">
+                    กรุณากรอกรหัสผ่านเพื่อยืนยันการล้างข้อมูลอุปกรณ์ไฟฟ้าทั้งหมดในกลุ่มของคุณ
+                </p>
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">🔑 รหัสผ่านยืนยันการล้างข้อมูล</label>
+                    <input type="password" id="clearEquipPasswordInput" placeholder="กรอกรหัสผ่าน..." class="w-full px-3.5 py-2 text-center text-base font-extrabold tracking-widest text-rose-700" onkeypress="if(event.key==='Enter') confirmClearAllEquipPins()">
+                </div>
+            </div>
+            <div class="p-3 bg-slate-50 border-t flex gap-2">
+                <button type="button" onclick="closeClearEquipModal()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition">
+                    ยกเลิก
+                </button>
+                <button type="button" onclick="confirmClearAllEquipPins()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl shadow text-xs transition">
+                    🗑️ ยืนยันล้างข้อมูล
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            const STORAGE_KEY_LABELS = 'elec_labeled_places_list';
+            const STORAGE_KEY_DELETED_LABELS = 'elec_deleted_labeled_places_map';
+            // ✅ [แก้ไขจุดที่ 3] จำกัดอายุและจำนวนประวัติหมุดที่ถูกลบ (เก็บสูงสุด 500 รายการ / ไม่เกิน 30 วัน)
+            const MAX_DELETED_EQUIP_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+            const MAX_DELETED_EQUIP_ITEMS = 500;
+
+            let labeledPlaces = [];
+            let deletedLabeledMap = {};
+            let leafletMap = null;
+            let markersLayer = null;
+            let routeLineLayer = null;
+            let techSelfMarker = null;
+            let markerMapById = {};
+            let showAllPinLabels = true;
+            let editingEquipPinId = null;
+
+            // สถานะการนำทางไปยังจุดอุปกรณ์ไฟฟ้า
+            let activeMapNav = null;
+            let mapNavWatchId = null;
+            let mapNavTimerId = null;
+            let lastMapRouteCalcMs = 0;
+
+            // ✅ [แก้ไขจุดที่ 3] ฟังก์ชันตัดประวัติการลบหมุดเก่าออกอัตโนมัติป้องกันหน่วยความจำเต็ม
+            function pruneDeletedLabeledMap(rawMap) {
+                if (!rawMap || typeof rawMap !== 'object') return {};
+                const now = Date.now();
+                const entries = Object.entries(rawMap).filter(([id, isoStr]) => {
+                    if (!id) return false;
+                    const t = new Date(isoStr).getTime();
+                    if (!isNaN(t) && (now - t > MAX_DELETED_EQUIP_AGE_MS)) return false;
+                    return true;
+                });
+                entries.sort((a, b) => {
+                    const tA = new Date(a[1] || 0).getTime() || 0;
+                    const tB = new Date(b[1] || 0).getTime() || 0;
+                    return tB - tA;
+                });
+                return Object.fromEntries(entries.slice(0, MAX_DELETED_EQUIP_ITEMS));
+            }
+
+            function getActiveEquipUserGroup() {
+                if (typeof getCurrentUserGroup === 'function') {
+                    const g = getCurrentUserGroup();
+                    if (g && String(g).trim()) return String(g).trim();
+                }
+                const savedGroup = (localStorage.getItem('elec_app_current_group') || '').trim();
+                if (savedGroup) return savedGroup;
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                if (typeof getUserGroupName === 'function') {
+                    const ug = getUserGroupName(curUser);
+                    if (ug) return ug;
+                }
+                return 'กฟส.บึง';
+            }
+
+            function getPinOwnerGroup(pin) {
+                if (!pin) return '';
+                if (pin.ownerGroup && String(pin.ownerGroup).trim()) {
+                    return String(pin.ownerGroup).trim();
+                }
+                if (pin.ownerUser && typeof getUserGroupName === 'function') {
+                    const g = getUserGroupName(pin.ownerUser);
+                    if (g) return g;
+                }
+                return 'กฟส.บึง';
+            }
+
+            function canCurrentUserSeeEquipPin(pin) {
+                if (!pin || deletedLabeledMap[pin.id]) return false;
+                const myGroup = getActiveEquipUserGroup();
+                const pinGroup = getPinOwnerGroup(pin);
+                const curRole = localStorage.getItem('elec_app_current_role') || 'user';
+                if (curRole === 'admin' && !getCurrentUserGroup()) return true;
+                return myGroup === pinGroup;
+            }
+
+            function loadStoredLabeledPlaces() {
+                try {
+                    const rawDel = JSON.parse(localStorage.getItem(STORAGE_KEY_DELETED_LABELS) || '{}');
+                    deletedLabeledMap = pruneDeletedLabeledMap((rawDel && typeof rawDel === 'object') ? rawDel : {});
+                } catch (e) {
+                    deletedLabeledMap = {};
+                }
+                try {
+                    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY_LABELS) || '[]');
+                    labeledPlaces = Array.isArray(raw) ? raw.filter(p => p && !deletedLabeledMap[p.id]) : [];
+                } catch (e) {
+                    labeledPlaces = [];
+                }
+            }
+
+            function saveLabeledPlaces(syncCloud = true) {
+                deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
+                localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(labeledPlaces));
+                if (syncCloud && typeof pushAllJobsToCloud === 'function') {
+                    pushAllJobsToCloud(true);
+                }
+            }
+
+            // ✅ [แก้ไขจุดที่ 2] ใช้ await รอให้การรวมข้อมูลหมุดอุปกรณ์ไฟฟ้าจาก Cloud เสร็จสิ้นก่อนคืนค่า response เสมอ
+            const _origFetch = window.fetch;
+            window.fetch = async function(input, init) {
+                if (init && init.method === 'POST' && typeof init.body === 'string' && init.body.includes('"saveJobs"')) {
+                    try {
+                        const bodyObj = JSON.parse(init.body);
+                        if (Array.isArray(bodyObj.jobs)) {
+                            const locReg = bodyObj.jobs.find(j => j.jobType === 'tech_loc');
+                            if (locReg) {
+                                deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                                locReg.electricEquipmentPins = labeledPlaces;
+                                locReg.deletedElectricEquipmentMap = deletedLabeledMap;
+                                init.body = JSON.stringify(bodyObj);
+                            }
+                        }
+                    } catch (e) {}
+                }
+                const response = await _origFetch.apply(this, arguments);
+                try {
+                    const urlStr = typeof input === 'string' ? input : (input?.url || '');
+                    if ((!init || !init.method || init.method === 'GET') && urlStr.includes('script.google.com')) {
+                        const cloned = response.clone();
+                        const data = await cloned.json();
+                        if (data && data.status === 'ok' && Array.isArray(data.jobs)) {
+                            const locReg = data.jobs.find(j => j.jobType === 'tech_loc');
+                            if (locReg) {
+                                let changed = false;
+                                if (locReg.deletedElectricEquipmentMap && typeof locReg.deletedElectricEquipmentMap === 'object') {
+                                    Object.assign(deletedLabeledMap, locReg.deletedElectricEquipmentMap);
+                                    deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                                    localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
+                                }
+                                if (Array.isArray(locReg.electricEquipmentPins)) {
+                                    const mapById = new Map();
+                                    labeledPlaces.forEach(p => {
+                                        if (p && p.id && !deletedLabeledMap[p.id]) mapById.set(p.id, p);
+                                    });
+                                    locReg.electricEquipmentPins.forEach(cp => {
+                                        if (!cp || !cp.id || deletedLabeledMap[cp.id]) return;
+                                        const localPin = mapById.get(cp.id);
+                                        if (!localPin || (cp.updatedAt || '') >= (localPin.updatedAt || '')) {
+                                            mapById.set(cp.id, cp);
+                                            changed = true;
+                                        }
+                                    });
+                                    const beforeLen = labeledPlaces.length;
+                                    labeledPlaces = Array.from(mapById.values()).filter(p => !deletedLabeledMap[p.id]);
+                                    if (changed || labeledPlaces.length !== beforeLen) {
+                                        localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(labeledPlaces));
+                                        renderLabeledPlacesList(true);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+                return response;
+            };
+
+            function injectMapTabUI() {
+                const mainApp = document.getElementById('techMainApp');
+                if (!mainApp || document.getElementById('mainViewSwitcher')) return;
+
+                const headerEl = mainApp.querySelector('.bg-gradient-to-r');
+                const footerEl = mainApp.lastElementChild;
+
+                const jobsWrapper = document.createElement('div');
+                jobsWrapper.id = 'jobsMainViewWrapper';
+                const childrenToWrap = [];
+                for (let i = 0; i < mainApp.children.length; i++) {
+                    const ch = mainApp.children[i];
+                    if (ch !== headerEl && ch !== footerEl) {
+                        childrenToWrap.push(ch);
+                    }
+                }
+                childrenToWrap.forEach(ch => jobsWrapper.appendChild(ch));
+
+                const switcherBar = document.createElement('div');
+                switcherBar.id = 'mainViewSwitcher';
+                switcherBar.className = 'grid grid-cols-2 gap-1.5 p-2.5 bg-slate-100 border-b border-slate-200';
+                switcherBar.innerHTML = `
+                    <button type="button" id="mainTabBtn-jobs" onclick="switchTechMainTab('jobs')" class="py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-teal-700 text-white shadow-sm">
+                        <span>📋 รายการใบงานซ่อม</span>
+                    </button>
+                    <button type="button" id="mainTabBtn-map" onclick="switchTechMainTab('map')" class="py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-50">
+                        <span>⚡ แผนที่ อุปกรณ์ ไฟฟ้า</span>
+                        <span id="mapTabPinCountBadge" class="bg-teal-100 text-teal-800 text-[10px] px-1.5 py-0.5 rounded-full font-extrabold">0</span>
+                    </button>
+                `;
+
+                const mapSection = document.createElement('div');
+                mapSection.id = 'labeledMapViewWrapper';
+                mapSection.className = 'hidden flex-col';
+                mapSection.innerHTML = `
+                    <div class="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5">
+                        <div class="flex items-center justify-between bg-teal-50/90 border border-teal-200 px-3 py-1.5 rounded-xl text-[11px]">
+                            <span class="font-bold text-teal-900 flex items-center gap-1">
+                                <span>⚡ แผนที่ อุปกรณ์ ไฟฟ้า</span>
+                                <span id="currentEquipGroupHeaderBadge" class="bg-teal-700 text-white px-2 py-0.5 rounded-md text-[10px] font-extrabold">-</span>
+                            </span>
+                            <span class="text-[10px] text-teal-700 font-semibold">🔒 เห็นเฉพาะกลุ่มสังกัด</span>
+                        </div>
+
+                        <!-- ช่องค้นหาพร้อมดร็อปดาวน์แสดงชื่อเต็ม (ไม่มีเลขพิกัดบัง) -->
+                        <div class="flex gap-1.5 relative">
+                            <div class="relative flex-1" id="searchEquipAutocompleteBox">
+                                <input type="text" id="searchLabeledPinInput" autocomplete="off"
+                                    oninput="onSearchEquipInputChange(this.value)"
+                                    onfocus="onSearchEquipInputChange(this.value)"
+                                    onkeydown="onSearchEquipKeyDown(event)"
+                                    placeholder="🔍 พิมพ์ค้นหาชื่อรหัส, อุปกรณ์ไฟฟ้า..."
+                                    class="w-full px-3.5 py-2 pr-8 text-xs bg-white font-medium">
+                                <button type="button" onclick="clearSearchEquipInput()" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-bold">&times;</button>
+
+                                <!-- กล่องดร็อปดาวน์แสดงชื่ออุปกรณ์เต็มบรรทัด -->
+                                <div id="searchEquipDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-[600] divide-y divide-slate-100"></div>
+                            </div>
+                            <button type="button" onclick="focusMapOnSearchMatch()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-sm transition whitespace-nowrap flex items-center gap-1">
+                                🗺️ ค้นหาดู Map
+                            </button>
+                        </div>
+
+                                                <div class="flex flex-wrap items-center justify-between gap-1.5">
+                            <div class="flex flex-wrap gap-1.5">
+                                <button type="button" onclick="openEquipPinModal(null)" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition flex items-center gap-1">
+                                    ➕ เพิ่มป้ายกำกับ (ชื่อรหัส/พิกัด)
+                                </button>
+                                <button type="button" onclick="document.getElementById('importLabelsFileInput').click()" class="bg-white hover:bg-slate-100 text-teal-700 border border-teal-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1">
+                                    📂 นำเข้าไฟล์
+                                </button>
+                                <input type="file" id="importLabelsFileInput" accept=".json,.geojson,.kml,.csv" class="hidden" onchange="handleImportLabeledFile(event)">
+                                <button type="button" onclick="exportLabeledPinsToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition flex items-center gap-1" title="ส่งออกหมุดอุปกรณ์ในกลุ่มเป็นไฟล์ Excel (.xlsx)">
+                                    📊 ส่งออก Excel
+                                </button>
+                                <button type="button" onclick="exportLabeledPinsToJson()" class="bg-sky-600 hover:bg-sky-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition flex items-center gap-1" title="ส่งออกหมุดอุปกรณ์ในกลุ่มเป็นไฟล์ .json (ใช้สำรองหรือนำเข้าเครื่องอื่นได้ทันที)">
+                                    📥 ส่งออก JSON
+                                </button>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button type="button" id="togglePinNamesBtn" onclick="toggleShowAllPinNames()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-2 py-1.5 rounded-xl text-[11px] font-semibold transition">
+                                    🏷️ ชื่อรหัส: เปิด
+                                </button>
+                                <button type="button" onclick="centerMapOnMyGps()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    📍 พิกัดฉัน
+                                </button>
+                            </div>
+                        </div>
+                        </div>
+
+                    <!-- กล่องแสดงสถานะกำลังเดินทางไปจุดอุปกรณ์ไฟฟ้า -->
+                    <div id="mapActiveNavContainer" class="hidden px-3.5 pt-3">
+                        <div class="p-3 bg-blue-50/95 border-2 border-blue-400 rounded-2xl shadow-sm space-y-2 text-xs text-blue-950">
+                            <div id="mapActiveNavBody"></div>
+                            <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-blue-200">
+                                <div class="flex flex-wrap gap-1.5">
+                                    <button type="button" onclick="openExternalGoogleMapsForActiveNav()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                        🗺️ เปิด Google Maps
+                                    </button>
+                                    <button type="button" onclick="shareActiveNavPinToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                        💬 แชร์ LINE
+                                    </button>
+                                    <button type="button" onclick="zoomToActiveNavRoute()" class="bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                        🔍 ดูเส้นทาง
+                                    </button>
+                                </div>
+                                <button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    ❌ ยกเลิก
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- กรอบแผนที่อินเทอร์แอคทีฟ -->
+                    <div class="p-3.5 pb-2">
+                        <div class="relative rounded-2xl overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100">
+                            <div id="labeledInteractiveMap" class="w-full h-[340px] sm:h-[390px] z-0"></div>
+                            <button type="button" onclick="fitAllLabeledPinsOnMap()" class="absolute bottom-3 left-3 z-[400] bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md transition">
+                                🌐 ดูหมุดทั้งหมดในกลุ่ม
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- แถบจัดเรียงและปุ่มล้างข้อมูล (รหัส 1234) -->
+                    <div class="px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span id="labeledListSummaryText" class="font-bold text-teal-800">⚡ อุปกรณ์ไฟฟ้าในกลุ่ม (0)</span>
+                        <div class="flex items-center gap-2">
+                            <select id="sortLabeledPinsSelect" onchange="renderLabeledPlacesList(false)" class="px-2 py-1 text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg">
+                                <option value="nearest">📏 เรียงตามระยะใกล้ฉันที่สุด</option>
+                                <option value="name_asc">🔤 เรียงตามชื่อรหัส ก ➔ ฮ</option>
+                            </select>
+                            <button type="button" onclick="openClearEquipModal()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1 rounded-lg text-[11px] font-bold transition">
+                                🗑️ ล้างข้อมูล
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- รายการการ์ดอุปกรณ์ไฟฟ้าด้านล่างแผนที่ -->
+                    <div id="labeledPlacesCardsContainer" class="p-3.5 pt-1.5 space-y-2.5 max-h-[42vh] overflow-y-auto"></div>
+                `;
+
+                mainApp.insertBefore(switcherBar, footerEl);
+                mainApp.insertBefore(jobsWrapper, footerEl);
+                mainApp.insertBefore(mapSection, footerEl);
+            }
+
+            // =========================================================================
+            // 🔍 ระบบดร็อปดาวน์แนะนำคำค้นหาใกล้เคียง (แสดงชื่ออุปกรณ์เต็ม ไม่โชว์พิกัดบัง)
+            // =========================================================================
+            function highlightKeywordHtml(text, kw) {
+                const safeText = escapeHtmlStr(text || '');
+                if (!kw) return safeText;
+                const escapedKw = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(${escapedKw})`, 'gi');
+                return safeText.replace(regex, '<span class="bg-amber-200 text-slate-900 font-extrabold px-0.5 rounded">$1</span>');
+            }
+
+            window.onSearchEquipInputChange = function(rawValue) {
+                renderSearchEquipDropdown(rawValue);
+                renderLabeledPlacesList(true);
+            };
+
+            window.onSearchEquipKeyDown = function(e) {
+                if (e.key === 'Escape') {
+                    hideSearchEquipDropdown();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    hideSearchEquipDropdown();
+                    focusMapOnSearchMatch();
+                }
+            };
+
+            window.clearSearchEquipInput = function() {
+                const input = document.getElementById('searchLabeledPinInput');
+                if (input) input.value = '';
+                hideSearchEquipDropdown();
+                renderLabeledPlacesList(true);
+            };
+
+            function hideSearchEquipDropdown() {
+                const dd = document.getElementById('searchEquipDropdown');
+                if (dd) dd.classList.add('hidden');
+            }
+
+            function renderSearchEquipDropdown(rawVal) {
+                const dd = document.getElementById('searchEquipDropdown');
+                if (!dd) return;
+
+                const kw = String(rawVal || '').trim().toLowerCase();
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+
+                if (!kw || visiblePins.length === 0) {
+                    dd.classList.add('hidden');
+                    dd.innerHTML = '';
+                    return;
+                }
+
+                const startCoord = (isGpsTrackingEnabled && lastKnownTechCoords) ? lastKnownTechCoords : null;
+
+                const matched = visiblePins
+                    .map(p => {
+                        const nameStr = String(p.name || '');
+                        const noteStr = String(p.note || '');
+                        const coordStr = `${Number(p.lat).toFixed(5)}, ${Number(p.lon).toFixed(5)}`;
+                        const nameLower = nameStr.toLowerCase();
+                        const noteLower = noteStr.toLowerCase();
+
+                        const startsWithName = nameLower.startsWith(kw);
+                        const inName = nameLower.includes(kw);
+                        const inNote = noteLower.includes(kw);
+                        const inCoord = coordStr.includes(kw);
+
+                        if (!inName && !inNote && !inCoord) return null;
+
+                        let roadKm = null;
+                        if (startCoord && typeof calcHaversineKm === 'function') {
+                            const straight = calcHaversineKm(startCoord.lat, startCoord.lon, p.lat, p.lon);
+                            roadKm = Math.max(0.1, straight * 1.35);
+                        }
+
+                        return {
+                            ...p,
+                            roadKm,
+                            score: startsWithName ? 1 : (inName ? 2 : 3)
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => {
+                        if (a.score !== b.score) return a.score - b.score;
+                        if (a.roadKm !== null && b.roadKm !== null) return a.roadKm - b.roadKm;
+                        return String(a.name || '').localeCompare(String(b.name || ''), 'th');
+                    })
+                    .slice(0, 12);
+
+                if (matched.length === 0) {
+                    dd.innerHTML = `
+                        <div class="px-3.5 py-2.5 text-xs text-slate-400 text-center">
+                            ไม่พบชื่อรหัสหรืออุปกรณ์ที่ตรงกับ "${escapeHtmlStr(rawVal)}"
+                        </div>
+                    `;
+                    dd.classList.remove('hidden');
+                    return;
+                }
+
+                dd.innerHTML = matched.map(item => {
+                    return `
+                        <button type="button" onclick="selectSearchEquipSuggestion('${item.id}')" class="w-full text-left px-3.5 py-2.5 hover:bg-teal-50/90 transition block">
+                            <div class="text-xs sm:text-sm font-bold text-slate-800 break-words leading-snug">⚡ ${highlightKeywordHtml(item.name, kw)}</div>
+                            ${item.note ? `<div class="text-[11px] text-slate-500 break-words mt-0.5">📝 ${highlightKeywordHtml(item.note, kw)}</div>` : ''}
+                        </button>
+                    `;
+                }).join('');
+
+                dd.classList.remove('hidden');
+            }
+
+            window.selectSearchEquipSuggestion = function(placeId) {
+                const target = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!target) return;
+
+                const input = document.getElementById('searchLabeledPinInput');
+                if (input) input.value = target.name;
+
+                hideSearchEquipDropdown();
+                renderLabeledPlacesList(true);
+                focusSinglePinOnMap(target.id);
+                showToast(`🎯 เลือกอุปกรณ์: ${target.name}`);
+            };
+
+            document.addEventListener('click', (e) => {
+                const box = document.getElementById('searchEquipAutocompleteBox');
+                if (box && !box.contains(e.target)) {
+                    hideSearchEquipDropdown();
+                }
+            });
+
+            // =========================================================================
+            // 💬 ฟังก์ชันแชร์ป้ายชื่อและพิกัดอุปกรณ์ไฟฟ้าเข้ากลุ่ม LINE
+            // =========================================================================
+            window.shareEquipPinToLine = function(placeId) {
+                const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!place) return;
+
+                const lat = Number(place.lat).toFixed(6);
+                const lon = Number(place.lon).toFixed(6);
+                const pinGroup = getPinOwnerGroup(place);
+                const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+
+                const lines = [
+                    `⚡ พิกัดอุปกรณ์ไฟฟ้า (${pinGroup})`,
+                    `🏷️ ป้ายชื่อ/รหัส : ${place.name}`
+                ];
+                if (place.note && String(place.note).trim()) {
+                    lines.push(`📝 รายละเอียด : ${place.note}`);
+                }
+                lines.push(`📍 พิกัด : ${lat}, ${lon}`);
+                lines.push(`🗺️ แผนที่นำทาง : ${mapsUrl}`);
+
+                const shareText = lines.join('\n');
+
+                if (typeof copyTechText === 'function') {
+                    copyTechText(shareText, `💬 คัดลอกและกำลังเปิด LINE เพื่อแชร์ "${place.name}"...`);
+                }
+                window.open('https://line.me/R/share?text=' + encodeURIComponent(shareText), '_blank');
+            };
+
+            window.shareActiveNavPinToLine = function() {
+                if (!activeMapNav || !activeMapNav.placeId) return;
+                shareEquipPinToLine(activeMapNav.placeId);
+            };
+
+            window.switchTechMainTab = function(tabName) {
+                const jobsWrap = document.getElementById('jobsMainViewWrapper');
+                const mapWrap = document.getElementById('labeledMapViewWrapper');
+                const btnJobs = document.getElementById('mainTabBtn-jobs');
+                const btnMap = document.getElementById('mainTabBtn-map');
+                if (!jobsWrap || !mapWrap) return;
+
+                if (tabName === 'map') {
+                    jobsWrap.classList.add('hidden');
+                    mapWrap.classList.remove('hidden');
+                    mapWrap.classList.add('flex');
+                    btnMap.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-teal-700 text-white shadow-sm';
+                    btnJobs.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-50';
+                    initLabeledLeafletMap();
+                    setTimeout(() => {
+                        if (leafletMap) leafletMap.invalidateSize();
+                        renderLabeledPlacesList(true);
+                    }, 150);
+                } else {
+                    hideSearchEquipDropdown();
+                    mapWrap.classList.add('hidden');
+                    mapWrap.classList.remove('flex');
+                    jobsWrap.classList.remove('hidden');
+                    btnJobs.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-teal-700 text-white shadow-sm';
+                    btnMap.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-50';
+                }
+            };
+
+            function initLabeledLeafletMap() {
+                if (leafletMap || typeof L === 'undefined') return;
+                const mapContainer = document.getElementById('labeledInteractiveMap');
+                if (!mapContainer) return;
+
+                const defaultCenter = (typeof lastKnownTechCoords === 'object' && lastKnownTechCoords)
+                    ? [lastKnownTechCoords.lat, lastKnownTechCoords.lon]
+                    : [13.095, 101.125];
+
+                leafletMap = L.map('labeledInteractiveMap').setView(defaultCenter, 12);
+
+                const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                });
+                const googleHybridLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    attribution: '© Google Maps'
+                });
+                const googleStreetsLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                    maxZoom: 20,
+                    attribution: '© Google Maps'
+                });
+
+                googleStreetsLayer.addTo(leafletMap);
+                L.control.layers({
+                    "🗺️ แผนที่ถนน (Google)": googleStreetsLayer,
+                    "🛰️ ดาวเทียม+ชื่อถนน (Google)": googleHybridLayer,
+                    "🌐 OpenStreetMap": streetLayer
+                }, null, { position: 'topright' }).addTo(leafletMap);
+
+                markersLayer = L.layerGroup().addTo(leafletMap);
+                routeLineLayer = L.layerGroup().addTo(leafletMap);
+
+                updateMyGpsMarkerOnLeaflet();
+                renderLabeledPlacesList(true);
+            }
+
+            function updateMyGpsMarkerOnLeaflet() {
+                if (!leafletMap || typeof L === 'undefined') return;
+                if (!lastKnownTechCoords || !isGpsTrackingEnabled) {
+                    if (techSelfMarker) {
+                        leafletMap.removeLayer(techSelfMarker);
+                        techSelfMarker = null;
+                    }
+                    return;
+                }
+                const myLatLng = [lastKnownTechCoords.lat, lastKnownTechCoords.lon];
+                const myIcon = L.divIcon({
+                    className: '',
+                    html: `<div style="width:26px;height:26px;border-radius:9999px;background:#2563eb;border:3px solid #fff;box-shadow:0 0 10px rgba(37,99,235,0.8);display:flex;align-items:center;justify-content:center;font-size:13px;">🚗</div>`,
+                    iconSize: [26, 26],
+                    iconAnchor: [13, 13]
+                });
+                if (!techSelfMarker) {
+                    techSelfMarker = L.marker(myLatLng, { icon: myIcon, zIndexOffset: 900 })
+                        .addTo(leafletMap)
+                        .bindPopup('<b>🚗 ตำแหน่งปัจจุบันของคุณ</b>');
+                } else {
+                    techSelfMarker.setLatLng(myLatLng);
+                }
+            }
+
+            window.centerMapOnMyGps = function() {
+                if (navigator.geolocation) {
+                    showToast("⏳ กำลังค้นหาพิกัดปัจจุบันของคุณ...");
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            if (typeof recordCurrentTechGpsLocation === 'function') {
+                                recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
+                            } else {
+                                lastKnownTechCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                            }
+                            updateMyGpsMarkerOnLeaflet();
+                            if (leafletMap) leafletMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
+                            renderLabeledPlacesList(false);
+                            showToast("📍 ซูมไปยังตำแหน่งปัจจุบันแล้ว");
+                        },
+                        () => {
+                            if (lastKnownTechCoords && leafletMap) {
+                                leafletMap.setView([lastKnownTechCoords.lat, lastKnownTechCoords.lon], 15);
+                            } else {
+                                showToast("⚠️ ไม่สามารถดึงพิกัด GPS ได้ กรุณาเปิด Location");
+                            }
+                        },
+                        { enableHighAccuracy: true, timeout: 7000 }
+                    );
+                }
+            };
+
+            window.toggleShowAllPinNames = function() {
+                showAllPinLabels = !showAllPinLabels;
+                const btn = document.getElementById('togglePinNamesBtn');
+                if (btn) {
+                    btn.textContent = showAllPinLabels ? '🏷️ ชื่อรหัส: เปิด' : '🏷️ ชื่อรหัส: ปิด';
+                }
+                renderLabeledPlacesList(true);
+            };
+
+            function renderMarkersOnMap(filteredItems, autoFit = false) {
+                if (!leafletMap || !markersLayer) return;
+                markersLayer.clearLayers();
+                markerMapById = {};
+
+                const listToRender = Array.isArray(filteredItems)
+                    ? filteredItems
+                    : labeledPlaces.filter(canCurrentUserSeeEquipPin);
+                const bounds = [];
+
+                listToRender.forEach(place => {
+                    const lat = parseFloat(place.lat);
+                    const lon = parseFloat(place.lon);
+                    if (isNaN(lat) || isNaN(lon)) return;
+
+                    bounds.push([lat, lon]);
+                    const pinIcon = L.divIcon({
+                        className: '',
+                        html: `<div style="width:28px;height:28px;border-radius:9999px 9999px 9999px 2px;transform:rotate(-45deg);background:linear-gradient(135deg,#0d9488,#0284c7);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;">
+                                <span style="transform:rotate(45deg);font-size:13px;">⚡</span>
+                               </div>`,
+                        iconSize: [28, 28],
+                        iconAnchor: [14, 28],
+                        popupAnchor: [0, -26]
+                    });
+
+                    const marker = L.marker([lat, lon], { icon: pinIcon });
+                    if (showAllPinLabels) {
+                        marker.bindTooltip(escapeHtmlStr(place.name), {
+                            permanent: true,
+                            direction: 'top',
+                            offset: [0, -26],
+                            className: 'labeled-pin-tooltip'
+                        });
+                    }
+
+                    const pinGroup = getPinOwnerGroup(place);
+                    const popupHtml = `
+                        <div style="font-family:'Prompt',sans-serif;min-width:225px;" class="space-y-1.5 text-xs">
+                            <div class="flex items-center justify-between gap-1">
+                                <span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(pinGroup)}</span>
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="shareEquipPinToLine('${place.id}')" style="color:#00B900;font-weight:700;font-size:11px;">💬 แชร์ LINE</button>
+                                    <button type="button" onclick="openEquipPinModal('${place.id}')" style="color:#0f766e;font-weight:700;font-size:11px;">✏️ แก้ไข</button>
+                                </div>
+                            </div>
+                            <div class="font-bold text-slate-900 text-sm break-words">⚡ ${escapeHtmlStr(place.name)}</div>
+                            ${place.note ? `<div class="text-slate-600 text-[11px] break-words">${escapeHtmlStr(place.note)}</div>` : ''}
+                            <div class="text-[10px] text-slate-400">${lat.toFixed(6)}, ${lon.toFixed(6)}</div>
+                            <div class="pt-1 flex gap-1">
+                                <button type="button" onclick="startLabeledPlaceNavigation('${place.id}', false)" style="background:#0d9488;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">
+                                    🚗 เริ่มเดินทาง
+                                </button>
+                                <button type="button" onclick="startLabeledPlaceNavigation('${place.id}', true)" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">
+                                    🗺️ นำทาง Maps
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    marker.bindPopup(popupHtml);
+                    marker.addTo(markersLayer);
+                    markerMapById[place.id] = marker;
+                });
+
+                if (autoFit && bounds.length > 0) {
+                    leafletMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
+                }
+            }
+
+            window.fitAllLabeledPinsOnMap = function() {
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+                if (!leafletMap || visiblePins.length === 0) {
+                    showToast("⚠️ ยังไม่มีหมุดอุปกรณ์ไฟฟ้าในกลุ่มของคุณ");
+                    return;
+                }
+                const bounds = visiblePins.map(p => [p.lat, p.lon]);
+                if (lastKnownTechCoords && isGpsTrackingEnabled) {
+                    bounds.push([lastKnownTechCoords.lat, lastKnownTechCoords.lon]);
+                }
+                leafletMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
+            };
+
+            window.focusSinglePinOnMap = function(placeId) {
+                const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!place || !leafletMap) return;
+                const mapEl = document.getElementById('labeledInteractiveMap');
+                if (mapEl) mapEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                leafletMap.setView([place.lat, place.lon], 17);
+                const m = markerMapById[placeId];
+                if (m) m.openPopup();
+            };
+
+            window.focusMapOnSearchMatch = function() {
+                hideSearchEquipDropdown();
+                const kw = (document.getElementById('searchLabeledPinInput')?.value || '').trim().toLowerCase();
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+                const matches = visiblePins.filter(p =>
+                    !kw ||
+                    String(p.name || '').toLowerCase().includes(kw) ||
+                    String(p.note || '').toLowerCase().includes(kw) ||
+                    `${p.lat},${p.lon}`.includes(kw)
+                );
+                if (matches.length === 0) {
+                    showToast("⚠️ ไม่พบรหัสอุปกรณ์ไฟฟ้าที่ค้นหาในกลุ่มของคุณ");
+                    return;
+                }
+                const mapEl = document.getElementById('labeledInteractiveMap');
+                if (mapEl) mapEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                if (matches.length === 1) {
+                    focusSinglePinOnMap(matches[0].id);
+                    showToast(`🎯 พบอุปกรณ์: ${matches[0].name}`);
+                } else {
+                    renderMarkersOnMap(matches, true);
+                    showToast(`🗺️ แสดงผลการค้นหาบนแผนที่ ${matches.length} จุด`);
+                }
+            };
+
+            function escapeHtmlStr(str) {
+                return String(str || '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            window.renderLabeledPlacesList = function(updateMapMarkers = false) {
+                const myGroup = getActiveEquipUserGroup();
+                const groupHeaderBadge = document.getElementById('currentEquipGroupHeaderBadge');
+                if (groupHeaderBadge) {
+                    groupHeaderBadge.textContent = `🏢 ${myGroup}`;
+                }
+
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+
+                const countBadge = document.getElementById('mapTabPinCountBadge');
+                if (countBadge) countBadge.textContent = visiblePins.length;
+
+                const container = document.getElementById('labeledPlacesCardsContainer');
+                const summaryEl = document.getElementById('labeledListSummaryText');
+                if (!container) return;
+
+                const kw = (document.getElementById('searchLabeledPinInput')?.value || '').trim().toLowerCase();
+                const sortBy = document.getElementById('sortLabeledPinsSelect')?.value || 'nearest';
+                const startCoord = (isGpsTrackingEnabled && lastKnownTechCoords) ? lastKnownTechCoords : null;
+
+                let enriched = visiblePins.map(p => {
+                    let roadKm = null;
+                    let estMin = null;
+                    if (startCoord && typeof calcHaversineKm === 'function') {
+                        const straight = calcHaversineKm(startCoord.lat, startCoord.lon, p.lat, p.lon);
+                        roadKm = Math.max(0.1, straight * 1.35);
+                        estMin = Math.max(1, Math.round((roadKm / 45) * 60));
+                    }
+                    return { ...p, roadKm, estMin };
+                });
+
+                const filtered = enriched.filter(p => {
+                    if (!kw) return true;
+                    return String(p.name || '').toLowerCase().includes(kw) ||
+                           String(p.note || '').toLowerCase().includes(kw) ||
+                           `${p.lat},${p.lon}`.includes(kw);
+                });
+
+                if (sortBy === 'nearest' && startCoord) {
+                    filtered.sort((a, b) => (a.roadKm ?? 99999) - (b.roadKm ?? 99999));
+                } else {
+                    filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+                }
+
+                if (summaryEl) {
+                    summaryEl.textContent = kw
+                        ? `🔍 พบอุปกรณ์ ${filtered.length} จุด (จาก ${visiblePins.length} จุดใน ${myGroup})`
+                        : `⚡ อุปกรณ์ไฟฟ้าใน ${myGroup} (${visiblePins.length} จุด)`;
+                }
+
+                if (updateMapMarkers) {
+                    renderMarkersOnMap(filtered, Boolean(kw && filtered.length > 0));
+                }
+
+                container.innerHTML = '';
+                if (filtered.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-500 space-y-2">
+                            <div class="text-base font-bold text-slate-600">⚡ ยังไม่มีข้อมูลอุปกรณ์ไฟฟ้าของกลุ่ม ${escapeHtmlStr(myGroup)}</div>
+                            <div>กดปุ่ม <b>"➕ เพิ่มป้ายกำกับ (ชื่อรหัส/พิกัด)"</b> หรือ <b>"📂 นำเข้าไฟล์"</b> ด้านบน ข้อมูลที่เพิ่มจะแสดงเฉพาะสมาชิกในกลุ่ม <b>${escapeHtmlStr(myGroup)}</b> เท่านั้น</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                filtered.forEach(item => {
+                    const isCurrentNav = activeMapNav && activeMapNav.placeId === item.id;
+                    const pinGroup = getPinOwnerGroup(item);
+                    const distBadge = item.roadKm !== null
+                        ? `<span class="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold px-2 py-0.5 rounded-full">📍 ห่าง ~${item.roadKm.toFixed(1)} กม. (~${item.estMin} นาที)</span>`
+                        : `<span class="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full">${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</span>`;
+
+                    const card = document.createElement('div');
+                    card.className = `p-3 rounded-2xl border bg-white shadow-sm space-y-2 transition ${isCurrentNav ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/30' : 'border-slate-200 hover:border-teal-300'}`;
+                    card.innerHTML = `
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0 flex-1 space-y-0.5">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold px-1.5 py-0.5 rounded">🏢 ${escapeHtmlStr(pinGroup)}</span>
+                                    <span class="font-bold text-slate-800 text-xs sm:text-sm break-words">⚡ ${escapeHtmlStr(item.name)}</span>
+                                </div>
+                                ${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${escapeHtmlStr(item.note)}</div>` : ''}
+                                <div class="text-[10px] text-slate-400">📍 พิกัด: ${Number(item.lat).toFixed(6)}, ${Number(item.lon).toFixed(6)}</div>
+                            </div>
+                            <div class="shrink-0 flex items-center gap-1">
+                                ${distBadge}
+                                <button type="button" onclick="deleteSingleLabeledPin('${item.id}')" title="ลบรายการนี้" class="text-slate-300 hover:text-rose-500 px-1 text-sm font-bold">&times;</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+                            <div class="flex flex-wrap gap-1.5">
+                                <button type="button" onclick="focusSinglePinOnMap('${item.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    🎯 ดูบนแมพ
+                                </button>
+                                <button type="button" onclick="openEquipPinModal('${item.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    ✏️ แก้ไข
+                                </button>
+                                <button type="button" onclick="shareEquipPinToLine('${item.id}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                    💬 แชร์ LINE
+                                </button>
+                            </div>
+                            <div class="flex gap-1.5">
+                                <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    🚗 ${isCurrentNav ? 'อัปเดตเวลา' : 'กดออกเดินทาง'}
+                                </button>
+                                <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', true)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                    🗺️ นำทาง Maps
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            };
+
+            // =========================================================================
+            // 🚗 ระบบเริ่มนำทางไปจุดอุปกรณ์ไฟฟ้า + คำนวณระยะเวลาถึง (ETA)
+            // =========================================================================
+            window.startLabeledPlaceNavigation = async function(placeId, openExternalGoogleMaps = false) {
+                const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!place) return;
+
+                const loggedInUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+                const startCoord = lastKnownTechCoords || { lat: 13.1361, lon: 101.0322 };
+                const destCoord = { lat: parseFloat(place.lat), lon: parseFloat(place.lon) };
+
+                const now = new Date();
+                const nowMs = now.getTime();
+                const departTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
+
+                const instantRoute = typeof calculateInstantRouteFallback === 'function'
+                    ? calculateInstantRouteFallback(startCoord, destCoord)
+                    : { distanceKm: "2.0", durationMin: 5, isArrived: false };
+
+                const etaMs = nowMs + (instantRoute.durationMin * 60000);
+                const etaDate = new Date(etaMs);
+                const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
+
+                activeMapNav = {
+                    placeId: place.id,
+                    placeName: place.name,
+                    destLat: destCoord.lat,
+                    destLon: destCoord.lon,
+                    durationMin: instantRoute.durationMin,
+                    initialDurationMin: instantRoute.durationMin,
+                    distanceKm: instantRoute.distanceKm,
+                    initialDistanceKm: instantRoute.distanceKm,
+                    departTime: departTimeStr,
+                    departTimestamp: nowMs,
+                    etaTime: instantRoute.isArrived ? 'ถึงจุดหมายแล้ว' : etaTimeStr,
+                    etaTimestamp: etaMs,
+                    isArrived: instantRoute.isArrived,
+                    techName: loggedInUser,
+                    updatedAt: new Date().toISOString()
+                };
+
+                document.getElementById('mapActiveNavContainer')?.classList.remove('hidden');
+                renderActiveMapNavBox();
+                renderLabeledPlacesList(false);
+
+                await drawAndRefreshRouteToLabeledPin(startCoord, destCoord, true);
+                startMapNavRealtimeWatch();
+
+                if (openExternalGoogleMaps) {
+                    openExternalGoogleMapsForActiveNav();
+                } else {
+                    showToast(`🚗 เริ่มเดินทางไป "${place.name}" (ถึงประมาณ ${activeMapNav.etaTime})`);
+                }
+            };
+
+            async function drawAndRefreshRouteToLabeledPin(startCoord, destCoord, fitRoute = false) {
+                if (!activeMapNav) return;
+                try {
+                    const url = `https://router.project-osrm.org/route/v1/driving/${startCoord.lon},${startCoord.lat};${destCoord.lon},${destCoord.lat}?overview=full&geometries=geojson`;
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.routes && data.routes.length > 0) {
+                            const route = data.routes[0];
+                            const distKm = Math.max(0.1, route.distance / 1000);
+                            const durMin = Math.max(1, Math.round((route.duration / 60) * 1.15));
+                            const isArrived = distKm <= 0.12;
+                            const nowMs = Date.now();
+                            const etaMs = nowMs + (durMin * 60000);
+                            const etaDate = new Date(etaMs);
+                            const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
+
+                            activeMapNav.distanceKm = distKm.toFixed(1);
+                            if (!activeMapNav.initialDistanceKm) activeMapNav.initialDistanceKm = distKm.toFixed(1);
+                            activeMapNav.durationMin = durMin;
+                            activeMapNav.etaTimestamp = etaMs;
+                            activeMapNav.etaTime = isArrived ? 'ถึงจุดหมายแล้ว' : etaTimeStr;
+                            activeMapNav.isArrived = isArrived;
+                            activeMapNav.updatedAt = new Date().toISOString();
+
+                            if (leafletMap && routeLineLayer && route.geometry) {
+                                routeLineLayer.clearLayers();
+                                const latLngs = route.geometry.coordinates.map(c => [c[1], c[0]]);
+                                const poly = L.polyline(latLngs, {
+                                    color: '#2563eb',
+                                    weight: 5,
+                                    opacity: 0.85
+                                }).addTo(routeLineLayer);
+                                if (fitRoute) {
+                                    leafletMap.fitBounds(poly.getBounds(), { padding: [40, 40] });
+                                }
+                            }
+                            renderActiveMapNavBox();
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            function startMapNavRealtimeWatch() {
+                if (mapNavWatchId !== null && navigator.geolocation) {
+                    navigator.geolocation.clearWatch(mapNavWatchId);
+                    mapNavWatchId = null;
+                }
+                if (mapNavTimerId) clearInterval(mapNavTimerId);
+                mapNavTimerId = setInterval(renderActiveMapNavBox, 1000);
+
+                if (!navigator.geolocation || !isGpsTrackingEnabled) return;
+                if (typeof requestScreenWakeLock === 'function') requestScreenWakeLock();
+
+                mapNavWatchId = navigator.geolocation.watchPosition(
+                    async (pos) => {
+                        if (!activeMapNav) return;
+                        if (typeof recordCurrentTechGpsLocation === 'function') {
+                            recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
+                        }
+                        updateMyGpsMarkerOnLeaflet();
+
+                        const nowMs = Date.now();
+                        if (nowMs - lastMapRouteCalcMs < 7000) return;
+                        lastMapRouteCalcMs = nowMs;
+
+                        const curStart = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+                        const curDest = { lat: activeMapNav.destLat, lon: activeMapNav.destLon };
+                        await drawAndRefreshRouteToLabeledPin(curStart, curDest, false);
+
+                        if (activeMapNav && activeMapNav.isArrived) {
+                            showToast(`📍 คุณเดินทางถึง "${activeMapNav.placeName}" แล้ว!`);
+                        }
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, maximumAge: 4000, timeout: 10000 }
+                );
+            }
+
+            function renderActiveMapNavBox() {
+                const bodyEl = document.getElementById('mapActiveNavBody');
+                if (!bodyEl || !activeMapNav) return;
+                const navHtml = typeof formatRealtimeNavHtml === 'function'
+                    ? formatRealtimeNavHtml(activeMapNav)
+                    : `<div class="font-bold text-blue-700">🚗 กำลังเดินทาง: ถึงประมาณ ${activeMapNav.etaTime}</div>`;
+
+                bodyEl.innerHTML = `
+                    <div class="font-extrabold text-indigo-950 text-xs sm:text-sm flex items-center gap-1.5 pb-1">
+                        <span>⚡ กำลังเดินทางไปอุปกรณ์:</span>
+                        <span class="text-blue-700 underline">${escapeHtmlStr(activeMapNav.placeName)}</span>
+                    </div>
+                    ${navHtml}
+                `;
+            }
+
+            window.openExternalGoogleMapsForActiveNav = function() {
+                if (!activeMapNav) return;
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${activeMapNav.destLat},${activeMapNav.destLon}&travelmode=driving`;
+                window.open(url, '_blank');
+            };
+
+            window.zoomToActiveNavRoute = function() {
+                if (!activeMapNav || !leafletMap) return;
+                const bounds = [[activeMapNav.destLat, activeMapNav.destLon]];
+                if (lastKnownTechCoords) bounds.push([lastKnownTechCoords.lat, lastKnownTechCoords.lon]);
+                leafletMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 });
+            };
+
+            window.stopLabeledPlaceNavigation = function() {
+                activeMapNav = null;
+                if (mapNavWatchId !== null && navigator.geolocation) {
+                    navigator.geolocation.clearWatch(mapNavWatchId);
+                    mapNavWatchId = null;
+                }
+                if (mapNavTimerId) {
+                    clearInterval(mapNavTimerId);
+                    mapNavTimerId = null;
+                }
+                if (routeLineLayer) routeLineLayer.clearLayers();
+                document.getElementById('mapActiveNavContainer')?.classList.add('hidden');
+                renderLabeledPlacesList(false);
+                showToast("↩️ ยกเลิกการนำทางไปยังอุปกรณ์ไฟฟ้าแล้ว");
+            };
+
+            // =========================================================================
+            // ➕✏️ ระบบเพิ่ม & แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า
+            // =========================================================================
+            function normalizeThaiLatLon(valA, valB) {
+                const a = parseFloat(valA);
+                const b = parseFloat(valB);
+                if (isNaN(a) || isNaN(b)) return null;
+                if (a >= 95 && a <= 108 && b >= 4 && b <= 23) {
+                    return { lat: b, lon: a };
+                }
+                if (a >= -90 && a <= 90 && b >= -180 && b <= 180) {
+                    return { lat: a, lon: b };
+                }
+                return null;
+            }
+
+            function parseInputCoordOrGpsLink(rawStr) {
+                if (!rawStr || !String(rawStr).trim()) return null;
+                const text = String(rawStr).trim();
+
+                if (typeof extractCoordsFromJob === 'function') {
+                    const extracted = extractCoordsFromJob({ gps: text, address: text, area: '' });
+                    if (extracted && !extracted.isApproxTambon) {
+                        return normalizeThaiLatLon(extracted.lat, extracted.lon);
+                    }
+                }
+
+                const nums = text.match(/-?\d+\.\d+/g);
+                if (nums && nums.length >= 2) {
+                    return normalizeThaiLatLon(nums[0], nums[1]);
+                }
+                return null;
+            }
+
+            window.openEquipPinModal = function(pinId = null) {
+                editingEquipPinId = pinId;
+                const modal = document.getElementById('equipPinModal');
+                const titleEl = document.getElementById('equipPinModalTitle');
+                const groupBadge = document.getElementById('equipModalGroupBadge');
+                const nameInput = document.getElementById('equipCodeNameInput');
+                const coordInput = document.getElementById('equipCoordInput');
+                const noteInput = document.getElementById('equipNoteInput');
+                if (!modal) return;
+
+                const myGroup = getActiveEquipUserGroup();
+
+                if (pinId) {
+                    const target = labeledPlaces.find(p => p.id === pinId);
+                    if (!target) return;
+                    titleEl.innerHTML = '✏️ แก้ไขป้ายกำกับ / อุปกรณ์ไฟฟ้า';
+                    groupBadge.textContent = getPinOwnerGroup(target) || myGroup;
+                    nameInput.value = target.name || '';
+                    coordInput.value = target.rawGpsLink || `${Number(target.lat).toFixed(6)}, ${Number(target.lon).toFixed(6)}`;
+                    noteInput.value = target.note || '';
+                } else {
+                    titleEl.innerHTML = '➕ เพิ่มป้ายกำกับ / อุปกรณ์ไฟฟ้า';
+                    groupBadge.textContent = myGroup;
+                    nameInput.value = '';
+                    coordInput.value = lastKnownTechCoords
+                        ? `${lastKnownTechCoords.lat.toFixed(6)}, ${lastKnownTechCoords.lon.toFixed(6)}`
+                        : '';
+                    noteInput.value = '';
+                }
+
+                modal.classList.remove('hidden');
+                setTimeout(() => nameInput.focus(), 100);
+            };
+
+            window.closeEquipPinModal = function() {
+                document.getElementById('equipPinModal')?.classList.add('hidden');
+                editingEquipPinId = null;
+            };
+
+            window.fillEquipCurrentGps = function() {
+                const coordInput = document.getElementById('equipCoordInput');
+                if (!navigator.geolocation) {
+                    showToast("⚠️ เบราว์เซอร์ไม่รองรับ GPS");
+                    return;
+                }
+                showToast("⏳ กำลังดึงพิกัดมือถือปัจจุบัน...");
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const lat = pos.coords.latitude.toFixed(6);
+                        const lon = pos.coords.longitude.toFixed(6);
+                        if (typeof recordCurrentTechGpsLocation === 'function') {
+                            recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
+                        }
+                        if (coordInput) coordInput.value = `https://www.google.com/maps?q=${lat},${lon}`;
+                        showToast(`📍 ดึงพิกัดสำเร็จ (${lat}, ${lon})`);
+                    },
+                    () => {
+                        if (lastKnownTechCoords && coordInput) {
+                            coordInput.value = `${lastKnownTechCoords.lat.toFixed(6)}, ${lastKnownTechCoords.lon.toFixed(6)}`;
+                            showToast("📍 ใช้พิกัดล่าสุดของเครื่อง");
+                        } else {
+                            showToast("❌ ไม่สามารถดึงพิกัดได้ กรุณาเปิด Location ในมือถือ");
+                        }
+                    },
+                    { enableHighAccuracy: true, timeout: 8000 }
+                );
+            };
+
+            window.saveEquipPinModal = function() {
+                const codeName = (document.getElementById('equipCodeNameInput')?.value || '').trim();
+                const rawCoord = (document.getElementById('equipCoordInput')?.value || '').trim();
+                const note = (document.getElementById('equipNoteInput')?.value || '').trim();
+
+                if (!codeName) {
+                    showToast("⚠️ กรุณากรอก 'ชื่อรหัส' หรือชื่ออุปกรณ์ไฟฟ้า");
+                    return;
+                }
+                if (!rawCoord) {
+                    showToast("⚠️ กรุณากรอก 'พิกัด' หรือวาง 'ลิงก์ GPS'");
+                    return;
+                }
+
+                const pair = parseInputCoordOrGpsLink(rawCoord);
+                if (!pair) {
+                    showToast("❌ รูปแบบพิกัดหรือลิงก์ GPS ไม่ถูกต้อง (โปรดระบุเช่น 13.1361, 101.0322 หรือลิงก์ที่มีพิกัด)");
+                    return;
+                }
+
+                const myGroup = getActiveEquipUserGroup();
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                const nowIso = new Date().toISOString();
+
+                if (editingEquipPinId) {
+                    const idx = labeledPlaces.findIndex(p => p.id === editingEquipPinId);
+                    if (idx !== -1) {
+                        labeledPlaces[idx] = {
+                            ...labeledPlaces[idx],
+                            name: codeName,
+                            note: note,
+                            lat: pair.lat,
+                            lon: pair.lon,
+                            rawGpsLink: rawCoord.startsWith('http') ? rawCoord : undefined,
+                            ownerGroup: labeledPlaces[idx].ownerGroup || myGroup,
+                            updatedBy: curUser,
+                            updatedAt: nowIso
+                        };
+                        const updatedPin = labeledPlaces[idx];
+                        saveLabeledPlaces(true);
+                        closeEquipPinModal();
+                        renderLabeledPlacesList(true);
+                        focusSinglePinOnMap(updatedPin.id);
+
+                        if (activeMapNav && activeMapNav.placeId === updatedPin.id) {
+                            startLabeledPlaceNavigation(updatedPin.id, false);
+                        }
+                        showToast(`✅ แก้ไขข้อมูล "${codeName}" เรียบร้อยแล้ว`);
+                        return;
+                    }
+                }
+
+                const newPin = {
+                    id: 'eqp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+                    name: codeName,
+                    note: note,
+                    lat: pair.lat,
+                    lon: pair.lon,
+                    rawGpsLink: rawCoord.startsWith('http') ? rawCoord : undefined,
+                    ownerGroup: myGroup,
+                    ownerUser: curUser,
+                    updatedAt: nowIso
+                };
+
+                labeledPlaces.unshift(newPin);
+                saveLabeledPlaces(true);
+                closeEquipPinModal();
+                renderLabeledPlacesList(true);
+                focusSinglePinOnMap(newPin.id);
+                showToast(`✅ เพิ่ม "${codeName}" สำหรับกลุ่ม ${myGroup} เรียบร้อยแล้ว`);
+            };
+
+                     // =========================================================================
+            // 📊📥 ระบบส่งออกหมุดอุปกรณ์ไฟฟ้า (Excel .xlsx และ .json)
+            // =========================================================================
+            function ensureTechXlsxLoaded() {
+                return new Promise((resolve) => {
+                    if (typeof XLSX !== 'undefined') {
+                        resolve(true);
+                        return;
+                    }
+                    const script = document.createElement('script');
+                    script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+                    script.onload = () => resolve(true);
+                    script.onerror = () => resolve(false);
+                    document.head.appendChild(script);
+                });
+            }
+            
+            window.exportLabeledPinsToJson = function() {
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+                if (visiblePins.length === 0) {
+                    showToast("⚠️ ไม่มีข้อมูลหมุดอุปกรณ์ไฟฟ้าในกลุ่มสำหรับส่งออก");
+                    return;
+                }
+                
+                const myGroup = getActiveEquipUserGroup();
+                const sortedPins = [...visiblePins].sort((a, b) =>
+                    String(a.name || '').localeCompare(String(b.name || ''), 'th')
+                );
+                
+                const dateStr = new Date().toISOString().split('T')[0];
+                const safeGroup = myGroup.replace(/\s+/g, '_');
+                const filename = `Equipment_Pins_${safeGroup}_${dateStr}.json`;
+                
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(sortedPins, null, 2));
+                const a = document.createElement('a');
+                a.setAttribute("href", dataStr);
+                a.setAttribute("download", filename);
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                showToast(`📥 ส่งออกไฟล์ JSON (${sortedPins.length} จุด) สำเร็จ!`);
+            };
+            
+            window.exportLabeledPinsToExcel = async function() {
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+                if (visiblePins.length === 0) {
+                    showToast("⚠️ ไม่มีข้อมูลหมุดอุปกรณ์ไฟฟ้าในกลุ่มสำหรับส่งออก");
+                    return;
+                }
+                
+                const myGroup = getActiveEquipUserGroup();
+                const sortedPins = [...visiblePins].sort((a, b) =>
+                    String(a.name || '').localeCompare(String(b.name || ''), 'th')
+                );
+                
+                const headers = [
+                    'ลำดับ',
+                    'กลุ่มสังกัด',
+                    'ชื่อรหัส / อุปกรณ์ไฟฟ้า',
+                    'รายละเอียด / บริเวณ',
+                    'ละติจูด (Lat)',
+                    'ลองจิจูด (Lon)',
+                    'ลิงก์นำทาง Google Maps',
+                    'ผู้บันทึก/อัปเดต',
+                    'วันเวลาที่อัปเดต'
+                ];
+                
+                const rows = sortedPins.map((p, idx) => {
+                    const lat = Number(p.lat).toFixed(6);
+                    const lon = Number(p.lon).toFixed(6);
+                    const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+                    const grp = getPinOwnerGroup(p) || myGroup;
+                    const updatedBy = p.updatedBy || p.ownerUser || '-';
+                    const updatedTime = p.updatedAt ? new Date(p.updatedAt).toLocaleString('th-TH') : '-';
+                    return [
+                        String(idx + 1),
+                        String(grp),
+                        String(p.name || '-'),
+                        String(p.note || ''),
+                        String(lat),
+                        String(lon),
+                        mapsUrl,
+                        String(updatedBy),
+                        String(updatedTime)
+                    ];
+                });
+                
+                const dateStr = new Date().toISOString().split('T')[0];
+                const safeGroup = myGroup.replace(/\s+/g, '_');
+                const filename = `Equipment_Pins_${safeGroup}_${dateStr}.xlsx`;
+                
+                const isLoaded = await ensureTechXlsxLoaded();
+                if (isLoaded && typeof XLSX !== 'undefined') {
+                    const wb = XLSX.utils.book_new();
+                    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                    ws['!cols'] = [
+                        { wch: 8 },
+                        { wch: 16 },
+                        { wch: 24 },
+                        { wch: 28 },
+                        { wch: 14 },
+                        { wch: 14 },
+                        { wch: 42 },
+                        { wch: 18 },
+                        { wch: 20 }
+                    ];
+                    const cleanSheetName = `อุปกรณ์_${myGroup}`.replace(/[\:\\\/\?\*\[\]]/g, '_').substring(0, 30);
+                    XLSX.utils.book_append_sheet(wb, ws, cleanSheetName);
+                    XLSX.writeFile(wb, filename);
+                    showToast(`📊 ส่งออกไฟล์ Excel (${sortedPins.length} จุด) สำเร็จ!`);
+                } else {
+                    const escapeCsv = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+                    const csvContent = '\uFEFF' + [
+                        headers.map(escapeCsv).join(','),
+                        ...rows.map(r => r.map(escapeCsv).join(','))
+                    ].join('\r\n');
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = filename.replace(/\.xlsx$/i, '.csv');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    showToast(`📊 ส่งออกไฟล์ตาราง .csv (${sortedPins.length} จุด) สำเร็จ!`);
+                }
+            };
+            
+            // =========================================================================
+            // 📂 ระบบนำเข้าไฟล์ (.json / .kml / .csv)
+            // =========================================================================
+            window.handleImportLabeledFile = function(event) {
+                const file = event.target.files?.[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const text = String(e.target.result || '');
+                    const fileName = file.name.toLowerCase();
+                    let imported = [];
+
+                    try {
+                        if (fileName.endsWith('.json') || fileName.endsWith('.geojson') || text.trim().startsWith('{')) {
+                            imported = parseGeoJsonLabeledPlaces(text);
+                        } else if (fileName.endsWith('.kml') || text.includes('<kml')) {
+                            imported = parseKmlLabeledPlaces(text);
+                        } else {
+                            imported = parseCsvLabeledPlaces(text);
+                        }
+                    } catch (err) {
+                        showToast("❌ รูปแบบไฟล์ไม่ถูกต้อง กรุณาใช้ไฟล์ .json, .kml หรือ .csv");
+                        return;
+                    }
+
+                    if (imported.length === 0) {
+                        showToast("⚠️ ไม่พบข้อมูลพิกัดในไฟล์ที่เลือก");
+                        return;
+                    }
+
+                    const myGroup = getActiveEquipUserGroup();
+                    const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                    const nowIso = new Date().toISOString();
+
+                    const existingMap = new Map();
+                    labeledPlaces.forEach(p => {
+                        const pGrp = getPinOwnerGroup(p);
+                        const key = `${pGrp}_${Number(p.lat).toFixed(5)}_${Number(p.lon).toFixed(5)}_${p.name}`;
+                        existingMap.set(key, p);
+                    });
+
+                    imported.forEach(p => {
+                        const itemWithGroup = {
+                            ...p,
+                            ownerGroup: myGroup,
+                            ownerUser: curUser,
+                            updatedAt: nowIso
+                        };
+                        const key = `${myGroup}_${Number(p.lat).toFixed(5)}_${Number(p.lon).toFixed(5)}_${p.name}`;
+                        existingMap.set(key, itemWithGroup);
+                    });
+
+                    labeledPlaces = Array.from(existingMap.values());
+                    saveLabeledPlaces(true);
+                    renderLabeledPlacesList(true);
+                    fitAllLabeledPinsOnMap();
+                    showToast(`🎉 นำเข้าอุปกรณ์ไฟฟ้าสำหรับกลุ่ม ${myGroup} สำเร็จ ${imported.length} จุด`);
+                };
+                reader.readAsText(file, 'UTF-8');
+                event.target.value = '';
+            };
+
+            function parseGeoJsonLabeledPlaces(jsonText) {
+                const obj = JSON.parse(jsonText);
+                const features = Array.isArray(obj.features) ? obj.features : (Array.isArray(obj) ? obj : []);
+                const results = [];
+
+                features.forEach((f, idx) => {
+                    const coords = f?.geometry?.coordinates;
+                    const props = f?.properties || f || {};
+                    let pair = null;
+                    if (Array.isArray(coords) && coords.length >= 2) {
+                        pair = normalizeThaiLatLon(coords[1], coords[0]);
+                    } else if (props.lat && props.lon) {
+                        pair = normalizeThaiLatLon(props.lat, props.lon);
+                    }
+                    if (!pair) return;
+
+                    const name = String(props.name || props.title || props.Name || props.label || `รหัสอุปกรณ์ #${idx + 1}`).trim();
+                    const note = String(props.address || props.description || props.note || '').trim();
+                    results.push({
+                        id: 'eqp_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
+                        name,
+                        note,
+                        lat: pair.lat,
+                        lon: pair.lon
+                    });
+                });
+                return results;
+            }
+
+            function parseKmlLabeledPlaces(kmlText) {
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(kmlText, 'text/xml');
+                const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+                const results = [];
+
+                placemarks.forEach((pm, idx) => {
+                    const nameEl = pm.getElementsByTagName('name')[0];
+                    const descEl = pm.getElementsByTagName('description')[0];
+                    const coordEl = pm.getElementsByTagName('coordinates')[0];
+                    if (!coordEl) return;
+
+                    const rawCoord = String(coordEl.textContent || '').trim().split(/\s+/)[0];
+                    const parts = rawCoord.split(',');
+                    if (parts.length < 2) return;
+
+                    const pair = normalizeThaiLatLon(parts[1], parts[0]);
+                    if (!pair) return;
+
+                    const name = String(nameEl ? nameEl.textContent : `รหัสอุปกรณ์ #${idx + 1}`).trim();
+                    const note = String(descEl ? descEl.textContent : '').replace(/<[^>]+>/g, ' ').trim();
+                    results.push({
+                        id: 'eqp_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
+                        name,
+                        note,
+                        lat: pair.lat,
+                        lon: pair.lon
+                    });
+                });
+                return results;
+            }
+
+            function parseCsvLabeledPlaces(csvText) {
+                const lines = csvText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                const results = [];
+                lines.forEach((line, idx) => {
+                    if (idx === 0 && /lat|lon|name|ชื่อ/i.test(line)) return;
+                    const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+                    if (cols.length < 2) return;
+
+                    let numIndices = [];
+                    cols.forEach((c, i) => {
+                        if (/^-?\d+\.\d+$/.test(c)) numIndices.push(i);
+                    });
+                    if (numIndices.length < 2) return;
+
+                    const pair = normalizeThaiLatLon(cols[numIndices[0]], cols[numIndices[1]]);
+                    if (!pair) return;
+
+                    const textCols = cols.filter((_, i) => i !== numIndices[0] && i !== numIndices[1] && _);
+                    const name = textCols[0] || `รหัสอุปกรณ์ #${idx + 1}`;
+                    const note = textCols.slice(1).join(' ');
+                    results.push({
+                        id: 'eqp_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
+                        name,
+                        note,
+                        lat: pair.lat,
+                        lon: pair.lon
+                    });
+                });
+                return results;
+            }
+
+            window.deleteSingleLabeledPin = function(placeId) {
+                const target = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!target) return;
+                if (!confirm(`ต้องการลบอุปกรณ์ "${target.name}" ออกจากแผนที่ใช่หรือไม่?`)) return;
+                deletedLabeledMap[placeId] = new Date().toISOString();
+                deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                labeledPlaces = labeledPlaces.filter(p => p.id !== placeId);
+                if (activeMapNav && activeMapNav.placeId === placeId) {
+                    stopLabeledPlaceNavigation();
+                }
+                saveLabeledPlaces(true);
+                renderLabeledPlacesList(true);
+                showToast("🗑️ ลบข้อมูลอุปกรณ์ไฟฟ้าแล้ว");
+            };
+
+            // =========================================================================
+            // 🔒 ระบบล้างข้อมูลทั้งหมด (ต้องใส่รหัสผ่าน "1234")
+            // =========================================================================
+            window.openClearEquipModal = function() {
+                const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+                if (visiblePins.length === 0) {
+                    showToast("⚠️ ไม่มีข้อมูลอุปกรณ์ไฟฟ้าให้ล้างในกลุ่มของคุณ");
+                    return;
+                }
+                const myGroup = getActiveEquipUserGroup();
+                const warnEl = document.getElementById('clearEquipWarningText');
+                if (warnEl) {
+                    warnEl.innerHTML = `คุณกำลังจะล้างข้อมูลอุปกรณ์ไฟฟ้าทั้งหมดของกลุ่ม <b>${escapeHtmlStr(myGroup)}</b> จำนวน <b>${visiblePins.length} จุด</b> กรุณาใส่รหัสผ่านเพื่อยืนยัน`;
+                }
+                const passInput = document.getElementById('clearEquipPasswordInput');
+                if (passInput) passInput.value = '';
+                document.getElementById('clearEquipPasswordModal')?.classList.remove('hidden');
+                setTimeout(() => passInput?.focus(), 100);
+            };
+
+            window.closeClearEquipModal = function() {
+                document.getElementById('clearEquipPasswordModal')?.classList.add('hidden');
+            };
+
+            window.confirmClearAllEquipPins = function() {
+                const pass = (document.getElementById('clearEquipPasswordInput')?.value || '').trim();
+                if (pass !== '1234') {
+                    showToast("❌ รหัสผ่านไม่ถูกต้อง! กรุณากรอกรหัส 1234");
+                    return;
+                }
+
+                const nowIso = new Date().toISOString();
+                const remainingPins = [];
+                labeledPlaces.forEach(p => {
+                    if (canCurrentUserSeeEquipPin(p)) {
+                        deletedLabeledMap[p.id] = nowIso;
+                    } else {
+                        remainingPins.push(p);
+                    }
+                });
+
+                deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                labeledPlaces = remainingPins;
+                stopLabeledPlaceNavigation();
+                closeClearEquipModal();
+                saveLabeledPlaces(true);
+                renderLabeledPlacesList(true);
+                showToast("🗑️ ล้างข้อมูลอุปกรณ์ไฟฟ้าทั้งหมดเรียบร้อยแล้ว");
+            };
+
+            const _origUpdateRoleUIForEquip = window.updateRoleNavigationUI;
+            if (typeof _origUpdateRoleUIForEquip === 'function') {
+                window.updateRoleNavigationUI = function(...args) {
+                    const res = _origUpdateRoleUIForEquip.apply(this, args);
+                    renderLabeledPlacesList(true);
+                    return res;
+                };
+            }
+
+            window.addEventListener('DOMContentLoaded', () => {
+                loadStoredLabeledPlaces();
+                injectMapTabUI();
+                renderLabeledPlacesList(false);
             });
         })();
     </script>
