@@ -3289,7 +3289,7 @@
     </script>
     <!-- ===== จบพาทที่ 3 / 4 (นำโค้ดพาทที่ 4 / 4 มาวางต่อจากบรรทัดนี้จนจบไฟล์ได้เลยครับ) ===== -->
     <!-- ===== เริ่มพาทที่ 4 / 4 (วางต่อจากพาทที่ 3 จนจบไฟล์ได้เลยครับ) ===== -->
-    <!-- ================= ⚡ ระบบแท็บแผนที่ อุปกรณ์ ไฟฟ้า (รองรับจอคอมขนาดใหญ่ + ใบงาน 2 คอลัมน์ + ตัวกรองสีหมุด 4 สี + แอดมินเปลี่ยนสีทั้งหมด) ================= -->
+    <!-- ================= ⚡ ระบบแท็บแผนที่ อุปกรณ์ ไฟฟ้า (ฉบับสมบูรณ์: แก้ปุ่มลอยบัง + ปุ่มลบหมุดในหน้าแก้ไข + ประวัติผู้ลบ & กู้คืนหมุดเฉพาะ Admin) ================= -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -3309,16 +3309,18 @@
             border-top-color: rgba(15, 23, 42, 0.92) !important;
         }
 
+        /* บังคับให้ Toast และกล่องแจ้งเตือนอยู่ชั้นบนสุดเสมอ */
+        #toast { z-index: 1400 !important; }
+        #customAlertModal, #customConfirmModal { z-index: 1300 !important; }
+
         /* 🖥️ ปรับการแสดงผลบนหน้าจอคอมพิวเตอร์ (PC: กว้างตั้งแต่ 1024px ขึ้นไป) */
         @media (min-width: 1024px) {
-            /* ขยายกรอบแอปหลักให้กว้างเต็มจอทั้งหน้ารายการใบงานซ่อม และหน้าแผนที่อุปกรณ์ไฟฟ้า */
             #techMainApp {
                 max-width: 96vw !important;
                 width: 96vw !important;
                 transition: max-width 0.25s ease, width 0.25s ease;
             }
 
-            /* แสดงการ์ดใบงานซ่อมแบบ 2 คอลัมน์ */
             #jobCardsContainer {
                 display: grid !important;
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -3330,14 +3332,12 @@
                 margin-top: 0 !important;
             }
 
-            /* ให้แบนเนอร์แจ้งเตือนเดินทาง, แถบหัวข้อวันที่/กะ, และข้อความว่าง กางเต็ม 2 คอลัมน์ */
             #jobCardsContainer > button,
             #jobCardsContainer > div.sticky,
             #jobCardsContainer > div.text-center {
                 grid-column: 1 / -1 !important;
             }
 
-            /* จัดการ์ดใบงานในแถวเดียวกันให้สูงเท่ากัน และดันปุ่มกดลงชิดขอบล่างเสมอ */
             #jobCardsContainer > div.rounded-2xl {
                 display: flex !important;
                 flex-direction: column !important;
@@ -3348,18 +3348,17 @@
                 padding-top: 0.65rem !important;
             }
 
-            /* ขยายความสูงแผนที่อุปกรณ์ไฟฟ้าบนจอคอมพิวเตอร์ */
             #techMainApp #labeledInteractiveMap {
                 height: 76vh !important;
                 min-height: 620px !important;
             }
         }
 
-        /* ✅ [แก้ไขจุดที่ 3] โหมดขยายแผนที่เต็มจอ 100% (รองรับทั้งจอคอมและจอมือถือแนวนอน 100dvh) */
+        /* โหมดขยายแผนที่เต็มจอ 100% */
         #mapFullscreenContainer.map-is-fullscreen {
             position: fixed !important;
             inset: 0 !important;
-            z-index: 250 !important;
+            z-index: 900 !important;
             background: #0f172a !important;
             padding: 0.75rem !important;
             display: flex !important;
@@ -3379,14 +3378,14 @@
         }
     </style>
 
-    <!-- ⚡ Modal เพิ่ม / แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า (พร้อมตัวเลือกสีหมุด 4 สี) -->
-    <div id="equipPinModal" class="fixed inset-0 bg-slate-900/60 hidden z-[260] flex items-center justify-center p-3 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
-            <div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center">
+    <!-- ⚡ Modal เพิ่ม / แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า (ปรับ z-[1100] ไม่ให้ปุ่มแผนที่ลอยบัง + เพิ่มปุ่มลบหมุด) -->
+    <div id="equipPinModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1100] flex items-center justify-center p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90dvh] overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center shrink-0">
                 <h3 id="equipPinModalTitle" class="font-bold text-sm flex items-center gap-1.5">⚡ เพิ่มข้อมูลอุปกรณ์ไฟฟ้า</h3>
                 <button type="button" onclick="closeEquipPinModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
             </div>
-            <div class="p-4 space-y-3.5 text-xs">
+            <div class="p-4 space-y-3.5 text-xs overflow-y-auto flex-1">
                 <div class="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 flex items-center justify-between">
                     <span class="font-bold">🏢 กลุ่มผู้ใช้งานที่มีสิทธิ์เห็นข้อมูลนี้:</span>
                     <span id="equipModalGroupBadge" class="bg-teal-700 text-white font-extrabold px-2.5 py-0.5 rounded-lg text-[11px]">-</span>
@@ -3437,19 +3436,44 @@
                     <input type="text" id="equipNoteInput" placeholder="เช่น ขนาด 160 kVA, เสาต้นที่ 12, จุดสังเกต..." class="w-full px-3.5 py-2 text-xs text-slate-700">
                 </div>
             </div>
-            <div class="p-3 bg-slate-50 border-t flex gap-2">
-                <button type="button" onclick="closeEquipPinModal()" class="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition">
+            <div class="p-3 bg-slate-50 border-t flex items-center gap-2 shrink-0">
+                <button type="button" id="deleteEquipPinInModalBtn" onclick="deleteEquipPinFromModal()" class="hidden px-3.5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow transition items-center gap-1">
+                    🗑️ <span>ลบหมุด</span>
+                </button>
+                <button type="button" onclick="closeEquipPinModal()" class="px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition">
                     ยกเลิก
                 </button>
                 <button type="button" onclick="saveEquipPinModal()" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl shadow text-xs sm:text-sm transition">
-                    💾 บันทึกข้อมูลอุปกรณ์ไฟฟ้า
+                    💾 บันทึกข้อมูล
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📜 Modal ประวัติการลบหมุดอุปกรณ์ไฟฟ้า (ดูได้เฉพาะ Admin เท่านั้น) -->
+    <div id="deletedEquipAuditModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1100] flex items-center justify-center p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88dvh] overflow-hidden flex flex-col">
+            <div class="px-4 py-3 bg-gradient-to-r from-rose-700 to-slate-900 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-sm flex items-center gap-1.5">
+                    <span>📜 ประวัติการลบหมุดอุปกรณ์ไฟฟ้า (เฉพาะ Admin)</span>
+                </h3>
+                <button type="button" onclick="closeDeletedEquipAuditModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+            </div>
+            <div class="px-4 py-2 bg-rose-50 border-b border-rose-200 flex flex-wrap justify-between items-center gap-2 text-[11px] text-rose-900 font-semibold shrink-0">
+                <span id="deletedEquipAuditSummaryText">รายการที่ถูกลบทั้งหมด 0 รายการ</span>
+                <button type="button" onclick="clearDeletedEquipAuditLogs()" class="text-rose-700 hover:underline font-bold">🗑️ ล้างประวัติการลบ</button>
+            </div>
+            <div id="deletedEquipAuditListContainer" class="p-3.5 overflow-y-auto space-y-2 flex-1 bg-slate-50 text-xs"></div>
+            <div class="p-3 bg-white border-t flex justify-end shrink-0">
+                <button type="button" onclick="closeDeletedEquipAuditModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition">
+                    ปิดหน้าต่าง
                 </button>
             </div>
         </div>
     </div>
 
     <!-- 🔒 Modal ยืนยันรหัสผ่าน 1234 เพื่อล้างข้อมูลทั้งหมด -->
-    <div id="clearEquipPasswordModal" class="fixed inset-0 bg-slate-900/60 hidden z-[260] flex items-center justify-center p-3 backdrop-blur-sm">
+    <div id="clearEquipPasswordModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1100] flex items-center justify-center p-3 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
             <div class="px-4 py-3 bg-gradient-to-r from-rose-600 to-red-700 text-white flex justify-between items-center">
                 <h3 class="font-bold text-sm flex items-center gap-1.5">🗑️ ยืนยันการล้างข้อมูลอุปกรณ์ไฟฟ้า</h3>
@@ -3479,8 +3503,49 @@
         (function() {
             const STORAGE_KEY_LABELS = 'elec_labeled_places_list';
             const STORAGE_KEY_DELETED_LABELS = 'elec_deleted_labeled_places_map';
+            const STORAGE_KEY_DELETED_AUDIT_LOGS = 'elec_deleted_equip_audit_logs';
             const MAX_DELETED_EQUIP_AGE_MS = 30 * 24 * 60 * 60 * 1000;
             const MAX_DELETED_EQUIP_ITEMS = 500;
+            const MAX_DELETED_AUDIT_LOGS = 200;
+
+            let isSavingEquipStateToCloud = false;
+            let clearedAuditLogsTimestamp = parseInt(localStorage.getItem('elec_cleared_audit_logs_ts') || '0', 10);
+            let restoredAuditLogIds = new Set(JSON.parse(localStorage.getItem('elec_restored_audit_log_ids') || '[]'));
+
+            // 🛡️ กล่องยืนยันของระบบ (แทนที่ confirm() ของเบราว์เซอร์ ไม่ให้แสดงชื่อเว็บ supparet2533.github.io)
+            window.showCustomConfirm = function(message, onConfirm, title = "⚡ ยืนยันการทำรายการ") {
+                let modal = document.getElementById('customConfirmModal');
+                if (!modal) {
+                    modal = document.createElement('div');
+                    modal.id = 'customConfirmModal';
+                    modal.className = 'fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+                    modal.innerHTML = `
+                        <div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700">
+                            <h3 id="customConfirmTitle" class="text-lg font-bold text-amber-400"></h3>
+                            <p id="customConfirmMessage" class="text-sm text-slate-200 leading-relaxed whitespace-pre-line"></p>
+                            <div class="flex justify-end gap-2 pt-2">
+                                <button type="button" onclick="document.getElementById('customConfirmModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">
+                                    ยกเลิก
+                                </button>
+                                <button type="button" id="customConfirmOkBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">
+                                    ตกลง
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+                }
+                document.getElementById('customConfirmTitle').textContent = title;
+                document.getElementById('customConfirmMessage').textContent = message;
+
+                const okBtn = document.getElementById('customConfirmOkBtn');
+                okBtn.onclick = function() {
+                    modal.classList.add('hidden');
+                    if (typeof onConfirm === 'function') onConfirm();
+                };
+
+                modal.classList.remove('hidden');
+            };
 
             // 🎨 ค่าสีหมุดสายฟ้าทั้ง 4 สี (เขียว, เหลือง, แดง, ฟ้า)
             const PIN_COLOR_THEMES = {
@@ -3524,6 +3589,7 @@
 
             let labeledPlaces = [];
             let deletedLabeledMap = {};
+            let deletedEquipAuditLogs = [];
             let leafletMap = null;
             let markersLayer = null;
             let routeLineLayer = null;
@@ -3532,7 +3598,7 @@
             let showAllPinLabels = true;
             let editingEquipPinId = null;
             let currentActiveMainTab = 'jobs';
-            let currentPinColorFilter = 'all'; // ตัวกรองสีหมุด: 'all' | 'green' | 'yellow' | 'red' | 'blue'
+            let currentPinColorFilter = 'all';
             let isMapFullscreen = false;
 
             let activeMapNav = null;
@@ -3548,6 +3614,176 @@
                 return localStorage.getItem('elec_app_logged_in') === 'true' &&
                        localStorage.getItem('elec_app_current_role') === 'admin';
             }
+
+            // =========================================================================
+            // 📜 ระบบบันทึกประวัติผู้ลบหมุดอุปกรณ์ไฟฟ้า (ดูได้เฉพาะ Admin)
+            // =========================================================================
+            function deduplicateAuditLogs(logsArr) {
+                if (!Array.isArray(logsArr)) return [];
+                const map = new Map();
+                logsArr.forEach(item => {
+                    if (!item || !item.logId) return;
+                    if (restoredAuditLogIds.has(item.logId)) return;
+                    const delMs = new Date(item.deletedAt || 0).getTime() || 0;
+                    if (clearedAuditLogsTimestamp > 0 && delMs <= clearedAuditLogsTimestamp) return;
+                    map.set(item.logId, item);
+                });
+                const list = Array.from(map.values());
+                list.sort((a, b) => (new Date(b.deletedAt || 0).getTime() || 0) - (new Date(a.deletedAt || 0).getTime() || 0));
+                return list.slice(0, MAX_DELETED_AUDIT_LOGS);
+            }
+
+            function recordPinDeletionAuditLog(pinObj, actionNote = 'ลบรายจุด') {
+                if (!pinObj) return;
+                const curUser = (localStorage.getItem('elec_app_current_user') || 'ไม่ระบุชื่อ').trim();
+                const displayUser = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(curUser) : curUser;
+                const nowIso = new Date().toISOString();
+
+                const logEntry = {
+                    logId: 'del_' + (pinObj.id || Date.now()) + '_' + Date.now(),
+                    pinId: pinObj.id || ('eqp_' + Date.now()),
+                    pinName: pinObj.name || '-',
+                    pinColor: pinObj.pinColor || 'green',
+                    note: pinObj.note || '',
+                    lat: pinObj.lat,
+                    lon: pinObj.lon,
+                    ownerGroup: getPinOwnerGroup(pinObj),
+                    deletedByUsername: curUser,
+                    deletedByDisplay: displayUser,
+                    actionType: actionNote,
+                    deletedAt: nowIso
+                };
+
+                deletedEquipAuditLogs = deduplicateAuditLogs([logEntry, ...deletedEquipAuditLogs]);
+                localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify(deletedEquipAuditLogs));
+                updateAdminAuditCountBadge();
+            }
+
+            function updateAdminAuditCountBadge() {
+                const badge = document.getElementById('adminDeletedAuditCountBadge');
+                if (badge) {
+                    badge.textContent = deletedEquipAuditLogs.length;
+                }
+            }
+
+            window.openDeletedEquipAuditModal = function() {
+                if (!isCurrentUserAdminRole()) {
+                    showCustomAlert("⛔ เฉพาะแอดมิน (ผู้ดูแลระบบ) เท่านั้นที่สามารถดูประวัติผู้ลบหมุดได้", "🔒 จำกัดสิทธิ์เฉพาะ Admin");
+                    return;
+                }
+                renderDeletedEquipAuditModalList();
+                document.getElementById('deletedEquipAuditModal')?.classList.remove('hidden');
+            };
+
+            window.closeDeletedEquipAuditModal = function() {
+                document.getElementById('deletedEquipAuditModal')?.classList.add('hidden');
+            };
+
+            function renderDeletedEquipAuditModalList() {
+                const container = document.getElementById('deletedEquipAuditListContainer');
+                const summaryEl = document.getElementById('deletedEquipAuditSummaryText');
+                if (!container) return;
+
+                deletedEquipAuditLogs = deduplicateAuditLogs(deletedEquipAuditLogs);
+                if (summaryEl) {
+                    summaryEl.textContent = `📜 ประวัติการลบหมุดทั้งหมด ${deletedEquipAuditLogs.length} รายการ`;
+                }
+
+                if (deletedEquipAuditLogs.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center py-8 text-slate-400">
+                            ยังไม่มีประวัติการลบหมุดอุปกรณ์ไฟฟ้าในระบบ
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = deletedEquipAuditLogs.map(log => {
+                    const theme = getPinColorTheme(log.pinColor);
+                    const timeStr = log.deletedAt ? new Date(log.deletedAt).toLocaleString('th-TH') : '-';
+                    const latStr = !isNaN(parseFloat(log.lat)) ? Number(log.lat).toFixed(6) : '-';
+                    const lonStr = !isNaN(parseFloat(log.lon)) ? Number(log.lon).toFixed(6) : '-';
+                    const deleterLabel = log.deletedByDisplay || log.deletedByUsername || '-';
+
+                    return `
+                        <div class="p-3 bg-white rounded-xl border border-rose-200 shadow-sm space-y-1.5">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span class="bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold px-1.5 py-0.5 rounded">🏢 ${escapeHtmlStr(log.ownerGroup || '-')}</span>
+                                        <span class="border text-[10px] font-bold px-1.5 py-0.5 rounded ${theme.badgeClass}">${theme.dot} ${theme.name}</span>
+                                        <span class="font-bold text-slate-900 text-xs sm:text-sm break-words">⚡ ${escapeHtmlStr(log.pinName)}</span>
+                                    </div>
+                                    ${log.note ? `<div class="text-[11px] text-slate-500 mt-0.5">📝 ${escapeHtmlStr(log.note)}</div>` : ''}
+                                    <div class="text-[10px] text-slate-400 mt-0.5">📍 พิกัด: ${latStr}, ${lonStr}</div>
+                                </div>
+                                <button type="button" onclick="restoreDeletedPinFromAudit('${log.logId}')" class="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold shadow-sm transition">
+                                    ♻️ กู้คืนหมุด
+                                </button>
+                            </div>
+                            <div class="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                                <span class="font-bold text-rose-700">🗑️ ผู้ลบ: ${escapeHtmlStr(deleterLabel)} <span class="font-normal text-slate-500">(${escapeHtmlStr(log.actionType || 'ลบหมุด')})</span></span>
+                                <span class="text-[10px] text-slate-500">🕒 ${escapeHtmlStr(timeStr)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            window.restoreDeletedPinFromAudit = function(logId) {
+                if (!isCurrentUserAdminRole()) return;
+                const logItem = deletedEquipAuditLogs.find(l => l.logId === logId);
+                if (!logItem) return;
+
+                const nowIso = new Date().toISOString();
+                delete deletedLabeledMap[logItem.pinId];
+                restoredAuditLogIds.add(logId);
+                localStorage.setItem('elec_restored_audit_log_ids', JSON.stringify(Array.from(restoredAuditLogIds).slice(-200)));
+
+                const restoredPin = {
+                    id: logItem.pinId || ('eqp_' + Date.now()),
+                    name: logItem.pinName,
+                    note: logItem.note || '',
+                    lat: parseFloat(logItem.lat),
+                    lon: parseFloat(logItem.lon),
+                    pinColor: logItem.pinColor || 'green',
+                    ownerGroup: logItem.ownerGroup || getActiveEquipUserGroup(),
+                    ownerUser: logItem.deletedByUsername || 'admin',
+                    updatedAt: nowIso
+                };
+
+                labeledPlaces.unshift(restoredPin);
+                deletedEquipAuditLogs = deletedEquipAuditLogs.filter(l => l.logId !== logId);
+                localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify(deletedEquipAuditLogs));
+                updateAdminAuditCountBadge();
+
+                saveLabeledPlaces(true);
+                renderDeletedEquipAuditModalList();
+                renderLabeledPlacesList(true);
+                showToast(`♻️ กู้คืนหมุด "${restoredPin.name}" กลับสู่แผนที่แล้ว!`);
+            };
+
+            window.clearDeletedEquipAuditLogs = function() {
+                if (!isCurrentUserAdminRole()) return;
+                if (deletedEquipAuditLogs.length === 0) {
+                    showToast("⚠️ ไม่มีประวัติการลบให้ล้าง");
+                    return;
+                }
+                showCustomConfirm(
+                    "ต้องการล้างประวัติการลบหมุดทั้งหมดใช่หรือไม่?",
+                    function() {
+                        clearedAuditLogsTimestamp = Date.now();
+                        localStorage.setItem('elec_cleared_audit_logs_ts', String(clearedAuditLogsTimestamp));
+                        deletedEquipAuditLogs = [];
+                        localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify([]));
+                        updateAdminAuditCountBadge();
+                        renderDeletedEquipAuditModalList();
+                        saveLabeledPlaces(true);
+                        showToast("🗑️ ล้างประวัติการลบหมุดเรียบร้อยแล้ว");
+                    },
+                    "🗑️ ยืนยันการล้างประวัติการลบ"
+                );
+            };
 
             function pruneDeletedLabeledMap(rawMap) {
                 if (!rawMap || typeof rawMap !== 'object') return {};
@@ -3616,7 +3852,16 @@
                 const uniqueByLocKey = new Map();
 
                 rawList.forEach(pin => {
-                    if (!pin || !pin.id || deletedLabeledMap[pin.id]) return;
+                    if (!pin || !pin.id) return;
+                    if (deletedLabeledMap[pin.id]) {
+                        const delMs = new Date(deletedLabeledMap[pin.id]).getTime() || 0;
+                        const pinMs = new Date(pin.updatedAt || 0).getTime() || 0;
+                        if (pinMs > delMs) {
+                            delete deletedLabeledMap[pin.id];
+                        } else {
+                            return;
+                        }
+                    }
                     if (isNaN(parseFloat(pin.lat)) || isNaN(parseFloat(pin.lon))) return;
 
                     const locKey = getPinUniqueLocationKey(pin);
@@ -3658,6 +3903,12 @@
                     deletedLabeledMap = {};
                 }
                 try {
+                    const rawLogs = JSON.parse(localStorage.getItem(STORAGE_KEY_DELETED_AUDIT_LOGS) || '[]');
+                    deletedEquipAuditLogs = deduplicateAuditLogs(rawLogs);
+                } catch (e) {
+                    deletedEquipAuditLogs = [];
+                }
+                try {
                     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY_LABELS) || '[]');
                     const beforeCount = Array.isArray(raw) ? raw.length : 0;
                     labeledPlaces = deduplicateEquipPins(raw);
@@ -3670,13 +3921,21 @@
                 }
             }
 
-            function saveLabeledPlaces(syncCloud = true) {
+            async function saveLabeledPlaces(syncCloud = true) {
                 labeledPlaces = deduplicateEquipPins(labeledPlaces);
                 deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                deletedEquipAuditLogs = deduplicateAuditLogs(deletedEquipAuditLogs);
                 localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
+                localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify(deletedEquipAuditLogs));
                 localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(labeledPlaces));
+                updateAdminAuditCountBadge();
                 if (syncCloud && typeof pushAllJobsToCloud === 'function') {
-                    pushAllJobsToCloud(true);
+                    isSavingEquipStateToCloud = true;
+                    try {
+                        await pushAllJobsToCloud(true);
+                    } finally {
+                        isSavingEquipStateToCloud = false;
+                    }
                 }
             }
 
@@ -3690,8 +3949,11 @@
                             if (locReg) {
                                 labeledPlaces = deduplicateEquipPins(labeledPlaces);
                                 deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                                deletedEquipAuditLogs = deduplicateAuditLogs(deletedEquipAuditLogs);
                                 locReg.electricEquipmentPins = labeledPlaces;
                                 locReg.deletedElectricEquipmentMap = deletedLabeledMap;
+                                locReg.deletedEquipAuditLogs = deletedEquipAuditLogs;
+                                locReg.clearedAuditLogsTimestamp = clearedAuditLogsTimestamp;
                                 init.body = JSON.stringify(bodyObj);
                             }
                         }
@@ -3700,16 +3962,25 @@
                 const response = await _origFetch.apply(this, arguments);
                 try {
                     const urlStr = typeof input === 'string' ? input : (input?.url || '');
-                    if ((!init || !init.method || init.method === 'GET') && urlStr.includes('script.google.com')) {
+                    if (!isSavingEquipStateToCloud && (!init || !init.method || init.method === 'GET') && urlStr.includes('script.google.com')) {
                         const cloned = response.clone();
                         const data = await cloned.json();
                         if (data && data.status === 'ok' && Array.isArray(data.jobs)) {
                             const locReg = data.jobs.find(j => j.jobType === 'tech_loc');
                             if (locReg) {
+                                if (locReg.clearedAuditLogsTimestamp && locReg.clearedAuditLogsTimestamp > clearedAuditLogsTimestamp) {
+                                    clearedAuditLogsTimestamp = locReg.clearedAuditLogsTimestamp;
+                                    localStorage.setItem('elec_cleared_audit_logs_ts', String(clearedAuditLogsTimestamp));
+                                }
                                 if (locReg.deletedElectricEquipmentMap && typeof locReg.deletedElectricEquipmentMap === 'object') {
                                     Object.assign(deletedLabeledMap, locReg.deletedElectricEquipmentMap);
                                     deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
                                     localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
+                                }
+                                if (Array.isArray(locReg.deletedEquipAuditLogs)) {
+                                    deletedEquipAuditLogs = deduplicateAuditLogs([...deletedEquipAuditLogs, ...locReg.deletedEquipAuditLogs]);
+                                    localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify(deletedEquipAuditLogs));
+                                    updateAdminAuditCountBadge();
                                 }
                                 if (Array.isArray(locReg.electricEquipmentPins)) {
                                     const beforeLen = labeledPlaces.length;
@@ -3755,6 +4026,7 @@
             function updateAdminBulkColorBarVisibility() {
                 const adminBar = document.getElementById('adminBulkPinColorBar');
                 if (!adminBar) return;
+                updateAdminAuditCountBadge();
                 if (isCurrentUserAdminRole()) {
                     adminBar.classList.remove('hidden');
                     adminBar.classList.add('flex');
@@ -3764,34 +4036,54 @@
                 }
             }
 
-            // 🎨 อัปเดตสถานะปุ่มตัวกรองสีหมุดทั้ง 5 ปุ่ม (รวมทุกสี, เขียว, เหลือง, แดง, ฟ้า)
+            // 🎨 อัปเดตสถานะปุ่มตัวกรองสีหมุดทั้ง 5 ปุ่ม
             function updateEquipColorFilterPillsUI() {
+                const baseLayout = 'py-1.5 px-0.5 rounded-xl text-[10px] sm:text-[11px] leading-tight transition flex flex-col items-center justify-center gap-0.5 ';
                 const styles = {
                     all: {
-                        active: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border-2 transition bg-slate-800 text-white border-amber-300 shadow-md ring-2 ring-slate-400/30 truncate',
-                        inactive: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold border transition bg-white text-slate-700 border-slate-300 hover:bg-slate-100 truncate'
+                        active: baseLayout + 'font-extrabold border-2 bg-slate-800 text-white border-amber-300 shadow-md ring-2 ring-slate-400/30',
+                        inactive: baseLayout + 'font-bold border bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     },
                     green: {
-                        active: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border-2 transition bg-emerald-600 text-white border-amber-300 shadow-md ring-2 ring-emerald-400/40 truncate',
-                        inactive: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold border transition bg-emerald-50/70 text-emerald-800 border-emerald-300 hover:bg-emerald-100 truncate'
+                        active: baseLayout + 'font-extrabold border-2 bg-emerald-600 text-white border-amber-300 shadow-md ring-2 ring-emerald-400/40',
+                        inactive: baseLayout + 'font-bold border bg-emerald-50/70 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                     },
                     yellow: {
-                        active: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border-2 transition bg-amber-500 text-white border-slate-900 shadow-md ring-2 ring-amber-400/40 truncate',
-                        inactive: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold border transition bg-amber-50/70 text-amber-800 border-amber-300 hover:bg-amber-100 truncate'
+                        active: baseLayout + 'font-extrabold border-2 bg-amber-500 text-white border-slate-900 shadow-md ring-2 ring-amber-400/40',
+                        inactive: baseLayout + 'font-bold border bg-amber-50/70 text-amber-800 border-amber-300 hover:bg-amber-100'
                     },
                     red: {
-                        active: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border-2 transition bg-rose-600 text-white border-amber-300 shadow-md ring-2 ring-rose-400/40 truncate',
-                        inactive: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold border transition bg-rose-50/70 text-rose-800 border-rose-300 hover:bg-rose-100 truncate'
+                        active: baseLayout + 'font-extrabold border-2 bg-rose-600 text-white border-amber-300 shadow-md ring-2 ring-rose-400/40',
+                        inactive: baseLayout + 'font-bold border bg-rose-50/70 text-rose-800 border-rose-300 hover:bg-rose-100'
                     },
                     blue: {
-                        active: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border-2 transition bg-sky-600 text-white border-amber-300 shadow-md ring-2 ring-sky-400/40 truncate',
-                        inactive: 'py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-bold border transition bg-sky-50/70 text-sky-800 border-sky-300 hover:bg-sky-100 truncate'
+                        active: baseLayout + 'font-extrabold border-2 bg-sky-600 text-white border-amber-300 shadow-md ring-2 ring-sky-400/40',
+                        inactive: baseLayout + 'font-bold border bg-sky-50/70 text-sky-800 border-sky-300 hover:bg-sky-100'
                     }
+                };
+
+                const labels = {
+                    all: 'รวม',
+                    green: '🟢เขียว',
+                    yellow: '🟡เหลือง',
+                    red: '🔴แดง',
+                    blue: '🔵ฟ้า'
                 };
 
                 ['all', 'green', 'yellow', 'red', 'blue'].forEach(key => {
                     const btn = document.getElementById('colorFilterBtn-' + key);
                     if (!btn) return;
+
+                    if (!btn.dataset.multilineReady) {
+                        const countEl = document.getElementById('countPinColor-' + key);
+                        const curCount = countEl ? countEl.textContent : '0';
+                        btn.innerHTML = `
+                            <span class="whitespace-nowrap">${labels[key]}</span>
+                            <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-${key}">${curCount}</span>)</span>
+                        `;
+                        btn.dataset.multilineReady = 'true';
+                    }
+
                     btn.className = (currentPinColorFilter === key) ? styles[key].active : styles[key].inactive;
                 });
             }
@@ -3859,7 +4151,6 @@
                     </button>
                 `;
 
-                // ✅ [แก้ไขจุดที่ 1] ถอด lg:grid ออกจากคลาสเริ่มต้น เพื่อไม่ให้ชนกับ hidden เวลาเปิดบนจอคอมพิวเตอร์
                 const mapSection = document.createElement('div');
                 mapSection.id = 'labeledMapViewWrapper';
                 mapSection.className = 'hidden flex-col lg:grid-cols-12 lg:items-start';
@@ -3892,27 +4183,32 @@
                             </button>
                         </div>
 
-                        <!-- 🎨 แถบตัวกรองสีหมุดสายฟ้า (แสดงเฉพาะสีที่เลือก + นับจำนวนแต่ละสี) -->
+                        <!-- 🎨 แถบตัวกรองสีหมุดสายฟ้า (แสดงเฉพาะสีที่เลือก + นับจำนวนแต่ละสีครบทุกหลัก) -->
                         <div class="space-y-1">
                             <div class="text-[10px] font-bold text-slate-500 flex items-center justify-between px-0.5">
                                 <span>🎨 ตัวกรองแสดงตามสีหมุดสายฟ้า:</span>
                                 <button type="button" onclick="selectEquipPinColorFilter('all')" class="text-teal-700 hover:underline font-bold">แสดงทุกสี</button>
                             </div>
                             <div class="grid grid-cols-5 gap-1" id="equipColorFilterPills">
-                                <button type="button" id="colorFilterBtn-all" onclick="selectEquipPinColorFilter('all')">
-                                    รวม (<span id="countPinColor-all">0</span>)
+                                <button type="button" id="colorFilterBtn-all" data-multiline-ready="true" onclick="selectEquipPinColorFilter('all')">
+                                    <span class="whitespace-nowrap">รวม</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-all">0</span>)</span>
                                 </button>
-                                <button type="button" id="colorFilterBtn-green" onclick="selectEquipPinColorFilter('green')">
-                                    🟢 เขียว (<span id="countPinColor-green">0</span>)
+                                <button type="button" id="colorFilterBtn-green" data-multiline-ready="true" onclick="selectEquipPinColorFilter('green')">
+                                    <span class="whitespace-nowrap">🟢เขียว</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-green">0</span>)</span>
                                 </button>
-                                <button type="button" id="colorFilterBtn-yellow" onclick="selectEquipPinColorFilter('yellow')">
-                                    🟡 เหลือง (<span id="countPinColor-yellow">0</span>)
+                                <button type="button" id="colorFilterBtn-yellow" data-multiline-ready="true" onclick="selectEquipPinColorFilter('yellow')">
+                                    <span class="whitespace-nowrap">🟡เหลือง</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-yellow">0</span>)</span>
                                 </button>
-                                <button type="button" id="colorFilterBtn-red" onclick="selectEquipPinColorFilter('red')">
-                                    🔴 แดง (<span id="countPinColor-red">0</span>)
+                                <button type="button" id="colorFilterBtn-red" data-multiline-ready="true" onclick="selectEquipPinColorFilter('red')">
+                                    <span class="whitespace-nowrap">🔴แดง</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-red">0</span>)</span>
                                 </button>
-                                <button type="button" id="colorFilterBtn-blue" onclick="selectEquipPinColorFilter('blue')">
-                                    🔵 ฟ้า (<span id="countPinColor-blue">0</span>)
+                                <button type="button" id="colorFilterBtn-blue" data-multiline-ready="true" onclick="selectEquipPinColorFilter('blue')">
+                                    <span class="whitespace-nowrap">🔵ฟ้า</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-blue">0</span>)</span>
                                 </button>
                             </div>
                         </div>
@@ -3943,29 +4239,35 @@
                             </div>
                         </div>
 
-                        <!-- 👑 แถบปุ่มสำหรับแอดมินเปลี่ยนสีหมุดทั้งหมดพร้อมกัน (แสดงเฉพาะ Admin เท่านั้น) -->
-                        <div id="adminBulkPinColorBar" class="hidden flex-wrap items-center justify-between gap-1.5 p-2 bg-amber-50/90 border border-amber-300 rounded-xl text-[11px]">
-                            <span class="font-extrabold text-amber-900 flex items-center gap-1">
-                                <span>👑 แอดมินเปลี่ยนสีหมุดทั้งหมด:</span>
-                            </span>
-                            <div class="flex flex-wrap items-center gap-1">
+                        <!-- 👑 แถบปุ่มสำหรับแอดมิน (เปลี่ยนสีหมุดทั้งหมด + ดูประวัติผู้ลบหมุด เฉพาะ Admin เท่านั้น) -->
+                        <div id="adminBulkPinColorBar" class="hidden flex-col gap-2 p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-[11px]">
+                            <div class="flex flex-wrap items-center justify-between gap-1.5">
+                                <span class="font-extrabold text-amber-900 flex items-center gap-1">
+                                    <span>👑 เครื่องมือแอดมิน (Admin):</span>
+                                </span>
+                                <button type="button" onclick="openDeletedEquipAuditModal()" class="bg-rose-700 hover:bg-rose-800 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
+                                    📜 ประวัติผู้ลบหมุด (<span id="adminDeletedAuditCountBadge">0</span>)
+                                </button>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1 pt-1 border-t border-amber-200/80">
+                                <span class="text-[10px] font-bold text-amber-800 mr-1">เปลี่ยนสีทั้งหมด:</span>
                                 <button type="button" onclick="bulkChangeAllPinsColor('green')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
-                                    ⚡ เขียวทั้งหมด
+                                    ⚡ เขียว
                                 </button>
                                 <button type="button" onclick="bulkChangeAllPinsColor('yellow')" class="bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
-                                    ⚡ เหลืองทั้งหมด
+                                    ⚡ เหลือง
                                 </button>
                                 <button type="button" onclick="bulkChangeAllPinsColor('red')" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
-                                    ⚡ แดงทั้งหมด
+                                    ⚡ แดง
                                 </button>
                                 <button type="button" onclick="bulkChangeAllPinsColor('blue')" class="bg-sky-600 hover:bg-sky-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
-                                    ⚡ ฟ้าทั้งหมด
+                                    ⚡ ฟ้า
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 🗺️ แผงแผนที่ขนาดใหญ่ (มือถืออยู่ตรงกลาง / จอคอมอยู่ฝั่งซ้ายขนาดใหญ่ 8 คอลัมน์เต็มความสูง) -->
+                    <!-- 🗺️ แผงแผนที่ขนาดใหญ่ (ใส่ isolate z-10 เพื่อไม่ให้ปุ่มในแผนที่ลอยทะลุออกมาบังหน้าต่างแก้ไขหมุด) -->
                     <div class="lg:col-span-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 flex flex-col">
                         <!-- กล่องแสดงสถานะกำลังเดินทางไปจุดอุปกรณ์ไฟฟ้า -->
                         <div id="mapActiveNavContainer" class="hidden px-3.5 pt-3">
@@ -3990,11 +4292,11 @@
                             </div>
                         </div>
 
-                        <!-- กรอบแผนที่อินเทอร์แอคทีฟ -->
-                        <div id="mapFullscreenContainer" class="p-3.5 pb-2 lg:p-4">
-                            <div class="relative rounded-2xl overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100">
+                        <!-- กรอบแผนที่อินเทอร์แอคทีฟ (isolate z-10 ป้องกันปุ่มลอยทับ Modal 100%) -->
+                        <div id="mapFullscreenContainer" class="p-3.5 pb-2 lg:p-4 isolate z-10">
+                            <div class="relative isolate rounded-2xl overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100">
                                 <div id="labeledInteractiveMap" class="w-full h-[350px] sm:h-[420px] z-0"></div>
-                                <div class="absolute bottom-3 left-3 z-[400] flex flex-wrap items-center gap-1.5">
+                                <div id="mapFloatingActionBtns" class="absolute bottom-3 left-3 z-[400] flex flex-wrap items-center gap-1.5">
                                     <button type="button" onclick="fitAllLabeledPinsOnMap()" class="bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md transition">
                                         🌐 ดูหมุดทั้งหมดในกลุ่ม
                                     </button>
@@ -4006,9 +4308,8 @@
                         </div>
                     </div>
 
-                    <!-- 📋 แผงรายการการ์ดอุปกรณ์ไฟฟ้า (มือถืออยู่ล่างสุด / จอคอมอยู่คอลัมน์ขวาล่าง) -->
+                    <!-- 📋 แผงรายการการ์ดอุปกรณ์ไฟฟ้า -->
                     <div class="lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:border-l lg:border-slate-200 flex flex-col">
-                        <!-- แถบจัดเรียงและปุ่มล้างข้อมูล (รหัส 1234) -->
                         <div class="px-4 py-2 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                             <span id="labeledListSummaryText" class="font-bold text-teal-800">⚡ อุปกรณ์ไฟฟ้าในกลุ่ม (0)</span>
                             <div class="flex items-center gap-1.5">
@@ -4022,7 +4323,6 @@
                             </div>
                         </div>
 
-                        <!-- รายการการ์ดอุปกรณ์ไฟฟ้า -->
                         <div id="labeledPlacesCardsContainer" class="p-3.5 pt-2 space-y-2.5 max-h-[42vh] lg:max-h-[46vh] overflow-y-auto"></div>
                     </div>
                 `;
@@ -4083,32 +4383,34 @@
                 }
                 const theme = getPinColorTheme(colorKey);
                 const myGroup = getActiveEquipUserGroup();
-                if (!confirm(`👑 ยืนยันการเปลี่ยนสีหมุดอุปกรณ์ไฟฟ้าทั้งหมดในกลุ่ม "${myGroup}" (${visiblePins.length} จุด) ให้เป็น "${theme.dot} ${theme.name}" พร้อมกันใช่หรือไม่?`)) {
-                    return;
-                }
+                showCustomConfirm(
+                    `👑 ยืนยันการเปลี่ยนสีหมุดอุปกรณ์ไฟฟ้าทั้งหมดในกลุ่ม "${myGroup}" (${visiblePins.length} จุด) ให้เป็น "${theme.dot} ${theme.name}" พร้อมกันใช่หรือไม่?`,
+                    function() {
+                        const nowIso = new Date().toISOString();
+                        const curUser = (localStorage.getItem('elec_app_current_user') || 'admin').trim();
 
-                const nowIso = new Date().toISOString();
-                const curUser = (localStorage.getItem('elec_app_current_user') || 'admin').trim();
+                        labeledPlaces = labeledPlaces.map(p => {
+                            if (canCurrentUserSeeEquipPin(p)) {
+                                return {
+                                    ...p,
+                                    pinColor: theme.key,
+                                    updatedBy: curUser,
+                                    updatedAt: nowIso
+                                };
+                            }
+                            return p;
+                        });
 
-                labeledPlaces = labeledPlaces.map(p => {
-                    if (canCurrentUserSeeEquipPin(p)) {
-                        return {
-                            ...p,
-                            pinColor: theme.key,
-                            updatedBy: curUser,
-                            updatedAt: nowIso
-                        };
-                    }
-                    return p;
-                });
+                        if (currentPinColorFilter !== 'all' && currentPinColorFilter !== theme.key) {
+                            currentPinColorFilter = theme.key;
+                        }
 
-                if (currentPinColorFilter !== 'all' && currentPinColorFilter !== theme.key) {
-                    currentPinColorFilter = theme.key;
-                }
-
-                saveLabeledPlaces(true);
-                renderLabeledPlacesList(true);
-                showToast(`👑 เปลี่ยนสีหมุดทั้งหมด (${visiblePins.length} จุด) เป็น${theme.name}เรียบร้อยแล้ว!`);
+                        saveLabeledPlaces(true);
+                        renderLabeledPlacesList(true);
+                        showToast(`👑 เปลี่ยนสีหมุดทั้งหมด (${visiblePins.length} จุด) เป็น${theme.name}เรียบร้อยแล้ว!`);
+                    },
+                    "👑 ยืนยันการเปลี่ยนสีหมุดทั้งหมด"
+                );
             };
 
             // =========================================================================
@@ -4283,7 +4585,6 @@
                 shareEquipPinToLine(activeMapNav.placeId);
             };
 
-            // ✅ [แก้ไขจุดที่ 1] สลับคลาส flex และ lg:grid คู่กันเมื่อเปิด/ปิดแท็บแผนที่ เพื่อให้ซ่อนและแสดงผลบนจอคอมพิวเตอร์ได้สมบูรณ์
             window.switchTechMainTab = function(tabName) {
                 const jobsWrap = document.getElementById('jobsMainViewWrapper');
                 const mapWrap = document.getElementById('labeledMapViewWrapper');
@@ -4314,7 +4615,6 @@
                 }
             };
 
-            // ✅ [แก้ไขจุดที่ 3] ดักจับการปรับขนาดหน้าจอ, การหมุนจอมือถือ/แท็บเล็ต และปุ่ม Esc เพื่อย่อแผนที่กลับขนาดปกติ
             window.addEventListener('resize', () => {
                 if (currentActiveMainTab === 'map' && leafletMap) {
                     setTimeout(() => leafletMap.invalidateSize(), 200);
@@ -4918,7 +5218,7 @@
             };
 
             // =========================================================================
-            // ➕✏️ ระบบเพิ่ม & แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า
+            // ➕✏️🗑️ ระบบเพิ่ม, แก้ไข และลบหมุดในหน้าต่างแก้ไข
             // =========================================================================
             function normalizeThaiLatLon(valA, valB) {
                 const a = parseFloat(valA);
@@ -4959,7 +5259,13 @@
                 const nameInput = document.getElementById('equipCodeNameInput');
                 const coordInput = document.getElementById('equipCoordInput');
                 const noteInput = document.getElementById('equipNoteInput');
+                const deleteBtn = document.getElementById('deleteEquipPinInModalBtn');
+                const floatingBtns = document.getElementById('mapFloatingActionBtns');
                 if (!modal) return;
+
+                // ซ่อนปุ่มลอยบนแผนที่ชั่วคราวขณะเปิดหน้าต่างแก้ไขหมุด
+                if (floatingBtns) floatingBtns.classList.add('hidden');
+                if (leafletMap) leafletMap.closePopup();
 
                 const myGroup = getActiveEquipUserGroup();
 
@@ -4972,6 +5278,10 @@
                     coordInput.value = target.rawGpsLink || `${Number(target.lat).toFixed(6)}, ${Number(target.lon).toFixed(6)}`;
                     noteInput.value = target.note || '';
                     selectModalPinColor(target.pinColor || 'green');
+                    if (deleteBtn) {
+                        deleteBtn.classList.remove('hidden');
+                        deleteBtn.classList.add('inline-flex');
+                    }
                 } else {
                     titleEl.innerHTML = '➕ เพิ่มป้ายกำกับ / อุปกรณ์ไฟฟ้า';
                     groupBadge.textContent = myGroup;
@@ -4981,6 +5291,10 @@
                         : '';
                     noteInput.value = '';
                     selectModalPinColor(currentPinColorFilter !== 'all' ? currentPinColorFilter : 'green');
+                    if (deleteBtn) {
+                        deleteBtn.classList.add('hidden');
+                        deleteBtn.classList.remove('inline-flex');
+                    }
                 }
 
                 modal.classList.remove('hidden');
@@ -4989,7 +5303,41 @@
 
             window.closeEquipPinModal = function() {
                 document.getElementById('equipPinModal')?.classList.add('hidden');
+                const floatingBtns = document.getElementById('mapFloatingActionBtns');
+                if (floatingBtns) floatingBtns.classList.remove('hidden');
                 editingEquipPinId = null;
+            };
+
+            // ปุ่มลบหมุดจากในหน้าต่างแก้ไขหมุด พร้อมบันทึกชื่อผู้ลบ
+            window.deleteEquipPinFromModal = function() {
+                if (!editingEquipPinId) return;
+                const pinIdToDelete = editingEquipPinId;
+                const target = labeledPlaces.find(p => p.id === pinIdToDelete && canCurrentUserSeeEquipPin(p));
+                if (!target) return;
+
+                showCustomConfirm(
+                    `ต้องการลบหมุดอุปกรณ์ "${target.name}" ออกจากแผนที่ใช่หรือไม่?`,
+                    function() {
+                        recordPinDeletionAuditLog(target, 'ลบจากหน้าต่างแก้ไขหมุด');
+                        const targetLocKey = getPinUniqueLocationKey(target);
+                        const nowIso = new Date().toISOString();
+                        labeledPlaces.forEach(p => {
+                            if (p.id === pinIdToDelete || getPinUniqueLocationKey(p) === targetLocKey) {
+                                deletedLabeledMap[p.id] = nowIso;
+                            }
+                        });
+                        deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                        labeledPlaces = labeledPlaces.filter(p => p.id !== pinIdToDelete && getPinUniqueLocationKey(p) !== targetLocKey);
+                        if (activeMapNav && activeMapNav.placeId === pinIdToDelete) {
+                            stopLabeledPlaceNavigation();
+                        }
+                        closeEquipPinModal();
+                        saveLabeledPlaces(true);
+                        renderLabeledPlacesList(true);
+                        showToast(`🗑️ ลบหมุด "${target.name}" เรียบร้อยแล้ว`);
+                    },
+                    "🗑️ ยืนยันการลบหมุดอุปกรณ์ไฟฟ้า"
+                );
             };
 
             window.fillEquipCurrentGps = function() {
@@ -5381,22 +5729,28 @@
             window.deleteSingleLabeledPin = function(placeId) {
                 const target = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
                 if (!target) return;
-                if (!confirm(`ต้องการลบอุปกรณ์ "${target.name}" ออกจากแผนที่ใช่หรือไม่?`)) return;
-                const targetLocKey = getPinUniqueLocationKey(target);
-                const nowIso = new Date().toISOString();
-                labeledPlaces.forEach(p => {
-                    if (p.id === placeId || getPinUniqueLocationKey(p) === targetLocKey) {
-                        deletedLabeledMap[p.id] = nowIso;
-                    }
-                });
-                deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
-                labeledPlaces = labeledPlaces.filter(p => p.id !== placeId && getPinUniqueLocationKey(p) !== targetLocKey);
-                if (activeMapNav && activeMapNav.placeId === placeId) {
-                    stopLabeledPlaceNavigation();
-                }
-                saveLabeledPlaces(true);
-                renderLabeledPlacesList(true);
-                showToast("🗑️ ลบข้อมูลอุปกรณ์ไฟฟ้าแล้ว");
+                showCustomConfirm(
+                    `ต้องการลบอุปกรณ์ "${target.name}" ออกจากแผนที่ใช่หรือไม่?`,
+                    function() {
+                        recordPinDeletionAuditLog(target, 'ลบจากรายการการ์ด');
+                        const targetLocKey = getPinUniqueLocationKey(target);
+                        const nowIso = new Date().toISOString();
+                        labeledPlaces.forEach(p => {
+                            if (p.id === placeId || getPinUniqueLocationKey(p) === targetLocKey) {
+                                deletedLabeledMap[p.id] = nowIso;
+                            }
+                        });
+                        deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
+                        labeledPlaces = labeledPlaces.filter(p => p.id !== placeId && getPinUniqueLocationKey(p) !== targetLocKey);
+                        if (activeMapNav && activeMapNav.placeId === placeId) {
+                            stopLabeledPlaceNavigation();
+                        }
+                        saveLabeledPlaces(true);
+                        renderLabeledPlacesList(true);
+                        showToast("🗑️ ลบข้อมูลอุปกรณ์ไฟฟ้าแล้ว");
+                    },
+                    "🗑️ ยืนยันการลบอุปกรณ์ไฟฟ้า"
+                );
             };
 
             // =========================================================================
@@ -5435,6 +5789,7 @@
                 labeledPlaces.forEach(p => {
                     if (canCurrentUserSeeEquipPin(p)) {
                         deletedLabeledMap[p.id] = nowIso;
+                        recordPinDeletionAuditLog(p, 'ล้างข้อมูลทั้งหมดในกลุ่ม');
                     } else {
                         remainingPins.push(p);
                     }
@@ -5466,50 +5821,50 @@
             });
         })();
     </script>
+
     <!-- 🔗 ระบบจัดการอัตโนมัติเมื่อเปิด page2.html ซ้อนในเบราว์เซอร์ฝั่งซ้ายของ index.html -->
-<script>
-    (function() {
-        const isEmbeddedInMain = (window.self !== window.top);
-        if (!isEmbeddedInMain) return;
+    <script>
+        (function() {
+            const isEmbeddedInMain = (window.self !== window.top);
+            if (!isEmbeddedInMain) return;
 
-        // 1. ซ่อนปุ่ม "⬅️ หน้าหลัก" และป้ายติดตั้งแอป PWA เพราะเปิดซ้อนอยู่ในหน้าหลักอยู่แล้ว
-        window.addEventListener('DOMContentLoaded', () => {
-            const backBtn = document.getElementById('backToMainBtn');
-            if (backBtn) backBtn.style.display = 'none';
+            // 1. ซ่อนปุ่ม "⬅️ หน้าหลัก" และป้ายติดตั้งแอป PWA เพราะเปิดซ้อนอยู่ในหน้าหลักอยู่แล้ว
+            window.addEventListener('DOMContentLoaded', () => {
+                const backBtn = document.getElementById('backToMainBtn');
+                if (backBtn) backBtn.style.display = 'none';
 
-            const pwaBanner = document.getElementById('pwaInstallBanner');
-            if (pwaBanner) pwaBanner.style.display = 'none';
-        });
+                const pwaBanner = document.getElementById('pwaInstallBanner');
+                if (pwaBanner) pwaBanner.style.display = 'none';
+            });
 
-        // 2. ปรับชื่อหน้าจอในสถานะออนไลน์ไม่ให้ตีกันกับหน้าหลัก
-        const _origSetItem = Storage.prototype.setItem;
-        Storage.prototype.setItem = function(key, value) {
-            if (key === 'elec_tech_locations_map' && typeof value === 'string' && value.includes('📱 หน้าช่าง')) {
-                try {
-                    const mapObj = JSON.parse(value);
-                    const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                    if (curUser && mapObj[curUser]) {
-                        mapObj[curUser].currentPage = '💻 หน้าหลัก (เปิดคู่หน้าช่าง)';
-                        value = JSON.stringify(mapObj);
-                    }
-                } catch (e) {}
-            }
-            return _origSetItem.call(this, key, value);
-        };
+            // 2. ปรับชื่อหน้าจอในสถานะออนไลน์ไม่ให้ตีกันกับหน้าหลัก
+            const _origSetItem = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === 'elec_tech_locations_map' && typeof value === 'string' && value.includes('📱 หน้าช่าง')) {
+                    try {
+                        const mapObj = JSON.parse(value);
+                        const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                        if (curUser && mapObj[curUser]) {
+                            mapObj[curUser].currentPage = '💻 หน้าหลัก (เปิดคู่หน้าช่าง)';
+                            value = JSON.stringify(mapObj);
+                        }
+                    } catch (e) {}
+                }
+                return _origSetItem.call(this, key, value);
+            };
 
-        // 3. เมื่อฝั่งขวา (index.html) บันทึกหรือแก้ไขใบงาน ให้ฝั่งซ้าย (page2.html) อัปเดตการ์ดทันทีแบบ Real-time
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'elecReportsComplete_all' || e.key === 'fault_reports_all' || e.key === 'elec_closed_jobs_registry') {
-                if (typeof renderJobCards === 'function') renderJobCards();
-                if (typeof checkNewIncomingPendingJobs === 'function') checkNewIncomingPendingJobs();
-            } else if (e.key === 'elec_labeled_places_list' || e.key === 'elec_deleted_labeled_places_map') {
-                if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(true);
-            } else if (e.key === 'elec_app_logged_in') {
-                if (typeof checkTechAuth === 'function') checkTechAuth();
-            }
-        });
-    })();
-</script>
+            // 3. เมื่อฝั่งขวา (index.html) บันทึกหรือแก้ไขใบงาน ให้ฝั่งซ้าย (page2.html) อัปเดตการ์ดทันทีแบบ Real-time
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'elecReportsComplete_all' || e.key === 'fault_reports_all' || e.key === 'elec_closed_jobs_registry') {
+                    if (typeof renderJobCards === 'function') renderJobCards();
+                    if (typeof checkNewIncomingPendingJobs === 'function') checkNewIncomingPendingJobs();
+                } else if (e.key === 'elec_labeled_places_list' || e.key === 'elec_deleted_labeled_places_map' || e.key === 'elec_deleted_equip_audit_logs') {
+                    if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(true);
+                } else if (e.key === 'elec_app_logged_in') {
+                    if (typeof checkTechAuth === 'function') checkTechAuth();
+                }
+            });
+        })();
+    </script>
 </body>
 </html>
-
