@@ -4347,9 +4347,12 @@
                             <div class="p-3 bg-blue-50/95 border-2 border-blue-400 rounded-2xl shadow-sm space-y-2 text-xs text-blue-950">
                                 <div id="mapActiveNavBody"></div>
                                 <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-blue-200">
-                                    <div class="flex flex-wrap gap-1.5">
+                                                                       <div class="flex flex-wrap gap-1.5">
                                         <button type="button" onclick="openExternalGoogleMapsForActiveNav()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
                                             🗺️ เปิด Google Maps
+                                        </button>
+                                        <button type="button" onclick="copyActiveNavPinToClipboard()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                            📋 คัดลอก
                                         </button>
                                         <button type="button" onclick="shareActiveNavPinToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
                                             💬 แชร์ LINE
@@ -4358,7 +4361,7 @@
                                             🔍 ดูเส้นทาง
                                         </button>
                                     </div>
-                                    <button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+         <button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
                                         ❌ ยกเลิก
                                     </button>
                                 </div>
@@ -4635,18 +4638,15 @@
             });
 
             // =========================================================================
-            // 💬 ฟังก์ชันแชร์ป้ายชื่อและพิกัดอุปกรณ์ไฟฟ้าเข้ากลุ่ม LINE
+                    // 💬📋 ฟังก์ชันสร้างข้อความ คัดลอก และแชร์พิกัดอุปกรณ์ไฟฟ้าเข้ากลุ่ม LINE
             // =========================================================================
-            window.shareEquipPinToLine = function(placeId) {
-                const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
-                if (!place) return;
-
+            function buildEquipPinShareText(place) {
                 const lat = Number(place.lat).toFixed(6);
                 const lon = Number(place.lon).toFixed(6);
                 const pinGroup = getPinOwnerGroup(place);
                 const theme = getPinColorTheme(getEffectivePinColorKey(place));
                 const mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
-
+                
                 const lines = [
                     `${theme.dot} ⚡ พิกัดอุปกรณ์ไฟฟ้า (${pinGroup})`,
                     `🏷️ ป้ายชื่อ/รหัส : ${place.name}`
@@ -4660,20 +4660,40 @@
                 }
                 lines.push(`📍 พิกัด : ${lat}, ${lon}`);
                 lines.push(`🗺️ แผนที่นำทาง : ${mapsUrl}`);
-
-                const shareText = lines.join('\n');
-
+                
+                return lines.join('\n');
+            }
+            
+            window.copyEquipPinToClipboard = function(placeId) {
+                const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!place) return;
+                
+                const shareText = buildEquipPinShareText(place);
+                if (typeof copyTechText === 'function') {
+                    copyTechText(shareText, `📋 คัดลอกข้อมูล "${place.name}" แล้ว! (นำไปวางใน LINE ได้เลย)`);
+                }
+            };
+            
+            window.shareEquipPinToLine = function(placeId) {
+                const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
+                if (!place) return;
+                
+                const shareText = buildEquipPinShareText(place);
                 if (typeof copyTechText === 'function') {
                     copyTechText(shareText, `💬 คัดลอกและกำลังเปิด LINE เพื่อแชร์ "${place.name}"...`);
                 }
                 window.open('https://line.me/R/share?text=' + encodeURIComponent(shareText), '_blank');
             };
-
+            
+            window.copyActiveNavPinToClipboard = function() {
+                if (!activeMapNav || !activeMapNav.placeId) return;
+                copyEquipPinToClipboard(activeMapNav.placeId);
+            };
+            
             window.shareActiveNavPinToLine = function() {
                 if (!activeMapNav || !activeMapNav.placeId) return;
                 shareEquipPinToLine(activeMapNav.placeId);
             };
-
             window.switchTechMainTab = function(tabName) {
                 const jobsWrap = document.getElementById('jobsMainViewWrapper');
                 const mapWrap = document.getElementById('labeledMapViewWrapper');
@@ -5023,10 +5043,12 @@
                         <div style="font-family:'Prompt',sans-serif;min-width:230px;" class="space-y-1.5 text-xs">
                             <div class="flex items-center justify-between gap-1">
                                 <span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(pinGroup)}</span>
-                                <div class="flex items-center gap-2">
+                                                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="copyEquipPinToClipboard('${place.id}')" style="color:#4f46e5;font-weight:700;font-size:11px;">📋 คัดลอก</button>
                                     <button type="button" onclick="shareEquipPinToLine('${place.id}')" style="color:#00B900;font-weight:700;font-size:11px;">💬 แชร์ LINE</button>
                                     <button type="button" onclick="openEquipPinModal('${place.id}')" style="color:#0f766e;font-weight:700;font-size:11px;">✏️ แก้ไข</button>
                                 </div>
+
                             </div>
                             <div class="font-bold text-slate-900 text-sm break-words">${theme.dot} ⚡ ${escapeHtmlStr(place.name)}</div>
                             ${dueBadgeHtml ? `<div class="pt-0.5">${dueBadgeHtml}</div>` : ''}
@@ -5258,26 +5280,28 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="shrink-0 flex items-center gap-1">
+                              <div class="shrink-0 flex items-center gap-1">
                                 ${distBadge}
                                 <button type="button" onclick="deleteSingleLabeledPin('${item.id}')" title="ลบรายการนี้" class="text-slate-300 hover:text-rose-500 px-1 text-sm font-bold">&times;</button>
                             </div>
-                        </div>
-                        <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
-                            <div class="flex flex-wrap gap-1.5">
-                                <button type="button" onclick="focusSinglePinOnMap('${item.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
-                                    🎯 ดูบนแมพ
-                                </button>
-                                <button type="button" onclick="openEquipPinModal('${item.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
-                                    ✏️ แก้ไข
-                                </button>
-                                <button type="button" onclick="shareEquipPinToLine('${item.id}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
-                                    💬 แชร์ LINE
-                                </button>
                             </div>
-                            <div class="flex gap-1.5">
-                                <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
-                                    🚗 ${isCurrentNav ? 'อัปเดตเวลา' : 'กดออกเดินทาง'}
+                            <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+                                <div class="flex flex-wrap gap-1.5">
+                                    <button type="button" onclick="focusSinglePinOnMap('${item.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                        🎯 ดูบนแมพ
+                                    </button>
+                                    <button type="button" onclick="openEquipPinModal('${item.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                        ✏️ แก้ไข
+                                    </button>
+                                    <button type="button" onclick="copyEquipPinToClipboard('${item.id}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                        📋 คัดลอก
+                                    </button>
+                                    <button type="button" onclick="shareEquipPinToLine('${item.id}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                        💬 แชร์ LINE
+                                    </button>
+                                </div>
+                                <div class="flex gap-1.5">
+                                    <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">                                    🚗 ${isCurrentNav ? 'อัปเดตเวลา' : 'กดออกเดินทาง'}
                                 </button>
                                 <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', true)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
                                     🗺️ นำทาง Maps
