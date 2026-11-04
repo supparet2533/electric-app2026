@@ -567,63 +567,76 @@
             }
 
             function openLeftWebBrowser() {
-                const logoPanel = document.getElementById('leftLogoPanel');
-                const dock = document.getElementById('leftBrowserDock');
-                const mainApp = document.getElementById('mainAppContent');
-                const savedWidth = localStorage.getItem('elec_left_browser_width') || '55vw';
-
-                if (logoPanel) {
-                    logoPanel.classList.remove('lg:flex');
-                    logoPanel.classList.add('hidden');
-                }
-                if (dock) {
-                    dock.style.width = savedWidth;
-                    dock.classList.remove('hidden');
-                    dock.classList.add('flex');
-                }
-                if (mainApp) {
-                    mainApp.classList.remove('lg:grid-cols-2', 'max-w-7xl');
-                    mainApp.classList.add('lg:grid-cols-1', 'max-w-full');
-                    mainApp.style.paddingLeft = savedWidth;
-                }
-
-                renderLeftBrowserBookmarks();
-
-                const lastUrl = localStorage.getItem('elec_left_browser_last_url') || 'page2.html';
-                loadLeftBrowserUrl(lastUrl);
-                localStorage.setItem('elec_left_browser_open', 'true');
+            const logoPanel = document.getElementById('leftLogoPanel');
+            const dock = document.getElementById('leftBrowserDock');
+            const mainApp = document.getElementById('mainAppContent');
+            const savedWidth = localStorage.getItem('elec_left_browser_width') || '55vw';
+            const isDesktop = window.innerWidth >= 1024;
+            
+            if (logoPanel) {
+            logoPanel.classList.remove('lg:flex');
+            logoPanel.classList.add('hidden');
             }
-
+            if (dock) {
+            dock.style.width = isDesktop ? savedWidth : '100vw';
+            dock.classList.remove('hidden');
+            dock.classList.add('flex');
+            }
+            if (mainApp) {
+            mainApp.classList.remove('lg:grid-cols-2', 'max-w-7xl');
+            mainApp.classList.add('lg:grid-cols-1', 'max-w-full');
+            mainApp.style.paddingLeft = isDesktop ? savedWidth : '';
+            }
+            
+            renderLeftBrowserBookmarks();
+            
+            const lastUrl = localStorage.getItem('elec_left_browser_last_url') || 'page2.html';
+            loadLeftBrowserUrl(lastUrl);
+            localStorage.setItem('elec_left_browser_open', 'true');
+            }
+            
             function closeLeftWebBrowser() {
-                const logoPanel = document.getElementById('leftLogoPanel');
-                const dock = document.getElementById('leftBrowserDock');
-                const mainApp = document.getElementById('mainAppContent');
-
-                if (dock) {
-                    dock.classList.add('hidden');
-                    dock.classList.remove('flex');
-                }
-                if (logoPanel) {
-                    logoPanel.classList.add('lg:flex');
-                }
-                if (mainApp) {
-                    mainApp.classList.add('lg:grid-cols-2', 'max-w-7xl');
-                    mainApp.classList.remove('lg:grid-cols-1', 'max-w-full');
-                    mainApp.style.paddingLeft = '';
-                }
-                if (leftPopupWindowRef && !leftPopupWindowRef.closed) {
-                    leftPopupWindowRef.close();
-                }
-                localStorage.setItem('elec_left_browser_open', 'false');
+            const logoPanel = document.getElementById('leftLogoPanel');
+            const dock = document.getElementById('leftBrowserDock');
+            const mainApp = document.getElementById('mainAppContent');
+            
+            if (dock) {
+            dock.classList.add('hidden');
+            dock.classList.remove('flex');
             }
-
+            if (logoPanel) {
+            logoPanel.classList.add('lg:flex');
+            }
+            if (mainApp) {
+            mainApp.classList.add('lg:grid-cols-2', 'max-w-7xl');
+            mainApp.classList.remove('lg:grid-cols-1', 'max-w-full');
+            mainApp.style.paddingLeft = '';
+            }
+            if (leftPopupWindowRef && !leftPopupWindowRef.closed) {
+            leftPopupWindowRef.close();
+            }
+            localStorage.setItem('elec_left_browser_open', 'false');
+            }
+            
             function setLeftBrowserWidth(widthVal) {
-                const dock = document.getElementById('leftBrowserDock');
-                const mainApp = document.getElementById('mainAppContent');
-                if (dock) dock.style.width = widthVal;
-                if (mainApp) mainApp.style.paddingLeft = widthVal;
-                localStorage.setItem('elec_left_browser_width', widthVal);
+            const dock = document.getElementById('leftBrowserDock');
+            const mainApp = document.getElementById('mainAppContent');
+            const isDesktop = window.innerWidth >= 1024;
+            if (dock) dock.style.width = isDesktop ? widthVal : '100vw';
+            if (mainApp) mainApp.style.paddingLeft = isDesktop ? widthVal : '';
+            localStorage.setItem('elec_left_browser_width', widthVal);
             }
+            
+            window.addEventListener('resize', () => {
+            const dock = document.getElementById('leftBrowserDock');
+            const mainApp = document.getElementById('mainAppContent');
+            if (dock && !dock.classList.contains('hidden')) {
+            const savedWidth = localStorage.getItem('elec_left_browser_width') || '55vw';
+            const isDesktop = window.innerWidth >= 1024;
+            dock.style.width = isDesktop ? savedWidth : '100vw';
+            if (mainApp) mainApp.style.paddingLeft = isDesktop ? savedWidth : '';
+            }
+            });
 
             function loadLeftBrowserUrl(rawUrl) {
                 const rawTrimmed = (rawUrl || '').trim();
@@ -5839,7 +5852,11 @@
                         this.value = afterGpsCheck.replace(/\n{3,}/g, '\n\n').trim();
                     }
                     
-                    checkCaOverdue(this.value);
+                    if (typeof window.checkCaOverdueEnhanced === 'function') {
+                        window.checkCaOverdueEnhanced(false);
+                    } else {
+                        checkCaOverdue(this.value);
+                    }
                     this.style.height = 'auto';
                     this.style.height = (this.scrollHeight) + 'px';
                     if (typeof saveOutageDraft === 'function') saveOutageDraft();
