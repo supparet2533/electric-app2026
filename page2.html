@@ -5223,7 +5223,7 @@
                 }
             };
 
-            function escapeHtmlStr(str) {
+                        function escapeHtmlStr(str) {
                 return String(str || '')
                     .replace(/&/g, '&amp;')
                     .replace(/</g, '&lt;')
@@ -5232,11 +5232,12 @@
             }
 
             window.renderLabeledPlacesList = function(updateMapMarkers = false) {
+                loadStoredLabeledPlaces();
                 labeledPlaces = deduplicateEquipPins(labeledPlaces);
                 updateMainSwitcherButtonsStyle();
                 updateAdminBulkColorBarVisibility();
                 updateEquipColorFilterPillsUI();
-
+                
                 const myGroup = getActiveEquipUserGroup();
                 const groupHeaderBadge = document.getElementById('currentEquipGroupHeaderBadge');
                 if (groupHeaderBadge) {
