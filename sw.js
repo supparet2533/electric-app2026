@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pea-smart-tools-v56';
+const CACHE_NAME = 'pea-smart-tools-v57';
 
 // ไฟล์หลักที่ต้องการเก็บไว้ให้เปิดตอนออฟไลน์ได้ทันที (ครบทั้งหน้าหลักและหน้าช่าง)
 const STATIC_ASSETS = [
