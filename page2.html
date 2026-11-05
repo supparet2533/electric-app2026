@@ -3288,8 +3288,8 @@
         })();
     </script>
     <!-- ===== จบพาทที่ 3 / 4 (นำโค้ดพาทที่ 4 / 4 มาวางต่อจากบรรทัดนี้จนจบไฟล์ได้เลยครับ) ===== -->
-    <!-- ===== เริ่มพาทที่ 4 / 4 (ตอนที่ 1 / 2 : วางต่อจากพาทที่ 3 ได้เลยครับ) ===== -->
-    <!-- ================= ⚡ ระบบแท็บแผนที่ อุปกรณ์ ไฟฟ้า (ฉบับสมบูรณ์: ตั้งวันที่เปลี่ยนสีหมุดอัตโนมัติ + แก้ปุ่มลอยบัง + ปุ่มลบหมุดในหน้าแก้ไข + ประวัติผู้ลบ & กู้คืนหมุดเฉพาะ Admin) ================= -->
+    <!-- ===== เริ่มพาทที่ 4 / 4 (วางทับพาทที่ 4 เดิม ต่อจากพาทที่ 3 จนจบไฟล์ได้เลยครับ) ===== -->
+    <!-- ================= ⚡ ระบบแท็บแผนที่ อุปกรณ์ ไฟฟ้า (รองรับหมุด 7 สี + ตั้งวันที่เปลี่ยนสีหมุดอัตโนมัติ + ประวัติผู้ลบ & กู้คืนหมุดเฉพาะ Admin) ================= -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -3378,7 +3378,7 @@
         }
     </style>
 
-    <!-- ⚡ Modal เพิ่ม / แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า (ปรับ z-[1100] ไม่ให้ปุ่มแผนที่ลอยบัง + ปุ่มลบหมุด + ตั้งวันที่เปลี่ยนสีหมุด) -->
+    <!-- ⚡ Modal เพิ่ม / แก้ไข ข้อมูลอุปกรณ์ไฟฟ้า (รองรับ 7 สี + ตั้งวันที่เปลี่ยนสีหมุด) -->
     <div id="equipPinModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1100] flex items-center justify-center p-3 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90dvh] overflow-hidden flex flex-col">
             <div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center shrink-0">
@@ -3407,26 +3407,38 @@
                     <p class="text-[10px] text-slate-400 mt-1">รองรับทั้งตัวเลขละติจูด/ลองจิจูด และลิงก์แชร์จาก Google Maps</p>
                 </div>
 
-                <!-- 🎨 ตัวเลือกสีหมุดสายฟ้า 4 สี -->
+                <!-- 🎨 ตัวเลือกสีหมุดสายฟ้า 7 สี -->
                 <div>
-                    <label class="block font-bold text-slate-700 mb-1.5">🎨 เลือกสีหมุดสายฟ้าเริ่มต้นบนแผนที่</label>
+                    <label class="block font-bold text-slate-700 mb-1.5">🎨 เลือกสีหมุดสายฟ้าเริ่มต้นบนแผนที่ (7 สี)</label>
                     <input type="hidden" id="equipPinColorInput" value="green">
-                    <div class="grid grid-cols-4 gap-2">
-                        <button type="button" id="pinColorBtn-green" onclick="selectModalPinColor('green')" class="py-2 px-2 rounded-xl border-2 font-bold text-xs flex flex-col items-center gap-1 transition">
+                    <div class="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+                        <button type="button" id="pinColorBtn-green" onclick="selectModalPinColor('green')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
                             <span class="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
-                            <span>สีเขียว</span>
+                            <span>เขียว</span>
                         </button>
-                        <button type="button" id="pinColorBtn-yellow" onclick="selectModalPinColor('yellow')" class="py-2 px-2 rounded-xl border-2 font-bold text-xs flex flex-col items-center gap-1 transition">
+                        <button type="button" id="pinColorBtn-yellow" onclick="selectModalPinColor('yellow')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
                             <span class="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-yellow-600 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
-                            <span>สีเหลือง</span>
+                            <span>เหลือง</span>
                         </button>
-                        <button type="button" id="pinColorBtn-red" onclick="selectModalPinColor('red')" class="py-2 px-2 rounded-xl border-2 font-bold text-xs flex flex-col items-center gap-1 transition">
+                        <button type="button" id="pinColorBtn-orange" onclick="selectModalPinColor('orange')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
+                            <span class="w-6 h-6 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
+                            <span>ส้ม</span>
+                        </button>
+                        <button type="button" id="pinColorBtn-red" onclick="selectModalPinColor('red')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
                             <span class="w-6 h-6 rounded-full bg-gradient-to-br from-rose-500 to-red-700 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
-                            <span>สีแดง</span>
+                            <span>แดง</span>
                         </button>
-                        <button type="button" id="pinColorBtn-blue" onclick="selectModalPinColor('blue')" class="py-2 px-2 rounded-xl border-2 font-bold text-xs flex flex-col items-center gap-1 transition">
+                        <button type="button" id="pinColorBtn-blue" onclick="selectModalPinColor('blue')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
                             <span class="w-6 h-6 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
-                            <span>สีฟ้า</span>
+                            <span>ฟ้า</span>
+                        </button>
+                        <button type="button" id="pinColorBtn-purple" onclick="selectModalPinColor('purple')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
+                            <span class="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-purple-800 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
+                            <span>ม่วง</span>
+                        </button>
+                        <button type="button" id="pinColorBtn-brown" onclick="selectModalPinColor('brown')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition">
+                            <span class="w-6 h-6 rounded-full bg-gradient-to-br from-amber-700 to-yellow-950 text-white flex items-center justify-center shadow-sm text-xs">⚡</span>
+                            <span>น้ำตาล</span>
                         </button>
                     </div>
                 </div>
@@ -3455,8 +3467,11 @@
                             <label class="block text-[10px] font-semibold text-slate-600 mb-0.5">🎨 ให้เปลี่ยนหมุดเป็น</label>
                             <select id="equipDueColorInput" class="w-full px-2.5 py-1.5 text-xs bg-white font-bold text-slate-800">
                                 <option value="red">🔴 สีแดง (ครบกำหนด/ด่วน)</option>
+                                <option value="orange">🟠 สีส้ม (เร่งด่วน)</option>
                                 <option value="yellow">🟡 สีเหลือง (แจ้งเตือน)</option>
                                 <option value="blue">🔵 สีฟ้า (รอดำเนินการ)</option>
+                                <option value="purple">🟣 สีม่วง (ตรวจสอบพิเศษ)</option>
+                                <option value="brown">🟤 สีน้ำตาล (บำรุงรักษา)</option>
                                 <option value="green">🟢 สีเขียว (ปกติ)</option>
                             </select>
                         </div>
@@ -3536,6 +3551,8 @@
             const MAX_DELETED_EQUIP_ITEMS = 500;
             const MAX_DELETED_AUDIT_LOGS = 200;
 
+            const ALL_PIN_COLOR_KEYS = ['green', 'yellow', 'orange', 'red', 'blue', 'purple', 'brown'];
+
             let isSavingEquipStateToCloud = false;
             let clearedAuditLogsTimestamp = parseInt(localStorage.getItem('elec_cleared_audit_logs_ts') || '0', 10);
             let restoredAuditLogIds = new Set(JSON.parse(localStorage.getItem('elec_restored_audit_log_ids') || '[]'));
@@ -3575,7 +3592,7 @@
                 modal.classList.remove('hidden');
             };
 
-            // 🎨 ค่าสีหมุดสายฟ้าทั้ง 4 สี (เขียว, เหลือง, แดง, ฟ้า)
+            // 🎨 ค่าสีหมุดสายฟ้าทั้ง 7 สี (เขียว, เหลือง, ส้ม, แดง, ฟ้า, ม่วง, น้ำตาล)
             const PIN_COLOR_THEMES = {
                 green: {
                     key: 'green',
@@ -3595,6 +3612,15 @@
                     badgeClass: 'bg-amber-50 text-amber-800 border-amber-300',
                     activeBtnClass: 'border-amber-500 bg-amber-50 text-amber-900 ring-2 ring-amber-400/40 shadow-sm'
                 },
+                orange: {
+                    key: 'orange',
+                    name: 'สีส้ม',
+                    dot: '🟠',
+                    gradient: 'linear-gradient(135deg, #fb923c, #ea580c)',
+                    borderColor: '#f97316',
+                    badgeClass: 'bg-orange-50 text-orange-800 border-orange-300',
+                    activeBtnClass: 'border-orange-500 bg-orange-50 text-orange-900 ring-2 ring-orange-400/40 shadow-sm'
+                },
                 red: {
                     key: 'red',
                     name: 'สีแดง',
@@ -3612,6 +3638,24 @@
                     borderColor: '#0ea5e9',
                     badgeClass: 'bg-sky-50 text-sky-800 border-sky-300',
                     activeBtnClass: 'border-sky-600 bg-sky-50 text-sky-900 ring-2 ring-sky-500/30 shadow-sm'
+                },
+                purple: {
+                    key: 'purple',
+                    name: 'สีม่วง',
+                    dot: '🟣',
+                    gradient: 'linear-gradient(135deg, #c084fc, #7e22ce)',
+                    borderColor: '#9333ea',
+                    badgeClass: 'bg-purple-50 text-purple-800 border-purple-300',
+                    activeBtnClass: 'border-purple-600 bg-purple-50 text-purple-900 ring-2 ring-purple-500/30 shadow-sm'
+                },
+                brown: {
+                    key: 'brown',
+                    name: 'สีน้ำตาล',
+                    dot: '🟤',
+                    gradient: 'linear-gradient(135deg, #a16207, #713f12)',
+                    borderColor: '#854d0e',
+                    badgeClass: 'bg-amber-100/80 text-amber-950 border-amber-500',
+                    activeBtnClass: 'border-amber-800 bg-amber-100/70 text-amber-950 ring-2 ring-amber-700/30 shadow-sm'
                 }
             };
 
@@ -4109,7 +4153,7 @@
                 }
             }
 
-            // 🎨 อัปเดตสถานะปุ่มตัวกรองสีหมุดทั้ง 5 ปุ่ม
+            // 🎨 อัปเดตสถานะปุ่มตัวกรองสีหมุดทั้ง 8 ปุ่ม (รวม + 7 สี)
             function updateEquipColorFilterPillsUI() {
                 const baseLayout = 'py-1.5 px-0.5 rounded-xl text-[10px] sm:text-[11px] leading-tight transition flex flex-col items-center justify-center gap-0.5 ';
                 const styles = {
@@ -4125,6 +4169,10 @@
                         active: baseLayout + 'font-extrabold border-2 bg-amber-500 text-white border-slate-900 shadow-md ring-2 ring-amber-400/40',
                         inactive: baseLayout + 'font-bold border bg-amber-50/70 text-amber-800 border-amber-300 hover:bg-amber-100'
                     },
+                    orange: {
+                        active: baseLayout + 'font-extrabold border-2 bg-orange-500 text-white border-amber-300 shadow-md ring-2 ring-orange-400/40',
+                        inactive: baseLayout + 'font-bold border bg-orange-50/70 text-orange-800 border-orange-300 hover:bg-orange-100'
+                    },
                     red: {
                         active: baseLayout + 'font-extrabold border-2 bg-rose-600 text-white border-amber-300 shadow-md ring-2 ring-rose-400/40',
                         inactive: baseLayout + 'font-bold border bg-rose-50/70 text-rose-800 border-rose-300 hover:bg-rose-100'
@@ -4132,6 +4180,14 @@
                     blue: {
                         active: baseLayout + 'font-extrabold border-2 bg-sky-600 text-white border-amber-300 shadow-md ring-2 ring-sky-400/40',
                         inactive: baseLayout + 'font-bold border bg-sky-50/70 text-sky-800 border-sky-300 hover:bg-sky-100'
+                    },
+                    purple: {
+                        active: baseLayout + 'font-extrabold border-2 bg-purple-600 text-white border-amber-300 shadow-md ring-2 ring-purple-400/40',
+                        inactive: baseLayout + 'font-bold border bg-purple-50/70 text-purple-800 border-purple-300 hover:bg-purple-100'
+                    },
+                    brown: {
+                        active: baseLayout + 'font-extrabold border-2 bg-amber-800 text-white border-amber-300 shadow-md ring-2 ring-amber-600/40',
+                        inactive: baseLayout + 'font-bold border bg-amber-100/70 text-amber-950 border-amber-400 hover:bg-amber-200/70'
                     }
                 };
 
@@ -4139,11 +4195,14 @@
                     all: 'รวม',
                     green: '🟢เขียว',
                     yellow: '🟡เหลือง',
+                    orange: '🟠ส้ม',
                     red: '🔴แดง',
-                    blue: '🔵ฟ้า'
+                    blue: '🔵ฟ้า',
+                    purple: '🟣ม่วง',
+                    brown: '🟤น้ำตาล'
                 };
 
-                ['all', 'green', 'yellow', 'red', 'blue'].forEach(key => {
+                ['all', ...ALL_PIN_COLOR_KEYS].forEach(key => {
                     const btn = document.getElementById('colorFilterBtn-' + key);
                     if (!btn) return;
 
@@ -4256,13 +4315,13 @@
                             </button>
                         </div>
 
-                        <!-- 🎨 แถบตัวกรองสีหมุดสายฟ้า -->
+                        <!-- 🎨 แถบตัวกรองสีหมุดสายฟ้า (รวม + 7 สี = 8 ปุ่ม) -->
                         <div class="space-y-1">
                             <div class="text-[10px] font-bold text-slate-500 flex items-center justify-between px-0.5">
-                                <span>🎨 ตัวกรองแสดงตามสีหมุดสายฟ้า:</span>
+                                <span>🎨 ตัวกรองแสดงตามสีหมุดสายฟ้า (7 สี):</span>
                                 <button type="button" onclick="selectEquipPinColorFilter('all')" class="text-teal-700 hover:underline font-bold">แสดงทุกสี</button>
                             </div>
-                            <div class="grid grid-cols-5 gap-1" id="equipColorFilterPills">
+                            <div class="grid grid-cols-4 sm:grid-cols-8 lg:grid-cols-4 gap-1" id="equipColorFilterPills">
                                 <button type="button" id="colorFilterBtn-all" data-multiline-ready="true" onclick="selectEquipPinColorFilter('all')">
                                     <span class="whitespace-nowrap">รวม</span>
                                     <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-all">0</span>)</span>
@@ -4275,6 +4334,10 @@
                                     <span class="whitespace-nowrap">🟡เหลือง</span>
                                     <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-yellow">0</span>)</span>
                                 </button>
+                                <button type="button" id="colorFilterBtn-orange" data-multiline-ready="true" onclick="selectEquipPinColorFilter('orange')">
+                                    <span class="whitespace-nowrap">🟠ส้ม</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-orange">0</span>)</span>
+                                </button>
                                 <button type="button" id="colorFilterBtn-red" data-multiline-ready="true" onclick="selectEquipPinColorFilter('red')">
                                     <span class="whitespace-nowrap">🔴แดง</span>
                                     <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-red">0</span>)</span>
@@ -4282,6 +4345,14 @@
                                 <button type="button" id="colorFilterBtn-blue" data-multiline-ready="true" onclick="selectEquipPinColorFilter('blue')">
                                     <span class="whitespace-nowrap">🔵ฟ้า</span>
                                     <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-blue">0</span>)</span>
+                                </button>
+                                <button type="button" id="colorFilterBtn-purple" data-multiline-ready="true" onclick="selectEquipPinColorFilter('purple')">
+                                    <span class="whitespace-nowrap">🟣ม่วง</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-purple">0</span>)</span>
+                                </button>
+                                <button type="button" id="colorFilterBtn-brown" data-multiline-ready="true" onclick="selectEquipPinColorFilter('brown')">
+                                    <span class="whitespace-nowrap">🟤น้ำตาล</span>
+                                    <span class="text-[10px] opacity-95 whitespace-nowrap">(<span id="countPinColor-brown">0</span>)</span>
                                 </button>
                             </div>
                         </div>
@@ -4312,7 +4383,7 @@
                             </div>
                         </div>
 
-                        <!-- 👑 แถบปุ่มสำหรับแอดมิน (เปลี่ยนสีหมุดทั้งหมด + ดูประวัติผู้ลบหมุด เฉพาะ Admin เท่านั้น) -->
+                        <!-- 👑 แถบปุ่มสำหรับแอดมิน (เปลี่ยนสีหมุดทั้งหมด 7 สี + ดูประวัติผู้ลบหมุด เฉพาะ Admin เท่านั้น) -->
                         <div id="adminBulkPinColorBar" class="hidden flex-col gap-2 p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-[11px]">
                             <div class="flex flex-wrap items-center justify-between gap-1.5">
                                 <span class="font-extrabold text-amber-900 flex items-center gap-1">
@@ -4323,31 +4394,40 @@
                                 </button>
                             </div>
                             <div class="flex flex-wrap items-center gap-1 pt-1 border-t border-amber-200/80">
-                                <span class="text-[10px] font-bold text-amber-800 mr-1">เปลี่ยนสีทั้งหมด:</span>
-                                <button type="button" onclick="bulkChangeAllPinsColor('green')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
+                                <span class="text-[10px] font-bold text-amber-800 mr-0.5">เปลี่ยนสีทั้งหมด:</span>
+                                <button type="button" onclick="bulkChangeAllPinsColor('green')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
                                     ⚡ เขียว
                                 </button>
-                                <button type="button" onclick="bulkChangeAllPinsColor('yellow')" class="bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
+                                <button type="button" onclick="bulkChangeAllPinsColor('yellow')" class="bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
                                     ⚡ เหลือง
                                 </button>
-                                <button type="button" onclick="bulkChangeAllPinsColor('red')" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
+                                <button type="button" onclick="bulkChangeAllPinsColor('orange')" class="bg-orange-500 hover:bg-orange-600 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
+                                    ⚡ ส้ม
+                                </button>
+                                <button type="button" onclick="bulkChangeAllPinsColor('red')" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
                                     ⚡ แดง
                                 </button>
-                                <button type="button" onclick="bulkChangeAllPinsColor('blue')" class="bg-sky-600 hover:bg-sky-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-1">
+                                <button type="button" onclick="bulkChangeAllPinsColor('blue')" class="bg-sky-600 hover:bg-sky-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
                                     ⚡ ฟ้า
+                                </button>
+                                <button type="button" onclick="bulkChangeAllPinsColor('purple')" class="bg-purple-600 hover:bg-purple-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
+                                    ⚡ ม่วง
+                                </button>
+                                <button type="button" onclick="bulkChangeAllPinsColor('brown')" class="bg-amber-800 hover:bg-amber-900 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm transition flex items-center gap-0.5">
+                                    ⚡ น้ำตาล
                                 </button>
                             </div>
                         </div>
                     </div>
 
-                    <!-- 🗺️ แผงแผนที่ขนาดใหญ่ (ใส่ isolate z-10 เพื่อไม่ให้ปุ่มในแผนที่ลอยทะลุออกมาบังหน้าต่างแก้ไขหมุด) -->
+                    <!-- 🗺️ แผงแผนที่ขนาดใหญ่ -->
                     <div class="lg:col-span-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 flex flex-col">
                         <!-- กล่องแสดงสถานะกำลังเดินทางไปจุดอุปกรณ์ไฟฟ้า -->
                         <div id="mapActiveNavContainer" class="hidden px-3.5 pt-3">
                             <div class="p-3 bg-blue-50/95 border-2 border-blue-400 rounded-2xl shadow-sm space-y-2 text-xs text-blue-950">
                                 <div id="mapActiveNavBody"></div>
                                 <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-blue-200">
-                                                                       <div class="flex flex-wrap gap-1.5">
+                                    <div class="flex flex-wrap gap-1.5">
                                         <button type="button" onclick="openExternalGoogleMapsForActiveNav()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
                                             🗺️ เปิด Google Maps
                                         </button>
@@ -4361,14 +4441,14 @@
                                             🔍 ดูเส้นทาง
                                         </button>
                                     </div>
-         <button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    <button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
                                         ❌ ยกเลิก
                                     </button>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- กรอบแผนที่อินเทอร์แอคทีฟ (isolate z-10 ป้องกันปุ่มลอยทับ Modal 100%) -->
+                        <!-- กรอบแผนที่อินเทอร์แอคทีฟ -->
                         <div id="mapFullscreenContainer" class="p-3.5 pb-2 lg:p-4 isolate z-10">
                             <div class="relative isolate rounded-2xl overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100">
                                 <div id="labeledInteractiveMap" class="w-full h-[350px] sm:h-[420px] z-0"></div>
@@ -4413,20 +4493,20 @@
             }
 
             // =========================================================================
-            // 🎨 ฟังก์ชันเลือกสีหมุดรายจุด & เปลี่ยนสีพร้อมกันทั้งหมด (เฉพาะ Admin)
+            // 🎨 ฟังก์ชันเลือกสีหมุดรายจุด & เปลี่ยนสีพร้อมกันทั้งหมด (7 สี)
             // =========================================================================
             window.selectModalPinColor = function(colorKey) {
                 const theme = getPinColorTheme(colorKey);
                 const hiddenInput = document.getElementById('equipPinColorInput');
                 if (hiddenInput) hiddenInput.value = theme.key;
 
-                ['green', 'yellow', 'red', 'blue'].forEach(k => {
+                ALL_PIN_COLOR_KEYS.forEach(k => {
                     const btn = document.getElementById('pinColorBtn-' + k);
                     if (!btn) return;
                     if (k === theme.key) {
-                        btn.className = `py-2 px-2 rounded-xl border-2 font-extrabold text-xs flex flex-col items-center gap-1 transition ${PIN_COLOR_THEMES[k].activeBtnClass}`;
+                        btn.className = `py-2 px-1.5 rounded-xl border-2 font-extrabold text-[11px] flex flex-col items-center gap-1 transition ${PIN_COLOR_THEMES[k].activeBtnClass}`;
                     } else {
-                        btn.className = 'py-2 px-2 rounded-xl border-2 border-slate-200 bg-white text-slate-500 hover:bg-slate-50 font-semibold text-xs flex flex-col items-center gap-1 transition opacity-75';
+                        btn.className = 'py-2 px-1.5 rounded-xl border-2 border-slate-200 bg-white text-slate-500 hover:bg-slate-50 font-semibold text-[11px] flex flex-col items-center gap-1 transition opacity-75';
                     }
                 });
             };
@@ -4638,7 +4718,7 @@
             });
 
             // =========================================================================
-                    // 💬📋 ฟังก์ชันสร้างข้อความ คัดลอก และแชร์พิกัดอุปกรณ์ไฟฟ้าเข้ากลุ่ม LINE
+            // 💬📋 ฟังก์ชันสร้างข้อความ คัดลอก และแชร์พิกัดอุปกรณ์ไฟฟ้าเข้ากลุ่ม LINE
             // =========================================================================
             function buildEquipPinShareText(place) {
                 const lat = Number(place.lat).toFixed(6);
@@ -4694,6 +4774,7 @@
                 if (!activeMapNav || !activeMapNav.placeId) return;
                 shareEquipPinToLine(activeMapNav.placeId);
             };
+
             window.switchTechMainTab = function(tabName) {
                 const jobsWrap = document.getElementById('jobsMainViewWrapper');
                 const mapWrap = document.getElementById('labeledMapViewWrapper');
@@ -4741,8 +4822,6 @@
                     toggleMapFullscreenMode();
                 }
             });
-            // ===== จบพาทที่ 4 / 4 (ตอนที่ 1 / 2) — นำโค้ดตอนที่ 2 / 2 มาวางต่อจากบรรทัดนี้ได้เลยครับ =====
-            // ===== เริ่มพาทที่ 4 / 4 (ตอนที่ 2 / 2 : วางต่อจากตอนที่ 1 / 2 จนจบไฟล์ได้เลยครับ) =====
 
             let tempLongPressMarker = null;
 
@@ -4787,7 +4866,6 @@
                 markersLayer = L.layerGroup().addTo(leafletMap);
                 routeLineLayer = L.layerGroup().addTo(leafletMap);
 
-                // ป้ายแนะนำการกดค้างเพื่อปักหมุดบนแผนที่
                 if (mapContainer.parentElement && !document.getElementById('mapLongPressHintBadge')) {
                     const hintBadge = document.createElement('div');
                     hintBadge.id = 'mapLongPressHintBadge';
@@ -4852,14 +4930,12 @@
                     showToast(`📍 ดึงพิกัดจุดที่กดค้าง (${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}) แล้ว`);
                 }
 
-                // 1) รองรับคลิกขวาบน PC และ Long-press มาตรฐานของ Leaflet
                 leafletMap.on('contextmenu', function(e) {
                     if (e.originalEvent && isInteractiveMapElement(e.originalEvent.target)) return;
                     cancelLongPressTimer();
                     triggerLongPressPinAtLatLng(e.latlng);
                 });
 
-                // 2) รองรับการแตะค้างบนมือถือทุกระบบ (iOS / Android / LINE WebView)
                 mapContainer.addEventListener('touchstart', function(e) {
                     if (!e.touches || e.touches.length !== 1) {
                         cancelLongPressTimer();
@@ -4900,7 +4976,6 @@
                 mapContainer.addEventListener('touchend', cancelLongPressTimer, { passive: true });
                 mapContainer.addEventListener('touchcancel', cancelLongPressTimer, { passive: true });
 
-                // 3) รองรับการคลิกซ้ายค้างบนคอมพิวเตอร์ (PC)
                 mapContainer.addEventListener('mousedown', function(e) {
                     if (e.button !== 0 || isInteractiveMapElement(e.target)) return;
                     pressStartClientPos = { x: e.clientX, y: e.clientY };
@@ -5040,27 +5115,29 @@
 
                     const pinGroup = getPinOwnerGroup(place);
                     const popupHtml = `
-                        <div style="font-family:'Prompt',sans-serif;min-width:230px;" class="space-y-1.5 text-xs">
+                        <div style="font-family:'Prompt',sans-serif;min-width:240px;" class="space-y-1.5 text-xs">
                             <div class="flex items-center justify-between gap-1">
                                 <span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(pinGroup)}</span>
-                                                                <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-2">
                                     <button type="button" onclick="copyEquipPinToClipboard('${place.id}')" style="color:#4f46e5;font-weight:700;font-size:11px;">📋 คัดลอก</button>
                                     <button type="button" onclick="shareEquipPinToLine('${place.id}')" style="color:#00B900;font-weight:700;font-size:11px;">💬 แชร์ LINE</button>
                                     <button type="button" onclick="openEquipPinModal('${place.id}')" style="color:#0f766e;font-weight:700;font-size:11px;">✏️ แก้ไข</button>
                                 </div>
-
                             </div>
                             <div class="font-bold text-slate-900 text-sm break-words">${theme.dot} ⚡ ${escapeHtmlStr(place.name)}</div>
                             ${dueBadgeHtml ? `<div class="pt-0.5">${dueBadgeHtml}</div>` : ''}
                             ${place.note ? `<div class="text-slate-600 text-[11px] break-words">${escapeHtmlStr(place.note)}</div>` : ''}
                             <div class="text-[10px] text-slate-400">${lat.toFixed(6)}, ${lon.toFixed(6)}</div>
                             <div class="flex items-center justify-between bg-slate-100 px-2 py-1 rounded-lg">
-                                <span class="text-[10px] font-bold text-slate-600">🎨 เปลี่ยนสีหมุด:</span>
+                                <span class="text-[10px] font-bold text-slate-600">🎨 สีหมุด:</span>
                                 <div class="flex items-center gap-1">
                                     <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'green')" title="สีเขียว" class="text-sm leading-none hover:scale-125 transition">🟢</button>
                                     <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'yellow')" title="สีเหลือง" class="text-sm leading-none hover:scale-125 transition">🟡</button>
+                                    <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'orange')" title="สีส้ม" class="text-sm leading-none hover:scale-125 transition">🟠</button>
                                     <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'red')" title="สีแดง" class="text-sm leading-none hover:scale-125 transition">🔴</button>
                                     <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'blue')" title="สีฟ้า" class="text-sm leading-none hover:scale-125 transition">🔵</button>
+                                    <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'purple')" title="สีม่วง" class="text-sm leading-none hover:scale-125 transition">🟣</button>
+                                    <button type="button" onclick="quickChangeSinglePinColor('${place.id}', 'brown')" title="สีน้ำตาล" class="text-sm leading-none hover:scale-125 transition">🟤</button>
                                 </div>
                             </div>
                             <div class="pt-1 flex gap-1">
@@ -5198,11 +5275,20 @@
                            `${p.lat},${p.lon}`.includes(kw);
                 });
 
-                const colorCounts = { all: keywordFiltered.length, green: 0, yellow: 0, red: 0, blue: 0 };
+                const colorCounts = {
+                    all: keywordFiltered.length,
+                    green: 0,
+                    yellow: 0,
+                    orange: 0,
+                    red: 0,
+                    blue: 0,
+                    purple: 0,
+                    brown: 0
+                };
                 keywordFiltered.forEach(p => {
                     if (colorCounts[p.effectiveColor] !== undefined) colorCounts[p.effectiveColor]++;
                 });
-                ['all', 'green', 'yellow', 'red', 'blue'].forEach(k => {
+                ['all', ...ALL_PIN_COLOR_KEYS].forEach(k => {
                     const countEl = document.getElementById('countPinColor-' + k);
                     if (countEl) countEl.textContent = colorCounts[k];
                 });
@@ -5269,39 +5355,43 @@
                                     <span class="font-bold text-slate-800 text-xs sm:text-sm break-words">⚡ ${escapeHtmlStr(item.name)}</span>
                                 </div>
                                 ${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${escapeHtmlStr(item.note)}</div>` : ''}
-                                <div class="flex items-center justify-between gap-2 pt-0.5">
+                                <div class="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                                     <span class="text-[10px] text-slate-400">📍 พิกัด: ${Number(item.lat).toFixed(6)}, ${Number(item.lon).toFixed(6)}</span>
                                     <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-lg">
                                         <span class="text-[9px] text-slate-500 font-semibold">สีหมุด:</span>
                                         <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'green')" title="เปลี่ยนเป็นสีเขียว" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'green' ? 'ring-1 ring-emerald-500 rounded-full' : 'opacity-60 hover:opacity-100'}">🟢</button>
                                         <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'yellow')" title="เปลี่ยนเป็นสีเหลือง" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'yellow' ? 'ring-1 ring-amber-500 rounded-full' : 'opacity-60 hover:opacity-100'}">🟡</button>
+                                        <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'orange')" title="เปลี่ยนเป็นสีส้ม" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'orange' ? 'ring-1 ring-orange-500 rounded-full' : 'opacity-60 hover:opacity-100'}">🟠</button>
                                         <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'red')" title="เปลี่ยนเป็นสีแดง" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'red' ? 'ring-1 ring-rose-500 rounded-full' : 'opacity-60 hover:opacity-100'}">🔴</button>
                                         <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'blue')" title="เปลี่ยนเป็นสีฟ้า" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'blue' ? 'ring-1 ring-sky-500 rounded-full' : 'opacity-60 hover:opacity-100'}">🔵</button>
+                                        <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'purple')" title="เปลี่ยนเป็นสีม่วง" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'purple' ? 'ring-1 ring-purple-500 rounded-full' : 'opacity-60 hover:opacity-100'}">🟣</button>
+                                        <button type="button" onclick="quickChangeSinglePinColor('${item.id}', 'brown')" title="เปลี่ยนเป็นสีน้ำตาล" class="text-xs leading-none hover:scale-125 transition ${theme.key === 'brown' ? 'ring-1 ring-amber-800 rounded-full' : 'opacity-60 hover:opacity-100'}">🟤</button>
                                     </div>
                                 </div>
                             </div>
-                              <div class="shrink-0 flex items-center gap-1">
+                            <div class="shrink-0 flex items-center gap-1">
                                 ${distBadge}
                                 <button type="button" onclick="deleteSingleLabeledPin('${item.id}')" title="ลบรายการนี้" class="text-slate-300 hover:text-rose-500 px-1 text-sm font-bold">&times;</button>
                             </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+                            <div class="flex flex-wrap gap-1.5">
+                                <button type="button" onclick="focusSinglePinOnMap('${item.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    🎯 ดูบนแมพ
+                                </button>
+                                <button type="button" onclick="openEquipPinModal('${item.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    ✏️ แก้ไข
+                                </button>
+                                <button type="button" onclick="copyEquipPinToClipboard('${item.id}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                    📋 คัดลอก
+                                </button>
+                                <button type="button" onclick="shareEquipPinToLine('${item.id}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                                    💬 แชร์ LINE
+                                </button>
                             </div>
-                            <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
-                                <div class="flex flex-wrap gap-1.5">
-                                    <button type="button" onclick="focusSinglePinOnMap('${item.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
-                                        🎯 ดูบนแมพ
-                                    </button>
-                                    <button type="button" onclick="openEquipPinModal('${item.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
-                                        ✏️ แก้ไข
-                                    </button>
-                                    <button type="button" onclick="copyEquipPinToClipboard('${item.id}')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
-                                        📋 คัดลอก
-                                    </button>
-                                    <button type="button" onclick="shareEquipPinToLine('${item.id}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
-                                        💬 แชร์ LINE
-                                    </button>
-                                </div>
-                                <div class="flex gap-1.5">
-                                    <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">                                    🚗 ${isCurrentNav ? 'อัปเดตเวลา' : 'กดออกเดินทาง'}
+                            <div class="flex gap-1.5">
+                                <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', false)" class="bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                                    🚗 ${isCurrentNav ? 'อัปเดตเวลา' : 'กดออกเดินทาง'}
                                 </button>
                                 <button type="button" onclick="startLabeledPlaceNavigation('${item.id}', true)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
                                     🗺️ นำทาง Maps
@@ -5493,7 +5583,7 @@
             };
 
             // =========================================================================
-            // ➕✏️🗑️ ระบบเพิ่ม, แก้ไข และลบหมุดในหน้าต่างแก้ไข (รองรับพิกัดจากการกดค้างบนแผนที่)
+            // ➕✏️🗑️ ระบบเพิ่ม, แก้ไข และลบหมุดในหน้าต่างแก้ไข
             // =========================================================================
             function normalizeThaiLatLon(valA, valB) {
                 const a = parseFloat(valA);
@@ -5586,7 +5676,6 @@
                     }
                 }
 
-                // ป้องกันจังหวะยกนิ้วหลังกดค้างบนมือถือไปโดนปุ่มในหน้าต่างโดยไม่ตั้งใจ
                 if (hasPresetCoords) {
                     modal.style.pointerEvents = 'none';
                     setTimeout(() => { modal.style.pointerEvents = ''; }, 350);
@@ -6087,11 +6176,11 @@
             };
 
             window.confirmClearAllEquipPins = function() {
-    const pass = (document.getElementById('clearEquipPasswordInput')?.value || '').trim();
-    if (pass !== '1234') {
-        showToast("❌ รหัสผ่านไม่ถูกต้อง! กรุณาลองใหม่อีกครั้ง");
-        return;
-    }
+                const pass = (document.getElementById('clearEquipPasswordInput')?.value || '').trim();
+                if (pass !== '1234') {
+                    showToast("❌ รหัสผ่านไม่ถูกต้อง! กรุณาลองใหม่อีกครั้ง");
+                    return;
+                }
                 const nowIso = new Date().toISOString();
                 const remainingPins = [];
                 labeledPlaces.forEach(p => {
@@ -6180,5 +6269,608 @@
             });
         })();
     </script>
+    <!-- ==================== ระบบเชื่อมสถานะ "เดินทาง" ของแผนที่อุปกรณ์ไฟฟ้า เข้ากับการ์ดแดชบอร์ด & ซิงค์ออนไลน์ (สมบูรณ์ 100%) ==================== -->
+    <style>
+        #pea-equip-nav-banner {
+            display: none;
+            position: fixed;
+            bottom: 14px;
+            left: 14px;
+            right: 14px;
+            max-width: 540px;
+            margin: 0 auto;
+            background: linear-gradient(135deg, #0284c7, #1d4ed8);
+            color: #ffffff;
+            padding: 11px 15px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(2, 132, 199, 0.45);
+            z-index: 75; /* อยู่ใต้ Modal ทุกตัว (z-80 ขึ้นไป) เพื่อไม่ให้บังปุ่มบันทึก */
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-family: 'Prompt', sans-serif;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        #pea-equip-nav-banner .banner-info {
+            flex: 1;
+            min-width: 0;
+        }
+        #pea-equip-nav-banner .banner-title {
+            font-size: 13px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #pea-equip-nav-banner .banner-sub {
+            font-size: 11.5px;
+            opacity: 0.95;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 1px;
+        }
+        #pea-equip-nav-banner .banner-actions {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+    </style>
+
+    <!-- แถบลอยแจ้งสถานะกำลังเดินทางไปอุปกรณ์ไฟฟ้า -->
+    <div id="pea-equip-nav-banner">
+        <div class="banner-info">
+            <div class="banner-title">
+                <span class="w-2 h-2 rounded-full bg-amber-300 animate-ping"></span>
+                <span>🚗 กำลังเดินทางไปอุปกรณ์ไฟฟ้า (<span id="peaEquipBannerCount">1</span>)</span>
+            </div>
+            <div id="peaEquipBannerTarget" class="banner-sub">เป้าหมาย: -</div>
+        </div>
+        <div class="banner-actions">
+            <button type="button" onclick="switchStatusTab('traveling')" class="bg-white/20 hover:bg-white/30 text-white border border-white/40 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                📋 ดูสถานะ
+            </button>
+            <button type="button" onclick="finishMyEquipmentNavigation(true)" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow transition">
+                ✅ ถึงที่หมาย
+            </button>
+            <button type="button" onclick="finishMyEquipmentNavigation(false)" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+                ✖
+            </button>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        const EQUIP_NAV_STORAGE_KEY = 'elec_active_equip_nav_map_v2';
+        let lastGpsEquipRouteUpdateMs = 0;
+
+        function getEquipNavMap() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(EQUIP_NAV_STORAGE_KEY) || '{}');
+                return (raw && typeof raw === 'object') ? raw : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveEquipNavMap(mapObj) {
+            try {
+                localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(mapObj || {}));
+            } catch (e) {}
+        }
+
+        // ซิงค์สถานะเดินทางไปอุปกรณ์ไฟฟ้าของช่างในกลุ่มจาก elec_tech_locations_map (ป้องกันข้อมูลเก่าจาก Cloud ทับสถานะที่เพิ่งยกเลิก)
+        function syncEquipNavFromTechLocations() {
+            const locMap = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
+            const navMap = getEquipNavMap();
+            const nowMs = Date.now();
+            const MAX_NAV_AGE_MS = 6 * 60 * 60 * 1000;
+            let changed = false;
+
+            Object.keys(locMap).forEach(uKey => {
+                const loc = locMap[uKey];
+                if (!loc || !loc.activeEquipNav) return;
+                const remoteNav = loc.activeEquipNav;
+                const existing = navMap[uKey];
+
+                const rTime = new Date(remoteNav.updatedAt || 0).getTime() || 0;
+                const lTime = new Date(existing?.updatedAt || 0).getTime() || 0;
+
+                if (!existing || rTime > lTime) {
+                    navMap[uKey] = remoteNav;
+                    changed = true;
+                }
+            });
+
+            Object.keys(navMap).forEach(k => {
+                const item = navMap[k];
+                const tMs = new Date(item?.updatedAt || item?.departTimestamp || 0).getTime() || 0;
+                if (!item || (tMs > 0 && (nowMs - tMs > MAX_NAV_AGE_MS))) {
+                    delete navMap[k];
+                    changed = true;
+                }
+            });
+
+            if (changed) saveEquipNavMap(navMap);
+            return navMap;
+        }
+
+        function getVisibleActiveEquipNavList() {
+            const navMap = syncEquipNavFromTechLocations();
+            const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            const myGroup = typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '';
+
+            return Object.values(navMap).filter(nav => {
+                if (!nav || !nav.isTraveling) return false;
+                if (currentRole === 'admin' && !myGroup) return true;
+                if (!myGroup || !nav.ownerGroup) return true;
+                return myGroup === nav.ownerGroup;
+            });
+        }
+
+        // อัปเดตระยะทางและเวลาจริงจาก OSRM เข้าสู่การ์ดเดินทาง
+        async function refreshEquipNavWithRealRoute(curUser, startCoord, destCoord) {
+            if (typeof calculateDrivingRoute !== 'function') return;
+            try {
+                const routeInfo = await calculateDrivingRoute(startCoord, destCoord);
+                const navMap = getEquipNavMap();
+                const currentNav = navMap[curUser];
+                if (!currentNav || !currentNav.isTraveling) return;
+
+                const nowMs = Date.now();
+                const nowIso = new Date(nowMs).toISOString();
+                const etaMs = nowMs + (routeInfo.durationMin * 60000);
+                const etaDate = new Date(etaMs);
+                const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
+
+                currentNav.distanceKm = routeInfo.distanceKm;
+                if (!currentNav.initialDistanceKm) currentNav.initialDistanceKm = routeInfo.distanceKm;
+                currentNav.durationMin = routeInfo.durationMin;
+                currentNav.etaTimestamp = etaMs;
+                currentNav.etaTime = routeInfo.isArrived ? 'ถึงจุดหมายแล้ว' : etaTimeStr;
+                currentNav.isArrived = routeInfo.isArrived;
+                currentNav.statusText = routeInfo.isArrived
+                    ? '📍 ถึงจุดอุปกรณ์ไฟฟ้าแล้ว'
+                    : `อีกประมาณ ${routeInfo.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`;
+                currentNav.updatedAt = nowIso;
+
+                navMap[curUser] = currentNav;
+                saveEquipNavMap(navMap);
+
+                if (typeof getTechLocationsMap === 'function') {
+                    const locMap = getTechLocationsMap();
+                    if (locMap[curUser]) {
+                        locMap[curUser].activeEquipNav = currentNav;
+                        locMap[curUser].lastSeenAt = nowIso;
+                        locMap[curUser].updatedAt = nowIso;
+                        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                    }
+                }
+                updateEquipNavDashboardAndBanner();
+            } catch (e) {}
+        }
+
+        function setMyEquipmentNavigation(placeObj) {
+            if (!placeObj) return;
+            const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+            const myGroup = (typeof getCurrentUserGroup === 'function' && getCurrentUserGroup()) || placeObj.ownerGroup || 'กฟส.บึง';
+            const startCoord = (typeof lastKnownTechCoords === 'object' && lastKnownTechCoords)
+                ? lastKnownTechCoords
+                : { lat: 13.1361, lon: 101.0322 };
+            const destCoord = { lat: parseFloat(placeObj.lat), lon: parseFloat(placeObj.lon) };
+
+            const now = new Date();
+            const nowMs = now.getTime();
+            const nowIso = now.toISOString();
+            const departTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
+
+            const instantRoute = typeof calculateInstantRouteFallback === 'function'
+                ? calculateInstantRouteFallback(startCoord, destCoord)
+                : { distanceKm: "2.0", durationMin: 5, isArrived: false };
+
+            const etaMs = nowMs + (instantRoute.durationMin * 60000);
+            const etaDate = new Date(etaMs);
+            const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
+
+            const navRecord = {
+                navKey: 'EQP_' + curUser,
+                isTraveling: true,
+                placeId: placeObj.id,
+                placeName: placeObj.name || 'อุปกรณ์ไฟฟ้า',
+                placeNote: placeObj.note || '',
+                pinColor: placeObj.pinColor || 'green',
+                destLat: destCoord.lat,
+                destLon: destCoord.lon,
+                ownerGroup: myGroup,
+                techName: curUser,
+                durationMin: instantRoute.durationMin,
+                initialDurationMin: instantRoute.durationMin,
+                distanceKm: instantRoute.distanceKm,
+                initialDistanceKm: instantRoute.distanceKm,
+                departTime: departTimeStr,
+                departTimestamp: nowMs,
+                etaTime: instantRoute.isArrived ? 'ถึงจุดหมายแล้ว' : etaTimeStr,
+                etaTimestamp: etaMs,
+                isArrived: instantRoute.isArrived,
+                statusText: instantRoute.isArrived
+                    ? '📍 ถึงจุดอุปกรณ์ไฟฟ้าแล้ว'
+                    : `อีกประมาณ ${instantRoute.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
+                updatedAt: nowIso
+            };
+
+            const navMap = getEquipNavMap();
+            navMap[curUser] = navRecord;
+            saveEquipNavMap(navMap);
+
+            if (typeof getTechLocationsMap === 'function') {
+                const locMap = getTechLocationsMap();
+                locMap[curUser] = {
+                    ...(locMap[curUser] || {}),
+                    username: curUser,
+                    group: myGroup,
+                    activeEquipNav: navRecord,
+                    isOnline: true,
+                    lastSeenAt: nowIso,
+                    updatedAt: nowIso
+                };
+                localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+            }
+
+            updateEquipNavDashboardAndBanner();
+            refreshEquipNavWithRealRoute(curUser, startCoord, destCoord);
+
+            if (typeof pushAllJobsToCloud === 'function') {
+                pushAllJobsToCloud(true);
+            }
+        }
+
+        // บันทึกสถานะจบการเดินทางแบบมี Timestamp กำกับ เพื่อไม่ให้ข้อมูลเก่าจาก Cloud เด้งกลับมาทับ
+        function markUserEquipNavStopped(userKey) {
+            const nowIso = new Date().toISOString();
+            const stoppedRecord = { isTraveling: false, updatedAt: nowIso };
+
+            const navMap = getEquipNavMap();
+            navMap[userKey] = stoppedRecord;
+            saveEquipNavMap(navMap);
+
+            if (typeof getTechLocationsMap === 'function') {
+                const locMap = getTechLocationsMap();
+                if (locMap[userKey]) {
+                    locMap[userKey].activeEquipNav = stoppedRecord;
+                    locMap[userKey].lastSeenAt = nowIso;
+                    locMap[userKey].updatedAt = nowIso;
+                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                }
+            }
+        }
+
+        window.finishMyEquipmentNavigation = function(isArrivedDone = false, targetUserKey = null) {
+            const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+            const targetUser = targetUserKey || curUser;
+            const navMap = getEquipNavMap();
+            const targetNav = navMap[targetUser];
+            const placeName = targetNav?.placeName || 'อุปกรณ์ไฟฟ้า';
+
+            markUserEquipNavStopped(targetUser);
+
+            if (targetUser === curUser && typeof origStopLabeledNav === 'function') {
+                origStopLabeledNav();
+            }
+
+            updateEquipNavDashboardAndBanner();
+            if (typeof renderJobCards === 'function') {
+                renderJobCards();
+            }
+            if (typeof showToast === 'function') {
+                showToast(isArrivedDone
+                    ? `✅ ถึงที่หมาย "${placeName}" เรียบร้อยแล้ว`
+                    : `↩️ ยกเลิกสถานะกำลังเดินทางไป "${placeName}" แล้ว`
+                );
+            }
+            if (typeof pushAllJobsToCloud === 'function') {
+                pushAllJobsToCloud(true);
+            }
+        };
+
+        function updateEquipNavDashboardAndBanner() {
+            const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+            const activeEquipList = isLogged ? getVisibleActiveEquipNavList() : [];
+            const equipCount = activeEquipList.length;
+
+            const jobType = document.getElementById('filterJobType')?.value || 'outage';
+            const selectedDateIso = document.getElementById('filterJobDate')?.value || '';
+            let targetThaiDateStr = '';
+            if (selectedDateIso) {
+                const [y, m, d] = selectedDateIso.split('-');
+                targetThaiDateStr = `${d}/${m}/${parseInt(y, 10) + 543}`;
+            }
+
+            const allRawList = jobType === 'outage'
+                ? JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
+                : JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+
+            let repairTravelingCount = 0;
+            allRawList.forEach(item => {
+                if (typeof canCurrentUserSeeJob === 'function' && !canCurrentUserSeeJob(item)) return;
+                if (targetThaiDateStr && typeof getJobDateDisplay === 'function' && getJobDateDisplay(item, jobType) !== targetThaiDateStr) return;
+                const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
+                if (!isDone && Boolean(item.techNav)) {
+                    repairTravelingCount++;
+                }
+            });
+
+            const travEl = document.getElementById('countTravelingJobs');
+            if (travEl) {
+                travEl.textContent = String(repairTravelingCount + equipCount);
+            }
+
+            const banner = document.getElementById('pea-equip-nav-banner');
+            const bannerCount = document.getElementById('peaEquipBannerCount');
+            const bannerTarget = document.getElementById('peaEquipBannerTarget');
+            if (banner && bannerCount && bannerTarget) {
+                if (isLogged && equipCount > 0) {
+                    const latest = activeEquipList[activeEquipList.length - 1];
+                    const techDisp = typeof formatTechDisplayName === 'function'
+                        ? formatTechDisplayName(latest.techName)
+                        : latest.techName;
+                    bannerCount.textContent = String(equipCount);
+                    bannerTarget.textContent = `⚡ ${latest.placeName} • 👷 ${techDisp} (ถึง ~${latest.etaTime || '-'})`;
+                    banner.style.display = 'flex';
+                } else {
+                    banner.style.display = 'none';
+                }
+            }
+        }
+
+        function injectEquipNavCardsIntoJobContainer() {
+            const container = document.getElementById('jobCardsContainer');
+            const statusFilter = document.getElementById('filterJobStatus')?.value || 'pending';
+            const keyword = (document.getElementById('searchJobKeyword')?.value || '').toLowerCase().trim();
+            if (!container) return;
+
+            container.querySelectorAll('.equip-traveling-job-card, .equip-traveling-notice-banner').forEach(el => el.remove());
+
+            const activeEquipList = getVisibleActiveEquipNavList().filter(nav => {
+                if (!keyword) return true;
+                return JSON.stringify(nav).toLowerCase().includes(keyword);
+            });
+
+            if (activeEquipList.length === 0) return;
+
+            if (statusFilter === 'traveling' || statusFilter === 'all') {
+                const elSAll = document.getElementById('countShiftAll');
+                if (elSAll) {
+                    const currentShiftAll = parseInt(elSAll.textContent || '0', 10) || 0;
+                    elSAll.textContent = String(currentShiftAll + activeEquipList.length);
+                }
+            }
+
+            if (statusFilter === 'pending') {
+                const hasExistingBanner = container.querySelector('button.bg-gradient-to-r.from-blue-600');
+                if (!hasExistingBanner) {
+                    const noticeBanner = document.createElement('button');
+                    noticeBanner.type = 'button';
+                    noticeBanner.onclick = () => switchStatusTab('traveling');
+                    noticeBanner.className = 'equip-traveling-notice-banner w-full p-3 bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white rounded-2xl shadow-md flex items-center justify-between text-xs font-bold transition mb-2';
+                    noticeBanner.innerHTML = `
+                        <span class="flex items-center gap-1.5">🚗 ขณะนี้กำลังเดินทางไปจุดอุปกรณ์ไฟฟ้า ${activeEquipList.length} จุด</span>
+                        <span class="bg-white/20 px-2.5 py-1 rounded-xl text-[11px]">กดดูเวลาเดินทาง ➔</span>
+                    `;
+                    container.insertBefore(noticeBanner, container.firstChild);
+                }
+                return;
+            }
+
+            if (statusFilter !== 'traveling' && statusFilter !== 'all') return;
+
+            const emptyMsgDiv = container.querySelector('div.text-center.text-slate-400');
+            if (emptyMsgDiv) {
+                emptyMsgDiv.remove();
+            }
+
+            activeEquipList.forEach(nav => {
+                const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${nav.destLat},${nav.destLon}&travelmode=driving`;
+                const navHtml = typeof formatRealtimeNavHtml === 'function'
+                    ? formatRealtimeNavHtml(nav)
+                    : `<div class="font-bold text-blue-700">🚗 ${nav.statusText || 'กำลังเดินทาง'}</div>`;
+                const safeUserKey = String(nav.techName || '').replace(/'/g, "\\'");
+                const safePlaceId = String(nav.placeId || '').replace(/'/g, "\\'");
+
+                const card = document.createElement('div');
+                card.className = 'equip-traveling-job-card p-3.5 rounded-2xl border border-sky-300 border-l-[6px] border-l-sky-600 ring-1 ring-sky-100 bg-white shadow-sm space-y-2';
+                card.innerHTML = `
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="min-w-0 flex-1">
+                            <div class="mb-1 flex flex-wrap items-center gap-1">
+                                <span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">🏢 ${nav.ownerGroup || 'กฟส.บึง'}</span>
+                                <span class="inline-block bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⚡ แผนที่อุปกรณ์ไฟฟ้า</span>
+                                <span class="inline-block bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⏰ ออก ${nav.departTime || '-'}</span>
+                            </div>
+                            <div class="text-slate-900 text-sm font-extrabold flex items-center gap-1">
+                                <span>⚡</span>
+                                <span>อุปกรณ์: ${nav.placeName}</span>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 bg-blue-100 text-blue-700 border-blue-300 animate-pulse">
+                            ${nav.isArrived ? '📍 ถึงหน้างานแล้ว' : '🚗 กำลังเดินทาง'}
+                        </span>
+                    </div>
+                    <div class="text-xs text-slate-600">
+                        📍 พิกัดอุปกรณ์: ${Number(nav.destLat).toFixed(6)}, ${Number(nav.destLon).toFixed(6)}
+                        ${nav.placeNote ? ` | 📝 ${nav.placeNote}` : ''}
+                    </div>
+                    <div class="equip-live-nav-box p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl text-[11px] text-blue-950 space-y-1" data-equip-user="${nav.techName}">
+                        ${navHtml}
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
+                        <div class="flex flex-wrap gap-1.5">
+                            <a href="${mapsUrl}" target="_blank" class="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">
+                                🗺️ นำทาง Maps
+                            </a>
+                            <button type="button" onclick="switchTechMainTab('map'); setTimeout(() => { if(typeof focusSinglePinOnMap==='function') focusSinglePinOnMap('${safePlaceId}'); }, 250);" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">
+                                🎯 ดูในแผนที่อุปกรณ์
+                            </button>
+                            <button type="button" onclick="finishMyEquipmentNavigation(false, '${safeUserKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition">
+                                ❌ ยกเลิกเดินทาง
+                            </button>
+                        </div>
+                        <button type="button" onclick="finishMyEquipmentNavigation(true, '${safeUserKey}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition">
+                            ✅ ถึงที่หมายแล้ว
+                        </button>
+                    </div>
+                `;
+                container.insertBefore(card, container.firstChild);
+            });
+        }
+
+        // 1. เชื่อมกับฟังก์ชันเริ่ม/หยุดนำทางในแผนที่อุปกรณ์ไฟฟ้า (พาทที่ 4)
+        const origStartLabeledNav = window.startLabeledPlaceNavigation;
+        const origStopLabeledNav = window.stopLabeledPlaceNavigation;
+
+        if (typeof origStartLabeledNav === 'function') {
+            window.startLabeledPlaceNavigation = async function(placeId, openExternalGoogleMaps = false) {
+                try {
+                    const allPins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                    const targetPin = allPins.find(p => p && p.id === placeId);
+                    if (targetPin) {
+                        setMyEquipmentNavigation(targetPin);
+                    }
+                } catch (e) {}
+                return await origStartLabeledNav.apply(this, arguments);
+            };
+        }
+
+        if (typeof origStopLabeledNav === 'function') {
+            window.stopLabeledPlaceNavigation = function() {
+                const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+                markUserEquipNavStopped(curUser);
+                const res = origStopLabeledNav.apply(this, arguments);
+                updateEquipNavDashboardAndBanner();
+                if (typeof renderJobCards === 'function') renderJobCards();
+                if (typeof pushAllJobsToCloud === 'function') pushAllJobsToCloud(true);
+                return res;
+            };
+        }
+
+        // 2. เชื่อมกับ recordCurrentTechGpsLocation เพื่ออัปเดตระยะทางและเวลาถึงอุปกรณ์ไฟฟ้าตามพิกัด GPS สด
+        const origRecordGps = window.recordCurrentTechGpsLocation;
+        if (typeof origRecordGps === 'function') {
+            window.recordCurrentTechGpsLocation = function(lat, lon) {
+                const res = origRecordGps.apply(this, arguments);
+                const nowMs = Date.now();
+                if (lat && lon && (nowMs - lastGpsEquipRouteUpdateMs > 8000)) {
+                    const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                    const navMap = getEquipNavMap();
+                    const myNav = navMap[curUser];
+                    if (myNav && myNav.isTraveling) {
+                        lastGpsEquipRouteUpdateMs = nowMs;
+                        refreshEquipNavWithRealRoute(curUser, { lat: parseFloat(lat), lon: parseFloat(lon) }, { lat: myNav.destLat, lon: myNav.destLon });
+                    }
+                }
+                return res;
+            };
+        }
+
+        // 3. เชื่อมกับ handleTechLogout เพื่อเคลียร์สถานะเดินทางเมื่อกดออกจากระบบ
+        const origLogout = window.handleTechLogout;
+        if (typeof origLogout === 'function') {
+            window.handleTechLogout = async function() {
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                if (curUser) {
+                    markUserEquipNavStopped(curUser);
+                }
+                if (typeof origStopLabeledNav === 'function') {
+                    origStopLabeledNav();
+                }
+                const res = await origLogout.apply(this, arguments);
+                updateEquipNavDashboardAndBanner();
+                return res;
+            };
+        }
+
+        // 4. เชื่อมกับ renderJobCards เพื่ออัปเดตการ์ดและตัวเลขทุกครั้งที่มีการวาดหน้าจอใหม่
+        const origRenderJobCards = window.renderJobCards;
+        if (typeof origRenderJobCards === 'function') {
+            window.renderJobCards = function() {
+                const res = origRenderJobCards.apply(this, arguments);
+                updateEquipNavDashboardAndBanner();
+                injectEquipNavCardsIntoJobContainer();
+                return res;
+            };
+        }
+
+        // 5. ซิงค์ข้ามหน้าจอทันทีเมื่อเปิดคู่กับ index.html
+        window.addEventListener('storage', function(e) {
+            if (e.key === EQUIP_NAV_STORAGE_KEY || e.key === 'elec_tech_locations_map') {
+                updateEquipNavDashboardAndBanner();
+                if (typeof origRenderJobCards === 'function') {
+                    origRenderJobCards();
+                    injectEquipNavCardsIntoJobContainer();
+                }
+            }
+        });
+
+        setInterval(function() {
+            updateEquipNavDashboardAndBanner();
+            document.querySelectorAll('.equip-live-nav-box').forEach(box => {
+                const uKey = box.getAttribute('data-equip-user');
+                const navMap = getEquipNavMap();
+                if (uKey && navMap[uKey] && navMap[uKey].isTraveling && typeof formatRealtimeNavHtml === 'function') {
+                    box.innerHTML = formatRealtimeNavHtml(navMap[uKey]);
+                }
+            });
+        }, 1000);
+
+        window.addEventListener('DOMContentLoaded', function() {
+            updateEquipNavDashboardAndBanner();
+            injectEquipNavCardsIntoJobContainer();
+        });
+    })();
+    </script>
+    
+    <script>
+(function() {
+    // 1. ให้รับสถานะยกเลิก/จบการเดินทางไปอุปกรณ์จากหน้าหลัก (index.html) แม้ช่างจะปิด GPS อยู่
+    const _origMergeLocs = window.mergeTechLocationsMap;
+    if (typeof _origMergeLocs === 'function') {
+        window.mergeTechLocationsMap = function(cloudLocs) {
+            _origMergeLocs.apply(this, arguments);
+            if (!cloudLocs || typeof cloudLocs !== 'object') return;
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            if (!curUser) return;
+
+            const locMap = getTechLocationsMap();
+            Object.keys(cloudLocs).forEach(uKey => {
+                const cItem = cloudLocs[uKey];
+                if (cItem?.activeEquipNav && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) {
+                    const cNavTime = new Date(cItem.activeEquipNav.updatedAt || 0).getTime() || 0;
+                    const lNavTime = new Date(locMap[curUser]?.activeEquipNav?.updatedAt || 0).getTime() || 0;
+                    if (cNavTime >= lNavTime && locMap[curUser]) {
+                        locMap[curUser].activeEquipNav = cItem.activeEquipNav;
+                        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                    }
+                }
+            });
+        };
+    }
+
+    // 2. เมื่อหน้าหลัก (index.html) สั่งจบ/ยกเลิกเดินทางไปอุปกรณ์ ให้เคลียร์เส้นสีฟ้าบนแผนที่ใน page2.html อัตโนมัติ
+    setInterval(() => {
+        const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+        if (!curUser) return;
+        try {
+            const navMap = JSON.parse(localStorage.getItem('elec_active_equip_nav_map_v2') || '{}');
+            const myNav = navMap[curUser];
+            const mapNavBox = document.getElementById('mapActiveNavContainer');
+            if (myNav && myNav.isTraveling === false && mapNavBox && !mapNavBox.classList.contains('hidden')) {
+                if (typeof window.stopLabeledPlaceNavigation === 'function') {
+                    window.stopLabeledPlaceNavigation();
+                }
+            }
+        } catch (e) {}
+    }, 1500);
+})();
+</script>
 </body>
 </html>
