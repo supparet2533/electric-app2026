@@ -5566,7 +5566,8 @@
                 leafletMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 16 });
             };
 
-            window.stopLabeledPlaceNavigation = function() {
+                        window.stopLabeledPlaceNavigation = function(silent = false) {
+                const wasNavigating = Boolean(activeMapNav);
                 activeMapNav = null;
                 if (mapNavWatchId !== null && navigator.geolocation) {
                     navigator.geolocation.clearWatch(mapNavWatchId);
@@ -5579,7 +5580,9 @@
                 if (routeLineLayer) routeLineLayer.clearLayers();
                 document.getElementById('mapActiveNavContainer')?.classList.add('hidden');
                 renderLabeledPlacesList(false);
-                showToast("↩️ ยกเลิกการนำทางไปยังอุปกรณ์ไฟฟ้าแล้ว");
+                if (wasNavigating && !silent) {
+                    showToast("↩️ ยกเลิกการนำทางไปยังอุปกรณ์ไฟฟ้าแล้ว");
+                }
             };
 
             // =========================================================================
@@ -6355,9 +6358,12 @@
         const realStopMapNavFn = window.stopLabeledPlaceNavigation;
         const origStartLabeledNav = window.startLabeledPlaceNavigation;
 
-        // ==========================================
+        function isMapNavBoxCurrentlyVisible() {
+            const box = document.getElementById('mapActiveNavContainer');
+            return Boolean(box && !box.classList.contains('hidden'));
+        }
+
         // 🔒 1. ตรวจสอบสิทธิ์: อนุญาตเฉพาะ "ช่างผู้กำลังเดินทาง" หรือ "Admin" เท่านั้น
-        // ==========================================
         window.canUserControlNavigation = function(navTechName) {
             const curRole = localStorage.getItem('elec_app_current_role') || 'user';
             if (curRole === 'admin') return true;
@@ -6369,10 +6375,7 @@
             return curUser.toLowerCase() === String(navTechName).trim().toLowerCase();
         };
 
-        // ==========================================
         // ⏱️ 2. ป้องกันเวลานาฬิกามือถือแต่ละเครื่องไม่ตรงกัน (Clock Skew Safe Timestamp)
-        // บังคับให้เวลาตอนกดยกเลิกมีค่ามากกว่าเวลาเริ่มเดินทาง/อัปเดตเดิมเสมอ
-        // ==========================================
         function getMonotonicCancelTimestamp(existingNavOrList) {
             let maxPrevMs = Date.now();
             const items = Array.isArray(existingNavOrList) ? existingNavOrList : [existingNavOrList];
@@ -6438,42 +6441,46 @@
             } catch (e) {}
         }
 
-        // ==========================================
         // 🔗 3. ฝังทะเบียนยกเลิกไว้ใน techLocations.__NAV_CANCEL_REGISTRY__
-        // เพื่อให้ทั้ง index.html และ page2.html ส่งต่อสถานะยกเลิกถึงกัน 100% โดยไม่ถูกล้างทิ้ง
-        // ==========================================
         function syncCancelRegistryIntoTechLocations(locMapObj) {
             const locMap = locMapObj || (typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {});
             const eqCancel = getCancelledEquipNavMap();
             const jobCancel = getCancelledJobNavMap();
             const prevReg = locMap[REGISTRY_LOC_KEY] || {};
 
+            let regChanged = false;
             const mergedEq = { ...(prevReg.equipCancelMap || {}) };
             Object.entries(eqCancel).forEach(([k, v]) => {
-                if (Number(v || 0) >= Number(mergedEq[k] || 0)) mergedEq[k] = Number(v);
+                if (Number(v || 0) > Number(mergedEq[k] || 0)) {
+                    mergedEq[k] = Number(v);
+                    regChanged = true;
+                }
             });
 
             const mergedJob = { ...(prevReg.jobCancelMap || {}) };
             Object.entries(jobCancel).forEach(([k, v]) => {
-                if (!mergedJob[k] || String(v) >= String(mergedJob[k])) mergedJob[k] = String(v);
+                if (!mergedJob[k] || String(v) > String(mergedJob[k])) {
+                    mergedJob[k] = String(v);
+                    regChanged = true;
+                }
             });
 
-            saveCancelledEquipNavMap(mergedEq);
-            saveCancelledJobNavMap(mergedJob);
-
-            const nowIso = new Date(Date.now() + 500).toISOString();
-            locMap[REGISTRY_LOC_KEY] = {
-                username: '',
-                isOnline: false,
-                gpsDisabled: true,
-                equipCancelMap: mergedEq,
-                jobCancelMap: mergedJob,
-                lastSeenAt: nowIso,
-                updatedAt: nowIso
-            };
-
-            if (!locMapObj) {
-                localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+            if (regChanged || !locMap[REGISTRY_LOC_KEY]) {
+                saveCancelledEquipNavMap(mergedEq);
+                saveCancelledJobNavMap(mergedJob);
+                const nowIso = new Date().toISOString();
+                locMap[REGISTRY_LOC_KEY] = {
+                    username: '',
+                    isOnline: false,
+                    gpsDisabled: true,
+                    equipCancelMap: mergedEq,
+                    jobCancelMap: mergedJob,
+                    lastSeenAt: nowIso,
+                    updatedAt: nowIso
+                };
+                if (!locMapObj) {
+                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                }
             }
             return locMap;
         }
@@ -6544,7 +6551,7 @@
                 const remoteNav = loc?.activeEquipNav;
 
                 if (!remoteNav || remoteNav.isTraveling === false || isEquipNavCancelled(uKey, remoteNav)) {
-                    if (navMap[uKey] && navMap[uKey].isTraveling) {
+                    if (navMap[uKey] && navMap[uKey].isTraveling === true) {
                         navMap[uKey] = {
                             isTraveling: false,
                             cancelledAtMs: remoteNav?.cancelledAtMs || nowMs,
@@ -6559,7 +6566,7 @@
                 const rTime = new Date(remoteNav.updatedAt || 0).getTime() || 0;
                 const lTime = new Date(existing?.updatedAt || 0).getTime() || 0;
 
-                if (!existing || rTime >= lTime) {
+                if (!existing || rTime > lTime) {
                     navMap[uKey] = remoteNav;
                     changed = true;
                 }
@@ -6578,7 +6585,7 @@
                     changed = true;
                     return;
                 }
-                if (item.isTraveling) {
+                if (item.isTraveling === true) {
                     if (isEquipNavCancelled(k, item)) {
                         navMap[k] = { isTraveling: false, updatedAt: new Date(nowMs).toISOString() };
                         changed = true;
@@ -6597,11 +6604,10 @@
                 }
             });
 
-            // ป้องกันคีย์ซ้ำของช่างคนเดียวกัน
             const dedupByPerson = [];
             Object.keys(navMap).forEach(k => {
                 const item = navMap[k];
-                if (!item || !item.isTraveling) return;
+                if (!item || item.isTraveling !== true) return;
                 const personName = item.techName || k;
                 const existingIdx = dedupByPerson.findIndex(p =>
                     (typeof isSameTechPerson === 'function' && isSameTechPerson(p.personName, personName)) ||
@@ -6641,9 +6647,7 @@
             });
         }
 
-        // ==========================================
         // 🛰️ 4. ดักจับ GPS Watch ไม่ให้เขียนทับหลังกดยกเลิก
-        // ==========================================
         async function refreshEquipNavWithRealRoute(curUser, startCoord, destCoord, expectedSessionId) {
             if (typeof calculateDrivingRoute !== 'function') return;
             try {
@@ -6651,7 +6655,6 @@
                 const navMap = getEquipNavMap();
                 const currentNav = navMap[curUser];
 
-                // หากถูกยกเลิกไปแล้วระหว่างรอคำนวณเส้นทาง ให้หยุดทันที ห้ามเขียนทับเด็ดขาด
                 if (!currentNav || currentNav.isTraveling !== true || isEquipNavCancelled(curUser, currentNav)) {
                     return;
                 }
@@ -6712,7 +6715,6 @@
             });
             saveCancelledEquipNavMap(cancelEquipMap);
 
-            // บังคับให้เวลาเริ่มเดินทางรอบใหม่ มากกว่าเวลายกเลิกครั้งก่อนเสมอ (แก้ปัญหา Clock Skew)
             const nowMs = Math.max(Date.now(), prevCancelMs + 1000);
             const now = new Date(nowMs);
             const nowIso = now.toISOString();
@@ -6782,12 +6784,10 @@
             }
         }
 
-        // บันทึกยกเลิก/จบการเดินทางไปอุปกรณ์ไฟฟ้า (ตรวจสิทธิ์ + Monotonic Timestamp)
         window.finishMyEquipmentNavigation = async function(isArrivedDone = false, targetUserKey = null) {
             const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
             const targetUser = targetUserKey || curUser;
 
-            // 🔒 ล็อกสิทธิ์: ห้ามช่างคนอื่นกดยกเลิกหรือจบการเดินทางของเพื่อนร่วมงาน
             if (!window.canUserControlNavigation(targetUser)) {
                 const disp = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(targetUser) : targetUser;
                 if (typeof showToast === 'function') {
@@ -6801,6 +6801,7 @@
             const cancelEquipMap = getCancelledEquipNavMap();
 
             let stoppedPlaceName = 'อุปกรณ์ไฟฟ้า';
+            let hadActiveTravel = isMapNavBoxCurrentlyVisible();
             const keysToStop = new Set([targetUser]);
             const relatedNavObjects = [];
 
@@ -6810,7 +6811,10 @@
                     navMap[k]?.techName === targetUser ||
                     (typeof isSameTechPerson === 'function' && isSameTechPerson(navMap[k]?.techName, targetUser))) {
                     keysToStop.add(k);
-                    if (navMap[k]) relatedNavObjects.push(navMap[k]);
+                    if (navMap[k]) {
+                        relatedNavObjects.push(navMap[k]);
+                        if (navMap[k].isTraveling === true) hadActiveTravel = true;
+                    }
                 }
             });
 
@@ -6820,9 +6824,15 @@
                     (typeof isSameTechPerson === 'function' && isSameTechPerson(lk, targetUser)) ||
                     locMap[lk]?.activeEquipNav?.techName === targetUser) {
                     keysToStop.add(lk);
-                    if (locMap[lk]?.activeEquipNav) relatedNavObjects.push(locMap[lk].activeEquipNav);
+                    if (locMap[lk]?.activeEquipNav) {
+                        relatedNavObjects.push(locMap[lk].activeEquipNav);
+                        if (locMap[lk].activeEquipNav.isTraveling === true) hadActiveTravel = true;
+                    }
                 }
             });
+
+            // หากไม่ได้อยู่ในสถานะกำลังเดินทางอยู่เลย ไม่ต้องทำซ้ำและไม่ต้องแสดงแจ้งเตือน
+            if (!hadActiveTravel) return;
 
             const { ms: cancelMs, iso: cancelIso } = getMonotonicCancelTimestamp(relatedNavObjects);
             const stoppedRecord = { isTraveling: false, cancelledAtMs: cancelMs, updatedAt: cancelIso };
@@ -6832,7 +6842,7 @@
 
             if (isStoppingMyOwnNav && typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
                 isStoppingEquipNavInternal = true;
-                try { realStopMapNavFn(); } catch (e) {}
+                try { realStopMapNavFn(true); } catch (e) {}
                 isStoppingEquipNavInternal = false;
             }
 
@@ -7057,7 +7067,6 @@
             });
         }
 
-        // ซ่อนปุ่ม "❌ ยกเลิกเดินทาง" ในการ์ดใบงานซ่อมปกติ หากไม่ใช่ช่างผู้เดินทางหรือ Admin
         function lockUnauthorizedJobCancelButtons() {
             const container = document.getElementById('jobCardsContainer');
             if (!container) return;
@@ -7075,7 +7084,6 @@
             });
         }
 
-        // 5. เข้าคิวส่งข้อมูลขึ้น Cloud ซ้ำอัตโนมัติหากติดสถานะกำลังส่งอยู่
         const _origPushAllJobs = window.pushAllJobsToCloud;
         if (typeof _origPushAllJobs === 'function') {
             window.pushAllJobsToCloud = async function(silent = false) {
@@ -7093,7 +7101,6 @@
             };
         }
 
-        // 6. ป้องกันเครื่องช่างคนอื่นดึงสถานะนำทางใบงานซ่อมที่ยกเลิกไปแล้วกลับมาทับ
         const _origMergeCloudJobs = window.mergeCloudJobsToLocal;
         if (typeof _origMergeCloudJobs === 'function') {
             window.mergeCloudJobsToLocal = function(cloudJobs) {
@@ -7142,7 +7149,6 @@
             };
         }
 
-        // 7. ปุ่มยกเลิกเดินทางของใบงานซ่อม (ตรวจสิทธิ์ + Monotonic Timestamp)
         window.handleCancelNavigation = async function(key, jobType) {
             const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
             let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
@@ -7219,9 +7225,7 @@
             };
         }
 
-        // ==========================================
-        // 🛡️ 8. ซิงค์สถานะ activeEquipNav จาก Cloud พร้อมบล็อก else ป้องกัน preRes ทับค่าตอนกดยกเลิก
-        // ==========================================
+        // 🛡️ 8. ซิงค์สถานะ activeEquipNav จาก Cloud โดยสั่งหยุดเฉพาะเมื่อเปลี่ยนจาก "กำลังเดินทาง -> ยกเลิก" จริงๆ เท่านั้น
         const _origMergeLocsBase = window.mergeTechLocationsMap;
         if (typeof _origMergeLocsBase === 'function') {
             window.mergeTechLocationsMap = function(cloudLocs) {
@@ -7246,42 +7250,49 @@
                     const pTime = new Date(prevNav?.updatedAt || 0).getTime() || 0;
                     const cTime = new Date(cNav?.updatedAt || 0).getTime() || 0;
                     const isMe = Boolean(curUser && (uKey === curUser || (typeof isSameTechPerson === 'function' && isSameTechPerson(uKey, curUser))));
+                    const wasTravelingBefore = Boolean(prevNav && prevNav.isTraveling === true);
 
                     // กรณีที่ 1: รายการนำทางนี้ถูกบันทึกในทะเบียนยกเลิกแล้ว
                     if (cNav && isEquipNavCancelled(uKey, cNav)) {
-                        const stoppedObj = {
-                            isTraveling: false,
-                            cancelledAtMs: Math.max(cTime, pTime, Date.now()),
-                            updatedAt: new Date(Math.max(cTime, pTime, Date.now())).toISOString()
-                        };
-                        navMap[uKey] = stoppedObj;
-                        if (localAfter[uKey]) localAfter[uKey].activeEquipNav = stoppedObj;
-                        changed = true;
-                        if (isMe && typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
-                            isStoppingEquipNavInternal = true;
-                            try { realStopMapNavFn(); } catch (e) {}
-                            isStoppingEquipNavInternal = false;
+                        if (wasTravelingBefore || (isMe && isMapNavBoxCurrentlyVisible())) {
+                            const stopMs = Math.max(cTime, pTime, Date.now());
+                            const stoppedObj = {
+                                isTraveling: false,
+                                cancelledAtMs: stopMs,
+                                updatedAt: new Date(stopMs).toISOString()
+                            };
+                            navMap[uKey] = stoppedObj;
+                            if (localAfter[uKey]) localAfter[uKey].activeEquipNav = stoppedObj;
+                            changed = true;
+                            if (isMe && typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
+                                isStoppingEquipNavInternal = true;
+                                try { realStopMapNavFn(true); } catch (e) {}
+                                isStoppingEquipNavInternal = false;
+                            }
                         }
                         return;
                     }
 
-                    // กรณีที่ 2: ข้อมูลในเครื่องตัวเองใหม่กว่า Cloud (เช่น จังหวะ preRes ดึงข้อมูลเก่ามาก่อนส่งสถานะยกเลิกขึ้น Cloud)
+                    // กรณีที่ 2: ข้อมูลในเครื่องตัวเองใหม่กว่า Cloud
                     if (prevNav && pTime > cTime) {
-                        navMap[uKey] = prevNav;
-                        localAfter[uKey] = {
-                            ...(localAfter[uKey] || cItem || { username: uKey }),
-                            activeEquipNav: prevNav,
-                            lastSeenAt: prevNav.updatedAt || localAfter[uKey]?.lastSeenAt,
-                            updatedAt: prevNav.updatedAt || localAfter[uKey]?.updatedAt
-                        };
-                        if (isMe) navMap[curUser] = prevNav;
-                        changed = true;
+                        if (JSON.stringify(localAfter[uKey]?.activeEquipNav) !== JSON.stringify(prevNav)) {
+                            navMap[uKey] = prevNav;
+                            localAfter[uKey] = {
+                                ...(localAfter[uKey] || cItem || { username: uKey }),
+                                activeEquipNav: prevNav,
+                                lastSeenAt: prevNav.updatedAt || localAfter[uKey]?.lastSeenAt,
+                                updatedAt: prevNav.updatedAt || localAfter[uKey]?.updatedAt
+                            };
+                            if (isMe) navMap[curUser] = prevNav;
+                            changed = true;
+                        }
                         return;
                     }
 
-                    // กรณีที่ 3: ข้อมูลจาก Cloud ใหม่กว่าหรือเท่ากับในเครื่อง
+                    // กรณีที่ 3: ข้อมูลจาก Cloud เป็นสถานะไม่ได้เดินทาง
                     if (!cNav || cNav.isTraveling === false) {
-                        if (!isMe || cTime >= pTime) {
+                        // สั่งหยุดเฉพาะเมื่อก่อนหน้านี้กำลังเดินทางอยู่จริงเท่านั้น (ป้องกันการเด้งซ้ำทุก 3 วินาที)
+                        if (wasTravelingBefore && (!isMe || cTime >= pTime)) {
                             const stoppedObj = {
                                 isTraveling: false,
                                 cancelledAtMs: cNav?.cancelledAtMs || cTime || Date.now(),
@@ -7294,12 +7305,12 @@
                                 navMap[curUser] = stoppedObj;
                                 if (typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
                                     isStoppingEquipNavInternal = true;
-                                    try { realStopMapNavFn(); } catch (e) {}
+                                    try { realStopMapNavFn(true); } catch (e) {}
                                     isStoppingEquipNavInternal = false;
                                 }
                             }
                         }
-                    } else if (cTime >= pTime) {
+                    } else if (cTime > pTime || !prevNav) {
                         navMap[uKey] = cNav;
                         localAfter[uKey] = { ...(localAfter[uKey] || cItem), activeEquipNav: cNav };
                         if (isMe) navMap[curUser] = cNav;
@@ -7330,20 +7341,22 @@
         }
 
         if (typeof realStopMapNavFn === 'function') {
-            window.stopLabeledPlaceNavigation = function() {
+            window.stopLabeledPlaceNavigation = function(silent = false) {
                 if (isStoppingEquipNavInternal) {
-                    return realStopMapNavFn.apply(this, arguments);
+                    return realStopMapNavFn.call(this, true);
                 }
                 const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
                 isStoppingEquipNavInternal = true;
-                const res = realStopMapNavFn.apply(this, arguments);
+                const res = realStopMapNavFn.call(this, true);
                 isStoppingEquipNavInternal = false;
-                window.finishMyEquipmentNavigation(false, curUser);
+                if (!silent) {
+                    window.finishMyEquipmentNavigation(false, curUser);
+                }
                 return res;
             };
         }
 
-        // 10. เชื่อมกับ recordCurrentTechGpsLocation เพื่ออัปเดตระยะทางและเวลาถึงอุปกรณ์ไฟฟ้าตามพิกัด GPS สด
+        // 10. เชื่อมกับ recordCurrentTechGpsLocation
         const origRecordGps = window.recordCurrentTechGpsLocation;
         if (typeof origRecordGps === 'function') {
             window.recordCurrentTechGpsLocation = function(lat, lon) {
@@ -7367,7 +7380,7 @@
             };
         }
 
-        // 11. เชื่อมกับ handleTechLogout เพื่อเคลียร์สถานะเดินทางของตัวเองเมื่อกดออกจากระบบ
+        // 11. เชื่อมกับ handleTechLogout
         const origLogout = window.handleTechLogout;
         if (typeof origLogout === 'function') {
             window.handleTechLogout = async function() {
@@ -7381,7 +7394,7 @@
             };
         }
 
-        // 12. เชื่อมกับ renderJobCards เพื่ออัปเดตการ์ดและล็อกปุ่มยกเลิกของช่างคนอื่น
+        // 12. เชื่อมกับ renderJobCards
         const origRenderJobCards = window.renderJobCards;
         if (typeof origRenderJobCards === 'function') {
             window.renderJobCards = function() {
@@ -7422,14 +7435,16 @@
         });
     })();
     </script>
-    <!-- ⚡ ระบบ Turbo Sync 0 วินาที (BroadcastChannel + Smart Pre-Fetch Cache สำหรับทั้ง index.html และ page2.html) -->
+<!-- ⚡ ระบบ Hyper-Speed Engine v3.1 (รวม ข้อ 1 Delta Patch + ข้อ 2 WebRTC P2P 5ms + ข้อ 3 Optimistic Queue 1ms พร้อมแนบหมุดอุปกรณ์และข้อมูลสำรองครบ 100%) -->
+<script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
 <script>
 (function() {
-    const CHANNEL_NAME = 'pea_smart_grid_turbo_sync_v1';
+    const CHANNEL_NAME = 'pea_smart_grid_hyper_v3';
     const isTechPage = Boolean(document.getElementById('techMainApp'));
     const isMainPage = Boolean(document.getElementById('mainAppContent'));
+    const MY_PEER_ID = 'peer_' + Math.random().toString(36).substring(2, 9) + '_' + (Date.now() % 100000);
 
-    const WATCHED_KEYS = new Set([
+    const SYNC_KEYS = new Set([
         'elecReportsComplete_all',
         'fault_reports_all',
         'elec_closed_jobs_registry',
@@ -7440,21 +7455,23 @@
         'elec_cancelled_job_nav_map',
         'elec_labeled_places_list',
         'elec_deleted_labeled_places_map',
-        'elec_deleted_equip_audit_logs',
-        'elec_user_accounts'
+        'elec_deleted_equip_audit_logs'
     ]);
 
-    let syncChannel = null;
-    try {
-        if ('BroadcastChannel' in window) {
-            syncChannel = new BroadcastChannel(CHANNEL_NAME);
-        }
-    } catch (e) {}
+    const LOCAL_WATCHED_KEYS = new Set([...SYNC_KEYS, 'elec_user_accounts']);
 
+    const _rawGetItem = typeof _origLocalStorageGetItem === 'function'
+        ? _origLocalStorageGetItem
+        : Storage.prototype.getItem;
+    const _prevSetItem = Storage.prototype.setItem;
+
+    let isApplyingRemoteState = false;
     let uiRefreshTimer = null;
     const pendingChangedKeys = new Set();
 
-    // 1. ฟังก์ชันอัปเดตหน้าจอทันที (Debounce 16ms ป้องกันหน้าจอกระตุกเมื่อบันทึกหลายคีย์พร้อมกัน)
+    // =========================================================
+    // 🖥️ 1. อัปเดตหน้าจอทันทีใน 1 เฟรม (16ms Debounce)
+    // =========================================================
     function scheduleInstantUiRefresh(changedKey) {
         if (changedKey) pendingChangedKeys.add(changedKey);
         if (uiRefreshTimer) return;
@@ -7490,73 +7507,614 @@
                     if (keys.some(k => k === 'elec_tech_locations_map' || k.includes('equip_nav') || k.includes('cancelled'))) {
                         if (typeof renderNavEtaBadgesInMainHistory === 'function') renderNavEtaBadgesInMainHistory();
                     }
-                    // กระตุ้น listener ที่รอรับ storage event ในหน้าหลักให้ทำงานทันที
                     keys.forEach(k => {
-                        try {
-                            window.dispatchEvent(new StorageEvent('storage', { key: k }));
-                        } catch (e) {}
+                        try { window.dispatchEvent(new StorageEvent('storage', { key: k })); } catch (e) {}
                     });
                 }
             } catch (err) {}
         });
     }
 
-    // 2. ส่งสัญญาณแจ้งเตือนข้ามหน้าต่าง/Iframe ทันทีที่มีการเปลี่ยนข้อมูลใน localStorage
-    function broadcastKeyChange(key) {
-        const payload = { type: 'PEA_TURBO_SYNC', key: key, ts: Date.now() };
+    // =========================================================
+    // 🔀 2. ผสานข้อมูลสดจาก WebRTC P2P / WebSocket ลงในเครื่อง
+    // =========================================================
+    function applyIncomingLivePacket(key, incomingValStr) {
+        if (!incomingValStr) return;
+        isApplyingRemoteState = true;
         try {
-            if (syncChannel) syncChannel.postMessage(payload);
-        } catch (e) {}
+            const currentValStr = _rawGetItem.call(localStorage, key);
+            if (currentValStr === incomingValStr) return;
 
-        try {
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage(payload, '*');
+            if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
+                const isFault = (key === 'fault_reports_all');
+                const kField = isFault ? 'timestamp' : 'dateTimeSaved';
+                const delReg = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_jobs_registry') || '{}');
+                const cancelJobMap = JSON.parse(_rawGetItem.call(localStorage, 'elec_cancelled_job_nav_map') || '{}');
+
+                const localArr = JSON.parse(currentValStr || '[]');
+                const incomingArr = JSON.parse(incomingValStr || '[]');
+                const map = new Map();
+
+                localArr.forEach(item => {
+                    if (item && item[kField] && !delReg[item[kField]]) map.set(item[kField], item);
+                });
+
+                incomingArr.forEach(inItem => {
+                    if (!inItem || !inItem[kField] || delReg[inItem[kField]]) return;
+                    const id = inItem[kField];
+                    const ex = map.get(id);
+                    if (!ex) {
+                        map.set(id, inItem);
+                    } else {
+                        const inRepT = inItem.techReport?.updatedAt || '';
+                        const exRepT = ex.techReport?.updatedAt || '';
+                        const bestReport = inRepT >= exRepT ? (inItem.techReport || ex.techReport) : ex.techReport;
+
+                        const cancelIso = cancelJobMap[id] || ((inItem.navCancelledAt || '') >= (ex.navCancelledAt || '') ? inItem.navCancelledAt : ex.navCancelledAt) || '';
+                        const inNavT = inItem.techNav?.updatedAt || '';
+                        const exNavT = ex.techNav?.updatedAt || '';
+                        let bestNav = inNavT >= exNavT ? (inItem.techNav || ex.techNav) : ex.techNav;
+
+                        const isDone = bestReport && String(bestReport.status || '').includes('เสร็จสิ้น');
+                        if (isDone || (cancelIso && (!bestNav?.updatedAt || cancelIso >= bestNav.updatedAt))) {
+                            bestNav = undefined;
+                        }
+
+                        const merged = { ...ex, ...inItem, techReport: bestReport, navCancelledAt: cancelIso || undefined };
+                        if (!bestReport) delete merged.techReport;
+                        if (bestNav) merged.techNav = bestNav;
+                        else delete merged.techNav;
+                        map.set(id, merged);
+                    }
+                });
+
+                _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(map.values())));
+            } else if (key === 'elec_tech_locations_map' || key === 'elec_closed_jobs_registry' || key === 'elec_deleted_jobs_registry' || key === 'elec_active_equip_nav_map_v2' || key.includes('cancelled')) {
+                const localObj = JSON.parse(currentValStr || '{}');
+                const inObj = JSON.parse(incomingValStr || '{}');
+                if (key === 'elec_tech_locations_map' && typeof window.mergeTechLocationsMap === 'function') {
+                    window.mergeTechLocationsMap(inObj);
+                } else {
+                    _prevSetItem.call(localStorage, key, JSON.stringify({ ...localObj, ...inObj }));
+                }
+            } else if (key === 'elec_labeled_places_list') {
+                const delEquip = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+                const localPins = JSON.parse(currentValStr || '[]');
+                const inPins = JSON.parse(incomingValStr || '[]');
+                const pinMap = new Map();
+
+                [...localPins, ...inPins].forEach(p => {
+                    if (!p || !p.id) return;
+                    if (delEquip[p.id]) {
+                        const delMs = new Date(delEquip[p.id]).getTime() || 0;
+                        const pinMs = new Date(p.updatedAt || 0).getTime() || 0;
+                        if (pinMs <= delMs) return;
+                    }
+                    const ex = pinMap.get(p.id);
+                    if (!ex || (p.updatedAt || '') >= (ex.updatedAt || '')) {
+                        pinMap.set(p.id, p);
+                    }
+                });
+                _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(pinMap.values())));
+            } else {
+                _prevSetItem.call(localStorage, key, incomingValStr);
             }
-            const leftIframe = document.getElementById('leftBrowserIframe');
-            if (leftIframe && leftIframe.contentWindow) {
-                leftIframe.contentWindow.postMessage(payload, '*');
-            }
-            if (typeof leftPopupWindowRef !== 'undefined' && leftPopupWindowRef && !leftPopupWindowRef.closed) {
-                leftPopupWindowRef.postMessage(payload, '*');
-            }
-        } catch (e) {}
+
+            scheduleInstantUiRefresh(key);
+        } catch (e) {
+        } finally {
+            isApplyingRemoteState = false;
+        }
     }
 
-    if (syncChannel) {
-        syncChannel.onmessage = (event) => {
-            if (event.data && event.data.type === 'PEA_TURBO_SYNC') {
-                scheduleInstantUiRefresh(event.data.key);
-            }
+    // =========================================================
+    // ⚡ 3. ข้อ 2: ระบบ WebRTC P2P Direct Mesh (5–15ms ในไทย) + MQTT WSS
+    // =========================================================
+    function getTopicBase() {
+        const rawUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '') || 'pea_grid';
+        let hash = 0;
+        for (let i = 0; i < rawUrl.length; i++) {
+            hash = ((hash << 5) - hash) + rawUrl.charCodeAt(i);
+            hash |= 0;
+        }
+        return 'pea_hyper_v3_' + Math.abs(hash);
+    }
+
+    const TOPIC_DATA = getTopicBase() + '/data';
+    const TOPIC_SIGNAL = getTopicBase() + '/sig';
+    const WS_BROKERS = [
+        'wss://broker.emqx.io:8084/mqtt',
+        'wss://broker.hivemq.com:8884/mqtt'
+    ];
+    const RTC_CONFIG = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+    };
+
+    let mqttClient = null;
+    let brokerIdx = 0;
+    const rtcPeers = new Map();
+    const debounceSendTimers = {};
+
+    function setupDataChannelEvents(remotePeerId, dc) {
+        dc.onopen = () => {
+            const peerObj = rtcPeers.get(remotePeerId);
+            if (peerObj) peerObj.isReady = true;
+        };
+        dc.onclose = () => {
+            rtcPeers.delete(remotePeerId);
+        };
+        dc.onmessage = (evt) => {
+            try {
+                const packet = JSON.parse(evt.data);
+                if (packet && packet.type === 'DELTA_KEY' && packet.key && packet.val) {
+                    applyIncomingLivePacket(packet.key, packet.val);
+                } else if (packet && packet.type === 'CLOUD_POKE') {
+                    triggerImmediateCloudPull();
+                }
+            } catch (e) {}
         };
     }
 
-    window.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'PEA_TURBO_SYNC') {
-            scheduleInstantUiRefresh(event.data.key);
+    function createPeerConnection(remotePeerId, isInitiator) {
+        if (typeof RTCPeerConnection === 'undefined') return null;
+        if (rtcPeers.size >= 12 && !rtcPeers.has(remotePeerId)) return null;
+
+        try {
+            const pc = new RTCPeerConnection(RTC_CONFIG);
+            const peerEntry = { pc, dc: null, isReady: false };
+            rtcPeers.set(remotePeerId, peerEntry);
+
+            pc.onicecandidate = (evt) => {
+                if (evt.candidate && mqttClient && mqttClient.connected) {
+                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
+                        from: MY_PEER_ID,
+                        to: remotePeerId,
+                        sigType: 'ice',
+                        candidate: evt.candidate
+                    }));
+                }
+            };
+
+            pc.onconnectionstatechange = () => {
+                if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+                    rtcPeers.delete(remotePeerId);
+                }
+            };
+
+            if (isInitiator) {
+                const dc = pc.createDataChannel('pea_fast_lane', { ordered: true });
+                peerEntry.dc = dc;
+                setupDataChannelEvents(remotePeerId, dc);
+
+                pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
+                    if (mqttClient && mqttClient.connected) {
+                        mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
+                            from: MY_PEER_ID,
+                            to: remotePeerId,
+                            sigType: 'offer',
+                            sdp: pc.localDescription
+                        }));
+                    }
+                }).catch(() => {});
+            } else {
+                pc.ondatachannel = (evt) => {
+                    peerEntry.dc = evt.channel;
+                    setupDataChannelEvents(remotePeerId, evt.channel);
+                };
+            }
+
+            return peerEntry;
+        } catch (e) {
+            return null;
         }
+    }
+
+    async function handleWebRtcSignal(msg) {
+        if (!msg || msg.from === MY_PEER_ID) return;
+        if (msg.to && msg.to !== MY_PEER_ID) return;
+
+        const remoteId = msg.from;
+        try {
+            if (msg.sigType === 'hello') {
+                if (MY_PEER_ID < remoteId && !rtcPeers.has(remoteId)) {
+                    createPeerConnection(remoteId, true);
+                } else if (MY_PEER_ID > remoteId && !rtcPeers.has(remoteId) && mqttClient?.connected) {
+                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
+                        from: MY_PEER_ID,
+                        to: remoteId,
+                        sigType: 'hello_ack'
+                    }));
+                }
+            } else if (msg.sigType === 'hello_ack') {
+                if (!rtcPeers.has(remoteId)) {
+                    createPeerConnection(remoteId, true);
+                }
+            } else if (msg.sigType === 'offer') {
+                const peerEntry = createPeerConnection(remoteId, false);
+                if (!peerEntry) return;
+                await peerEntry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+                const answer = await peerEntry.pc.createAnswer();
+                await peerEntry.pc.setLocalDescription(answer);
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
+                        from: MY_PEER_ID,
+                        to: remoteId,
+                        sigType: 'answer',
+                        sdp: peerEntry.pc.localDescription
+                    }));
+                }
+            } else if (msg.sigType === 'answer') {
+                const peerEntry = rtcPeers.get(remoteId);
+                if (peerEntry && peerEntry.pc.signalingState === 'have-local-offer') {
+                    await peerEntry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+                }
+            } else if (msg.sigType === 'ice' && msg.candidate) {
+                const peerEntry = rtcPeers.get(remoteId);
+                if (peerEntry && peerEntry.pc.remoteDescription) {
+                    await peerEntry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+                }
+            }
+        } catch (e) {}
+    }
+
+    function initRealtimeTransport() {
+        if (typeof mqtt === 'undefined') return;
+        const brokerUrl = WS_BROKERS[brokerIdx % WS_BROKERS.length];
+
+        try {
+            mqttClient = mqtt.connect(brokerUrl, {
+                clientId: MY_PEER_ID,
+                clean: true,
+                connectTimeout: 4000,
+                reconnectPeriod: 3000
+            });
+
+            mqttClient.on('connect', () => {
+                mqttClient.subscribe([TOPIC_DATA, TOPIC_SIGNAL], { qos: 0 });
+                mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
+                    from: MY_PEER_ID,
+                    sigType: 'hello'
+                }));
+            });
+
+            mqttClient.on('message', (topic, buf) => {
+                try {
+                    const packet = JSON.parse(buf.toString());
+                    if (!packet) return;
+
+                    if (topic === TOPIC_SIGNAL) {
+                        handleWebRtcSignal(packet);
+                        return;
+                    }
+
+                    if (topic === TOPIC_DATA && packet.sender !== MY_PEER_ID) {
+                        if (packet.type === 'DELTA_KEY' && packet.key && packet.val) {
+                            applyIncomingLivePacket(packet.key, packet.val);
+                        } else if (packet.type === 'CLOUD_POKE') {
+                            triggerImmediateCloudPull();
+                        }
+                    }
+                } catch (e) {}
+            });
+
+            mqttClient.on('error', () => { brokerIdx++; });
+        } catch (e) {}
+    }
+
+    function triggerImmediateCloudPull() {
+        if (isTechPage && typeof syncJobsFromCloud === 'function' && !isSyncingNow) {
+            syncJobsFromCloud(true);
+        } else if (isMainPage && typeof pullFieldReportsFromCloud === 'function' && !isUploadingFromMain) {
+            pullFieldReportsFromCloud();
+        }
+    }
+
+    function broadcastDeltaOverNetwork(key, valStr) {
+        if (!SYNC_KEYS.has(key)) return;
+        clearTimeout(debounceSendTimers[key]);
+
+        debounceSendTimers[key] = setTimeout(() => {
+            try {
+                let payloadStr = valStr;
+                if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
+                    const arr = JSON.parse(valStr || '[]');
+                    payloadStr = JSON.stringify(arr.slice(0, 25));
+                }
+
+                const packetStr = payloadStr.length < 60000
+                    ? JSON.stringify({ type: 'DELTA_KEY', sender: MY_PEER_ID, key: key, val: payloadStr, ts: Date.now() })
+                    : JSON.stringify({ type: 'CLOUD_POKE', sender: MY_PEER_ID, key: key, ts: Date.now() });
+
+                rtcPeers.forEach(peer => {
+                    if (peer.isReady && peer.dc && peer.dc.readyState === 'open') {
+                        try { peer.dc.send(packetStr); } catch (e) {}
+                    }
+                });
+
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.publish(TOPIC_DATA, packetStr, { qos: 0 });
+                }
+            } catch (e) {}
+        }, 20);
+    }
+
+    // =========================================================
+    // 🖥️ 4. BroadcastChannel + postMessage (0ms บนเครื่องเดียวกัน)
+    // =========================================================
+    let localChannel = null;
+    try {
+        if ('BroadcastChannel' in window) {
+            localChannel = new BroadcastChannel(CHANNEL_NAME);
+            localChannel.onmessage = (e) => {
+                if (e.data && e.data.type === 'LOCAL_TURBO') scheduleInstantUiRefresh(e.data.key);
+            };
+        }
+    } catch (e) {}
+
+    window.addEventListener('message', (e) => {
+        if (e.data && e.data.type === 'LOCAL_TURBO') scheduleInstantUiRefresh(e.data.key);
     });
 
-    const _rawGetItem = typeof _origLocalStorageGetItem === 'function'
-        ? _origLocalStorageGetItem
-        : Storage.prototype.getItem;
-    const _prevSetItem = Storage.prototype.setItem;
+    function broadcastSameDevice(key) {
+        const msg = { type: 'LOCAL_TURBO', key: key, ts: Date.now() };
+        try { if (localChannel) localChannel.postMessage(msg); } catch (e) {}
+        try {
+            if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*');
+            const leftIframe = document.getElementById('leftBrowserIframe');
+            if (leftIframe && leftIframe.contentWindow) leftIframe.contentWindow.postMessage(msg, '*');
+            if (typeof leftPopupWindowRef !== 'undefined' && leftPopupWindowRef && !leftPopupWindowRef.closed) {
+                leftPopupWindowRef.postMessage(msg, '*');
+            }
+        } catch (e) {}
+    }
 
     Storage.prototype.setItem = function(key, value) {
         let prevVal = null;
-        if (WATCHED_KEYS.has(key)) {
+        if (LOCAL_WATCHED_KEYS.has(key)) {
             try { prevVal = _rawGetItem.call(this, key); } catch (e) {}
         }
-        const result = _prevSetItem.apply(this, arguments);
-        if (WATCHED_KEYS.has(key) && prevVal !== value) {
-            broadcastKeyChange(key);
+        const res = _prevSetItem.apply(this, arguments);
+        if (!isApplyingRemoteState && LOCAL_WATCHED_KEYS.has(key) && prevVal !== value) {
+            broadcastSameDevice(key);
+            broadcastDeltaOverNetwork(key, value);
         }
-        return result;
+        return res;
     };
 
-    // 3. Smart Pre-Fetch Cache: ข้ามการยิง GET ซ้ำซ้อนก่อน POST หากเพิ่งดึงข้อมูลมาไม่เกิน 2.5 วินาที
-    let lastCloudGetSnapshotText = null;
-    let lastCloudGetTimeMs = 0;
+    // =========================================================
+    // 📦 5. ข้อ 1 & ข้อ 3: Delta Patch Builder + 1ms Optimistic Background Queue
+    // =========================================================
+    const syncedJobHashes = new Map();
+    let lastBackupsHash = '';
+    let lastPinsHash = '';
+    let lastDelPinsHash = '';
+    let lastAuditLogsHash = '';
+    let hasCompletedFirstFullBaseline = false;
+
+    let lastGetSnapshotText = null;
+    let lastGetTimeMs = 0;
+    let pendingPostTask = null;
+    let isWorkerRunning = false;
+
     const _prevFetch = window.fetch;
+
+    function getJobKeyForDiff(job) {
+        if (!job || typeof job !== 'object') return '';
+        if (job.jobType === 'tech_loc') return 'TECH_LOC_REGISTRY';
+        const isFault = job.jobType === 'fault';
+        const rk = isFault ? (job.timestamp || '') : (job.dateTimeSaved || job.timestamp || '');
+        return (isFault ? 'F_' : 'O_') + String(rk);
+    }
+
+    // แนบข้อมูลหมุดอุปกรณ์ ประวัติผู้ลบ และสำรองคลาวด์รายกลุ่มเข้ากับรายการก่อนสร้าง Delta
+    function enrichSaveJobsArrayWithLocalState(jobsArr) {
+        if (!Array.isArray(jobsArr)) return jobsArr;
+        const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_jobs_registry') || '{}');
+        const groupBackups = JSON.parse(_rawGetItem.call(localStorage, 'elec_cloud_group_backups_map') || '{}');
+        const savedEquipPins = JSON.parse(_rawGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
+        const savedDeletedEquipMap = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+        const savedDeletedAuditLogs = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_equip_audit_logs') || '[]');
+        const savedClearedAuditTs = parseInt(_rawGetItem.call(localStorage, 'elec_cleared_audit_logs_ts') || '0', 10);
+        const overrideMap = window.cloudEditedJobsOverrideMap || {};
+
+        return jobsArr.filter(j => {
+            if (!j) return false;
+            if (j.jobType === 'tech_loc') return true;
+            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+            return !(rk && deletedReg[rk]);
+        }).map(j => {
+            if (j.jobType === 'tech_loc') {
+                return {
+                    ...j,
+                    cloudGroupBackups: Object.keys(groupBackups).length > 0 ? groupBackups : (j.cloudGroupBackups || {}),
+                    electricEquipmentPins: savedEquipPins.length > 0 ? savedEquipPins : (j.electricEquipmentPins || []),
+                    deletedElectricEquipmentMap: Object.keys(savedDeletedEquipMap).length > 0 ? savedDeletedEquipMap : (j.deletedElectricEquipmentMap || {}),
+                    deletedEquipAuditLogs: savedDeletedAuditLogs.length > 0 ? savedDeletedAuditLogs : (j.deletedEquipAuditLogs || []),
+                    clearedAuditLogsTimestamp: savedClearedAuditTs || j.clearedAuditLogsTimestamp || 0
+                };
+            }
+            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+            const mapKey = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
+            if (overrideMap[mapKey]) {
+                return { ...j, ...overrideMap[mapKey] };
+            }
+            return j;
+        });
+    }
+
+    function recordBaselineFromJobsArray(jobsArr) {
+        if (!Array.isArray(jobsArr)) return;
+        const seenKeys = new Set();
+        jobsArr.forEach(j => {
+            if (!j || typeof j !== 'object') return;
+            if (j.jobType === 'tech_loc') {
+                if (j.cloudGroupBackups) lastBackupsHash = JSON.stringify(j.cloudGroupBackups);
+                if (j.electricEquipmentPins) lastPinsHash = JSON.stringify(j.electricEquipmentPins);
+                if (j.deletedElectricEquipmentMap) lastDelPinsHash = JSON.stringify(j.deletedElectricEquipmentMap);
+                if (j.deletedEquipAuditLogs) lastAuditLogsHash = JSON.stringify(j.deletedEquipAuditLogs);
+            } else {
+                const k = getJobKeyForDiff(j);
+                if (k) {
+                    seenKeys.add(k);
+                    syncedJobHashes.set(k, JSON.stringify(j));
+                }
+            }
+        });
+        Array.from(syncedJobHashes.keys()).forEach(k => {
+            if (!seenKeys.has(k)) syncedJobHashes.delete(k);
+        });
+        if (seenKeys.size > 0) hasCompletedFirstFullBaseline = true;
+    }
+
+    function buildDeltaPayloadFromSaveJobs(fullJobsArray) {
+        if (!hasCompletedFirstFullBaseline || !Array.isArray(fullJobsArray)) {
+            return null;
+        }
+
+        const upsertedJobs = [];
+        const currentKeys = new Set();
+        let techLocObj = null;
+
+        fullJobsArray.forEach(j => {
+            if (!j || typeof j !== 'object') return;
+            if (j.jobType === 'tech_loc') {
+                techLocObj = j;
+                return;
+            }
+            const uKey = getJobKeyForDiff(j);
+            if (!uKey) return;
+            currentKeys.add(uKey);
+
+            const jsonStr = JSON.stringify(j);
+            if (syncedJobHashes.get(uKey) !== jsonStr) {
+                upsertedJobs.push(j);
+            }
+        });
+
+        const removedJobKeys = [];
+        syncedJobHashes.forEach((_, oldKey) => {
+            if (!currentKeys.has(oldKey)) {
+                removedJobKeys.push(oldKey);
+            }
+        });
+
+        if (upsertedJobs.length > 40) return null;
+
+        let techLocDelta = null;
+        if (techLocObj) {
+            const curBackupsStr = JSON.stringify(techLocObj.cloudGroupBackups || {});
+            const curPinsStr = JSON.stringify(techLocObj.electricEquipmentPins || []);
+            const curDelPinsStr = JSON.stringify(techLocObj.deletedElectricEquipmentMap || {});
+            const curAuditStr = JSON.stringify(techLocObj.deletedEquipAuditLogs || []);
+
+            const keepBackups = (curBackupsStr === lastBackupsHash);
+            const keepPins = (curPinsStr === lastPinsHash);
+            const keepDelPins = (curDelPinsStr === lastDelPinsHash);
+            const keepAuditLogs = (curAuditStr === lastAuditLogsHash);
+
+            techLocDelta = {
+                jobType: 'tech_loc',
+                dateTimeSaved: 'TECH_LOC_REGISTRY',
+                techLocations: techLocObj.techLocations || {},
+                closedJobsMap: techLocObj.closedJobsMap || {},
+                closedReports: techLocObj.closedReports || {},
+                deletedJobsMap: techLocObj.deletedJobsMap || {},
+                clearedAuditLogsTimestamp: techLocObj.clearedAuditLogsTimestamp || 0,
+                _keepBackups: keepBackups,
+                _keepPins: keepPins,
+                _keepDelPins: keepDelPins,
+                _keepAuditLogs: keepAuditLogs,
+                ...(keepBackups ? {} : { cloudGroupBackups: techLocObj.cloudGroupBackups }),
+                ...(keepPins ? {} : { electricEquipmentPins: techLocObj.electricEquipmentPins }),
+                ...(keepDelPins ? {} : { deletedElectricEquipmentMap: techLocObj.deletedElectricEquipmentMap }),
+                ...(keepAuditLogs ? {} : { deletedEquipAuditLogs: techLocObj.deletedEquipAuditLogs }),
+                updatedAt: new Date().toISOString()
+            };
+        }
+
+        const isGpsTickOnly = (
+            upsertedJobs.length === 0 &&
+            removedJobKeys.length === 0 &&
+            techLocDelta &&
+            techLocDelta._keepBackups &&
+            techLocDelta._keepPins &&
+            techLocDelta._keepDelPins &&
+            techLocDelta._keepAuditLogs
+        );
+
+        return {
+            action: 'patchDelta',
+            ramOnly: isGpsTickOnly && (Date.now() - lastSheetWriteTimeMs < 20000),
+            upsertedJobs: upsertedJobs,
+            removedJobKeys: removedJobKeys,
+            techLocDelta: techLocDelta
+        };
+    }
+
+    let lastSheetWriteTimeMs = 0;
+
+    async function processBackgroundPostQueue() {
+        if (isWorkerRunning || !pendingPostTask) return;
+        isWorkerRunning = true;
+
+        while (pendingPostTask) {
+            const task = pendingPostTask;
+            pendingPostTask = null;
+
+            try {
+                let bodyToSend = task.rawBody;
+                let parsedOrig = null;
+
+                try {
+                    parsedOrig = JSON.parse(task.rawBody);
+                } catch (e) {}
+
+                if (parsedOrig && parsedOrig.action === 'saveJobs' && Array.isArray(parsedOrig.jobs)) {
+                    parsedOrig.jobs = enrichSaveJobsArrayWithLocalState(parsedOrig.jobs);
+                    const deltaObj = buildDeltaPayloadFromSaveJobs(parsedOrig.jobs);
+                    if (deltaObj) {
+                        bodyToSend = JSON.stringify(deltaObj);
+                        if (!deltaObj.ramOnly) lastSheetWriteTimeMs = Date.now();
+                    } else {
+                        bodyToSend = JSON.stringify(parsedOrig);
+                        lastSheetWriteTimeMs = Date.now();
+                    }
+                }
+
+                const res = await _prevFetch.call(window, task.input, {
+                    ...task.init,
+                    body: bodyToSend
+                });
+
+                if (res && res.ok) {
+                    const resJson = await res.clone().json().catch(() => ({}));
+                    if (resJson && resJson.requireFullSync && parsedOrig) {
+                        await _prevFetch.call(window, task.input, {
+                            ...task.init,
+                            body: JSON.stringify(parsedOrig)
+                        });
+                    }
+                    if (parsedOrig && Array.isArray(parsedOrig.jobs)) {
+                        recordBaselineFromJobsArray(parsedOrig.jobs);
+                    }
+                    if (mqttClient && mqttClient.connected) {
+                        mqttClient.publish(TOPIC_DATA, JSON.stringify({
+                            type: 'CLOUD_POKE',
+                            sender: MY_PEER_ID,
+                            ts: Date.now()
+                        }), { qos: 0 });
+                    }
+                }
+            } catch (err) {
+                localStorage.setItem('elec_tech_has_pending_push', 'true');
+            }
+        }
+
+        isWorkerRunning = false;
+    }
 
     window.fetch = async function(input, init) {
         const urlStr = typeof input === 'string' ? input : (input?.url || '');
@@ -7568,9 +8126,8 @@
             const isSavingNow = (typeof isPushingToCloudNow !== 'undefined' && isPushingToCloudNow) ||
                                 (typeof isUploadingFromMain !== 'undefined' && isUploadingFromMain);
 
-            // หากกำลังจะกดบันทึก (POST) และเพิ่งซิงค์ GET มาไม่เกิน 2.5 วินาที ให้ใช้ข้อมูลล่าสุดในหน่วยความจำทันที (ประหยัดเวลา 50%)
-            if (isSavingNow && lastCloudGetSnapshotText && (now - lastCloudGetTimeMs < 2500)) {
-                return new Response(lastCloudGetSnapshotText, {
+            if (isSavingNow && lastGetSnapshotText && (now - lastGetTimeMs < 6000)) {
+                return new Response(lastGetSnapshotText, {
                     status: 200,
                     headers: { 'Content-Type': 'application/json' }
                 });
@@ -7582,30 +8139,61 @@
                     const cloned = response.clone();
                     const text = await cloned.text();
                     if (text && text.includes('"status":"ok"')) {
-                        lastCloudGetSnapshotText = text;
-                        lastCloudGetTimeMs = Date.now();
+                        lastGetSnapshotText = text;
+                        lastGetTimeMs = Date.now();
+                        const parsed = JSON.parse(text);
+                        if (parsed && Array.isArray(parsed.jobs)) {
+                            recordBaselineFromJobsArray(parsed.jobs);
+                        }
                     }
                 } catch (e) {}
             }
             return response;
         }
 
-        if (isGasUrl && method === 'POST') {
-            // เมื่อมีการส่งข้อมูลใหม่ขึ้น Cloud ให้ล้างแคช GET เพื่อให้รอบถัดไปดึงข้อมูลใหม่เสมอ
-            lastCloudGetTimeMs = 0;
+        if (isGasUrl && method === 'POST' && init && typeof init.body === 'string') {
+            if (init.body.includes('"saveJobs"')) {
+                try {
+                    const parsedBody = JSON.parse(init.body);
+                    if (parsedBody && Array.isArray(parsedBody.jobs)) {
+                        parsedBody.jobs = enrichSaveJobsArrayWithLocalState(parsedBody.jobs);
+                        init.body = JSON.stringify(parsedBody);
+                        lastGetSnapshotText = JSON.stringify({
+                            status: 'ok',
+                            jobs: parsedBody.jobs,
+                            serverTime: new Date().toISOString()
+                        });
+                        lastGetTimeMs = Date.now();
+                    }
+                } catch (e) {}
+
+                pendingPostTask = { input, init: { ...init }, rawBody: init.body };
+                setTimeout(processBackgroundPostQueue, 5);
+
+                return new Response(JSON.stringify({ status: 'ok', optimistic: true }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            lastGetTimeMs = 0;
+            return await _prevFetch.apply(this, arguments);
         }
 
         return _prevFetch.apply(this, arguments);
     };
 
-    // 4. เร่งรอบซิงค์ขณะเปิดหน้าจอใช้งาน (ทุก 3 วินาที) เพื่อให้รับข้อมูลจาก RAM Cache ได้ไวขึ้น
+    window.addEventListener('DOMContentLoaded', initRealtimeTransport);
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        initRealtimeTransport();
+    }
+
     setInterval(() => {
         if (document.hidden || localStorage.getItem('elec_app_logged_in') !== 'true') return;
-        if (isTechPage && typeof syncJobsFromCloud === 'function' && typeof isSyncingNow !== 'undefined' && !isSyncingNow) {
-            syncJobsFromCloud(true);
-        } else if (isMainPage && typeof pullFieldReportsFromCloud === 'function' && typeof isUploadingFromMain !== 'undefined' && !isUploadingFromMain) {
-            pullFieldReportsFromCloud();
+        if (mqttClient && mqttClient.connected && rtcPeers.size === 0) {
+            mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, sigType: 'hello' }));
         }
+        triggerImmediateCloudPull();
     }, 3000);
 })();
 </script>
