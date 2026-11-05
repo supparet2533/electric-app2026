@@ -2027,10 +2027,16 @@
             showCustomAlert("🔒 บัญชีของคุณมีการเข้าสู่ระบบจากอุปกรณ์เครื่องอื่น ระบบจึงทำการออกจากระบบในเครื่องนี้อัตโนมัติ", "⚠️ มีการเข้าสู่ระบบซ้อนจากเครื่องอื่น");
         }
 
+        let lastActivityThrottleMs = 0;
+
         function resetInactivityTimer() {
+            const now = Date.now();
+            // ป้องกัน mousemove เรียกซ้ำถี่เกินไป (จำกัดให้ทำงานสูงสุด 1 ครั้ง ทุกๆ 3 วินาที)
+            if (now - lastActivityThrottleMs < 3000) return;
+            lastActivityThrottleMs = now;
+
             if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
 
-            const now = Date.now();
             const lastActive = parseInt(localStorage.getItem('elec_app_last_active') || '0', 10);
 
             if (lastActive > 0 && (now - lastActive > INACTIVITY_TIMEOUT_MS)) {
@@ -2051,7 +2057,6 @@
             if (inactivityTimer) clearTimeout(inactivityTimer);
             inactivityTimer = setTimeout(triggerAutoLogout, INACTIVITY_TIMEOUT_MS);
         }
-
         function verifyActiveSessionRole() {
             if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
             const loggedUser = localStorage.getItem('elec_app_current_user') || '';
