@@ -6872,5 +6872,258 @@
     }, 1500);
 })();
 </script>
+<!-- 🔧 แพตช์แก้บั๊กสถานะนำทางค้างและเคลียร์เส้นทางแผนที่สมบูรณ์ 100% (สำหรับ page2.html) -->
+<script>
+    (function() {
+        const EQUIP_NAV_STORAGE_KEY = 'elec_active_equip_nav_map_v2';
+        const CANCELLED_JOB_NAV_KEY = 'elec_cancelled_job_nav_map';
+        let pendingForceCloudPush = false;
+        
+        // เก็บอ้างอิงฟังก์ชันหยุดนำทางบนแผนที่ตัวจริงไว้ใช้เคลียร์เส้นสีฟ้าและ GPS Watch
+        const realStopMapNavFn = window.stopLabeledPlaceNavigation;
+        
+        function getCancelledJobNavMap() {
+            try {
+                return JSON.parse(localStorage.getItem(CANCELLED_JOB_NAV_KEY) || '{}');
+            } catch (e) { return {}; }
+        }
+        
+        function recordJobNavCancelled(jobKey) {
+            if (!jobKey) return;
+            const map = getCancelledJobNavMap();
+            map[jobKey] = new Date().toISOString();
+            const keys = Object.keys(map);
+            if (keys.length > 200) delete map[keys[0]];
+            localStorage.setItem(CANCELLED_JOB_NAV_KEY, JSON.stringify(map));
+        }
+        
+        // 1. เข้าคิวส่งข้อมูลขึ้น Cloud ซ้ำอัตโนมัติหากติดสถานะกำลังส่งอยู่
+        const _origPushAllJobs = window.pushAllJobsToCloud;
+        if (typeof _origPushAllJobs === 'function') {
+            window.pushAllJobsToCloud = async function(silent = false) {
+                if (typeof isPushingToCloudNow !== 'undefined' && isPushingToCloudNow) {
+                    pendingForceCloudPush = true;
+                    return false;
+                }
+                const res = await _origPushAllJobs.apply(this, arguments);
+                if (pendingForceCloudPush) {
+                    pendingForceCloudPush = false;
+                    return await window.pushAllJobsToCloud(true);
+                }
+                return res;
+            };
+        }
+        
+        // 2. ป้องกัน Cloud ดึงสถานะนำทางใบงานซ่อมที่กดยกเลิกไปแล้วกลับมาทับ
+        const _origMergeCloudJobs = window.mergeCloudJobsToLocal;
+        if (typeof _origMergeCloudJobs === 'function') {
+            window.mergeCloudJobsToLocal = function(cloudJobs) {
+                const cancelMap = getCancelledJobNavMap();
+                if (Array.isArray(cloudJobs)) {
+                    cloudJobs.forEach(cJob => {
+                        if (!cJob || cJob.jobType === 'tech_loc') return;
+                        const k = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
+                        const localCancelIso = cancelMap[k];
+                        if (localCancelIso) {
+                            const navTime = cJob.techNav?.updatedAt || '';
+                            if (!navTime || localCancelIso >= navTime) {
+                                delete cJob.techNav;
+                                cJob.navCancelledAt = localCancelIso;
+                            }
+                        }
+                    });
+                }
+                return _origMergeCloudJobs.apply(this, arguments);
+            };
+        }
+        
+        // 3. ปุ่มยกเลิกเดินทางของใบงานซ่อม
+        window.handleCancelNavigation = async function(key, jobType) {
+            if (typeof stopRealtimeGpsWatch === 'function') {
+                stopRealtimeGpsWatch();
+            }
+            const cancelIso = new Date().toISOString();
+            recordJobNavCancelled(key);
+            
+            const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
+            let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+            const idx = list.findIndex(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
+            if (idx !== -1) {
+                delete list[idx].techNav;
+                list[idx].navCancelledAt = cancelIso;
+                localStorage.setItem(storageKey, JSON.stringify(list));
+            }
+            
+            if (typeof cachedCloudJobs !== 'undefined' && Array.isArray(cachedCloudJobs)) {
+                cachedCloudJobs.forEach(cj => {
+                    const ck = cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved;
+                    if (ck === key) {
+                        delete cj.techNav;
+                        cj.navCancelledAt = cancelIso;
+                    }
+                });
+            }
+            
+            if (typeof renderJobCards === 'function') renderJobCards();
+            if (typeof showToast === 'function') showToast("↩️ ยกเลิกการเดินทางใบงานเรียบร้อยแล้ว");
+            
+            pendingForceCloudPush = true;
+            await window.pushAllJobsToCloud(true);
+        };
+        
+        const _origStartNav = window.handleStartNavigation;
+        if (typeof _origStartNav === 'function') {
+            window.handleStartNavigation = async function(key, jobType, gpsLink) {
+                const cancelMap = getCancelledJobNavMap();
+                if (cancelMap[key]) {
+                    delete cancelMap[key];
+                    localStorage.setItem(CANCELLED_JOB_NAV_KEY, JSON.stringify(cancelMap));
+                }
+                return await _origStartNav.apply(this, arguments);
+            };
+        }
+        
+        // 4. ซิงค์สถานะ activeEquipNav ระหว่าง Cloud กับเครื่องช่าง โดยยึดตามเวลา updatedAt ของการนำทางโดยตรง
+        const _prevMergeTechLocs = window.mergeTechLocationsMap;
+        if (typeof _prevMergeTechLocs === 'function') {
+            window.mergeTechLocationsMap = function(cloudLocs) {
+                const localBefore = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
+                const navMap = JSON.parse(localStorage.getItem(EQUIP_NAV_STORAGE_KEY) || '{}');
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                
+                _prevMergeTechLocs.apply(this, arguments);
+                
+                const localAfter = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
+                let changed = false;
+                
+                // ตรวจสอบทุกคีย์จาก Cloud รวมถึงกรณีช่างปิด GPS อยู่
+                Object.keys(cloudLocs || {}).forEach(uKey => {
+                    const cNav = cloudLocs[uKey]?.activeEquipNav;
+                    if (!cNav) return;
+                    const prevNav = navMap[uKey] || localBefore[uKey]?.activeEquipNav;
+                    const pTime = new Date(prevNav?.updatedAt || 0).getTime() || 0;
+                    const cTime = new Date(cNav.updatedAt || 0).getTime() || 0;
+                    
+                    if (cTime > pTime) {
+                        navMap[uKey] = cNav;
+                        localAfter[uKey] = { ...(localAfter[uKey] || cloudLocs[uKey]), activeEquipNav: cNav };
+                        changed = true;
+                        
+                        // หากเป็นของช่างเครื่องนี้และ Cloud สั่งยกเลิกมา ให้หยุด GPS Watch และลบเส้นสีฟ้าบนแผนที่ทันที
+                        if (curUser && cNav.isTraveling === false &&
+                            (uKey === curUser || (typeof isSameTechPerson === 'function' && isSameTechPerson(uKey, curUser)))) {
+                            navMap[curUser] = cNav;
+                            if (typeof realStopMapNavFn === 'function') {
+                                try { realStopMapNavFn(); } catch (e) {}
+                            }
+                        }
+                    } else if (prevNav && pTime >= cTime) {
+                        localAfter[uKey] = { ...(localAfter[uKey] || {}), activeEquipNav: prevNav };
+                        navMap[uKey] = prevNav;
+                        changed = true;
+                    }
+                });
+                
+                if (changed) {
+                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(localAfter));
+                    localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(navMap));
+                }
+            };
+        }
+        
+        // 5. ฟังก์ชันปิด/ยกเลิกนำทางอุปกรณ์ไฟฟ้า (หยุดทั้งการ์ด แถบลอย เส้นแผนที่ และตัวจับ GPS)
+        window.finishMyEquipmentNavigation = async function(isArrivedDone = false, targetUserKey = null) {
+            const nowIso = new Date().toISOString();
+            const stoppedRecord = { isTraveling: false, updatedAt: nowIso };
+            const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+            
+            let navMap = {};
+            try { navMap = JSON.parse(localStorage.getItem(EQUIP_NAV_STORAGE_KEY) || '{}'); } catch (e) {}
+            let locMap = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
+            
+            let stoppedPlaceName = 'อุปกรณ์ไฟฟ้า';
+            const keysToStop = new Set();
+            
+            if (targetUserKey) {
+                keysToStop.add(targetUserKey);
+                Object.keys(navMap).forEach(k => {
+                    if (k === targetUserKey ||
+                        (typeof isSameTechPerson === 'function' && isSameTechPerson(k, targetUserKey)) ||
+                        navMap[k]?.techName === targetUserKey ||
+                        navMap[k]?.placeId === targetUserKey) {
+                        keysToStop.add(k);
+                    }
+                });
+            } else {
+                keysToStop.add(curUser);
+                const myGroup = typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '';
+                const myRole = localStorage.getItem('elec_app_current_role') || 'user';
+                Object.keys(navMap).forEach(k => {
+                    const item = navMap[k];
+                    if (item && item.isTraveling) {
+                        if (myRole === 'admin' || !myGroup || !item.ownerGroup || item.ownerGroup === myGroup) {
+                            keysToStop.add(k);
+                        }
+                    }
+                });
+            }
+            
+            const isStoppingMyOwnNav = keysToStop.has(curUser) ||
+                Array.from(keysToStop).some(k => typeof isSameTechPerson === 'function' && isSameTechPerson(k, curUser));
+            
+            // สั่งหยุดตัวจับพิกัดของแผนที่และลบเส้นสีฟ้าบนแผนที่ก่อนบันทึกสถานะปิด
+            if (isStoppingMyOwnNav && typeof realStopMapNavFn === 'function') {
+                try { realStopMapNavFn(); } catch (e) {}
+            }
+            
+            keysToStop.forEach(k => {
+                if (navMap[k]?.placeName) stoppedPlaceName = navMap[k].placeName;
+                navMap[k] = stoppedRecord;
+                locMap[k] = {
+                    ...(locMap[k] || { username: k }),
+                    activeEquipNav: stoppedRecord,
+                    lastSeenAt: nowIso,
+                    updatedAt: nowIso
+                };
+            });
+            
+            Object.keys(locMap).forEach(lk => {
+                const loc = locMap[lk];
+                if (loc?.activeEquipNav?.isTraveling) {
+                    const matchAny = Array.from(keysToStop).some(k =>
+                        lk === k ||
+                        (typeof isSameTechPerson === 'function' && isSameTechPerson(lk, k)) ||
+                        loc.activeEquipNav?.techName === k
+                    );
+                    if (matchAny) {
+                        locMap[lk].activeEquipNav = stoppedRecord;
+                        locMap[lk].lastSeenAt = nowIso;
+                        locMap[lk].updatedAt = nowIso;
+                    }
+                }
+            });
+            
+            localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(navMap));
+            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+            
+            document.getElementById('mapActiveNavContainer')?.classList.add('hidden');
+            const banner = document.getElementById('pea-equip-nav-banner');
+            if (banner) banner.style.display = 'none';
+            
+            if (typeof renderJobCards === 'function') renderJobCards();
+            if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(false);
+            
+            if (typeof showToast === 'function') {
+                showToast(isArrivedDone ?
+                    `✅ ถึงที่หมาย "${stoppedPlaceName}" เรียบร้อยแล้ว` :
+                    `↩️ ยกเลิกการเดินทางไป "${stoppedPlaceName}" แล้ว`
+                );
+            }
+            
+            pendingForceCloudPush = true;
+            await window.pushAllJobsToCloud(true);
+        };
+    })();
+</script>
 </body>
 </html>
