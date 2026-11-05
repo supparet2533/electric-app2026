@@ -10922,5 +10922,192 @@
         };
     })();
 </script>
+<!-- ⚡ ระบบ Turbo Sync 0 วินาที (BroadcastChannel + Smart Pre-Fetch Cache สำหรับทั้ง index.html และ page2.html) -->
+<script>
+(function() {
+    const CHANNEL_NAME = 'pea_smart_grid_turbo_sync_v1';
+    const isTechPage = Boolean(document.getElementById('techMainApp'));
+    const isMainPage = Boolean(document.getElementById('mainAppContent'));
+
+    const WATCHED_KEYS = new Set([
+        'elecReportsComplete_all',
+        'fault_reports_all',
+        'elec_closed_jobs_registry',
+        'elec_deleted_jobs_registry',
+        'elec_tech_locations_map',
+        'elec_active_equip_nav_map_v2',
+        'elec_cancelled_equip_nav_map',
+        'elec_cancelled_job_nav_map',
+        'elec_labeled_places_list',
+        'elec_deleted_labeled_places_map',
+        'elec_deleted_equip_audit_logs',
+        'elec_user_accounts'
+    ]);
+
+    let syncChannel = null;
+    try {
+        if ('BroadcastChannel' in window) {
+            syncChannel = new BroadcastChannel(CHANNEL_NAME);
+        }
+    } catch (e) {}
+
+    let uiRefreshTimer = null;
+    const pendingChangedKeys = new Set();
+
+    // 1. ฟังก์ชันอัปเดตหน้าจอทันที (Debounce 16ms ป้องกันหน้าจอกระตุกเมื่อบันทึกหลายคีย์พร้อมกัน)
+    function scheduleInstantUiRefresh(changedKey) {
+        if (changedKey) pendingChangedKeys.add(changedKey);
+        if (uiRefreshTimer) return;
+
+        uiRefreshTimer = requestAnimationFrame(() => {
+            uiRefreshTimer = null;
+            const keys = Array.from(pendingChangedKeys);
+            pendingChangedKeys.clear();
+
+            try {
+                if (isTechPage) {
+                    if (keys.some(k => k === 'elecReportsComplete_all' || k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
+                        if (typeof checkNewIncomingPendingJobs === 'function') checkNewIncomingPendingJobs();
+                        if (typeof renderJobCards === 'function') renderJobCards();
+                    }
+                    if (keys.some(k => k.includes('equip') || k === 'elec_tech_locations_map' || k.includes('cancelled'))) {
+                        if (typeof renderJobCards === 'function') renderJobCards();
+                        if (typeof updateLiveNavDomElements === 'function') updateLiveNavDomElements();
+                    }
+                    if (keys.some(k => k.includes('labeled') || k.includes('audit'))) {
+                        if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(true);
+                    }
+                }
+
+                if (isMainPage) {
+                    if (keys.some(k => k === 'elecReportsComplete_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
+                        if (typeof loadOutageHistory === 'function') loadOutageHistory();
+                        if (typeof autoFillJobNo === 'function') autoFillJobNo();
+                    }
+                    if (keys.some(k => k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
+                        if (typeof loadFaultHistory === 'function') loadFaultHistory();
+                    }
+                    if (keys.some(k => k === 'elec_tech_locations_map' || k.includes('equip_nav') || k.includes('cancelled'))) {
+                        if (typeof renderNavEtaBadgesInMainHistory === 'function') renderNavEtaBadgesInMainHistory();
+                    }
+                    // กระตุ้น listener ที่รอรับ storage event ในหน้าหลักให้ทำงานทันที
+                    keys.forEach(k => {
+                        try {
+                            window.dispatchEvent(new StorageEvent('storage', { key: k }));
+                        } catch (e) {}
+                    });
+                }
+            } catch (err) {}
+        });
+    }
+
+    // 2. ส่งสัญญาณแจ้งเตือนข้ามหน้าต่าง/Iframe ทันทีที่มีการเปลี่ยนข้อมูลใน localStorage
+    function broadcastKeyChange(key) {
+        const payload = { type: 'PEA_TURBO_SYNC', key: key, ts: Date.now() };
+        try {
+            if (syncChannel) syncChannel.postMessage(payload);
+        } catch (e) {}
+
+        try {
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage(payload, '*');
+            }
+            const leftIframe = document.getElementById('leftBrowserIframe');
+            if (leftIframe && leftIframe.contentWindow) {
+                leftIframe.contentWindow.postMessage(payload, '*');
+            }
+            if (typeof leftPopupWindowRef !== 'undefined' && leftPopupWindowRef && !leftPopupWindowRef.closed) {
+                leftPopupWindowRef.postMessage(payload, '*');
+            }
+        } catch (e) {}
+    }
+
+    if (syncChannel) {
+        syncChannel.onmessage = (event) => {
+            if (event.data && event.data.type === 'PEA_TURBO_SYNC') {
+                scheduleInstantUiRefresh(event.data.key);
+            }
+        };
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'PEA_TURBO_SYNC') {
+            scheduleInstantUiRefresh(event.data.key);
+        }
+    });
+
+    const _rawGetItem = typeof _origLocalStorageGetItem === 'function'
+        ? _origLocalStorageGetItem
+        : Storage.prototype.getItem;
+    const _prevSetItem = Storage.prototype.setItem;
+
+    Storage.prototype.setItem = function(key, value) {
+        let prevVal = null;
+        if (WATCHED_KEYS.has(key)) {
+            try { prevVal = _rawGetItem.call(this, key); } catch (e) {}
+        }
+        const result = _prevSetItem.apply(this, arguments);
+        if (WATCHED_KEYS.has(key) && prevVal !== value) {
+            broadcastKeyChange(key);
+        }
+        return result;
+    };
+
+    // 3. Smart Pre-Fetch Cache: ข้ามการยิง GET ซ้ำซ้อนก่อน POST หากเพิ่งดึงข้อมูลมาไม่เกิน 2.5 วินาที
+    let lastCloudGetSnapshotText = null;
+    let lastCloudGetTimeMs = 0;
+    const _prevFetch = window.fetch;
+
+    window.fetch = async function(input, init) {
+        const urlStr = typeof input === 'string' ? input : (input?.url || '');
+        const isGasUrl = urlStr.includes('script.google.com');
+        const method = (init && init.method) ? init.method.toUpperCase() : 'GET';
+
+        if (isGasUrl && method === 'GET') {
+            const now = Date.now();
+            const isSavingNow = (typeof isPushingToCloudNow !== 'undefined' && isPushingToCloudNow) ||
+                                (typeof isUploadingFromMain !== 'undefined' && isUploadingFromMain);
+
+            // หากกำลังจะกดบันทึก (POST) และเพิ่งซิงค์ GET มาไม่เกิน 2.5 วินาที ให้ใช้ข้อมูลล่าสุดในหน่วยความจำทันที (ประหยัดเวลา 50%)
+            if (isSavingNow && lastCloudGetSnapshotText && (now - lastCloudGetTimeMs < 2500)) {
+                return new Response(lastCloudGetSnapshotText, {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            const response = await _prevFetch.apply(this, arguments);
+            if (response && response.ok) {
+                try {
+                    const cloned = response.clone();
+                    const text = await cloned.text();
+                    if (text && text.includes('"status":"ok"')) {
+                        lastCloudGetSnapshotText = text;
+                        lastCloudGetTimeMs = Date.now();
+                    }
+                } catch (e) {}
+            }
+            return response;
+        }
+
+        if (isGasUrl && method === 'POST') {
+            // เมื่อมีการส่งข้อมูลใหม่ขึ้น Cloud ให้ล้างแคช GET เพื่อให้รอบถัดไปดึงข้อมูลใหม่เสมอ
+            lastCloudGetTimeMs = 0;
+        }
+
+        return _prevFetch.apply(this, arguments);
+    };
+
+    // 4. เร่งรอบซิงค์ขณะเปิดหน้าจอใช้งาน (ทุก 3 วินาที) เพื่อให้รับข้อมูลจาก RAM Cache ได้ไวขึ้น
+    setInterval(() => {
+        if (document.hidden || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+        if (isTechPage && typeof syncJobsFromCloud === 'function' && typeof isSyncingNow !== 'undefined' && !isSyncingNow) {
+            syncJobsFromCloud(true);
+        } else if (isMainPage && typeof pullFieldReportsFromCloud === 'function' && typeof isUploadingFromMain !== 'undefined' && !isUploadingFromMain) {
+            pullFieldReportsFromCloud();
+        }
+    }, 3000);
+})();
+</script>
 </body>
 </html>
