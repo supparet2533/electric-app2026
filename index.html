@@ -10789,5 +10789,72 @@
             });
         })();
     </script>
+<!-- 🔧 แพตช์แก้บั๊กยกเลิกนำทางอุปกรณ์ไฟฟ้าและซิงค์เวลาล่าสุด (สำหรับ index.html) -->
+<script>
+    (function() {
+        const EQUIP_NAV_STORAGE_KEY = 'elec_active_equip_nav_map_v2';
+        
+        // ฟังก์ชันกดยกเลิก/ถึงที่หมายจากหน้าหลัก บันทึกสถานะปิดลงทั้ง navMap และ locMap เพื่อส่งขึ้น Cloud ทันที
+        window.stopEquipNavFromMainPage = async function(techUserKey, isArrived = true) {
+            const nowIso = new Date().toISOString();
+            const stoppedRecord = { isTraveling: false, updatedAt: nowIso };
+            
+            let navMap = {};
+            try { navMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, EQUIP_NAV_STORAGE_KEY) || '{}'); } catch (e) {}
+            let locMap = {};
+            try { locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}'); } catch (e) {}
+            
+            let targetName = 'อุปกรณ์ไฟฟ้า';
+            const keysToClear = new Set([techUserKey]);
+            
+            Object.keys(navMap).forEach(k => {
+                if (k === techUserKey || navMap[k]?.techName === techUserKey ||
+                    (typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(k, techUserKey))) {
+                    keysToClear.add(k);
+                }
+            });
+            
+            Object.keys(locMap).forEach(k => {
+                if (k === techUserKey || locMap[k]?.username === techUserKey ||
+                    (typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(k, techUserKey))) {
+                    keysToClear.add(k);
+                }
+            });
+            
+            keysToClear.forEach(k => {
+                if (!k) return;
+                if (navMap[k]?.placeName) targetName = navMap[k].placeName;
+                else if (locMap[k]?.activeEquipNav?.placeName) targetName = locMap[k].activeEquipNav.placeName;
+                
+                navMap[k] = stoppedRecord;
+                locMap[k] = {
+                    ...(locMap[k] || { username: k }),
+                    activeEquipNav: stoppedRecord,
+                    lastSeenAt: nowIso,
+                    updatedAt: nowIso
+                };
+            });
+            
+            localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(navMap));
+            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+            
+            ['historyListFault', 'historyListOutage'].forEach(listId => {
+                const wrap = document.getElementById('mainEquipNavBanner_' + listId);
+                if (wrap) wrap.remove();
+            });
+            
+            if (typeof showToast === 'function') {
+                showToast(isArrived ?
+                    `✅ บันทึกถึงที่หมาย "${targetName}" เรียบร้อยแล้ว` :
+                    `↩️ ยกเลิกการเดินทางไป "${targetName}" แล้ว`
+                );
+            }
+            
+            if (typeof syncJobsWithFieldPage === 'function') {
+                await syncJobsWithFieldPage();
+            }
+        };
+    })();
+</script>
 </body>
 </html>
