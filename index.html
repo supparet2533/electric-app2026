@@ -10789,67 +10789,133 @@
             });
         })();
     </script>
-<!-- 🔧 แพตช์แก้บั๊กยกเลิกนำทางอุปกรณ์ไฟฟ้าและซิงค์เวลาล่าสุด (สำหรับ index.html) -->
+<!-- 🔧 แพตช์เชื่อมทะเบียนยกเลิกนำทางอุปกรณ์ไฟฟ้า (__NAV_CANCEL_REGISTRY__) และป้องกันเวลาเพี้ยน (สำหรับท้ายไฟล์ index.html) -->
 <script>
     (function() {
         const EQUIP_NAV_STORAGE_KEY = 'elec_active_equip_nav_map_v2';
-        
-        // ฟังก์ชันกดยกเลิก/ถึงที่หมายจากหน้าหลัก บันทึกสถานะปิดลงทั้ง navMap และ locMap เพื่อส่งขึ้น Cloud ทันที
+        const CANCELLED_JOB_NAV_KEY = 'elec_cancelled_job_nav_map';
+        const CANCELLED_EQUIP_NAV_KEY = 'elec_cancelled_equip_nav_map';
+        const REGISTRY_LOC_KEY = '__NAV_CANCEL_REGISTRY__';
+
+        function getCancelledEquipNavMap() {
+            try {
+                const raw = JSON.parse(_origLocalStorageGetItem.call(localStorage, CANCELLED_EQUIP_NAV_KEY) || '{}');
+                return (raw && typeof raw === 'object') ? raw : {};
+            } catch (e) { return {}; }
+        }
+
+        function saveCancelledEquipNavMap(mapObj) {
+            try {
+                const entries = Object.entries(mapObj || {});
+                if (entries.length > 250) {
+                    entries.sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+                    mapObj = Object.fromEntries(entries.slice(0, 250));
+                }
+                localStorage.setItem(CANCELLED_EQUIP_NAV_KEY, JSON.stringify(mapObj));
+            } catch (e) {}
+        }
+
+        function getCancelledJobNavMap() {
+            try {
+                const raw = JSON.parse(_origLocalStorageGetItem.call(localStorage, CANCELLED_JOB_NAV_KEY) || '{}');
+                return (raw && typeof raw === 'object') ? raw : {};
+            } catch (e) { return {}; }
+        }
+
+        function getMonotonicCancelTimestamp(existingNavOrList) {
+            let maxPrevMs = Date.now();
+            const items = Array.isArray(existingNavOrList) ? existingNavOrList : [existingNavOrList];
+            items.forEach(nav => {
+                if (!nav) return;
+                const depMs = Number(nav.departTimestamp || 0);
+                const updMs = nav.updatedAt ? new Date(nav.updatedAt).getTime() : 0;
+                const canMs = Number(nav.cancelledAtMs || 0);
+                if (!isNaN(depMs) && depMs > maxPrevMs) maxPrevMs = depMs;
+                if (!isNaN(updMs) && updMs > maxPrevMs) maxPrevMs = updMs;
+                if (!isNaN(canMs) && canMs > maxPrevMs) maxPrevMs = canMs;
+            });
+            const safeMs = maxPrevMs + 1000;
+            return { ms: safeMs, iso: new Date(safeMs).toISOString() };
+        }
+
+        // ฟังก์ชันกดยกเลิก/ถึงที่หมายจากหน้าหลัก พร้อมฝังลง __NAV_CANCEL_REGISTRY__ ส่งไปบอก page2.html ทันที
         window.stopEquipNavFromMainPage = async function(techUserKey, isArrived = true) {
-            const nowIso = new Date().toISOString();
-            const stoppedRecord = { isTraveling: false, updatedAt: nowIso };
-            
+            if (!techUserKey) return;
+
             let navMap = {};
             try { navMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, EQUIP_NAV_STORAGE_KEY) || '{}'); } catch (e) {}
             let locMap = {};
             try { locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}'); } catch (e) {}
-            
+            const cancelEquipMap = getCancelledEquipNavMap();
+
             let targetName = 'อุปกรณ์ไฟฟ้า';
             const keysToClear = new Set([techUserKey]);
-            
+            const relatedNavs = [];
+
             Object.keys(navMap).forEach(k => {
                 if (k === techUserKey || navMap[k]?.techName === techUserKey ||
                     (typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(k, techUserKey))) {
                     keysToClear.add(k);
+                    if (navMap[k]) relatedNavs.push(navMap[k]);
                 }
             });
-            
+
             Object.keys(locMap).forEach(k => {
+                if (k === REGISTRY_LOC_KEY) return;
                 if (k === techUserKey || locMap[k]?.username === techUserKey ||
                     (typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(k, techUserKey))) {
                     keysToClear.add(k);
+                    if (locMap[k]?.activeEquipNav) relatedNavs.push(locMap[k].activeEquipNav);
                 }
             });
-            
+
+            const { ms: cancelMs, iso: cancelIso } = getMonotonicCancelTimestamp(relatedNavs);
+            const stoppedRecord = { isTraveling: false, cancelledAtMs: cancelMs, updatedAt: cancelIso };
+
             keysToClear.forEach(k => {
                 if (!k) return;
                 if (navMap[k]?.placeName) targetName = navMap[k].placeName;
                 else if (locMap[k]?.activeEquipNav?.placeName) targetName = locMap[k].activeEquipNav.placeName;
-                
+
+                cancelEquipMap[k] = cancelMs;
                 navMap[k] = stoppedRecord;
                 locMap[k] = {
                     ...(locMap[k] || { username: k }),
                     activeEquipNav: stoppedRecord,
-                    lastSeenAt: nowIso,
-                    updatedAt: nowIso
+                    lastSeenAt: cancelIso,
+                    updatedAt: cancelIso
                 };
             });
-            
+
+            saveCancelledEquipNavMap(cancelEquipMap);
+
+            // อัปเดต __NAV_CANCEL_REGISTRY__ ใน techLocations เพื่อให้ page2.html รับรู้ทันที
+            const prevReg = locMap[REGISTRY_LOC_KEY] || {};
+            locMap[REGISTRY_LOC_KEY] = {
+                username: '',
+                isOnline: false,
+                gpsDisabled: true,
+                equipCancelMap: { ...(prevReg.equipCancelMap || {}), ...cancelEquipMap },
+                jobCancelMap: { ...(prevReg.jobCancelMap || {}), ...getCancelledJobNavMap() },
+                lastSeenAt: cancelIso,
+                updatedAt: cancelIso
+            };
+
             localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(navMap));
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
-            
+
             ['historyListFault', 'historyListOutage'].forEach(listId => {
                 const wrap = document.getElementById('mainEquipNavBanner_' + listId);
                 if (wrap) wrap.remove();
             });
-            
+
             if (typeof showToast === 'function') {
-                showToast(isArrived ?
-                    `✅ บันทึกถึงที่หมาย "${targetName}" เรียบร้อยแล้ว` :
-                    `↩️ ยกเลิกการเดินทางไป "${targetName}" แล้ว`
+                showToast(isArrived
+                    ? `✅ บันทึกถึงที่หมาย "${targetName}" เรียบร้อยแล้ว`
+                    : `↩️ ยกเลิกการเดินทางไป "${targetName}" แล้ว`
                 );
             }
-            
+
             if (typeof syncJobsWithFieldPage === 'function') {
                 await syncJobsWithFieldPage();
             }
