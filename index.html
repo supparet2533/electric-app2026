@@ -10536,13 +10536,258 @@
                 window.addEventListener('focus', () => checkShiftTransition(false));
             });
         })();
-        window.addEventListener('storage', (e) => {
-    if (e.key === 'elecReportsComplete_all' || e.key === 'elec_closed_jobs_registry') {
-        if (typeof loadOutageHistory === 'function') loadOutageHistory();
-    } else if (e.key === 'fault_reports_all') {
-        if (typeof loadFaultHistory === 'function') loadFaultHistory();
-    }
-});
+        // =========================================================================
+        // 🔗 ระบบเชื่อมสถานะ "กำลังเดินทางไปอุปกรณ์ไฟฟ้า" (ระหว่าง index.html <-> page2.html)
+        // =========================================================================
+        (function() {
+            const EQUIP_NAV_STORAGE_KEY = 'elec_active_equip_nav_map_v2';
+            const MAX_EQUIP_NAV_AGE_MS = 6 * 60 * 60 * 1000; // 6 ชั่วโมง
+
+            function getEquipNavMapMain() {
+                try {
+                    const raw = JSON.parse(_origLocalStorageGetItem.call(localStorage, EQUIP_NAV_STORAGE_KEY) || '{}');
+                    return (raw && typeof raw === 'object') ? raw : {};
+                } catch (e) {
+                    return {};
+                }
+            }
+
+            function saveEquipNavMapMain(mapObj) {
+                try {
+                    localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(mapObj || {}));
+                } catch (e) {}
+            }
+
+            // 1. ป้องกันการเขียนทับ elec_tech_locations_map แบบไม่เช็กเวลา (รักษาค่า activeEquipNav ล่าสุดเสมอ)
+            const _prevSetItemForLoc = Storage.prototype.setItem;
+            Storage.prototype.setItem = function(key, value) {
+                if (key === 'elec_tech_locations_map' && typeof value === 'string') {
+                    try {
+                        const incomingMap = JSON.parse(value);
+                        const existingMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                        const navMap = getEquipNavMapMain();
+                        let navMapChanged = false;
+
+                        Object.keys(existingMap).forEach(uKey => {
+                            const exLoc = existingMap[uKey];
+                            const inLoc = incomingMap[uKey];
+                            if (!exLoc) return;
+
+                            if (!inLoc) {
+                                incomingMap[uKey] = exLoc;
+                            } else {
+                                const exNavTime = new Date(exLoc.activeEquipNav?.updatedAt || 0).getTime() || 0;
+                                const inNavTime = new Date(inLoc.activeEquipNav?.updatedAt || 0).getTime() || 0;
+                                if (exNavTime > inNavTime && exLoc.activeEquipNav) {
+                                    inLoc.activeEquipNav = exLoc.activeEquipNav;
+                                }
+                            }
+                        });
+
+                        // ซิงค์สถานะ activeEquipNav จาก elec_tech_locations_map ลงใน elec_active_equip_nav_map_v2
+                        Object.keys(incomingMap).forEach(uKey => {
+                            const remoteNav = incomingMap[uKey]?.activeEquipNav;
+                            if (!remoteNav) return;
+                            const existingNav = navMap[uKey];
+                            const rTime = new Date(remoteNav.updatedAt || 0).getTime() || 0;
+                            const lTime = new Date(existingNav?.updatedAt || 0).getTime() || 0;
+                            if (!existingNav || rTime > lTime) {
+                                navMap[uKey] = remoteNav;
+                                navMapChanged = true;
+                            }
+                        });
+
+                        if (navMapChanged) {
+                            _prevSetItemForLoc.call(this, EQUIP_NAV_STORAGE_KEY, JSON.stringify(navMap));
+                        }
+                        value = JSON.stringify(incomingMap);
+                    } catch (e) {}
+                }
+                return _prevSetItemForLoc.call(this, key, value);
+            };
+
+            // ดึงรายการอุปกรณ์ไฟฟ้าที่ช่างในกลุ่มกำลังเดินทางอยู่
+            function getVisibleActiveEquipNavsForMain() {
+                const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                const navMap = getEquipNavMapMain();
+                const nowMs = Date.now();
+                let changed = false;
+
+                Object.keys(locMap).forEach(uKey => {
+                    const rNav = locMap[uKey]?.activeEquipNav;
+                    if (!rNav) return;
+                    const lNav = navMap[uKey];
+                    const rTime = new Date(rNav.updatedAt || 0).getTime() || 0;
+                    const lTime = new Date(lNav?.updatedAt || 0).getTime() || 0;
+                    if (!lNav || rTime > lTime) {
+                        navMap[uKey] = rNav;
+                        changed = true;
+                    }
+                });
+
+                Object.keys(navMap).forEach(k => {
+                    const item = navMap[k];
+                    const tMs = new Date(item?.updatedAt || item?.departTimestamp || 0).getTime() || 0;
+                    if (!item || (tMs > 0 && (nowMs - tMs > MAX_EQUIP_NAV_AGE_MS))) {
+                        delete navMap[k];
+                        changed = true;
+                    }
+                });
+
+                if (changed) saveEquipNavMapMain(navMap);
+
+                const role = localStorage.getItem('elec_app_current_role') || 'user';
+                const myGroup = typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '';
+
+                return Object.values(navMap).filter(nav => {
+                    if (!nav || !nav.isTraveling) return false;
+                    if (role === 'admin' && !myGroup) return true;
+                    if (!myGroup || !nav.ownerGroup) return true;
+                    return myGroup === nav.ownerGroup;
+                });
+            }
+
+            // ฟังก์ชันกดจบ/ยกเลิกสถานะเดินทางไปอุปกรณ์ไฟฟ้าจากหน้า index.html ได้โดยตรง
+            window.stopEquipNavFromMainPage = async function(techUserKey, isArrived = true) {
+                if (!techUserKey) return;
+                const nowIso = new Date().toISOString();
+                const stoppedRecord = { isTraveling: false, updatedAt: nowIso };
+
+                const navMap = getEquipNavMapMain();
+                const targetName = navMap[techUserKey]?.placeName || 'อุปกรณ์ไฟฟ้า';
+                navMap[techUserKey] = stoppedRecord;
+                saveEquipNavMapMain(navMap);
+
+                const locMap = JSON.parse(_origLocalStorageGetItem.call(localStorage, 'elec_tech_locations_map') || '{}');
+                if (locMap[techUserKey]) {
+                    locMap[techUserKey].activeEquipNav = stoppedRecord;
+                    locMap[techUserKey].lastSeenAt = nowIso;
+                    locMap[techUserKey].updatedAt = nowIso;
+                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                }
+
+                renderEquipNavStatusInMainHistory();
+                if (typeof showToast === 'function') {
+                    showToast(isArrived
+                        ? `✅ บันทึกถึงที่หมาย "${targetName}" เรียบร้อยแล้ว`
+                        : `↩️ ยกเลิกการเดินทางไป "${targetName}" แล้ว`
+                    );
+                }
+                if (typeof syncJobsWithFieldPage === 'function') {
+                    await syncJobsWithFieldPage();
+                }
+            };
+
+            // 2. แสดงการ์ดสถานะ "กำลังเดินทางไปอุปกรณ์ไฟฟ้า" เหนือรายการประวัติในแท็บ 1 และแท็บ 2 ของ index.html
+            function renderEquipNavStatusInMainHistory() {
+                if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+                const activeList = getVisibleActiveEquipNavsForMain();
+
+                ['historyListFault', 'historyListOutage'].forEach(listId => {
+                    const historyContainer = document.getElementById(listId);
+                    if (!historyContainer || !historyContainer.parentElement) return;
+
+                    const wrapperId = 'mainEquipNavBanner_' + listId;
+                    let bannerWrap = document.getElementById(wrapperId);
+
+                    if (activeList.length === 0) {
+                        if (bannerWrap) bannerWrap.remove();
+                        return;
+                    }
+
+                    if (!bannerWrap) {
+                        bannerWrap = document.createElement('div');
+                        bannerWrap.id = wrapperId;
+                        bannerWrap.className = 'space-y-2 mb-2';
+                        historyContainer.parentElement.insertBefore(bannerWrap, historyContainer);
+                    }
+
+                    bannerWrap.innerHTML = activeList.map(nav => {
+                        const navDetailHtml = typeof buildMainRealtimeNavHtml === 'function'
+                            ? buildMainRealtimeNavHtml(nav)
+                            : `<div class="font-bold text-blue-700">🚗 กำลังเดินทางไป: ${nav.placeName}</div>`;
+                        const safeTech = String(nav.techName || '').replace(/'/g, "\\'");
+                        const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${nav.destLat},${nav.destLon}&travelmode=driving`;
+
+                        return `
+                            <div class="p-3 rounded-xl border-2 border-sky-400 bg-sky-50/95 shadow-sm text-xs space-y-1.5">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="font-bold text-sky-950 flex items-center gap-1.5 min-w-0">
+                                        <span class="bg-sky-600 text-white text-[10px] px-2 py-0.5 rounded-md shrink-0">⚡ แผนที่อุปกรณ์</span>
+                                        <span class="truncate">${nav.placeName || 'หมุดอุปกรณ์ไฟฟ้า'}</span>
+                                    </div>
+                                    <span class="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md shrink-0">
+                                        🏢 ${nav.ownerGroup || 'กฟส.บึง'}
+                                    </span>
+                                </div>
+                                <div class="p-2 bg-white/90 border border-sky-200 rounded-lg text-[11px]">
+                                    ${navDetailHtml}
+                                </div>
+                                <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1">
+                                    <a href="${mapsUrl}" target="_blank" class="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1">
+                                        🗺️ ดูเส้นทาง Google Maps ↗
+                                    </a>
+                                    <div class="flex gap-1.5">
+                                        <button type="button" onclick="stopEquipNavFromMainPage('${safeTech}', false)" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg text-[10px] font-bold transition">
+                                            ❌ ยกเลิก
+                                        </button>
+                                        <button type="button" onclick="stopEquipNavFromMainPage('${safeTech}', true)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-sm transition">
+                                            ✅ ถึงที่หมายแล้ว
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                });
+
+                // 3. อัปเดตสถานะกำลังเดินทางไปอุปกรณ์ในหน้าต่าง "🟢 ออนไลน์" ของ Admin (ถ้าเปิดอยู่)
+                const onlineModal = document.getElementById('onlineUsersModal');
+                if (onlineModal && !onlineModal.classList.contains('hidden')) {
+                    const cards = onlineModal.querySelectorAll('#onlineUsersListContainer > div');
+                    const navMap = getEquipNavMapMain();
+                    cards.forEach(card => {
+                        const oldTag = card.querySelector('.admin-equip-nav-tag');
+                        if (oldTag) oldTag.remove();
+
+                        const nameEl = card.querySelector('.font-bold.text-slate-800');
+                        if (!nameEl) return;
+                        const cardText = nameEl.textContent || '';
+
+                        Object.values(navMap).forEach(nav => {
+                            if (!nav || !nav.isTraveling) return;
+                            const dispName = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(nav.techName) : nav.techName;
+                            if (cardText.includes(dispName) || cardText.includes(nav.techName)) {
+                                const tag = document.createElement('div');
+                                tag.className = 'admin-equip-nav-tag text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded-md mt-1 inline-block';
+                                tag.innerHTML = `🚗 กำลังเดินทางไปอุปกรณ์: ⚡ ${nav.placeName} (ถึง ~${nav.etaTime || '-'})`;
+                                const infoCol = card.querySelector('.min-w-0.flex-1');
+                                if (infoCol) infoCol.appendChild(tag);
+                            }
+                        });
+                    });
+                }
+            }
+
+            setInterval(renderEquipNavStatusInMainHistory, 1000);
+            window.addEventListener('DOMContentLoaded', () => {
+                setTimeout(renderEquipNavStatusInMainHistory, 300);
+            });
+
+            // 4. ซิงค์ข้อมูลข้ามหน้าต่างแบบ Real-time เมื่อเปิดคู่กับ page2.html
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'elecReportsComplete_all' || e.key === 'elec_closed_jobs_registry') {
+                    if (typeof loadOutageHistory === 'function') loadOutageHistory();
+                } else if (e.key === 'fault_reports_all') {
+                    if (typeof loadFaultHistory === 'function') loadFaultHistory();
+                } else if (e.key === EQUIP_NAV_STORAGE_KEY || e.key === 'elec_tech_locations_map') {
+                    renderEquipNavStatusInMainHistory();
+                    if (typeof renderNavEtaBadgesInMainHistory === 'function') {
+                        renderNavEtaBadgesInMainHistory();
+                    }
+                }
+            });
+        })();
     </script>
 </body>
 </html>
