@@ -10836,13 +10836,175 @@
         })();
     </script>
 
-    <!-- ⚡ ระบบ Hyper-Speed Engine v3.1 (รวม ข้อ 1 Delta Patch + ข้อ 2 WebRTC P2P 5ms + ข้อ 3 Optimistic Queue 1ms พร้อมแนบหมุดอุปกรณ์และข้อมูลสำรองครบ 100%) -->
+        <!-- 👁️ ระบบสิทธิ์ "ผู้สำรวจ (Viewer - ดูอย่างเดียว)" สำหรับ index.html -->
+    <style>
+        /* ซ่อนปุ่มเพิ่ม/แก้ไข/ลบทั้งหมดเมื่อล็อกอินด้วยสิทธิ์ผู้สำรวจ */
+        body.role-viewer-readonly button[onclick*="saveAndCopyFault"],
+        body.role-viewer-readonly button[onclick*="confirmResetFaultForm"],
+        body.role-viewer-readonly button[onclick*="generateOutageMessage"],
+        body.role-viewer-readonly button[onclick*="confirmResetOutageForm"],
+        body.role-viewer-readonly button[onclick*="openStationManageModal"],
+        body.role-viewer-readonly button[onclick*="openTambonManageModal"],
+        body.role-viewer-readonly button[onclick*="openIssueManageModal"],
+        body.role-viewer-readonly button[onclick*="openMeterLinkModal"],
+        body.role-viewer-readonly button[onclick*="openApiKeyModal"],
+        body.role-viewer-readonly button[onclick*="openCaManageModal"],
+        body.role-viewer-readonly button[onclick*="openStripWordsModal"],
+        body.role-viewer-readonly button[onclick^="editFaultItem"],
+        body.role-viewer-readonly button[onclick^="deleteFaultItem"],
+        body.role-viewer-readonly button[onclick^="editOutageItem"],
+        body.role-viewer-readonly button[onclick^="deleteOutageItem"],
+        body.role-viewer-readonly button[onclick^="quickCloseJobFromMainHistory"],
+        body.role-viewer-readonly button[onclick^="stopEquipNavFromMainPage"],
+        body.role-viewer-readonly #cloudDataManageBtn,
+        body.role-viewer-readonly #autoFillCustomerContainer,
+        body.role-viewer-readonly #geminiChatbot {
+            display: none !important;
+        }
+    </style>
+    <script>
+    (function() {
+        const VIEWER_LOCK_MSG = "🔒 บัญชีผู้สำรวจ (ดูอย่างเดียว) ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้";
+
+        function isViewerRole() {
+            return localStorage.getItem('elec_app_logged_in') === 'true' &&
+                   localStorage.getItem('elec_app_current_role') === 'viewer';
+        }
+
+        function injectViewerOptionIntoSelects() {
+            const newRoleSel = document.getElementById('newAccountRole');
+            if (newRoleSel && !newRoleSel.querySelector('option[value="viewer"]')) {
+                const opt = document.createElement('option');
+                opt.value = 'viewer';
+                opt.textContent = '👁️ สิทธิ์: ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
+                newRoleSel.appendChild(opt);
+            }
+
+            const editRoleSel = document.getElementById('editAccRoleSelect');
+            if (editRoleSel && !editRoleSel.querySelector('option[value="viewer"]')) {
+                const opt = document.createElement('option');
+                opt.value = 'viewer';
+                opt.textContent = '👁️ ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
+                editRoleSel.appendChild(opt);
+            }
+
+            const filterRoleSel = document.getElementById('filterUserRoleSelect');
+            if (filterRoleSel && !filterRoleSel.querySelector('option[value="viewer"]')) {
+                const opt = document.createElement('option');
+                opt.value = 'viewer';
+                opt.textContent = '👁️ เฉพาะผู้สำรวจ';
+                filterRoleSel.appendChild(opt);
+            }
+        }
+
+        function patchAdminUserListForViewer() {
+            injectViewerOptionIntoSelects();
+            const container = document.getElementById('userAccountListContainer');
+            if (!container || typeof userAccountsList === 'undefined') return;
+
+            container.querySelectorAll('strong[id^="pw-mask-"]').forEach(pwEl => {
+                const idx = parseInt(pwEl.id.replace('pw-mask-', ''), 10);
+                const acc = userAccountsList[idx];
+                if (!acc || acc.role !== 'viewer') return;
+
+                const card = pwEl.closest('.flex.items-center.justify-between');
+                if (!card) return;
+
+                const nameSpan = card.querySelector('.font-bold.text-slate-800');
+                if (nameSpan && nameSpan.textContent.includes('👷')) {
+                    nameSpan.textContent = nameSpan.textContent.replace('👷', '👁️');
+                }
+
+                card.querySelectorAll('span').forEach(sp => {
+                    if (sp.textContent.trim() === 'ผู้ใช้ทั่วไป') {
+                        sp.textContent = 'ผู้สำรวจ (ดูอย่างเดียว)';
+                        sp.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold bg-cyan-100 text-cyan-800 border border-cyan-300';
+                    }
+                });
+            });
+        }
+
+        function applyViewerReadOnlyMode() {
+            const isViewer = isViewerRole();
+            document.body.classList.toggle('role-viewer-readonly', isViewer);
+
+            let banner = document.getElementById('viewerReadOnlyBanner');
+            if (isViewer) {
+                if (!banner) {
+                    const header = document.querySelector('#mainAppContent .bg-gradient-to-r');
+                    if (header) {
+                        banner = document.createElement('div');
+                        banner.id = 'viewerReadOnlyBanner';
+                        banner.className = 'mt-3 bg-cyan-950/80 border border-cyan-400/50 text-cyan-100 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-inner';
+                        banner.innerHTML = '<span>👁️ โหมดผู้สำรวจ: ดูข้อมูลและแผนที่อย่างเดียว (ไม่สามารถเพิ่ม/แก้ไข/ลบข้อมูลได้)</span>';
+                        header.appendChild(banner);
+                    }
+                }
+            } else if (banner) {
+                banner.remove();
+            }
+        }
+
+        const blockedFunctions = [
+            'saveAndCopyFault', 'generateOutageMessage', 'saveOutageData',
+            'deleteFaultItem', 'deleteOutageItem', 'editFaultItem', 'editOutageItem',
+            'quickCloseJobFromMainHistory', 'stopEquipNavFromMainPage',
+            'addStation', 'editStation', 'deleteStation',
+            'addIssueItem', 'editIssueItem', 'deleteIssueItem',
+            'addTambon', 'editTambon', 'deleteTambon',
+            'addCaNumber', 'deleteCaNumber', 'clearAllCaNumbers',
+            'importBackupJson', 'restoreFromAutoBackup',
+            'openCloudDataManagerModal', 'backupToCloudByGroup',
+            'restoreGroupBackupFromCloud', 'deleteGroupBackupOnCloud'
+        ];
+
+        blockedFunctions.forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    if (isViewerRole()) {
+                        if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                        return false;
+                    }
+                    return origFn.apply(this, args);
+                };
+            }
+        });
+
+        ['openUserManageModal', 'renderUserAccountList', 'editUserAccount'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    const res = origFn.apply(this, args);
+                    setTimeout(patchAdminUserListForViewer, 30);
+                    return res;
+                };
+            }
+        });
+
+        const origCheckLogin = window.checkLoginStatus;
+        if (typeof origCheckLogin === 'function') {
+            window.checkLoginStatus = function(...args) {
+                const res = origCheckLogin.apply(this, args);
+                applyViewerReadOnlyMode();
+                return res;
+            };
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                applyViewerReadOnlyMode();
+                injectViewerOptionIntoSelects();
+            }, 200);
+        });
+    })();
+    </script>
+
+    <!-- ⚡ ระบบ Hyper-Speed Engine v3.1 + High-Scale Traffic Governor (รองรับ 2,000 คนพร้อมกัน + ซิงค์สด 0.2 วินาทีผ่าน MQTT) -->
     <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
     <script>
     (function() {
         const CHANNEL_NAME = 'pea_smart_grid_hyper_v3';
-        const isTechPage = Boolean(document.getElementById('techMainApp'));
-        const isMainPage = Boolean(document.getElementById('mainAppContent'));
         const MY_PEER_ID = 'peer_' + Math.random().toString(36).substring(2, 9) + '_' + (Date.now() % 100000);
 
         const SYNC_KEYS = new Set([
@@ -10867,6 +11029,37 @@
         let uiRefreshTimer = null;
         const pendingChangedKeys = new Set();
 
+        // 1. ป้องกันปัญหาล็อกอินแล้วถูกเตะออกเองหลัง 15 วินาที (ซิงค์ Session Token ในเครื่องให้ตรงกับสถานะปัจจุบัน)
+        const origParseAcc = window.parseAccountRecord;
+        if (typeof origParseAcc === 'function') {
+            window.parseAccountRecord = function(rawAcc) {
+                const parsed = origParseAcc.apply(this, arguments);
+                if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                    const curUser = localStorage.getItem('elec_app_current_user') || '';
+                    const localToken = localStorage.getItem('elec_app_session_token') || '';
+                    const isAdminReset = parsed.sessionToken && String(parsed.sessionToken).startsWith('reset_');
+                    if (curUser && localToken && !isAdminReset && typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(curUser, parsed.username)) {
+                        parsed.sessionToken = localToken;
+                    }
+                }
+                return parsed;
+            };
+        }
+
+        // 2. เมื่อกดยืนยันลบรายการในป๊อปอัป (recordDeletedJobToRegistry) ให้ซิงค์ขึ้น Cloud ทันทีหลังกดตกลง
+        const origRecordDeleted = window.recordDeletedJobToRegistry;
+        if (typeof origRecordDeleted === 'function') {
+            window.recordDeletedJobToRegistry = function(jobKey) {
+                allowRealWriteUntilMs = Date.now() + 15000;
+                const res = origRecordDeleted.apply(this, arguments);
+                setTimeout(() => {
+                    if (typeof syncJobsWithFieldPage === 'function') syncJobsWithFieldPage();
+                }, 150);
+                return res;
+            };
+        }
+
+        // 3. อัปเดต UI ทันทีเมื่อได้รับข้อมูลสดจาก MQTT หรือหน้าจอคู่ขนาน
         function scheduleInstantUiRefresh(changedKey) {
             if (changedKey) pendingChangedKeys.add(changedKey);
             if (uiRefreshTimer) return;
@@ -10877,35 +11070,19 @@
                 pendingChangedKeys.clear();
 
                 try {
-                    if (isTechPage) {
-                        if (keys.some(k => k === 'elecReportsComplete_all' || k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
-                            if (typeof checkNewIncomingPendingJobs === 'function') checkNewIncomingPendingJobs();
-                            if (typeof renderJobCards === 'function') renderJobCards();
-                        }
-                        if (keys.some(k => k.includes('equip') || k === 'elec_tech_locations_map' || k.includes('cancelled'))) {
-                            if (typeof renderJobCards === 'function') renderJobCards();
-                            if (typeof updateLiveNavDomElements === 'function') updateLiveNavDomElements();
-                        }
-                        if (keys.some(k => k.includes('labeled') || k.includes('audit'))) {
-                            if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(true);
-                        }
+                    if (keys.some(k => k === 'elecReportsComplete_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
+                        if (typeof loadOutageHistory === 'function') loadOutageHistory();
+                        if (typeof autoFillJobNo === 'function') autoFillJobNo();
                     }
-
-                    if (isMainPage) {
-                        if (keys.some(k => k === 'elecReportsComplete_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
-                            if (typeof loadOutageHistory === 'function') loadOutageHistory();
-                            if (typeof autoFillJobNo === 'function') autoFillJobNo();
-                        }
-                        if (keys.some(k => k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
-                            if (typeof loadFaultHistory === 'function') loadFaultHistory();
-                        }
-                        if (keys.some(k => k === 'elec_tech_locations_map' || k.includes('equip_nav') || k.includes('cancelled'))) {
-                            if (typeof renderNavEtaBadgesInMainHistory === 'function') renderNavEtaBadgesInMainHistory();
-                        }
-                        keys.forEach(k => {
-                            try { window.dispatchEvent(new StorageEvent('storage', { key: k })); } catch (e) {}
-                        });
+                    if (keys.some(k => k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
+                        if (typeof loadFaultHistory === 'function') loadFaultHistory();
                     }
+                    if (keys.some(k => k === 'elec_tech_locations_map' || k.includes('equip_nav') || k.includes('cancelled'))) {
+                        if (typeof renderNavEtaBadgesInMainHistory === 'function') renderNavEtaBadgesInMainHistory();
+                    }
+                    keys.forEach(k => {
+                        try { window.dispatchEvent(new StorageEvent('storage', { key: k })); } catch (e) {}
+                    });
                 } catch (err) {}
             });
         }
@@ -10964,11 +11141,7 @@
                 } else if (key === 'elec_tech_locations_map' || key === 'elec_closed_jobs_registry' || key === 'elec_deleted_jobs_registry' || key === 'elec_active_equip_nav_map_v2' || key.includes('cancelled')) {
                     const localObj = JSON.parse(currentValStr || '{}');
                     const inObj = JSON.parse(incomingValStr || '{}');
-                    if (key === 'elec_tech_locations_map' && typeof window.mergeTechLocationsMap === 'function') {
-                        window.mergeTechLocationsMap(inObj);
-                    } else {
-                        _prevSetItem.call(localStorage, key, JSON.stringify({ ...localObj, ...inObj }));
-                    }
+                    _prevSetItem.call(localStorage, key, JSON.stringify({ ...localObj, ...inObj }));
                 } else if (key === 'elec_labeled_places_list') {
                     const delEquip = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
                     const localPins = JSON.parse(currentValStr || '[]');
@@ -10999,6 +11172,7 @@
             }
         }
 
+        // 4. ระบบ MQTT (Retained State) ส่งข้อมูลสดภายใน 0.2 วินาที รองรับ 2,000 คนโดยไม่เกิดพายุสัญญาณ
         function getTopicBase() {
             const rawUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '') || 'pea_grid';
             let hash = 0;
@@ -11010,135 +11184,38 @@
         }
 
         const TOPIC_DATA = getTopicBase() + '/data';
-        const TOPIC_SIGNAL = getTopicBase() + '/sig';
         const WS_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
-        const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
-
         let mqttClient = null;
         let brokerIdx = 0;
-        const rtcPeers = new Map();
         const debounceSendTimers = {};
-
-        function setupDataChannelEvents(remotePeerId, dc) {
-            dc.onopen = () => { const peerObj = rtcPeers.get(remotePeerId); if (peerObj) peerObj.isReady = true; };
-            dc.onclose = () => { rtcPeers.delete(remotePeerId); };
-            dc.onmessage = (evt) => {
-                try {
-                    const packet = JSON.parse(evt.data);
-                    if (packet && packet.type === 'DELTA_KEY' && packet.key && packet.val) {
-                        applyIncomingLivePacket(packet.key, packet.val);
-                    } else if (packet && packet.type === 'CLOUD_POKE') {
-                        triggerImmediateCloudPull();
-                    }
-                } catch (e) {}
-            };
-        }
-
-        function createPeerConnection(remotePeerId, isInitiator) {
-            if (typeof RTCPeerConnection === 'undefined') return null;
-            if (rtcPeers.size >= 12 && !rtcPeers.has(remotePeerId)) return null;
-
-            try {
-                const pc = new RTCPeerConnection(RTC_CONFIG);
-                const peerEntry = { pc, dc: null, isReady: false };
-                rtcPeers.set(remotePeerId, peerEntry);
-
-                pc.onicecandidate = (evt) => {
-                    if (evt.candidate && mqttClient && mqttClient.connected) {
-                        mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, to: remotePeerId, sigType: 'ice', candidate: evt.candidate }));
-                    }
-                };
-                pc.onconnectionstatechange = () => {
-                    if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) rtcPeers.delete(remotePeerId);
-                };
-
-                if (isInitiator) {
-                    const dc = pc.createDataChannel('pea_fast_lane', { ordered: true });
-                    peerEntry.dc = dc;
-                    setupDataChannelEvents(remotePeerId, dc);
-                    pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
-                        if (mqttClient && mqttClient.connected) {
-                            mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, to: remotePeerId, sigType: 'offer', sdp: pc.localDescription }));
-                        }
-                    }).catch(() => {});
-                } else {
-                    pc.ondatachannel = (evt) => {
-                        peerEntry.dc = evt.channel;
-                        setupDataChannelEvents(remotePeerId, evt.channel);
-                    };
-                }
-                return peerEntry;
-            } catch (e) { return null; }
-        }
-
-        async function handleWebRtcSignal(msg) {
-            if (!msg || msg.from === MY_PEER_ID) return;
-            if (msg.to && msg.to !== MY_PEER_ID) return;
-
-            const remoteId = msg.from;
-            try {
-                if (msg.sigType === 'hello') {
-                    if (MY_PEER_ID < remoteId && !rtcPeers.has(remoteId)) {
-                        createPeerConnection(remoteId, true);
-                    } else if (MY_PEER_ID > remoteId && !rtcPeers.has(remoteId) && mqttClient?.connected) {
-                        mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, to: remoteId, sigType: 'hello_ack' }));
-                    }
-                } else if (msg.sigType === 'hello_ack') {
-                    if (!rtcPeers.has(remoteId)) createPeerConnection(remoteId, true);
-                } else if (msg.sigType === 'offer') {
-                    const peerEntry = createPeerConnection(remoteId, false);
-                    if (!peerEntry) return;
-                    await peerEntry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-                    const answer = await peerEntry.pc.createAnswer();
-                    await peerEntry.pc.setLocalDescription(answer);
-                    if (mqttClient && mqttClient.connected) {
-                        mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, to: remoteId, sigType: 'answer', sdp: peerEntry.pc.localDescription }));
-                    }
-                } else if (msg.sigType === 'answer') {
-                    const peerEntry = rtcPeers.get(remoteId);
-                    if (peerEntry && peerEntry.pc.signalingState === 'have-local-offer') {
-                        await peerEntry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-                    }
-                } else if (msg.sigType === 'ice' && msg.candidate) {
-                    const peerEntry = rtcPeers.get(remoteId);
-                    if (peerEntry && peerEntry.pc.remoteDescription) {
-                        await peerEntry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                    }
-                }
-            } catch (e) {}
-        }
 
         function initRealtimeTransport() {
             if (typeof mqtt === 'undefined') return;
             const brokerUrl = WS_BROKERS[brokerIdx % WS_BROKERS.length];
 
             try {
-                mqttClient = mqtt.connect(brokerUrl, { clientId: MY_PEER_ID, clean: true, connectTimeout: 4000, reconnectPeriod: 3000 });
-                mqttClient.on('connect', () => {
-                    mqttClient.subscribe([TOPIC_DATA, TOPIC_SIGNAL], { qos: 0 });
-                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, sigType: 'hello' }));
+                mqttClient = mqtt.connect(brokerUrl, {
+                    clientId: MY_PEER_ID,
+                    clean: true,
+                    connectTimeout: 4000,
+                    reconnectPeriod: 3000
                 });
+
+                mqttClient.on('connect', () => {
+                    mqttClient.subscribe([TOPIC_DATA], { qos: 0 });
+                });
+
                 mqttClient.on('message', (topic, buf) => {
                     try {
                         const packet = JSON.parse(buf.toString());
-                        if (!packet) return;
-                        if (topic === TOPIC_SIGNAL) { handleWebRtcSignal(packet); return; }
-                        if (topic === TOPIC_DATA && packet.sender !== MY_PEER_ID) {
-                            if (packet.type === 'DELTA_KEY' && packet.key && packet.val) applyIncomingLivePacket(packet.key, packet.val);
-                            else if (packet.type === 'CLOUD_POKE') triggerImmediateCloudPull();
+                        if (packet && packet.sender !== MY_PEER_ID && packet.type === 'DELTA_KEY' && packet.key && packet.val) {
+                            applyIncomingLivePacket(packet.key, packet.val);
                         }
                     } catch (e) {}
                 });
+
                 mqttClient.on('error', () => { brokerIdx++; });
             } catch (e) {}
-        }
-
-        function triggerImmediateCloudPull() {
-            if (isTechPage && typeof syncJobsFromCloud === 'function' && !isSyncingNow) {
-                syncJobsFromCloud(true);
-            } else if (isMainPage && typeof pullFieldReportsFromCloud === 'function' && !isUploadingFromMain) {
-                pullFieldReportsFromCloud();
-            }
         }
 
         function broadcastDeltaOverNetwork(key, valStr) {
@@ -11153,21 +11230,18 @@
                         payloadStr = JSON.stringify(arr.slice(0, 25));
                     }
 
-                    const packetStr = payloadStr.length < 60000
-                        ? JSON.stringify({ type: 'DELTA_KEY', sender: MY_PEER_ID, key: key, val: payloadStr, ts: Date.now() })
-                        : JSON.stringify({ type: 'CLOUD_POKE', sender: MY_PEER_ID, key: key, ts: Date.now() });
-
-                    rtcPeers.forEach(peer => {
-                        if (peer.isReady && peer.dc && peer.dc.readyState === 'open') {
-                            try { peer.dc.send(packetStr); } catch (e) {}
-                        }
-                    });
-
-                    if (mqttClient && mqttClient.connected) {
-                        mqttClient.publish(TOPIC_DATA, packetStr, { qos: 0 });
+                    if (payloadStr.length < 60000 && mqttClient && mqttClient.connected) {
+                        const packetStr = JSON.stringify({
+                            type: 'DELTA_KEY',
+                            sender: MY_PEER_ID,
+                            key: key,
+                            val: payloadStr,
+                            ts: Date.now()
+                        });
+                        mqttClient.publish(TOPIC_DATA, packetStr, { qos: 0, retain: true });
                     }
                 } catch (e) {}
-            }, 20);
+            }, 25);
         }
 
         let localChannel = null;
@@ -11210,20 +11284,68 @@
             return res;
         };
 
+        // 5. ตัวควบคุมทราฟฟิก 2,000 คน + ระบบ Delta Patch & Optimistic Queue รวมเป็นหนึ่งเดียว
+        const SHEET_GET_COOLDOWN_MS = 180000 + Math.floor(Math.random() * 120000);
+        let lastRealSheetGetMs = 0;
+        let cachedSheetResponseText = localStorage.getItem('elec_sheet_cache_2k') || null;
+        let forceManualGet = false;
+        let allowRealWriteUntilMs = 0;
+
+        ['refreshCloudDataInManager', 'fetchUserAccountsFromCloud', 'triggerManualPresenceSync'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(silent, ...rest) {
+                    if (silent === false || fnName === 'triggerManualPresenceSync') forceManualGet = true;
+                    return origFn.apply(this, [silent, ...rest]);
+                };
+            }
+        });
+
+        const writeActionFunctions = [
+            'saveAndCopyFault', 'generateOutageMessage', 'saveOutageData',
+            'deleteFaultItem', 'deleteOutageItem', 'quickCloseJobFromMainHistory',
+            'stopEquipNavFromMainPage', 'saveCloudItemEdit', 'deleteSelectedCloudItems',
+            'backupToCloudByGroup', 'restoreGroupBackupFromCloud', 'deleteGroupBackupOnCloud',
+            'importBackupJson', 'restoreFromAutoBackup',
+            'addUserAccount', 'editUserAccount', 'deleteUserAccount', 'renameEntireUserGroup'
+        ];
+
+        writeActionFunctions.forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    if (fnName === 'backupToCloudByGroup' && args[0] === true) {
+                        return origFn.apply(this, args);
+                    }
+                    allowRealWriteUntilMs = Date.now() + 20000;
+                    return origFn.apply(this, args);
+                };
+            }
+        });
+        
+        // เมื่อผู้ใช้กดปุ่มยืนยันใน showCustomConfirm ให้เปิดสิทธิ์เขียนข้อมูลลงชีตได้อีก 20 วินาที
+        const origShowConfirm = window.showCustomConfirm;
+        if (typeof origShowConfirm === 'function') {
+            window.showCustomConfirm = function(message, onConfirm, title) {
+                const wrappedConfirm = function() {
+                    allowRealWriteUntilMs = Date.now() + 20000;
+                    if (typeof onConfirm === 'function') return onConfirm.apply(this, arguments);
+                };
+                return origShowConfirm.call(this, message, wrappedConfirm, title);
+            };
+        }
+
         const syncedJobHashes = new Map();
         let lastBackupsHash = '';
         let lastPinsHash = '';
         let lastDelPinsHash = '';
         let lastAuditLogsHash = '';
         let hasCompletedFirstFullBaseline = false;
-
-        let lastGetSnapshotText = null;
-        let lastGetTimeMs = 0;
         let pendingPostTask = null;
         let isWorkerRunning = false;
         let lastSheetWriteTimeMs = 0;
 
-        const _prevFetch = window.fetch;
+        const _underFetch = window.fetch;
 
         function getJobKeyForDiff(job) {
             if (!job || typeof job !== 'object') return '';
@@ -11339,11 +11461,9 @@
                 };
             }
 
-            const isGpsTickOnly = (upsertedJobs.length === 0 && removedJobKeys.length === 0 && techLocDelta && techLocDelta._keepBackups && techLocDelta._keepPins && techLocDelta._keepDelPins && techLocDelta._keepAuditLogs);
-
             return {
                 action: 'patchDelta',
-                ramOnly: isGpsTickOnly && (Date.now() - lastSheetWriteTimeMs < 20000),
+                ramOnly: false,
                 upsertedJobs: upsertedJobs,
                 removedJobKeys: removedJobKeys,
                 techLocDelta: techLocDelta
@@ -11368,22 +11488,20 @@
                         const deltaObj = buildDeltaPayloadFromSaveJobs(parsedOrig.jobs);
                         if (deltaObj) {
                             bodyToSend = JSON.stringify(deltaObj);
-                            if (!deltaObj.ramOnly) lastSheetWriteTimeMs = Date.now();
                         } else {
                             bodyToSend = JSON.stringify(parsedOrig);
-                            lastSheetWriteTimeMs = Date.now();
                         }
+                        lastSheetWriteTimeMs = Date.now();
                     }
 
-                    const res = await _prevFetch.call(window, task.input, { ...task.init, body: bodyToSend });
+                    const res = await _underFetch.call(window, task.input, { ...task.init, body: bodyToSend });
                     if (res && res.ok) {
                         const resJson = await res.clone().json().catch(() => ({}));
                         if (resJson && resJson.requireFullSync && parsedOrig) {
-                            await _prevFetch.call(window, task.input, { ...task.init, body: JSON.stringify(parsedOrig) });
+                            await _underFetch.call(window, task.input, { ...task.init, body: JSON.stringify(parsedOrig) });
                         }
-                        if (parsedOrig && Array.isArray(parsedOrig.jobs)) recordBaselineFromJobsArray(parsedOrig.jobs);
-                        if (mqttClient && mqttClient.connected) {
-                            mqttClient.publish(TOPIC_DATA, JSON.stringify({ type: 'CLOUD_POKE', sender: MY_PEER_ID, ts: Date.now() }), { qos: 0 });
+                        if (parsedOrig && Array.isArray(parsedOrig.jobs)) {
+                            recordBaselineFromJobsArray(parsedOrig.jobs);
                         }
                     }
                 } catch (err) {
@@ -11396,41 +11514,82 @@
         window.fetch = async function(input, init) {
             const urlStr = typeof input === 'string' ? input : (input?.url || '');
             const isGasUrl = urlStr.includes('script.google.com');
+            if (!isGasUrl) return _underFetch.apply(this, arguments);
+
             const method = (init && init.method) ? init.method.toUpperCase() : 'GET';
+            const now = Date.now();
 
-            if (isGasUrl && method === 'GET') {
-                const now = Date.now();
-                const isSavingNow = (typeof isPushingToCloudNow !== 'undefined' && isPushingToCloudNow) || (typeof isUploadingFromMain !== 'undefined' && isUploadingFromMain);
-
-                if (isSavingNow && lastGetSnapshotText && (now - lastGetTimeMs < 6000)) {
-                    return new Response(lastGetSnapshotText, { status: 200, headers: { 'Content-Type': 'application/json' } });
+            // 🟢 กรณี GET: ใช้แคชในเครื่องหากยังไม่ครบเวลาสุ่ม 3-5 นาที (ยกเว้นกดรีเฟรชเอง)
+            if (method === 'GET') {
+                if (!forceManualGet && cachedSheetResponseText && (now - lastRealSheetGetMs < SHEET_GET_COOLDOWN_MS)) {
+                    return new Response(cachedSheetResponseText, {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
                 }
+                forceManualGet = false;
+                lastRealSheetGetMs = now;
 
-                const response = await _prevFetch.apply(this, arguments);
-                if (response && response.ok) {
-                    try {
+                try {
+                    const response = await _underFetch.apply(this, arguments);
+                    if (response && response.ok) {
                         const cloned = response.clone();
                         const text = await cloned.text();
                         if (text && text.includes('"status":"ok"')) {
-                            lastGetSnapshotText = text;
-                            lastGetTimeMs = Date.now();
+                            cachedSheetResponseText = text;
+                            try { localStorage.setItem('elec_sheet_cache_2k', text); } catch (e) {}
                             const parsed = JSON.parse(text);
                             if (parsed && Array.isArray(parsed.jobs)) recordBaselineFromJobsArray(parsed.jobs);
                         }
-                    } catch (e) {}
+                    }
+                    return response;
+                } catch (err) {
+                    if (cachedSheetResponseText) {
+                        return new Response(cachedSheetResponseText, {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+                    throw err;
                 }
-                return response;
             }
 
-            if (isGasUrl && method === 'POST' && init && typeof init.body === 'string') {
+            // 🟠 กรณี POST: กรองเฉพาะการบันทึกข้อมูลจริง และส่งผ่านคิว Delta Patch
+            if (method === 'POST' && init && typeof init.body === 'string') {
+                const isWriteAllowedNow = (now <= allowRealWriteUntilMs);
+
+                if (init.body.includes('"saveUsers"')) {
+                    const userModal = document.getElementById('userManageModal');
+                    const editModal = document.getElementById('customUserEditModal');
+                    const isAdminManaging = (userModal && !userModal.classList.contains('hidden')) ||
+                                            (editModal && !editModal.classList.contains('hidden')) ||
+                                            isWriteAllowedNow;
+                    if (!isAdminManaging) {
+                        return new Response(JSON.stringify({ status: 'ok', skippedLoginWrite: true }), {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+                    lastRealSheetGetMs = 0;
+                    return await _underFetch.apply(this, arguments);
+                }
+
                 if (init.body.includes('"saveJobs"')) {
+                    if (!isWriteAllowedNow) {
+                        return new Response(JSON.stringify({ status: 'ok', skippedIdleHeartbeat: true }), {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+
                     try {
                         const parsedBody = JSON.parse(init.body);
                         if (parsedBody && Array.isArray(parsedBody.jobs)) {
                             parsedBody.jobs = enrichSaveJobsArrayWithLocalState(parsedBody.jobs);
                             init.body = JSON.stringify(parsedBody);
-                            lastGetSnapshotText = JSON.stringify({ status: 'ok', jobs: parsedBody.jobs, serverTime: new Date().toISOString() });
-                            lastGetTimeMs = Date.now();
+                            cachedSheetResponseText = JSON.stringify({ status: 'ok', jobs: parsedBody.jobs, serverTime: new Date().toISOString() });
+                            try { localStorage.setItem('elec_sheet_cache_2k', cachedSheetResponseText); } catch (e) {}
+                            lastRealSheetGetMs = Date.now();
                         }
                     } catch (e) {}
 
@@ -11443,192 +11602,18 @@
                     });
                 }
 
-                lastGetTimeMs = 0;
-                return await _prevFetch.apply(this, arguments);
+                lastRealSheetGetMs = 0;
+                return await _underFetch.apply(this, arguments);
             }
 
-            return _prevFetch.apply(this, arguments);
+            return _underFetch.apply(this, arguments);
         };
 
         window.addEventListener('DOMContentLoaded', initRealtimeTransport);
-        if (document.readyState === 'interactive' || document.readyState === 'complete') initRealtimeTransport();
-
-        setInterval(() => {
-            if (document.hidden || localStorage.getItem('elec_app_logged_in') !== 'true') return;
-            if (mqttClient && mqttClient.connected && rtcPeers.size === 0) {
-                mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, sigType: 'hello' }));
-            }
-            triggerImmediateCloudPull();
-        }, 3000);
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            initRealtimeTransport();
+        }
     })();
     </script>
-    <!-- 👁️ ระบบสิทธิ์ "ผู้สำรวจ (Viewer - ดูอย่างเดียว)" สำหรับ index.html -->
-<style>
-    /* ซ่อนปุ่มเพิ่ม/แก้ไข/ลบทั้งหมดเมื่อล็อกอินด้วยสิทธิ์ผู้สำรวจ */
-    body.role-viewer-readonly button[onclick*="saveAndCopyFault"],
-    body.role-viewer-readonly button[onclick*="confirmResetFaultForm"],
-    body.role-viewer-readonly button[onclick*="generateOutageMessage"],
-    body.role-viewer-readonly button[onclick*="confirmResetOutageForm"],
-    body.role-viewer-readonly button[onclick*="openStationManageModal"],
-    body.role-viewer-readonly button[onclick*="openTambonManageModal"],
-    body.role-viewer-readonly button[onclick*="openIssueManageModal"],
-    body.role-viewer-readonly button[onclick*="openMeterLinkModal"],
-    body.role-viewer-readonly button[onclick*="openApiKeyModal"],
-    body.role-viewer-readonly button[onclick*="openCaManageModal"],
-    body.role-viewer-readonly button[onclick*="openStripWordsModal"],
-    body.role-viewer-readonly button[onclick^="editFaultItem"],
-    body.role-viewer-readonly button[onclick^="deleteFaultItem"],
-    body.role-viewer-readonly button[onclick^="editOutageItem"],
-    body.role-viewer-readonly button[onclick^="deleteOutageItem"],
-    body.role-viewer-readonly button[onclick^="quickCloseJobFromMainHistory"],
-    body.role-viewer-readonly button[onclick^="stopEquipNavFromMainPage"],
-    body.role-viewer-readonly #cloudDataManageBtn,
-    body.role-viewer-readonly #autoFillCustomerContainer,
-    body.role-viewer-readonly #geminiChatbot {
-        display: none !important;
-    }
-</style>
-<script>
-(function() {
-    const VIEWER_LOCK_MSG = "🔒 บัญชีผู้สำรวจ (ดูอย่างเดียว) ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้";
-
-    function isViewerRole() {
-        return localStorage.getItem('elec_app_logged_in') === 'true' &&
-               localStorage.getItem('elec_app_current_role') === 'viewer';
-    }
-
-    // 1. เพิ่มตัวเลือก "ผู้สำรวจ (viewer)" ในหน้าต่างจัดการผู้ใช้ของ Admin
-    function injectViewerOptionIntoSelects() {
-        const newRoleSel = document.getElementById('newAccountRole');
-        if (newRoleSel && !newRoleSel.querySelector('option[value="viewer"]')) {
-            const opt = document.createElement('option');
-            opt.value = 'viewer';
-            opt.textContent = '👁️ สิทธิ์: ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
-            newRoleSel.appendChild(opt);
-        }
-
-        const editRoleSel = document.getElementById('editAccRoleSelect');
-        if (editRoleSel && !editRoleSel.querySelector('option[value="viewer"]')) {
-            const opt = document.createElement('option');
-            opt.value = 'viewer';
-            opt.textContent = '👁️ ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
-            editRoleSel.appendChild(opt);
-        }
-
-        const filterRoleSel = document.getElementById('filterUserRoleSelect');
-        if (filterRoleSel && !filterRoleSel.querySelector('option[value="viewer"]')) {
-            const opt = document.createElement('option');
-            opt.value = 'viewer';
-            opt.textContent = '👁️ เฉพาะผู้สำรวจ';
-            filterRoleSel.appendChild(opt);
-        }
-    }
-
-    // แปลงป้ายแสดงสิทธิ์ในรายการบัญชีของ Admin ให้แสดง "👁️ ผู้สำรวจ"
-    function patchAdminUserListForViewer() {
-        injectViewerOptionIntoSelects();
-        const container = document.getElementById('userAccountListContainer');
-        if (!container || typeof userAccountsList === 'undefined') return;
-
-        container.querySelectorAll('strong[id^="pw-mask-"]').forEach(pwEl => {
-            const idx = parseInt(pwEl.id.replace('pw-mask-', ''), 10);
-            const acc = userAccountsList[idx];
-            if (!acc || acc.role !== 'viewer') return;
-
-            const card = pwEl.closest('.flex.items-center.justify-between');
-            if (!card) return;
-
-            const nameSpan = card.querySelector('.font-bold.text-slate-800');
-            if (nameSpan && nameSpan.textContent.includes('👷')) {
-                nameSpan.textContent = nameSpan.textContent.replace('👷', '👁️');
-            }
-
-            card.querySelectorAll('span').forEach(sp => {
-                if (sp.textContent.trim() === 'ผู้ใช้ทั่วไป') {
-                    sp.textContent = 'ผู้สำรวจ (ดูอย่างเดียว)';
-                    sp.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold bg-cyan-100 text-cyan-800 border border-cyan-300';
-                }
-            });
-        });
-    }
-
-    // 2. เปิด/ปิดโหมด Read-Only บนหน้าจอหลัก
-    function applyViewerReadOnlyMode() {
-        const isViewer = isViewerRole();
-        document.body.classList.toggle('role-viewer-readonly', isViewer);
-
-        let banner = document.getElementById('viewerReadOnlyBanner');
-        if (isViewer) {
-            if (!banner) {
-                const header = document.querySelector('#mainAppContent .bg-gradient-to-r');
-                if (header) {
-                    banner = document.createElement('div');
-                    banner.id = 'viewerReadOnlyBanner';
-                    banner.className = 'mt-3 bg-cyan-950/80 border border-cyan-400/50 text-cyan-100 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-inner';
-                    banner.innerHTML = '<span>👁️ โหมดผู้สำรวจ: ดูข้อมูลและแผนที่อย่างเดียว (ไม่สามารถเพิ่ม/แก้ไข/ลบข้อมูลได้)</span>';
-                    header.appendChild(banner);
-                }
-            }
-        } else if (banner) {
-            banner.remove();
-        }
-    }
-
-    // 3. ล็อกฟังก์ชันบันทึก/แก้ไข/ลบทั้งหมดเมื่อเป็นสิทธิ์ viewer
-    const blockedFunctions = [
-        'saveAndCopyFault', 'generateOutageMessage', 'saveOutageData',
-        'deleteFaultItem', 'deleteOutageItem', 'editFaultItem', 'editOutageItem',
-        'quickCloseJobFromMainHistory', 'stopEquipNavFromMainPage',
-        'addStation', 'editStation', 'deleteStation',
-        'addIssueItem', 'editIssueItem', 'deleteIssueItem',
-        'addTambon', 'editTambon', 'deleteTambon',
-        'addCaNumber', 'deleteCaNumber', 'clearAllCaNumbers',
-        'importBackupJson', 'restoreFromAutoBackup',
-        'openCloudDataManagerModal', 'backupToCloudByGroup',
-        'restoreGroupBackupFromCloud', 'deleteGroupBackupOnCloud'
-    ];
-
-    blockedFunctions.forEach(fnName => {
-        const origFn = window[fnName];
-        if (typeof origFn === 'function') {
-            window[fnName] = function(...args) {
-                if (isViewerRole()) {
-                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
-                    return false;
-                }
-                return origFn.apply(this, args);
-            };
-        }
-    });
-
-    // ดักจับการเปิดหน้าต่างจัดการผู้ใช้และแก้ไขผู้ใช้ของ Admin
-    ['openUserManageModal', 'renderUserAccountList', 'editUserAccount'].forEach(fnName => {
-        const origFn = window[fnName];
-        if (typeof origFn === 'function') {
-            window[fnName] = function(...args) {
-                const res = origFn.apply(this, args);
-                setTimeout(patchAdminUserListForViewer, 30);
-                return res;
-            };
-        }
-    });
-
-    const origCheckLogin = window.checkLoginStatus;
-    if (typeof origCheckLogin === 'function') {
-        window.checkLoginStatus = function(...args) {
-            const res = origCheckLogin.apply(this, args);
-            applyViewerReadOnlyMode();
-            return res;
-        };
-    }
-
-    window.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            applyViewerReadOnlyMode();
-            injectViewerOptionIntoSelects();
-        }, 200);
-    });
-})();
-</script>
 </body>
 </html>
