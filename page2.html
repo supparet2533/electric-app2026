@@ -7043,144 +7043,523 @@
         });
     })();
     </script>
-    <!-- 👁️ ระบบสิทธิ์ "ผู้สำรวจ (Viewer - ดูอย่างเดียว)" สำหรับ page2.html -->
-<style>
-    /* ซ่อนปุ่มแก้ไขใบงาน ปุ่มเพิ่ม/ลบ/เปลี่ยนสีหมุดอุปกรณ์ไฟฟ้า สำหรับผู้สำรวจ */
-    body.role-viewer-readonly button[onclick^="openInspectModal"],
-    body.role-viewer-readonly button[onclick^="handleCancelNavigation"],
-    body.role-viewer-readonly button[onclick^="handleStartNavigation"][onclick*="''"],
-    body.role-viewer-readonly button[onclick="openEquipPinModal(null)"],
-    body.role-viewer-readonly button[onclick*="importLabelsFileInput"],
-    body.role-viewer-readonly button[onclick="openClearEquipModal()"],
-    body.role-viewer-readonly button[onclick^="openEquipPinModal("],
-    body.role-viewer-readonly button[onclick^="deleteSingleLabeledPin"],
-    body.role-viewer-readonly button[onclick^="quickChangeSinglePinColor"],
-    body.role-viewer-readonly button[onclick^="startLabeledPlaceNavigation"][onclick*="false"],
-    body.role-viewer-readonly button[onclick^="stopEquipmentNavigationByKey"],
-    body.role-viewer-readonly #peaEquipBannerFinishBtn,
-    body.role-viewer-readonly #peaEquipBannerCancelBtn,
-    body.role-viewer-readonly #mapLongPressHintBadge,
-    body.role-viewer-readonly #adminBulkPinColorBar {
-        display: none !important;
-    }
-</style>
-<script>
-(function() {
-    const VIEWER_LOCK_MSG = "🔒 สิทธิ์ผู้สำรวจ: ดูข้อมูลอย่างเดียว ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้";
+        <!-- 👁️ ระบบสิทธิ์ "ผู้สำรวจ (Viewer - ดูอย่างเดียว)" สำหรับ page2.html (ฉบับสมบูรณ์) -->
+    <style>
+        body.role-viewer-readonly button[onclick^="openInspectModal"],
+        body.role-viewer-readonly button[onclick^="handleCancelNavigation"],
+        body.role-viewer-readonly button[onclick^="handleStartNavigation"][onclick*="''"],
+        body.role-viewer-readonly button[onclick="openEquipPinModal(null)"],
+        body.role-viewer-readonly button[onclick*="importLabelsFileInput"],
+        body.role-viewer-readonly button[onclick="openClearEquipModal()"],
+        body.role-viewer-readonly button[onclick^="openEquipPinModal("],
+        body.role-viewer-readonly button[onclick^="deleteSingleLabeledPin"],
+        body.role-viewer-readonly button[onclick^="quickChangeSinglePinColor"],
+        body.role-viewer-readonly button[onclick^="startLabeledPlaceNavigation"][onclick*="false"],
+        body.role-viewer-readonly button[onclick^="stopEquipmentNavigationByKey"],
+        body.role-viewer-readonly #peaEquipBannerFinishBtn,
+        body.role-viewer-readonly #peaEquipBannerCancelBtn,
+        body.role-viewer-readonly #mapLongPressHintBadge,
+        body.role-viewer-readonly #adminBulkPinColorBar {
+            display: none !important;
+        }
+    </style>
+    <script>
+    (function() {
+        const VIEWER_LOCK_MSG = "🔒 สิทธิ์ผู้สำรวจ: ดูข้อมูลอย่างเดียว ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้";
 
-    function isViewerRole() {
-        return localStorage.getItem('elec_app_logged_in') === 'true' &&
-               localStorage.getItem('elec_app_current_role') === 'viewer';
-    }
-
-    function applyTechViewerReadOnlyUI() {
-        const isViewer = isViewerRole();
-        document.body.classList.toggle('role-viewer-readonly', isViewer);
-
-        // ปรับป้ายชื่อมุมขวาให้แสดง "👁️ ผู้สำรวจ"
-        const userBadge = document.getElementById('loggedUserDisplayBadge');
-        if (isViewer && userBadge && userBadge.textContent.includes('👷 ผู้ใช้:')) {
-            userBadge.textContent = userBadge.textContent.replace('👷 ผู้ใช้:', '👁️ ผู้สำรวจ (ดูอย่างเดียว):');
-            userBadge.className = 'text-[11px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full truncate';
+        function isViewerRole() {
+            return localStorage.getItem('elec_app_logged_in') === 'true' &&
+                   localStorage.getItem('elec_app_current_role') === 'viewer';
         }
 
-        // ซ่อนแถบเลือกสีหมุดในป๊อปอัปและในการ์ดเมื่ออยู่ในโหมดผู้สำรวจ
-        if (isViewer) {
-            document.querySelectorAll('button[onclick^="quickChangeSinglePinColor"]').forEach(btn => {
-                const colorRow = btn.closest('.bg-slate-100, .bg-slate-50');
-                if (colorRow) colorRow.style.display = 'none';
+        function applyTechViewerReadOnlyUI() {
+            const isViewer = isViewerRole();
+            document.body.classList.toggle('role-viewer-readonly', isViewer);
+
+            const userBadge = document.getElementById('loggedUserDisplayBadge');
+            if (isViewer && userBadge && userBadge.textContent.includes('👷 ผู้ใช้:')) {
+                userBadge.textContent = userBadge.textContent.replace('👷 ผู้ใช้:', '👁️ ผู้สำรวจ (ดูอย่างเดียว):');
+                userBadge.className = 'text-[11px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full truncate';
+            }
+
+            if (isViewer) {
+                document.querySelectorAll('button[onclick^="quickChangeSinglePinColor"]').forEach(btn => {
+                    const colorRow = btn.closest('.bg-slate-100, .bg-slate-50');
+                    if (colorRow) colorRow.style.display = 'none';
+                });
+            }
+        }
+
+        const blockedTechFunctions = [
+            'openInspectModal', 'submitTechReport', 'handleCancelNavigation',
+            'openEquipPinModal', 'saveEquipPinModal', 'deleteEquipPinFromModal',
+            'deleteSingleLabeledPin', 'openClearEquipModal', 'confirmClearAllEquipPins',
+            'quickChangeSinglePinColor', 'bulkChangeAllPinsColor', 'handleImportLabeledFile',
+            'stopEquipmentNavigationByKey', 'finishMyEquipmentNavigation'
+        ];
+
+        blockedTechFunctions.forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    if (isViewerRole()) {
+                        // ลบหมุดจำลองชั่วคราวหากผู้สำรวจกดค้างบนแผนที่
+                        document.querySelectorAll('#labeledInteractiveMap .leaflet-marker-icon').forEach(el => {
+                            if (el.textContent && el.textContent.includes('📍')) el.remove();
+                        });
+                        setTimeout(() => {
+                            if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                        }, 15);
+                        return false;
+                    }
+                    return origFn.apply(this, args);
+                };
+            }
+        });
+
+        const origHandleStartNav = window.handleStartNavigation;
+        if (typeof origHandleStartNav === 'function') {
+            window.handleStartNavigation = async function(key, jobType, gpsLink) {
+                if (isViewerRole()) {
+                    if (gpsLink) {
+                        window.open(gpsLink, '_blank');
+                        if (typeof showToast === 'function') showToast("🗺️ เปิดแผนที่ Google Maps (โหมดผู้สำรวจ)");
+                    } else {
+                        if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                    }
+                    return;
+                }
+                return await origHandleStartNav.apply(this, arguments);
+            };
+        }
+
+        const origStartEquipNav = window.startLabeledPlaceNavigation;
+        if (typeof origStartEquipNav === 'function') {
+            window.startLabeledPlaceNavigation = async function(placeId, openExternalMaps) {
+                if (isViewerRole()) {
+                    if (openExternalMaps) {
+                        try {
+                            const list = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                            const pin = list.find(p => p && String(p.id) === String(placeId));
+                            if (pin && pin.lat && (pin.lon ?? pin.lng)) {
+                                const url = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lon ?? pin.lng}&travelmode=driving`;
+                                window.open(url, '_blank');
+                                if (typeof showToast === 'function') showToast(`🗺️ เปิด Google Maps นำทางไป "${pin.name}" (โหมดผู้สำรวจ)`);
+                                return;
+                            }
+                        } catch (e) {}
+                    }
+                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                    return;
+                }
+                return await origStartEquipNav.apply(this, arguments);
+            };
+        }
+
+        const origPushCloud = window.pushAllJobsToCloud;
+        if (typeof origPushCloud === 'function') {
+            window.pushAllJobsToCloud = async function(...args) {
+                if (isViewerRole()) return true;
+                return await origPushCloud.apply(this, args);
+            };
+        }
+
+        ['updateRoleNavigationUI', 'renderJobCards', 'renderLabeledPlacesList'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    const res = origFn.apply(this, args);
+                    applyTechViewerReadOnlyUI();
+                    return res;
+                };
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(applyTechViewerReadOnlyUI, 250);
+        });
+    })();
+    </script>
+
+    <!-- ⚡ ระบบ Hyper-Speed Engine v3.1 + High-Scale Traffic Governor (รองรับ 2,000 คนพร้อมกัน + ซิงค์สด 0.2 วินาทีผ่าน MQTT) -->
+    <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+    <script>
+    (function() {
+        const CHANNEL_NAME = 'pea_smart_grid_hyper_v3';
+        const MY_PEER_ID = 'peer_' + Math.random().toString(36).substring(2, 9) + '_' + (Date.now() % 100000);
+
+        const SYNC_KEYS = new Set([
+            'elecReportsComplete_all',
+            'fault_reports_all',
+            'elec_closed_jobs_registry',
+            'elec_deleted_jobs_registry',
+            'elec_tech_locations_map',
+            'elec_active_equip_nav_map_v2',
+            'elec_cancelled_equip_nav_map',
+            'elec_cancelled_job_nav_map',
+            'elec_labeled_places_list',
+            'elec_deleted_labeled_places_map',
+            'elec_deleted_equip_audit_logs'
+        ]);
+
+        const LOCAL_WATCHED_KEYS = new Set([...SYNC_KEYS, 'elec_user_accounts']);
+        const _rawGetItem = Storage.prototype.getItem;
+        const _prevSetItem = Storage.prototype.setItem;
+
+        let isApplyingRemoteState = false;
+        let uiRefreshTimer = null;
+        const pendingChangedKeys = new Set();
+
+        // 1. ป้องกันปัญหาล็อกอินแล้วถูกเตะออกหลัง 8 วินาที เมื่อเปิดโหมดรองรับ 2,000 คน
+        const origParseAcc = window.parseAccountRecord;
+        if (typeof origParseAcc === 'function') {
+            window.parseAccountRecord = function(rawAcc) {
+                const parsed = origParseAcc.apply(this, arguments);
+                if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                    const curUser = localStorage.getItem('elec_app_current_user') || '';
+                    const localToken = localStorage.getItem('elec_app_session_token') || '';
+                    const isAdminReset = parsed.sessionToken && String(parsed.sessionToken).startsWith('reset_');
+                    if (curUser && localToken && !isAdminReset && typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(curUser, parsed.username)) {
+                        parsed.sessionToken = localToken;
+                    }
+                }
+                return parsed;
+            };
+        }
+
+        // 2. อัปเดตหน้าจอทันทีเมื่อได้รับข้อมูลสดจาก MQTT หรือหน้าจอคู่ขนาน
+        function scheduleInstantUiRefresh(changedKey) {
+            if (changedKey) pendingChangedKeys.add(changedKey);
+            if (uiRefreshTimer) return;
+
+            uiRefreshTimer = requestAnimationFrame(() => {
+                uiRefreshTimer = null;
+                const keys = Array.from(pendingChangedKeys);
+                pendingChangedKeys.clear();
+
+                try {
+                    if (keys.some(k => k === 'elecReportsComplete_all' || k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
+                        if (typeof checkNewIncomingPendingJobs === 'function') checkNewIncomingPendingJobs();
+                        if (typeof renderJobCards === 'function') renderJobCards();
+                    }
+                    if (keys.some(k => k.includes('equip') || k === 'elec_tech_locations_map' || k.includes('cancelled'))) {
+                        if (typeof window.syncEquipNavFromTechLocations === 'function') window.syncEquipNavFromTechLocations();
+                        if (typeof renderJobCards === 'function') renderJobCards();
+                        if (typeof updateLiveNavDomElements === 'function') updateLiveNavDomElements();
+                    }
+                    if (keys.some(k => k.includes('labeled') || k.includes('audit'))) {
+                        if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(true);
+                    }
+                } catch (err) {}
             });
         }
-    }
 
-    // 1. บล็อกฟังก์ชันแก้ไขใบงานและหมุดอุปกรณ์ทั้งหมด
-    const blockedTechFunctions = [
-        'openInspectModal', 'submitTechReport', 'handleCancelNavigation',
-        'openEquipPinModal', 'saveEquipPinModal', 'deleteEquipPinFromModal',
-        'deleteSingleLabeledPin', 'openClearEquipModal', 'confirmClearAllEquipPins',
-        'quickChangeSinglePinColor', 'bulkChangeAllPinsColor', 'handleImportLabeledFile',
-        'stopEquipmentNavigationByKey', 'finishMyEquipmentNavigation'
-    ];
+        function applyIncomingLivePacket(key, incomingValStr) {
+            if (!incomingValStr) return;
+            isApplyingRemoteState = true;
+            try {
+                const currentValStr = _rawGetItem.call(localStorage, key);
+                if (currentValStr === incomingValStr) return;
 
-    blockedTechFunctions.forEach(fnName => {
-        const origFn = window[fnName];
-        if (typeof origFn === 'function') {
-            window[fnName] = function(...args) {
-                if (isViewerRole()) {
-                    // ล้างหมุดชั่วคราวกรณีผู้สำรวจเผลอกดค้างบนแผนที่
-                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
-                    return false;
-                }
-                return origFn.apply(this, args);
-            };
-        }
-    });
+                if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
+                    const isFault = (key === 'fault_reports_all');
+                    const kField = isFault ? 'timestamp' : 'dateTimeSaved';
+                    const delReg = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_jobs_registry') || '{}');
+                    const cancelJobMap = JSON.parse(_rawGetItem.call(localStorage, 'elec_cancelled_job_nav_map') || '{}');
 
-    // 2. เมื่อผู้สำรวจกดปุ่ม "🗺️ นำทาง Maps" ในใบงานซ่อม ให้เปิด Google Maps ทันทีโดยไม่เปลี่ยนสถานะใบงาน
-    const origHandleStartNav = window.handleStartNavigation;
-    if (typeof origHandleStartNav === 'function') {
-        window.handleStartNavigation = async function(key, jobType, gpsLink) {
-            if (isViewerRole()) {
-                if (gpsLink) {
-                    window.open(gpsLink, '_blank');
-                    if (typeof showToast === 'function') showToast("🗺️ เปิดแผนที่ Google Maps (โหมดผู้สำรวจ)");
+                    const localArr = JSON.parse(currentValStr || '[]');
+                    const incomingArr = JSON.parse(incomingValStr || '[]');
+                    const map = new Map();
+
+                    localArr.forEach(item => {
+                        if (item && item[kField] && !delReg[item[kField]]) map.set(item[kField], item);
+                    });
+
+                    incomingArr.forEach(inItem => {
+                        if (!inItem || !inItem[kField] || delReg[inItem[kField]]) return;
+                        const id = inItem[kField];
+                        const ex = map.get(id);
+                        if (!ex) {
+                            map.set(id, inItem);
+                        } else {
+                            const inRepT = inItem.techReport?.updatedAt || '';
+                            const exRepT = ex.techReport?.updatedAt || '';
+                            const bestReport = inRepT >= exRepT ? (inItem.techReport || ex.techReport) : ex.techReport;
+
+                            const cancelIso = cancelJobMap[id] || ((inItem.navCancelledAt || '') >= (ex.navCancelledAt || '') ? inItem.navCancelledAt : ex.navCancelledAt) || '';
+                            const inNavT = inItem.techNav?.updatedAt || '';
+                            const exNavT = ex.techNav?.updatedAt || '';
+                            let bestNav = inNavT >= exNavT ? (inItem.techNav || ex.techNav) : ex.techNav;
+
+                            const isDone = bestReport && String(bestReport.status || '').includes('เสร็จสิ้น');
+                            if (isDone || (cancelIso && (!bestNav?.updatedAt || cancelIso >= bestNav.updatedAt))) {
+                                bestNav = undefined;
+                            }
+
+                            const merged = { ...ex, ...inItem, techReport: bestReport, navCancelledAt: cancelIso || undefined };
+                            if (!bestReport) delete merged.techReport;
+                            if (bestNav) merged.techNav = bestNav;
+                            else delete merged.techNav;
+                            map.set(id, merged);
+                        }
+                    });
+
+                    _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(map.values())));
+                } else if (key === 'elec_tech_locations_map' || key === 'elec_closed_jobs_registry' || key === 'elec_deleted_jobs_registry' || key === 'elec_active_equip_nav_map_v2' || key.includes('cancelled')) {
+                    const localObj = JSON.parse(currentValStr || '{}');
+                    const inObj = JSON.parse(incomingValStr || '{}');
+                    if (key === 'elec_tech_locations_map' && typeof window.mergeTechLocationsMap === 'function') {
+                        window.mergeTechLocationsMap(inObj);
+                    } else {
+                        _prevSetItem.call(localStorage, key, JSON.stringify({ ...localObj, ...inObj }));
+                    }
+                } else if (key === 'elec_labeled_places_list') {
+                    const delEquip = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+                    const localPins = JSON.parse(currentValStr || '[]');
+                    const inPins = JSON.parse(incomingValStr || '[]');
+                    const pinMap = new Map();
+
+                    [...localPins, ...inPins].forEach(p => {
+                        if (!p || !p.id) return;
+                        if (delEquip[p.id]) {
+                            const delMs = new Date(delEquip[p.id]).getTime() || 0;
+                            const pinMs = new Date(p.updatedAt || 0).getTime() || 0;
+                            if (pinMs <= delMs) return;
+                        }
+                        const ex = pinMap.get(p.id);
+                        if (!ex || (p.updatedAt || '') >= (ex.updatedAt || '')) {
+                            pinMap.set(p.id, p);
+                        }
+                    });
+                    _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(pinMap.values())));
                 } else {
-                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                    _prevSetItem.call(localStorage, key, incomingValStr);
                 }
-                return;
-            }
-            return await origHandleStartNav.apply(this, arguments);
-        };
-    }
 
-    // 3. เมื่อผู้สำรวจกดปุ่ม "🗺️ นำทาง Maps" ที่หมุดอุปกรณ์ไฟฟ้า ให้เปิด Google Maps โดยไม่ส่งสถานะกำลังเดินทางเข้าแดชบอร์ด
-    const origStartEquipNav = window.startLabeledPlaceNavigation;
-    if (typeof origStartEquipNav === 'function') {
-        window.startLabeledPlaceNavigation = async function(placeId, openExternalMaps) {
-            if (isViewerRole()) {
-                if (openExternalMaps) {
+                scheduleInstantUiRefresh(key);
+            } catch (e) {
+            } finally {
+                isApplyingRemoteState = false;
+            }
+        }
+
+        // 3. ระบบ MQTT (Retained State) สำหรับรองรับ 2,000 คนโดยไม่ต้องยิงกวน Google Sheets
+        function getTopicBase() {
+            const rawUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '') || 'pea_grid';
+            let hash = 0;
+            for (let i = 0; i < rawUrl.length; i++) {
+                hash = ((hash << 5) - hash) + rawUrl.charCodeAt(i);
+                hash |= 0;
+            }
+            return 'pea_hyper_v3_' + Math.abs(hash);
+        }
+
+        const TOPIC_DATA = getTopicBase() + '/data';
+        const WS_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+        let mqttClient = null;
+        let brokerIdx = 0;
+        const debounceSendTimers = {};
+
+        function initRealtimeTransport() {
+            if (typeof mqtt === 'undefined') return;
+            const brokerUrl = WS_BROKERS[brokerIdx % WS_BROKERS.length];
+
+            try {
+                mqttClient = mqtt.connect(brokerUrl, {
+                    clientId: MY_PEER_ID,
+                    clean: true,
+                    connectTimeout: 4000,
+                    reconnectPeriod: 3000
+                });
+
+                mqttClient.on('connect', () => {
+                    mqttClient.subscribe([TOPIC_DATA], { qos: 0 });
+                });
+
+                mqttClient.on('message', (topic, buf) => {
                     try {
-                        const list = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
-                        const pin = list.find(p => p && String(p.id) === String(placeId));
-                        if (pin && pin.lat && (pin.lon ?? pin.lng)) {
-                            const url = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lon ?? pin.lng}&travelmode=driving`;
-                            window.open(url, '_blank');
-                            if (typeof showToast === 'function') showToast(`🗺️ เปิด Google Maps นำทางไป "${pin.name}" (โหมดผู้สำรวจ)`);
-                            return;
+                        const packet = JSON.parse(buf.toString());
+                        if (packet && packet.sender !== MY_PEER_ID && packet.type === 'DELTA_KEY' && packet.key && packet.val) {
+                            applyIncomingLivePacket(packet.key, packet.val);
                         }
                     } catch (e) {}
-                }
-                if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
-                return;
+                });
+
+                mqttClient.on('error', () => { brokerIdx++; });
+            } catch (e) {}
+        }
+
+        function broadcastDeltaOverNetwork(key, valStr) {
+            if (!SYNC_KEYS.has(key)) return;
+            clearTimeout(debounceSendTimers[key]);
+
+            debounceSendTimers[key] = setTimeout(() => {
+                try {
+                    let payloadStr = valStr;
+                    if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
+                        const arr = JSON.parse(valStr || '[]');
+                        payloadStr = JSON.stringify(arr.slice(0, 25));
+                    }
+                    if (payloadStr.length < 60000 && mqttClient && mqttClient.connected) {
+                        const packetStr = JSON.stringify({
+                            type: 'DELTA_KEY',
+                            sender: MY_PEER_ID,
+                            key: key,
+                            val: payloadStr,
+                            ts: Date.now()
+                        });
+                        mqttClient.publish(TOPIC_DATA, packetStr, { qos: 0, retain: true });
+                    }
+                } catch (e) {}
+            }, 25);
+        }
+
+        let localChannel = null;
+        try {
+            if ('BroadcastChannel' in window) {
+                localChannel = new BroadcastChannel(CHANNEL_NAME);
+                localChannel.onmessage = (e) => {
+                    if (e.data && e.data.type === 'LOCAL_TURBO') scheduleInstantUiRefresh(e.data.key);
+                };
             }
-            return await origStartEquipNav.apply(this, arguments);
-        };
-    }
+        } catch (e) {}
 
-    // 4. ป้องกันเครื่องของผู้สำรวจส่งข้อมูลใบงานหรือหมุดอุปกรณ์ไปเขียนทับบน Cloud
-    const origPushCloud = window.pushAllJobsToCloud;
-    if (typeof origPushCloud === 'function') {
-        window.pushAllJobsToCloud = async function(...args) {
-            if (isViewerRole()) return true;
-            return await origPushCloud.apply(this, args);
-        };
-    }
+        window.addEventListener('message', (e) => {
+            if (e.data && e.data.type === 'LOCAL_TURBO') scheduleInstantUiRefresh(e.data.key);
+        });
 
-    ['updateRoleNavigationUI', 'renderJobCards', 'renderLabeledPlacesList'].forEach(fnName => {
-        const origFn = window[fnName];
-        if (typeof origFn === 'function') {
-            window[fnName] = function(...args) {
-                const res = origFn.apply(this, args);
-                applyTechViewerReadOnlyUI();
-                return res;
+        function broadcastSameDevice(key) {
+            const msg = { type: 'LOCAL_TURBO', key: key, ts: Date.now() };
+            try { if (localChannel) localChannel.postMessage(msg); } catch (e) {}
+            try { if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*'); } catch (e) {}
+        }
+
+        Storage.prototype.setItem = function(key, value) {
+            let prevVal = null;
+            if (LOCAL_WATCHED_KEYS.has(key)) {
+                try { prevVal = _rawGetItem.call(this, key); } catch (e) {}
+            }
+            const res = _prevSetItem.apply(this, arguments);
+            if (!isApplyingRemoteState && LOCAL_WATCHED_KEYS.has(key) && prevVal !== value) {
+                broadcastSameDevice(key);
+                broadcastDeltaOverNetwork(key, value);
+            }
+            return res;
+        };
+
+        // 4. ตัวควบคุมทราฟฟิก Google Sheets สำหรับรองรับ 2,000 คน (Smart Fetch Governor + Delta Patch)
+        const SHEET_GET_COOLDOWN_MS = 180000 + Math.floor(Math.random() * 120000);
+        let lastRealSheetGetMs = 0;
+        let cachedSheetResponseText = localStorage.getItem('elec_sheet_cache_2k') || null;
+        let forceManualGet = false;
+        let allowRealWritePost = false;
+
+        const origSyncFromCloud = window.syncJobsFromCloud;
+        if (typeof origSyncFromCloud === 'function') {
+            window.syncJobsFromCloud = function(silent, ...rest) {
+                if (silent === false) forceManualGet = true;
+                return origSyncFromCloud.apply(this, [silent, ...rest]);
             };
         }
-    });
 
-    window.addEventListener('DOMContentLoaded', () => {
-        setTimeout(applyTechViewerReadOnlyUI, 250);
-    });
-})();
-</script>
+        const writeActionFunctions = [
+            'submitTechReport', 'handleStartNavigation', 'handleCancelNavigation',
+            'saveEquipPinModal', 'deleteEquipPinFromModal', 'deleteSingleLabeledPin',
+            'confirmClearAllEquipPins', 'quickChangeSinglePinColor', 'bulkChangeAllPinsColor',
+            'handleImportLabeledFile', 'startLabeledPlaceNavigation', 'stopEquipmentNavigationByKey',
+            'finishMyEquipmentNavigation', 'restoreDeletedPinFromAudit', 'clearDeletedEquipAuditLogs',
+            'flushPendingJobsWhenOnline', 'handleTechLogout', 'toggleGpsTracking'
+        ];
+
+        writeActionFunctions.forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    allowRealWritePost = true;
+                    return origFn.apply(this, args);
+                };
+            }
+        });
+
+        function isTechCurrentlyNavigating() {
+            const hasJobWatch = (typeof activeNavWatchId !== 'undefined' && activeNavWatchId !== null) ||
+                                (typeof activeNavJobKey !== 'undefined' && activeNavJobKey !== null);
+            const mapNavBox = document.getElementById('mapActiveNavContainer');
+            const hasEquipWatch = Boolean(mapNavBox && !mapNavBox.classList.contains('hidden'));
+            return Boolean(hasJobWatch || hasEquipWatch);
+        }
+
+        const _prevFetch = window.fetch;
+        window.fetch = async function(input, init) {
+            const urlStr = typeof input === 'string' ? input : (input?.url || '');
+            const isGasUrl = urlStr.includes('script.google.com');
+            if (!isGasUrl) return _prevFetch.apply(this, arguments);
+
+            const method = (init && init.method) ? init.method.toUpperCase() : 'GET';
+            const now = Date.now();
+
+            if (method === 'GET') {
+                if (!forceManualGet && cachedSheetResponseText && (now - lastRealSheetGetMs < SHEET_GET_COOLDOWN_MS)) {
+                    return new Response(cachedSheetResponseText, {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+                forceManualGet = false;
+                lastRealSheetGetMs = now;
+
+                try {
+                    const res = await _prevFetch.apply(this, arguments);
+                    if (res && res.ok) {
+                        const cloned = res.clone();
+                        const txt = await cloned.text();
+                        if (txt && txt.includes('"status":"ok"')) {
+                            cachedSheetResponseText = txt;
+                            try { localStorage.setItem('elec_sheet_cache_2k', txt); } catch (e) {}
+                        }
+                    }
+                    return res;
+                } catch (err) {
+                    if (cachedSheetResponseText) {
+                        return new Response(cachedSheetResponseText, {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+                    throw err;
+                }
+            }
+
+            if (method === 'POST' && init && typeof init.body === 'string') {
+                if (init.body.includes('"saveUsers"')) {
+                    return new Response(JSON.stringify({ status: 'ok', skippedLoginWrite: true }), {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                }
+
+                if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
+                    if (!allowRealWritePost && !isTechCurrentlyNavigating()) {
+                        return new Response(JSON.stringify({ status: 'ok', skippedIdleHeartbeat: true }), {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+                }
+
+                allowRealWritePost = false;
+                lastRealSheetGetMs = now;
+                return _prevFetch.apply(this, arguments);
+            }
+
+            return _prevFetch.apply(this, arguments);
+        };
+
+        window.addEventListener('DOMContentLoaded', initRealtimeTransport);
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            initRealtimeTransport();
+        }
+    })();
+    </script>
 </body>
 </html>
