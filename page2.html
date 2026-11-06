@@ -488,7 +488,6 @@
         </div>
     </div>
 
-    <!-- ✅ [แก้ไขจุดที่ 2] ปรับ z-index ของ Toast เป็น z-[300] เพื่อให้แสดงอยู่เหนือโหมดขยายแผนที่เต็มจอ (z-250) เสมอ -->
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[300]"></div>
 
     <script>
@@ -675,7 +674,6 @@
             setTimeout(() => t.classList.add('opacity-0'), 2500);
         }
 
-        // กล่องแจ้งเตือนภาษาไทย (ปรับ z-[300] ให้แสดงอยู่เหนือหน้าแผนที่เต็มจอ)
         function showCustomAlert(message, title = "⚡ แจ้งเตือนระบบ") {
             let modal = document.getElementById('customAlertModal');
             if (!modal) {
@@ -704,7 +702,6 @@
             showCustomAlert(message, "⚡ แจ้งเตือนระบบ");
         };
 
-        // แยกค่า role, sessionToken และ displayName (ชื่อช่างที่แอดมินตั้งไว้)
         function parseAccountRecord(rawAcc) {
             const rawRole = String(rawAcc.role || 'user');
             const parts = rawRole.split('::');
@@ -717,7 +714,6 @@
             };
         }
 
-        // แปลงรหัสพนักงานเป็นชื่อช่างที่ตั้งไว้ (ถ้ามี)
         function formatTechDisplayName(rawNameOrList) {
             if (!rawNameOrList || rawNameOrList === '-') return '-';
             const str = String(rawNameOrList).trim();
@@ -739,7 +735,7 @@
         // ==========================================
         // 🗂️ ทะเบียนงานที่ปิดเสร็จสิ้นแล้ว & ระบบป้องกันความจำมือถือช่างเต็ม
         // ==========================================
-        const MAX_TECH_CLOSED_REGISTRY_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 วัน
+        const MAX_TECH_CLOSED_REGISTRY_AGE_MS = 30 * 24 * 60 * 60 * 1000;
         const MAX_TECH_CLOSED_REGISTRY_ITEMS = 300;
 
         function pruneTechClosedRegistry(rawMap) {
@@ -1195,8 +1191,8 @@
             }
             isSyncingNow = false;
         }
-        // ===== จบพาทที่ 1 / 4 (นำโค้ดพาทที่ 2 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-        // ===== เริ่มพาทที่ 2 / 4 (วางต่อจากพาทที่ 1 ได้เลยครับ) =====
+        // ===== จบพาทที่ 1 / 5 (นำโค้ดพาทที่ 2 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+                // ===== เริ่มพาทที่ 2 / 5 (วางต่อจากพาทที่ 1 ได้เลยครับ) =====
 
         // ==========================================
         // 🛰️ ระบบนำทางเรียลไทม์ & ปุ่มเปิด/ปิดพิกัด GPS
@@ -1510,9 +1506,8 @@
             }
 
             const nowMs = Date.now();
-            const ONLINE_LIMIT_MS = 180 * 1000; // นับเฉพาะช่างที่ออนไลน์ภายใน 3 นาทีล่าสุด
+            const ONLINE_LIMIT_MS = 180 * 1000;
 
-            // เช็กว่าช่างคนนั้นกำลังออนไลน์และเปิด GPS อยู่จริงเท่านั้น
             const isTechOnlineWithGps = (loc) => {
                 if (!loc || loc.isOnline === false || loc.gpsDisabled || !loc.lat || !loc.lon || !loc.username) return false;
                 if (!isGpsTrackingEnabled && curUser && isSameTechPerson(loc.username, curUser)) return false;
@@ -2200,8 +2195,8 @@
             localStorage.setItem('elecReportsComplete_all', JSON.stringify(sortedOutages));
             localStorage.setItem('fault_reports_all', JSON.stringify(sortedFaults));
         }
-        // ===== จบพาทที่ 2 / 4 (นำโค้ดพาทที่ 3 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== 
-        // ===== เริ่มพาทที่ 3 / 4 (วางต่อจากพาทที่ 2 ได้เลยครับ) =====
+        // ===== จบพาทที่ 2 / 5 (นำโค้ดพาทที่ 3 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+                // ===== เริ่มพาทที่ 3 / 5 (วางต่อจากพาทที่ 2 ได้เลยครับ) =====
 
         // ==========================================
         // 🕒 ฟังก์ชันช่วยดึงกะ วันที่ และเรียงลำดับใบงาน
@@ -2249,7 +2244,6 @@
             return 0;
         }
 
-        // ดึงเวลาที่ลงข้อมูลใบงานมาแสดงผล (เช่น 21.15 น.)
         function getJobLoggedTimeDisplay(item, jobType) {
             if (jobType === 'fault') {
                 if (item?.time && item.time !== '-') return String(item.time).trim();
@@ -2904,7 +2898,6 @@
             window.addEventListener(evt, touchTechActivity, { passive: true });
         });
 
-        // ฟังก์ชันส่งงานที่ค้างในเครื่องขึ้น Cloud อัตโนมัติทันทีที่สัญญาณเน็ตกลับมา
         async function flushPendingJobsWhenOnline() {
             if (!navigator.onLine || localStorage.getItem('elec_app_logged_in') !== 'true') return;
             if (localStorage.getItem('elec_tech_has_pending_push') === 'true') {
@@ -2964,7 +2957,7 @@
     <!-- 🟢 ระบบตรวจสอบผู้ใช้งานออนไลน์เรียลไทม์สำหรับหน้าช่าง (จำกัดสิทธิ์ดูได้เฉพาะ Admin) -->
     <script>
         (function() {
-            const ONLINE_THRESHOLD_MS = 180 * 1000; // 3 นาที
+            const ONLINE_THRESHOLD_MS = 180 * 1000;
             let techPresenceInterval = null;
             let lastTechHeartbeatPushMs = 0;
 
@@ -3287,8 +3280,8 @@
             });
         })();
     </script>
-    <!-- ===== จบพาทที่ 3 / 4 (นำโค้ดพาทที่ 4 / 4 มาวางต่อจากบรรทัดนี้จนจบไฟล์ได้เลยครับ) ===== -->
-    <!-- ===== เริ่มพาทที่ 4 / 4 (พาท 4.1 / 2 - วางทับพาทที่ 4 เดิม ต่อจากพาทที่ 3 ได้เลยครับ) ===== -->
+    <!-- ===== จบพาทที่ 3 / 5 (นำโค้ดพาทที่ 4 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) ===== -->
+        <!-- ===== เริ่มพาทที่ 4 / 5 (วางต่อจากพาทที่ 3 ได้เลยครับ) ===== -->
     <!-- ================= ⚡ ระบบแท็บแผนที่ อุปกรณ์ ไฟฟ้า (รองรับคลายลิงก์ย่อ maps.app.goo.gl + ซ่อนป้ายชื่อเมื่อ Zoom < 15 + แก้ป๊อปอัปปิดเอง) ================= -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -3558,7 +3551,7 @@
             const MAX_DELETED_EQUIP_AGE_MS = 30 * 24 * 60 * 60 * 1000;
             const MAX_DELETED_EQUIP_ITEMS = 500;
             const MAX_DELETED_AUDIT_LOGS = 200;
-            const AUTO_LABEL_MIN_ZOOM = 15; // แสดงป้ายชื่อรหัสอัตโนมัติตั้งแต่ระดับ Zoom 15 ขึ้นไป
+            const AUTO_LABEL_MIN_ZOOM = 15;
 
             const ALL_PIN_COLOR_KEYS = ['green', 'yellow', 'orange', 'red', 'blue', 'purple', 'brown'];
 
@@ -3566,7 +3559,6 @@
             let clearedAuditLogsTimestamp = parseInt(localStorage.getItem('elec_cleared_audit_logs_ts') || '0', 10);
             let restoredAuditLogIds = new Set(JSON.parse(localStorage.getItem('elec_restored_audit_log_ids') || '[]'));
 
-            // 🛡️ กล่องยืนยันของระบบ (แทนที่ confirm() ของเบราว์เซอร์)
             window.showCustomConfirm = function(message, onConfirm, title = "⚡ ยืนยันการทำรายการ") {
                 let modal = document.getElementById('customConfirmModal');
                 if (!modal) {
@@ -3660,7 +3652,6 @@
             let currentPinColorFilter = 'all';
             let isMapFullscreen = false;
 
-            // ตัวแปรป้องกันป๊อปอัปแผนที่ปิดเองเมื่อซิงค์หรือข้ามนาที
             let currentlyOpenPopupPinId = null;
             let lastRenderedMarkersSignature = '';
             let lastCheckedDateIsoForSchedule = '';
@@ -3674,7 +3665,6 @@
                 return PIN_COLOR_THEMES[colorKey] || PIN_COLOR_THEMES.green;
             }
 
-            // 🏷️ อัปเดตการแสดงป้ายชื่อรหัสตามระดับการซูม (แสดงเมื่อ Zoom >= 15 และซ่อนเมื่อซูมมุมสูง)
             function updatePinTooltipsVisibilityByZoom() {
                 const mapEl = document.getElementById('labeledInteractiveMap');
                 const btn = document.getElementById('togglePinNamesBtn');
@@ -4120,8 +4110,7 @@
                 } catch (e) {}
                 return response;
             };
-    //-- ===== จบพาทที่ 4.1 / 2 (พิมพ์แจ้งเพื่อรับโค้ดพาทที่ 4.2 / 2 ต่อได้เลยครับ) ===== -->
-                // ===== เริ่มพาทที่ 4.2 / 2 (วางต่อจากบรรทัดสุดท้ายของพาท 4.1 ได้เลยครับ) =====
+
             function updateMainSwitcherButtonsStyle() {
                 const btnJobs = document.getElementById('mainTabBtn-jobs');
                 const btnMap = document.getElementById('mainTabBtn-map');
@@ -4159,7 +4148,6 @@
                 }
             }
 
-            // 🎨 อัปเดตสถานะปุ่มตัวกรองสีหมุดทั้ง 8 ปุ่ม (รวม + 7 สี)
             function updateEquipColorFilterPillsUI() {
                 const baseLayout = 'py-1.5 px-0.5 rounded-xl text-[10px] sm:text-[11px] leading-tight transition flex flex-col items-center justify-center gap-0.5 ';
                 const styles = {
@@ -4816,7 +4804,6 @@
                 markersLayer = L.layerGroup().addTo(leafletMap);
                 routeLineLayer = L.layerGroup().addTo(leafletMap);
 
-                // ผูกอีเวนต์ตรวจสอบระดับการซูมเพื่อแสดง/ซ่อนป้ายชื่อรหัสอัตโนมัติ (Zoom >= 15)
                 leafletMap.on('zoomend', updatePinTooltipsVisibilityByZoom);
                 updatePinTooltipsVisibilityByZoom();
 
@@ -5002,7 +4989,6 @@
                 }
             };
 
-            // สลับเปิด/ปิดป้ายชื่อโดยไม่ต้องลบหมุดใหม่ (ป๊อปอัปไม่ถูกปิด)
             window.toggleShowAllPinNames = function() {
                 showAllPinLabels = !showAllPinLabels;
                 updatePinTooltipsVisibilityByZoom();
@@ -5011,7 +4997,6 @@
                 }
             };
 
-            // วาดหมุดเฉพาะเมื่อข้อมูลหมุดเปลี่ยนแปลงจริง และคงสถานะป๊อปอัปที่กำลังเปิดค้างไว้เสมอ
             function renderMarkersOnMap(filteredItems, autoFit = false, forceRedraw = false) {
                 if (!leafletMap || !markersLayer) return;
 
@@ -5190,7 +5175,9 @@
                     .replace(/>/g, '&gt;')
                     .replace(/"/g, '&quot;');
             }
-
+            window.escapeHtmlStr = escapeHtmlStr;
+            // ===== จบพาทที่ 4 / 5 (นำโค้ดพาทที่ 5 / 5 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+                        // ===== เริ่มพาทที่ 5 / 5 (วางต่อจากพาทที่ 4 จนจบไฟล์ได้เลยครับ) =====
             window.renderLabeledPlacesList = function(updateMapMarkers = false) {
                 loadStoredLabeledPlaces();
                 labeledPlaces = deduplicateEquipPins(labeledPlaces);
@@ -5525,19 +5512,13 @@
                 }
             };
 
-            // =========================================================================
-            // 🔗 ระบบคลายลิงก์ย่อ Google Maps (maps.app.goo.gl / goo.gl/maps) อัตโนมัติสำหรับ page2.html
-            // =========================================================================
+            // 🔗 ระบบคลายลิงก์ย่อ Google Maps (maps.app.goo.gl / goo.gl/maps) อัตโนมัติ
             function normalizeThaiLatLon(valA, valB) {
                 const a = parseFloat(valA);
                 const b = parseFloat(valB);
                 if (isNaN(a) || isNaN(b)) return null;
-                if (a >= 95 && a <= 108 && b >= 4 && b <= 23) {
-                    return { lat: b, lon: a };
-                }
-                if (a >= -90 && a <= 90 && b >= -180 && b <= 180) {
-                    return { lat: a, lon: b };
-                }
+                if (a >= 95 && a <= 108 && b >= 4 && b <= 23) return { lat: b, lon: a };
+                if (a >= -90 && a <= 90 && b >= -180 && b <= 180) return { lat: a, lon: b };
                 return null;
             }
 
@@ -5553,17 +5534,10 @@
                 }
 
                 for (let i = 0; i < 3; i++) {
-                    s = s.replace(/%25/gi, '%')
-                         .replace(/%40/gi, '@')
-                         .replace(/%2C/gi, ',')
-                         .replace(/%2B/gi, '+')
-                         .replace(/%20/gi, ' ')
-                         .replace(/%3A/gi, ':')
-                         .replace(/%2F/gi, '/')
-                         .replace(/%3F/gi, '?')
-                         .replace(/%3D/gi, '=')
-                         .replace(/%26/gi, '&')
-                         .replace(/%21/gi, '!');
+                    s = s.replace(/%25/gi, '%').replace(/%40/gi, '@').replace(/%2C/gi, ',')
+                         .replace(/%2B/gi, '+').replace(/%20/gi, ' ').replace(/%3A/gi, ':')
+                         .replace(/%2F/gi, '/').replace(/%3F/gi, '?').replace(/%3D/gi, '=')
+                         .replace(/%26/gi, '&').replace(/%21/gi, '!');
                 }
 
                 const m3d = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
@@ -6258,7 +6232,6 @@
                 lastCheckedDateIsoForSchedule = getTodayLocalIso();
                 renderLabeledPlacesList(false);
 
-                // ตรวจสอบการเปลี่ยนสีหมุดอัตโนมัติเฉพาะเมื่อ "ข้ามวันใหม่" เท่านั้น (ป้องกันป๊อปอัปแผนที่ปิดเองทุก 1 นาที)
                 setInterval(() => {
                     if (document.hidden || currentActiveMainTab !== 'map') return;
                     const todayNow = getTodayLocalIso();
@@ -6312,8 +6285,8 @@
             });
         })();
     </script>
-    <!-- ===== จบพาทที่ 4.2 / 2 (ต่อด้วยบล็อก ระบบเชื่อมสถานะ "เดินทาง" และ Hyper-Speed Engine v3.1 เดิมได้เลยครับ) ===== -->
-            <!--==================== ระบบเชื่อมสถานะ "เดินทาง" ของแผนที่อุปกรณ์ไฟฟ้า เข้ากับการ์ดแดชบอร์ด & ซิงค์ออนไลน์ (สมบูรณ์ 100%) ==================== -->
+
+    <!--==================== ระบบเชื่อมสถานะ "เดินทาง" ของแผนที่อุปกรณ์ไฟฟ้า เข้ากับการ์ดแดชบอร์ด & ซิงค์ออนไลน์ (ฉบับแก้ไขสมบูรณ์) ==================== -->
     <style>
         #pea-equip-nav-banner {
             display: none;
@@ -6328,38 +6301,18 @@
             padding: 11px 15px;
             border-radius: 16px;
             box-shadow: 0 10px 25px rgba(2, 132, 199, 0.45);
-            z-index: 75; /* อยู่ใต้ Modal ทุกตัว (z-80 ขึ้นไป) เพื่อไม่ให้บังปุ่มบันทึก */
+            z-index: 75;
             align-items: center;
             justify-content: space-between;
             gap: 10px;
             font-family: 'Prompt', sans-serif;
             border: 2px solid rgba(255, 255, 255, 0.3);
         }
-        #pea-equip-nav-banner .banner-info {
-            flex: 1;
-            min-width: 0;
-        }
-        #pea-equip-nav-banner .banner-title {
-            font-size: 13px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        #pea-equip-nav-banner .banner-sub {
-            font-size: 11.5px;
-            opacity: 0.95;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            margin-top: 1px;
-        }
-        #pea-equip-nav-banner .banner-actions {
-            display: flex;
-            gap: 6px;
-            align-items: center;
-            flex-shrink: 0;
-        }
+        #pea-equip-nav-banner .banner-info { flex: 1; min-width: 0; }
+        #pea-equip-nav-banner .banner-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+        #pea-equip-nav-banner .banner-sub { font-size: 11.5px; opacity: 0.95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+        #pea-equip-nav-banner .banner-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+        #pea-equip-nav-cards-mount { width: 100%; grid-column: 1 / -1 !important; }
     </style>
 
     <!-- แถบลอยแจ้งสถานะกำลังเดินทางไปอุปกรณ์ไฟฟ้า -->
@@ -6372,7 +6325,7 @@
             <div id="peaEquipBannerTarget" class="banner-sub">เป้าหมาย: -</div>
         </div>
         <div class="banner-actions">
-            <button type="button" onclick="switchStatusTab('traveling')" class="bg-white/20 hover:bg-white/30 text-white border border-white/40 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
+            <button type="button" onclick="openTravelingDashboardFromEquipBanner()" class="bg-white/20 hover:bg-white/30 text-white border border-white/40 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition">
                 📋 ดูสถานะ
             </button>
             <button type="button" id="peaEquipBannerFinishBtn" onclick="finishMyEquipmentNavigation(true)" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow transition">
@@ -6391,43 +6344,53 @@
         const CANCELLED_EQUIP_NAV_KEY = 'elec_cancelled_equip_nav_map';
         const REGISTRY_LOC_KEY = '__NAV_CANCEL_REGISTRY__';
 
-        let lastGpsEquipRouteUpdateMs = 0;
-        let pendingForceCloudPush = false;
         let isStoppingEquipNavInternal = false;
+        let lastLocalEquipNavStartMs = 0;
+        let baseJobTravelingCount = 0;
+        let baseShiftAllCount = 0;
 
-        // เก็บอ้างอิงฟังก์ชันต้นฉบับจากพาทที่ 4
         const realStopMapNavFn = window.stopLabeledPlaceNavigation;
         const origStartLabeledNav = window.startLabeledPlaceNavigation;
+
+        function escapeHtmlSafe(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
 
         function isMapNavBoxCurrentlyVisible() {
             const box = document.getElementById('mapActiveNavContainer');
             return Boolean(box && !box.classList.contains('hidden'));
         }
 
-        // 🔒 1. ตรวจสอบสิทธิ์: อนุญาตเฉพาะ "ช่างผู้กำลังเดินทาง" หรือ "Admin" เท่านั้น
+        function getNavEffectiveTimeMs(navObj) {
+            if (!navObj || typeof navObj !== 'object') return 0;
+            const depMs = Number(navObj.departTimestamp || 0);
+            const updMs = navObj.updatedAt ? new Date(navObj.updatedAt).getTime() : 0;
+            const canMs = Number(navObj.cancelledAtMs || 0);
+            return Math.max(isNaN(depMs) ? 0 : depMs, isNaN(updMs) ? 0 : updMs, isNaN(canMs) ? 0 : canMs);
+        }
+
         window.canUserControlNavigation = function(navTechName) {
             const curRole = localStorage.getItem('elec_app_current_role') || 'user';
             if (curRole === 'admin') return true;
             const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-            if (!curUser || !navTechName) return false;
+            if (!navTechName) return true;
             if (typeof isSameTechPerson === 'function' && isSameTechPerson(curUser, navTechName)) {
                 return true;
             }
-            return curUser.toLowerCase() === String(navTechName).trim().toLowerCase();
+            const target = String(navTechName).trim().toLowerCase();
+            return Boolean(curUser && (curUser.toLowerCase() === target || target.includes(curUser.toLowerCase()) || curUser.toLowerCase().includes(target)));
         };
 
-        // ⏱️ 2. ป้องกันเวลานาฬิกามือถือแต่ละเครื่องไม่ตรงกัน (Clock Skew Safe Timestamp)
         function getMonotonicCancelTimestamp(existingNavOrList) {
             let maxPrevMs = Date.now();
             const items = Array.isArray(existingNavOrList) ? existingNavOrList : [existingNavOrList];
             items.forEach(nav => {
-                if (!nav) return;
-                const depMs = Number(nav.departTimestamp || 0);
-                const updMs = nav.updatedAt ? new Date(nav.updatedAt).getTime() : 0;
-                const canMs = Number(nav.cancelledAtMs || 0);
-                if (!isNaN(depMs) && depMs > maxPrevMs) maxPrevMs = depMs;
-                if (!isNaN(updMs) && updMs > maxPrevMs) maxPrevMs = updMs;
-                if (!isNaN(canMs) && canMs > maxPrevMs) maxPrevMs = canMs;
+                const t = getNavEffectiveTimeMs(nav);
+                if (t > maxPrevMs) maxPrevMs = t;
             });
             const safeMs = maxPrevMs + 1000;
             return { ms: safeMs, iso: new Date(safeMs).toISOString() };
@@ -6441,9 +6404,7 @@
         }
 
         function saveEquipNavMap(mapObj) {
-            try {
-                localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(mapObj || {}));
-            } catch (e) {}
+            try { localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(mapObj || {})); } catch (e) {}
         }
 
         function getCancelledJobNavMap() {
@@ -6451,17 +6412,6 @@
                 const raw = JSON.parse(localStorage.getItem(CANCELLED_JOB_NAV_KEY) || '{}');
                 return (raw && typeof raw === 'object') ? raw : {};
             } catch (e) { return {}; }
-        }
-
-        function saveCancelledJobNavMap(mapObj) {
-            try {
-                const entries = Object.entries(mapObj || {});
-                if (entries.length > 250) {
-                    entries.sort((a, b) => String(b[1]).localeCompare(String(a[1])));
-                    mapObj = Object.fromEntries(entries.slice(0, 250));
-                }
-                localStorage.setItem(CANCELLED_JOB_NAV_KEY, JSON.stringify(mapObj));
-            } catch (e) {}
         }
 
         function getCancelledEquipNavMap() {
@@ -6472,1771 +6422,626 @@
         }
 
         function saveCancelledEquipNavMap(mapObj) {
-            try {
-                const entries = Object.entries(mapObj || {});
-                if (entries.length > 250) {
-                    entries.sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
-                    mapObj = Object.fromEntries(entries.slice(0, 250));
-                }
-                localStorage.setItem(CANCELLED_EQUIP_NAV_KEY, JSON.stringify(mapObj));
-            } catch (e) {}
+            try { localStorage.setItem(CANCELLED_EQUIP_NAV_KEY, JSON.stringify(mapObj || {})); } catch (e) {}
         }
 
-        // 🔗 3. ฝังทะเบียนยกเลิกไว้ใน techLocations.__NAV_CANCEL_REGISTRY__
-        function syncCancelRegistryIntoTechLocations(locMapObj) {
-            const locMap = locMapObj || (typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {});
-            const eqCancel = getCancelledEquipNavMap();
-            const jobCancel = getCancelledJobNavMap();
-            const prevReg = locMap[REGISTRY_LOC_KEY] || {};
+        function normalizeTechKey(name) {
+            const base = (typeof getUserBaseId === 'function' ? getUserBaseId(name) : String(name || '').trim().toLowerCase());
+            return base ? ('equip_nav_' + base.replace(/\s+/g, '_')) : 'equip_nav_guest';
+        }
 
-            let regChanged = false;
-            const mergedEq = { ...(prevReg.equipCancelMap || {}) };
-            Object.entries(eqCancel).forEach(([k, v]) => {
-                if (Number(v || 0) > Number(mergedEq[k] || 0)) {
-                    mergedEq[k] = Number(v);
-                    regChanged = true;
+        function getCurrentTechCanonicalName() {
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            return curUser || 'ช่างหน้างาน';
+        }
+
+        function findStoredEquipPinById(placeId) {
+            if (!placeId) return null;
+            if (typeof placeId === 'object') return placeId;
+            try {
+                const list = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                return list.find(p => p && String(p.id) === String(placeId)) || null;
+            } catch (e) { return null; }
+        }
+
+        function extractActiveMapDomInfo() {
+            const info = { title: '', distanceKm: null, durationMin: null, etaTime: '' };
+            try {
+                const box = document.getElementById('mapActiveNavBody');
+                if (box) {
+                    const txt = (box.innerText || box.textContent || '').trim();
+                    const distMatch = txt.match(/ระยะทางเหลือ:\s*~?(\d+(?:\.\d+)?)\s*กม/);
+                    if (distMatch) info.distanceKm = Number(distMatch[1]);
+                    const minMatch = txt.match(/อีก\s*(\d+)\s*นาที/);
+                    if (minMatch) info.durationMin = Number(minMatch[1]);
+                    const etaMatch = txt.match(/ถึง\s*~?(\d{2}\.\d{2}\s*น\.)/);
+                    if (etaMatch) info.etaTime = etaMatch[1];
                 }
-            });
+            } catch (e) {}
+            return info;
+        }
 
-            const mergedJob = { ...(prevReg.jobCancelMap || {}) };
-            Object.entries(jobCancel).forEach(([k, v]) => {
-                if (!mergedJob[k] || String(v) > String(mergedJob[k])) {
-                    mergedJob[k] = String(v);
-                    regChanged = true;
-                }
-            });
+        function clearEquipCancelRegistryForKey(navKey, techName) {
+            const cancelMap = getCancelledEquipNavMap();
+            delete cancelMap[navKey];
+            if (techName) delete cancelMap[normalizeTechKey(techName)];
+            saveCancelledEquipNavMap(cancelMap);
 
-            if (regChanged || !locMap[REGISTRY_LOC_KEY]) {
-                saveCancelledEquipNavMap(mergedEq);
-                saveCancelledJobNavMap(mergedJob);
-                const nowIso = new Date().toISOString();
-                locMap[REGISTRY_LOC_KEY] = {
-                    username: '',
-                    isOnline: false,
-                    gpsDisabled: true,
-                    equipCancelMap: mergedEq,
-                    jobCancelMap: mergedJob,
-                    lastSeenAt: nowIso,
-                    updatedAt: nowIso
-                };
-                if (!locMapObj) {
+            if (typeof getTechLocationsMap === 'function') {
+                const locMap = getTechLocationsMap();
+                if (locMap[REGISTRY_LOC_KEY]?.equipCancelMap) {
+                    delete locMap[REGISTRY_LOC_KEY].equipCancelMap[navKey];
+                    if (techName) delete locMap[REGISTRY_LOC_KEY].equipCancelMap[normalizeTechKey(techName)];
                     localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
                 }
             }
-            return locMap;
         }
 
-        function absorbCancelRegistryFromCloudLocs(cloudLocs) {
-            if (!cloudLocs || typeof cloudLocs !== 'object') return;
-            const cReg = cloudLocs[REGISTRY_LOC_KEY];
-            if (!cReg) return;
+        function isEquipNavCancelled(navKey, navObj, cloudEquipCancelMap) {
+            if (!navObj || typeof navObj !== 'object') return true;
+            const navMs = getNavEffectiveTimeMs(navObj);
+            const localCancelMap = getCancelledEquipNavMap();
+            const localCancelMs = Number(localCancelMap[navKey] || 0);
+            const cloudCancelMs = (cloudEquipCancelMap && Number(cloudEquipCancelMap[navKey] || 0)) || 0;
+            const explicitCancelMs = Number(navObj.cancelledAtMs || 0);
+            const maxCancelMs = Math.max(localCancelMs, cloudCancelMs, explicitCancelMs);
 
-            if (cReg.equipCancelMap && typeof cReg.equipCancelMap === 'object') {
-                const localEq = getCancelledEquipNavMap();
-                let eqChanged = false;
-                Object.entries(cReg.equipCancelMap).forEach(([k, v]) => {
-                    if (Number(v || 0) > Number(localEq[k] || 0)) {
-                        localEq[k] = Number(v);
-                        eqChanged = true;
-                    }
-                });
-                if (eqChanged) saveCancelledEquipNavMap(localEq);
-            }
-
-            if (cReg.jobCancelMap && typeof cReg.jobCancelMap === 'object') {
-                const localJob = getCancelledJobNavMap();
-                let jobChanged = false;
-                Object.entries(cReg.jobCancelMap).forEach(([k, v]) => {
-                    if (!localJob[k] || String(v) > String(localJob[k])) {
-                        localJob[k] = String(v);
-                        jobChanged = true;
-                    }
-                });
-                if (jobChanged) saveCancelledJobNavMap(localJob);
-            }
+            if (maxCancelMs > 0 && maxCancelMs >= navMs) return true;
+            return navObj.isTraveling === false;
         }
 
-        function isEquipNavCancelled(userKey, navObj) {
-            if (!navObj || navObj.isTraveling !== true) return true;
+        window.syncEquipNavToTechLocations = function() {
+            if (typeof getTechLocationsMap !== 'function') return;
+            const locMap = getTechLocationsMap();
+            const equipMap = getEquipNavMap();
             const cancelMap = getCancelledEquipNavMap();
-            const depTs = Number(navObj.departTimestamp || 0);
-            const updTs = navObj.updatedAt ? new Date(navObj.updatedAt).getTime() : 0;
-            const refTs = depTs > 0 ? depTs : updTs;
 
-            const checkKeys = [userKey, navObj.techName].filter(Boolean);
-            for (const k of checkKeys) {
-                const cancelledTs = Number(cancelMap[k] || 0);
-                if (cancelledTs > 0 && refTs <= cancelledTs) return true;
-                for (const [ck, cVal] of Object.entries(cancelMap)) {
-                    if (typeof isSameTechPerson === 'function' && isSameTechPerson(ck, k)) {
-                        if (Number(cVal || 0) > 0 && refTs <= Number(cVal || 0)) return true;
-                    }
+            const existingReg = (locMap[REGISTRY_LOC_KEY] && typeof locMap[REGISTRY_LOC_KEY] === 'object')
+                ? locMap[REGISTRY_LOC_KEY]
+                : {};
+            const mergedEquipCancel = Object.assign({}, existingReg.equipCancelMap || {}, cancelMap);
+
+            Object.entries(equipMap).forEach(([key, nav]) => {
+                if (!nav || typeof nav !== 'object') return;
+                const techName = String(nav.techName || '').trim();
+                if (!techName) return;
+
+                if (!locMap[techName] || typeof locMap[techName] !== 'object') {
+                    locMap[techName] = {
+                        username: techName,
+                        group: nav.ownerGroup || (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : 'กฟส.บึง'),
+                        isOnline: true,
+                        updatedAt: nav.updatedAt || new Date().toISOString()
+                    };
                 }
-            }
-            return false;
-        }
 
-        function syncEquipNavFromTechLocations() {
-            const locMap = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
-            absorbCancelRegistryFromCloudLocs(locMap);
+                const existingNav = locMap[techName].activeEquipNav;
+                const existingMs = getNavEffectiveTimeMs(existingNav);
+                const newMs = getNavEffectiveTimeMs(nav);
 
-            const navMap = getEquipNavMap();
-            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-            const nowMs = Date.now();
-            const MAX_NAV_AGE_MS = 6 * 60 * 60 * 1000;
+                if (newMs >= existingMs) {
+                    locMap[techName].activeEquipNav = Object.assign({}, nav);
+                }
+
+                if (nav.isTraveling && newMs > Number(mergedEquipCancel[key] || 0)) {
+                    delete mergedEquipCancel[key];
+                }
+            });
+
+            locMap[REGISTRY_LOC_KEY] = {
+                isSystemRegistry: true,
+                updatedAt: new Date().toISOString(),
+                jobCancelMap: Object.assign({}, existingReg.jobCancelMap || {}, getCancelledJobNavMap()),
+                equipCancelMap: mergedEquipCancel
+            };
+
+            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+        };
+
+        window.syncEquipNavFromTechLocations = function() {
+            if (typeof getTechLocationsMap !== 'function') return;
+            const locMap = getTechLocationsMap();
+            const reg = locMap[REGISTRY_LOC_KEY] || {};
+            const cloudEquipCancel = reg.equipCancelMap || {};
+            const localCancelMap = getCancelledEquipNavMap();
+            const equipMap = getEquipNavMap();
             let changed = false;
 
-            Object.keys(locMap).forEach(uKey => {
-                if (uKey === REGISTRY_LOC_KEY) return;
-                const loc = locMap[uKey];
-                const remoteNav = loc?.activeEquipNav;
-
-                if (!remoteNav || remoteNav.isTraveling === false || isEquipNavCancelled(uKey, remoteNav)) {
-                    if (navMap[uKey] && navMap[uKey].isTraveling === true) {
-                        navMap[uKey] = {
-                            isTraveling: false,
-                            cancelledAtMs: remoteNav?.cancelledAtMs || nowMs,
-                            updatedAt: remoteNav?.updatedAt || new Date(nowMs).toISOString()
-                        };
-                        changed = true;
-                    }
-                    return;
-                }
-
-                const existing = navMap[uKey];
-                const rTime = new Date(remoteNav.updatedAt || 0).getTime() || 0;
-                const lTime = new Date(existing?.updatedAt || 0).getTime() || 0;
-
-                if (!existing || rTime > lTime) {
-                    navMap[uKey] = remoteNav;
+            Object.entries(cloudEquipCancel).forEach(([k, cMs]) => {
+                const numCMs = Number(cMs || 0);
+                const localNav = equipMap[k];
+                const localNavMs = getNavEffectiveTimeMs(localNav);
+                if (numCMs > Number(localCancelMap[k] || 0) && numCMs >= localNavMs) {
+                    localCancelMap[k] = numCMs;
                     changed = true;
                 }
             });
+            if (changed) saveCancelledEquipNavMap(localCancelMap);
 
-            Object.keys(navMap).forEach(k => {
-                const item = navMap[k];
-                if (!item) {
-                    delete navMap[k];
-                    changed = true;
+            Object.entries(locMap).forEach(([tKey, locObj]) => {
+                if (tKey === REGISTRY_LOC_KEY || !locObj || typeof locObj !== 'object') return;
+                const cNav = locObj.activeEquipNav;
+                if (!cNav || typeof cNav !== 'object') return;
+
+                const navKey = cNav.id || normalizeTechKey(cNav.techName || tKey);
+                const pNav = equipMap[navKey];
+                const pTime = getNavEffectiveTimeMs(pNav);
+                const cTime = getNavEffectiveTimeMs(cNav);
+
+                if (pNav && pNav.isTraveling && (pTime >= cTime || (Date.now() - lastLocalEquipNavStartMs < 10000))) {
                     return;
                 }
-                const tMs = new Date(item.updatedAt || item.departTimestamp || 0).getTime() || 0;
-                if (tMs > 0 && (nowMs - tMs > MAX_NAV_AGE_MS)) {
-                    delete navMap[k];
-                    changed = true;
-                    return;
-                }
-                if (item.isTraveling === true) {
-                    if (isEquipNavCancelled(k, item)) {
-                        navMap[k] = { isTraveling: false, updatedAt: new Date(nowMs).toISOString() };
-                        changed = true;
-                        return;
-                    }
-                    if (curUser && typeof isSameTechPerson === 'function' && !isSameTechPerson(k, curUser)) {
-                        const matchingLocKey = Object.keys(locMap).find(lk => lk !== REGISTRY_LOC_KEY && (lk === k || isSameTechPerson(lk, k)));
-                        if (matchingLocKey) {
-                            const locNav = locMap[matchingLocKey]?.activeEquipNav;
-                            if (!locNav || locNav.isTraveling !== true || isEquipNavCancelled(matchingLocKey, locNav)) {
-                                navMap[k] = { isTraveling: false, updatedAt: new Date(nowMs).toISOString() };
-                                changed = true;
-                            }
+
+                if (cTime > pTime) {
+                    if (isEquipNavCancelled(navKey, cNav, cloudEquipCancel) || cNav.isTraveling === false) {
+                        if (equipMap[navKey]) {
+                            delete equipMap[navKey];
+                            changed = true;
                         }
-                    }
-                }
-            });
-
-            const dedupByPerson = [];
-            Object.keys(navMap).forEach(k => {
-                const item = navMap[k];
-                if (!item || item.isTraveling !== true) return;
-                const personName = item.techName || k;
-                const existingIdx = dedupByPerson.findIndex(p =>
-                    (typeof isSameTechPerson === 'function' && isSameTechPerson(p.personName, personName)) ||
-                    p.key === k
-                );
-                const itemTime = new Date(item.updatedAt || item.departTimestamp || 0).getTime() || 0;
-                if (existingIdx === -1) {
-                    dedupByPerson.push({ key: k, personName, time: itemTime });
-                } else if (itemTime >= dedupByPerson[existingIdx].time) {
-                    const oldKey = dedupByPerson[existingIdx].key;
-                    if (oldKey !== k) {
-                        navMap[oldKey] = { isTraveling: false, updatedAt: new Date(nowMs).toISOString() };
+                    } else if (cNav.isTraveling) {
+                        equipMap[navKey] = Object.assign({}, cNav, { id: navKey });
                         changed = true;
                     }
-                    dedupByPerson[existingIdx] = { key: k, personName, time: itemTime };
-                } else {
-                    navMap[k] = { isTraveling: false, updatedAt: new Date(nowMs).toISOString() };
+                } else if (pNav && isEquipNavCancelled(navKey, pNav, cloudEquipCancel)) {
+                    delete equipMap[navKey];
                     changed = true;
                 }
             });
 
-            if (changed) saveEquipNavMap(navMap);
-            return navMap;
-        }
+            if (changed) {
+                saveEquipNavMap(equipMap);
+            }
 
-        function getVisibleActiveEquipNavList() {
-            const navMap = syncEquipNavFromTechLocations();
-            const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
+            const myName = getCurrentTechCanonicalName();
+            const myKey = normalizeTechKey(myName);
+            const hasAnyMine = Boolean(equipMap[myKey]) || Object.values(equipMap).some(item => item && item.isTraveling && window.canUserControlNavigation(item.techName));
+
+            if (!hasAnyMine && isMapNavBoxCurrentlyVisible() && (Date.now() - lastLocalEquipNavStartMs > 10000)) {
+                if (!isStoppingEquipNavInternal && typeof realStopMapNavFn === 'function') {
+                    isStoppingEquipNavInternal = true;
+                    try { realStopMapNavFn(true); } catch (e) {}
+                    isStoppingEquipNavInternal = false;
+                }
+            }
+
+            updateEquipNavFloatingBanner();
+            syncDashboardTravelingCountsAndCards();
+        };
+
+        window.getActiveEquipmentNavItems = function() {
+            const equipMap = getEquipNavMap();
+            const curRole = localStorage.getItem('elec_app_current_role') || 'user';
             const myGroup = typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '';
 
-            return Object.values(navMap).filter(nav => {
-                if (!nav || nav.isTraveling !== true) return false;
-                if (isEquipNavCancelled(nav.techName, nav)) return false;
-                if (currentRole === 'admin' && !myGroup) return true;
-                if (!myGroup || !nav.ownerGroup) return true;
-                return myGroup === nav.ownerGroup;
+            return Object.values(equipMap).filter(item => {
+                if (!item || !item.isTraveling) return false;
+                if (curRole === 'admin') return true;
+                if (myGroup && item.ownerGroup && myGroup !== item.ownerGroup) return false;
+                return true;
             });
-        }
+        };
 
-        // 🛰️ 4. ดักจับ GPS Watch ไม่ให้เขียนทับหลังกดยกเลิก
-        async function refreshEquipNavWithRealRoute(curUser, startCoord, destCoord, expectedSessionId) {
-            if (typeof calculateDrivingRoute !== 'function') return;
-            try {
-                const routeInfo = await calculateDrivingRoute(startCoord, destCoord);
-                const navMap = getEquipNavMap();
-                const currentNav = navMap[curUser];
+        window.renderEquipmentNavCardsHtml = function() {
+            const items = window.getActiveEquipmentNavItems();
+            if (!items.length) return '';
 
-                if (!currentNav || currentNav.isTraveling !== true || isEquipNavCancelled(curUser, currentNav)) {
-                    return;
+            return items.map(nav => {
+                const canCtrl = window.canUserControlNavigation(nav.techName);
+                const safeKey = String(nav.id || normalizeTechKey(nav.techName)).replace(/'/g, "\\'");
+                const itemGroup = nav.ownerGroup || (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : 'กฟส.บึง');
+
+                let safeNav = { ...nav };
+                const nowMs = Date.now();
+
+                if (!safeNav.departTime && safeNav.departTimestamp) {
+                    const d = new Date(Number(safeNav.departTimestamp));
+                    safeNav.departTime = `${String(d.getHours()).padStart(2, '0')}.${String(d.getMinutes()).padStart(2, '0')} น.`;
                 }
-                if (expectedSessionId && currentNav.navSessionId && currentNav.navSessionId !== expectedSessionId) {
-                    return;
+                if (!safeNav.etaTimestamp && safeNav.durationMin) {
+                    safeNav.etaTimestamp = (Number(safeNav.departTimestamp) || nowMs) + (Number(safeNav.durationMin) * 60000);
+                }
+                if (!safeNav.initialDistanceKm && safeNav.distanceKm) {
+                    safeNav.initialDistanceKm = safeNav.distanceKm;
+                }
+                if (safeNav.etaTimestamp && !safeNav.etaTime) {
+                    const e = new Date(safeNav.etaTimestamp);
+                    safeNav.etaTime = `${String(e.getHours()).padStart(2, '0')}.${String(e.getMinutes()).padStart(2, '0')} น.`;
                 }
 
-                const nowMs = Math.max(Date.now(), Number(currentNav.departTimestamp || 0) + 500);
-                const nowIso = new Date(nowMs).toISOString();
-                const etaMs = nowMs + (routeInfo.durationMin * 60000);
-                const etaDate = new Date(etaMs);
-                const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
+                const title = escapeHtmlSafe(safeNav.placeTitle || 'หมุดอุปกรณ์ไฟฟ้า');
+                const category = escapeHtmlSafe(safeNav.placeCategory || 'อุปกรณ์ไฟฟ้า');
+                const details = safeNav.placeDetails ? ` | 📝 รายละเอียด: ${escapeHtmlSafe(safeNav.placeDetails)}` : '';
+                const destLat = safeNav.destLat;
+                const destLon = safeNav.destLon ?? safeNav.destLng;
 
-                currentNav.distanceKm = routeInfo.distanceKm;
-                if (!currentNav.initialDistanceKm) currentNav.initialDistanceKm = routeInfo.distanceKm;
-                currentNav.durationMin = routeInfo.durationMin;
-                currentNav.etaTimestamp = etaMs;
-                currentNav.etaTime = routeInfo.isArrived ? 'ถึงจุดหมายแล้ว' : etaTimeStr;
-                currentNav.isArrived = routeInfo.isArrived;
-                currentNav.statusText = routeInfo.isArrived
-                    ? '📍 ถึงจุดอุปกรณ์ไฟฟ้าแล้ว'
-                    : `อีกประมาณ ${routeInfo.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`;
-                currentNav.updatedAt = nowIso;
+                return `
+                <div class="p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 border-sky-300 border-l-[6px] border-l-sky-500 ring-1 ring-sky-100 mb-3 relative overflow-hidden">
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="font-bold text-slate-800 text-xs sm:text-sm leading-snug min-w-0 flex-1">
+                            <div class="mb-1 flex flex-wrap items-center gap-y-1">
+                                <span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md mr-1">🏢 ${escapeHtmlSafe(itemGroup)}</span>
+                                <span class="inline-block bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⚡ แผนที่อุปกรณ์</span>
+                            </div>
+                            <div class="text-sky-900 text-sm font-extrabold flex items-center gap-1">
+                                <span>⚡ อุปกรณ์ไฟฟ้า: ${title}</span>
+                            </div>
+                        </div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 bg-blue-100 text-blue-700 border-blue-300 animate-pulse">🚗 กำลังเดินทาง</span>
+                    </div>
 
-                navMap[curUser] = currentNav;
-                saveEquipNavMap(navMap);
+                    <div class="text-xs text-slate-600">
+                        📍 หมวดหมู่: ${category}${details}
+                    </div>
 
-                if (typeof getTechLocationsMap === 'function') {
-                    const locMap = getTechLocationsMap();
-                    if (locMap[curUser]) {
-                        locMap[curUser].activeEquipNav = currentNav;
-                        locMap[curUser].lastSeenAt = nowIso;
-                        locMap[curUser].updatedAt = nowIso;
-                        syncCancelRegistryIntoTechLocations(locMap);
-                        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                    <div class="equip-realtime-nav-box p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl text-[11px] text-blue-950 space-y-1" data-equip-key="${safeKey}">
+                        ${typeof formatRealtimeNavHtml === 'function' ? formatRealtimeNavHtml(safeNav) : ''}
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
+                        <div class="flex flex-wrap gap-1.5">
+                            ${(destLat && destLon) ? `
+                            <button type="button" onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLon}&travelmode=driving','_blank')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">
+                                🗺️ นำทาง Maps
+                            </button>` : ''}
+                            ${canCtrl ? `
+                            <button type="button" onclick="stopEquipmentNavigationByKey('${safeKey}', false)" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition">
+                                ❌ ยกเลิกเดินทาง
+                            </button>` : ''}
+                        </div>
+                        ${canCtrl ? `
+                        <button type="button" onclick="stopEquipmentNavigationByKey('${safeKey}', true)" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm transition">
+                            ✅ ถึงหน้างาน
+                        </button>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
+        setInterval(function() {
+            document.querySelectorAll('.equip-realtime-nav-box').forEach(box => {
+                const key = box.getAttribute('data-equip-key');
+                if (!key) return;
+                let navObj = getEquipNavMap()[key];
+                if (!navObj || !navObj.isTraveling) return;
+
+                const nowMs = Date.now();
+                if (!navObj.departTime && navObj.departTimestamp) {
+                    const d = new Date(Number(navObj.departTimestamp));
+                    navObj.departTime = `${String(d.getHours()).padStart(2, '0')}.${String(d.getMinutes()).padStart(2, '0')} น.`;
+                }
+                if (!navObj.etaTimestamp && navObj.durationMin) {
+                    navObj.etaTimestamp = (Number(navObj.departTimestamp) || nowMs) + (Number(navObj.durationMin) * 60000);
+                }
+                if (!navObj.initialDistanceKm && navObj.distanceKm) {
+                    navObj.initialDistanceKm = navObj.distanceKm;
+                }
+                if (navObj.etaTimestamp && !navObj.etaTime) {
+                    const e = new Date(navObj.etaTimestamp);
+                    navObj.etaTime = `${String(e.getHours()).padStart(2, '0')}.${String(e.getMinutes()).padStart(2, '0')} น.`;
+                }
+
+                if (typeof formatRealtimeNavHtml === 'function') {
+                    box.innerHTML = formatRealtimeNavHtml(navObj);
+                }
+            });
+        }, 1000);
+
+        function syncDashboardTravelingCountsAndCards() {
+            const activeItems = window.getActiveEquipmentNavItems();
+            const equipCount = activeItems.length;
+            const statusSelect = document.getElementById('filterJobStatus');
+            const currentMode = statusSelect ? statusSelect.value : 'pending';
+
+            const travEl = document.getElementById('countTravelingJobs');
+            if (travEl) {
+                travEl.textContent = String(baseJobTravelingCount + equipCount);
+            }
+
+            const shiftAllSpan = document.getElementById('countShiftAll');
+            if (shiftAllSpan) {
+                const addShift = (currentMode === 'traveling' || currentMode === 'all') ? equipCount : 0;
+                shiftAllSpan.textContent = String(baseShiftAllCount + addShift);
+            }
+
+            const container = document.getElementById('jobCardsContainer');
+            if (!container) return;
+
+            let mountEl = document.getElementById('pea-equip-nav-cards-mount');
+            if (!mountEl) {
+                mountEl = document.createElement('div');
+                mountEl.id = 'pea-equip-nav-cards-mount';
+            }
+
+            if (equipCount > 0 && (currentMode === 'traveling' || currentMode === 'all')) {
+                if (container.firstChild !== mountEl) {
+                    container.insertBefore(mountEl, container.firstChild);
+                }
+                mountEl.style.display = 'block';
+                mountEl.innerHTML = window.renderEquipmentNavCardsHtml();
+
+                Array.from(container.children).forEach(ch => {
+                    if (ch !== mountEl && ch.classList.contains('text-center') && ch.classList.contains('text-slate-400')) {
+                        ch.style.display = 'none';
                     }
-                }
-                updateEquipNavDashboardAndBanner();
-            } catch (e) {}
+                });
+            } else if (mountEl.parentNode) {
+                mountEl.style.display = 'none';
+                mountEl.innerHTML = '';
+            }
         }
 
-        function setMyEquipmentNavigation(placeObj) {
-            if (!placeObj) return;
-            const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
-            const myGroup = (typeof getCurrentUserGroup === 'function' && getCurrentUserGroup()) || placeObj.ownerGroup || 'กฟส.บึง';
-            const startCoord = (typeof lastKnownTechCoords === 'object' && lastKnownTechCoords)
-                ? lastKnownTechCoords
-                : { lat: 13.1361, lon: 101.0322 };
-            const destCoord = { lat: parseFloat(placeObj.lat), lon: parseFloat(placeObj.lon) };
+        function updateEquipNavFloatingBanner() {
+            const banner = document.getElementById('pea-equip-nav-banner');
+            if (!banner) return;
 
-            const cancelEquipMap = getCancelledEquipNavMap();
-            let prevCancelMs = 0;
-            Object.keys(cancelEquipMap).forEach(k => {
-                if (k === curUser || (typeof isSameTechPerson === 'function' && isSameTechPerson(k, curUser))) {
-                    if (Number(cancelEquipMap[k] || 0) > prevCancelMs) prevCancelMs = Number(cancelEquipMap[k]);
-                    delete cancelEquipMap[k];
+            const activeList = window.getActiveEquipmentNavItems();
+            if (activeList.length === 0) {
+                banner.style.display = 'none';
+                return;
+            }
+
+            const myName = getCurrentTechCanonicalName();
+            const myNav = activeList.find(item => window.canUserControlNavigation(item.techName)) || activeList[0];
+
+            const countEl = document.getElementById('peaEquipBannerCount');
+            const targetEl = document.getElementById('peaEquipBannerTarget');
+            const finishBtn = document.getElementById('peaEquipBannerFinishBtn');
+            const cancelBtn = document.getElementById('peaEquipBannerCancelBtn');
+
+            if (countEl) countEl.textContent = String(activeList.length);
+            if (targetEl && myNav) {
+                const distTxt = myNav.distanceKm ? ` (${Number(myNav.distanceKm).toFixed(1)} กม.)` : '';
+                const etaTxt = myNav.durationMin ? ` ~${Math.ceil(Number(myNav.durationMin))} นาที` : '';
+                const titleTxt = myNav.placeTitle || 'อุปกรณ์ไฟฟ้า';
+                const techTxt = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(myNav.techName || myName) : (myNav.techName || myName);
+                targetEl.textContent = `${titleTxt}${distTxt}${etaTxt} ➔ ${techTxt}`;
+            }
+
+            const canCtrl = myNav ? window.canUserControlNavigation(myNav.techName) : true;
+            if (finishBtn) finishBtn.style.display = canCtrl ? 'inline-block' : 'none';
+            if (cancelBtn) cancelBtn.style.display = canCtrl ? 'inline-block' : 'none';
+
+            banner.style.display = 'flex';
+        }
+
+        window.openTravelingDashboardFromEquipBanner = function() {
+            if (typeof window.switchTechMainTab === 'function') {
+                window.switchTechMainTab('jobs');
+            }
+            if (typeof window.switchStatusTab === 'function') {
+                window.switchStatusTab('traveling');
+            }
+            setTimeout(function() {
+                syncDashboardTravelingCountsAndCards();
+                const mountEl = document.getElementById('pea-equip-nav-cards-mount');
+                if (mountEl) {
+                    mountEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
-            });
-            saveCancelledEquipNavMap(cancelEquipMap);
+            }, 80);
+        };
 
-            const nowMs = Math.max(Date.now(), prevCancelMs + 1000);
-            const now = new Date(nowMs);
+        const origRenderJobCards = window.renderJobCards;
+        if (typeof origRenderJobCards === 'function') {
+            window.renderJobCards = function() {
+                const res = origRenderJobCards.apply(this, arguments);
+                const travEl = document.getElementById('countTravelingJobs');
+                const shiftAllEl = document.getElementById('countShiftAll');
+                baseJobTravelingCount = travEl ? (parseInt(travEl.textContent, 10) || 0) : 0;
+                baseShiftAllCount = shiftAllEl ? (parseInt(shiftAllEl.textContent, 10) || 0) : 0;
+                syncDashboardTravelingCountsAndCards();
+                return res;
+            };
+        }
+
+        window.startLabeledPlaceNavigation = async function(placeId, openExternalMaps) {
+            lastLocalEquipNavStartMs = Date.now();
+
+            const targetPin = findStoredEquipPinById(placeId);
+            const techName = getCurrentTechCanonicalName();
+            const navKey = normalizeTechKey(techName);
+            const now = new Date();
+            const nowMs = now.getTime();
             const nowIso = now.toISOString();
             const departTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
-            const sessionId = 'eqnav_' + nowMs;
 
-            const instantRoute = typeof calculateInstantRouteFallback === 'function'
-                ? calculateInstantRouteFallback(startCoord, destCoord)
+            const originCoord = (typeof lastKnownTechCoords === 'object' && lastKnownTechCoords)
+                ? lastKnownTechCoords
+                : { lat: 13.1361, lon: 101.0322 };
+
+            const destLat = targetPin ? Number(targetPin.lat) : null;
+            const destLon = targetPin ? Number(targetPin.lon ?? targetPin.lng) : null;
+
+            const instantRoute = (destLat && destLon && typeof calculateInstantRouteFallback === 'function')
+                ? calculateInstantRouteFallback(originCoord, { lat: destLat, lon: destLon })
                 : { distanceKm: "2.0", durationMin: 5, isArrived: false };
 
             const etaMs = nowMs + (instantRoute.durationMin * 60000);
             const etaDate = new Date(etaMs);
             const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
 
-            const navRecord = {
-                navKey: 'EQP_' + curUser,
-                navSessionId: sessionId,
-                isTraveling: true,
-                placeId: placeObj.id,
-                placeName: placeObj.name || 'อุปกรณ์ไฟฟ้า',
-                placeNote: placeObj.note || '',
-                pinColor: placeObj.pinColor || 'green',
-                destLat: destCoord.lat,
-                destLon: destCoord.lon,
-                ownerGroup: myGroup,
-                techName: curUser,
-                durationMin: instantRoute.durationMin,
-                initialDurationMin: instantRoute.durationMin,
+            clearEquipCancelRegistryForKey(navKey, techName);
+
+            const equipMap = getEquipNavMap();
+            equipMap[navKey] = {
+                id: navKey,
+                placeId: (targetPin && targetPin.id) || placeId || '',
+                placeTitle: (targetPin && targetPin.name) || String(placeId || 'อุปกรณ์ไฟฟ้า'),
+                placeCategory: 'อุปกรณ์ไฟฟ้า',
+                placeDetails: (targetPin && targetPin.note) || '',
+                ownerGroup: (targetPin && targetPin.ownerGroup) || (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : 'กฟส.บึง'),
+                techName: techName,
+                originLat: originCoord.lat,
+                originLng: originCoord.lon,
+                destLat: destLat,
+                destLon: destLon,
+                destLng: destLon,
                 distanceKm: instantRoute.distanceKm,
                 initialDistanceKm: instantRoute.distanceKm,
+                durationMin: instantRoute.durationMin,
+                initialDurationMin: instantRoute.durationMin,
                 departTime: departTimeStr,
                 departTimestamp: nowMs,
                 etaTime: instantRoute.isArrived ? 'ถึงจุดหมายแล้ว' : etaTimeStr,
                 etaTimestamp: etaMs,
                 isArrived: instantRoute.isArrived,
-                statusText: instantRoute.isArrived
-                    ? '📍 ถึงจุดอุปกรณ์ไฟฟ้าแล้ว'
-                    : `อีกประมาณ ${instantRoute.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
-                updatedAt: nowIso
+                updatedAt: nowIso,
+                isTraveling: true,
+                status: 'traveling'
             };
 
-            const navMap = getEquipNavMap();
-            navMap[curUser] = navRecord;
-            saveEquipNavMap(navMap);
+            saveEquipNavMap(equipMap);
+            window.syncEquipNavToTechLocations();
+            updateEquipNavFloatingBanner();
+            syncDashboardTravelingCountsAndCards();
+
+            let res = null;
+            if (typeof origStartLabeledNav === 'function') {
+                try {
+                    res = await origStartLabeledNav.call(this, placeId, openExternalMaps);
+                } catch (err) {
+                    console.warn('startLabeledPlaceNavigation warning:', err);
+                }
+            }
+
+            const afterDomInfo = extractActiveMapDomInfo();
+            const afterMap = getEquipNavMap();
+            if (afterMap[navKey] && afterMap[navKey].isTraveling) {
+                if (afterDomInfo.distanceKm) {
+                    afterMap[navKey].distanceKm = String(afterDomInfo.distanceKm.toFixed(1));
+                    afterMap[navKey].initialDistanceKm = String(afterDomInfo.distanceKm.toFixed(1));
+                }
+                if (afterDomInfo.durationMin) {
+                    afterMap[navKey].durationMin = afterDomInfo.durationMin;
+                    afterMap[navKey].etaTimestamp = nowMs + (afterDomInfo.durationMin * 60000);
+                }
+                if (afterDomInfo.etaTime) {
+                    afterMap[navKey].etaTime = afterDomInfo.etaTime;
+                }
+                afterMap[navKey].updatedAt = new Date().toISOString();
+                saveEquipNavMap(afterMap);
+                window.syncEquipNavToTechLocations();
+                updateEquipNavFloatingBanner();
+                syncDashboardTravelingCountsAndCards();
+            }
+
+            if (typeof pushAllJobsToCloud === 'function') {
+                pushAllJobsToCloud(true);
+            }
+            return res;
+        };
+
+        window.stopEquipmentNavigationByKey = function(navKey, isArrived) {
+            const equipMap = getEquipNavMap();
+            const targetNav = equipMap[navKey];
+            const techName = (targetNav && targetNav.techName) || getCurrentTechCanonicalName();
+
+            if (targetNav && !window.canUserControlNavigation(targetNav.techName)) {
+                if (typeof showToast === 'function') {
+                    showToast('⛔ เฉพาะช่างผู้กำลังเดินทาง หรือ Admin เท่านั้นที่ยกเลิกได้');
+                }
+                return false;
+            }
+
+            const cancelStamp = getMonotonicCancelTimestamp(targetNav);
+            const cancelMap = getCancelledEquipNavMap();
+            cancelMap[navKey] = cancelStamp.ms;
+            saveCancelledEquipNavMap(cancelMap);
+
+            delete equipMap[navKey];
+            saveEquipNavMap(equipMap);
 
             if (typeof getTechLocationsMap === 'function') {
                 const locMap = getTechLocationsMap();
-                locMap[curUser] = {
-                    ...(locMap[curUser] || {}),
-                    username: curUser,
-                    group: myGroup,
-                    activeEquipNav: navRecord,
-                    isOnline: true,
-                    lastSeenAt: nowIso,
-                    updatedAt: nowIso
-                };
-                syncCancelRegistryIntoTechLocations(locMap);
+                const tKey = String(techName).trim();
+                if (locMap[tKey] && locMap[tKey].activeEquipNav) {
+                    locMap[tKey].activeEquipNav = {
+                        id: navKey,
+                        techName: tKey,
+                        isTraveling: false,
+                        status: isArrived ? 'arrived' : 'cancelled',
+                        cancelledAtMs: cancelStamp.ms,
+                        updatedAt: cancelStamp.iso
+                    };
+                    locMap[tKey].updatedAt = cancelStamp.iso;
+                }
                 localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                window.syncEquipNavToTechLocations();
             }
 
-            updateEquipNavDashboardAndBanner();
-            refreshEquipNavWithRealRoute(curUser, startCoord, destCoord, sessionId);
-
-            pendingForceCloudPush = true;
-            if (typeof window.pushAllJobsToCloud === 'function') {
-                window.pushAllJobsToCloud(true);
-            }
-        }
-
-        window.finishMyEquipmentNavigation = async function(isArrivedDone = false, targetUserKey = null) {
-            const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
-            const targetUser = targetUserKey || curUser;
-
-            if (!window.canUserControlNavigation(targetUser)) {
-                const disp = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(targetUser) : targetUser;
-                if (typeof showToast === 'function') {
-                    showToast(`⛔ เฉพาะผู้กำลังเดินทาง (${disp}) หรือ Admin เท่านั้นที่กดออกจากนำทางได้`);
-                }
-                return;
-            }
-
-            const navMap = getEquipNavMap();
-            const locMap = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
-            const cancelEquipMap = getCancelledEquipNavMap();
-
-            let stoppedPlaceName = 'อุปกรณ์ไฟฟ้า';
-            let hadActiveTravel = isMapNavBoxCurrentlyVisible();
-            const keysToStop = new Set([targetUser]);
-            const relatedNavObjects = [];
-
-            Object.keys(navMap).forEach(k => {
-                if (k === targetUser ||
-                    (typeof isSameTechPerson === 'function' && isSameTechPerson(k, targetUser)) ||
-                    navMap[k]?.techName === targetUser ||
-                    (typeof isSameTechPerson === 'function' && isSameTechPerson(navMap[k]?.techName, targetUser))) {
-                    keysToStop.add(k);
-                    if (navMap[k]) {
-                        relatedNavObjects.push(navMap[k]);
-                        if (navMap[k].isTraveling === true) hadActiveTravel = true;
-                    }
-                }
-            });
-
-            Object.keys(locMap).forEach(lk => {
-                if (lk === REGISTRY_LOC_KEY) return;
-                if (lk === targetUser ||
-                    (typeof isSameTechPerson === 'function' && isSameTechPerson(lk, targetUser)) ||
-                    locMap[lk]?.activeEquipNav?.techName === targetUser) {
-                    keysToStop.add(lk);
-                    if (locMap[lk]?.activeEquipNav) {
-                        relatedNavObjects.push(locMap[lk].activeEquipNav);
-                        if (locMap[lk].activeEquipNav.isTraveling === true) hadActiveTravel = true;
-                    }
-                }
-            });
-
-            // หากไม่ได้อยู่ในสถานะกำลังเดินทางอยู่เลย ไม่ต้องทำซ้ำและไม่ต้องแสดงแจ้งเตือน
-            if (!hadActiveTravel) return;
-
-            const { ms: cancelMs, iso: cancelIso } = getMonotonicCancelTimestamp(relatedNavObjects);
-            const stoppedRecord = { isTraveling: false, cancelledAtMs: cancelMs, updatedAt: cancelIso };
-
-            const isStoppingMyOwnNav = keysToStop.has(curUser) ||
-                Array.from(keysToStop).some(k => typeof isSameTechPerson === 'function' && isSameTechPerson(k, curUser));
-
-            if (isStoppingMyOwnNav && typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
+            if (window.canUserControlNavigation(techName) && typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
                 isStoppingEquipNavInternal = true;
                 try { realStopMapNavFn(true); } catch (e) {}
                 isStoppingEquipNavInternal = false;
             }
 
-            keysToStop.forEach(k => {
-                if (navMap[k]?.placeName) stoppedPlaceName = navMap[k].placeName;
-                else if (locMap[k]?.activeEquipNav?.placeName) stoppedPlaceName = locMap[k].activeEquipNav.placeName;
-
-                cancelEquipMap[k] = cancelMs;
-                navMap[k] = stoppedRecord;
-                locMap[k] = {
-                    ...(locMap[k] || { username: k }),
-                    activeEquipNav: stoppedRecord,
-                    lastSeenAt: cancelIso,
-                    updatedAt: cancelIso
-                };
-            });
-
-            saveCancelledEquipNavMap(cancelEquipMap);
-            saveEquipNavMap(navMap);
-            syncCancelRegistryIntoTechLocations(locMap);
-            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
-
-            if (isStoppingMyOwnNav) {
-                document.getElementById('mapActiveNavContainer')?.classList.add('hidden');
-            }
-
-            updateEquipNavDashboardAndBanner();
-            if (typeof window.renderJobCards === 'function') window.renderJobCards();
-            if (typeof window.renderLabeledPlacesList === 'function') window.renderLabeledPlacesList(false);
+            updateEquipNavFloatingBanner();
+            syncDashboardTravelingCountsAndCards();
 
             if (typeof showToast === 'function') {
-                showToast(isArrivedDone
-                    ? `✅ ถึงที่หมาย "${stoppedPlaceName}" เรียบร้อยแล้ว`
-                    : `↩️ ยกเลิกการเดินทางไป "${stoppedPlaceName}" แล้ว`
-                );
+                showToast(isArrived ? '✅ บันทึกสถานะถึงจุดติดตั้งอุปกรณ์ไฟฟ้าแล้ว' : '↩️ ยกเลิกการเดินทางไปอุปกรณ์ไฟฟ้าแล้ว');
             }
 
-            pendingForceCloudPush = true;
-            if (typeof window.pushAllJobsToCloud === 'function') {
-                await window.pushAllJobsToCloud(true);
+            if (typeof pushAllJobsToCloud === 'function') {
+                pushAllJobsToCloud(true);
+            }
+            return true;
+        };
+
+        window.finishMyEquipmentNavigation = function(isArrived) {
+            const myName = getCurrentTechCanonicalName();
+            const myKey = normalizeTechKey(myName);
+            const equipMap = getEquipNavMap();
+            const targetKey = equipMap[myKey]
+                ? myKey
+                : Object.keys(equipMap).find(k => equipMap[k] && window.canUserControlNavigation(equipMap[k].techName))
+                || Object.keys(equipMap)[0];
+
+            if (targetKey) {
+                window.stopEquipmentNavigationByKey(targetKey, Boolean(isArrived));
+            } else if (typeof realStopMapNavFn === 'function') {
+                isStoppingEquipNavInternal = true;
+                try { realStopMapNavFn(true); } catch (e) {}
+                isStoppingEquipNavInternal = false;
+                updateEquipNavFloatingBanner();
+                syncDashboardTravelingCountsAndCards();
             }
         };
 
-        function updateEquipNavDashboardAndBanner() {
-            const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
-            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-            const activeEquipList = isLogged ? getVisibleActiveEquipNavList() : [];
-            const equipCount = activeEquipList.length;
-
-            const jobType = document.getElementById('filterJobType')?.value || 'outage';
-            const selectedDateIso = document.getElementById('filterJobDate')?.value || '';
-            let targetThaiDateStr = '';
-            if (selectedDateIso) {
-                const [y, m, d] = selectedDateIso.split('-');
-                targetThaiDateStr = `${d}/${m}/${parseInt(y, 10) + 543}`;
-            }
-
-            const allRawList = jobType === 'outage'
-                ? JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
-                : JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
-
-            let repairTravelingCount = 0;
-            allRawList.forEach(item => {
-                if (typeof canCurrentUserSeeJob === 'function' && !canCurrentUserSeeJob(item)) return;
-                if (targetThaiDateStr && typeof getJobDateDisplay === 'function' && getJobDateDisplay(item, jobType) !== targetThaiDateStr) return;
-                const isDone = item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น');
-                if (!isDone && Boolean(item.techNav)) {
-                    repairTravelingCount++;
-                }
-            });
-
-            const travEl = document.getElementById('countTravelingJobs');
-            if (travEl) {
-                travEl.textContent = String(repairTravelingCount + equipCount);
-            }
-
-            const banner = document.getElementById('pea-equip-nav-banner');
-            const bannerCount = document.getElementById('peaEquipBannerCount');
-            const bannerTarget = document.getElementById('peaEquipBannerTarget');
-            const finishBtn = document.getElementById('peaEquipBannerFinishBtn');
-            const cancelBtn = document.getElementById('peaEquipBannerCancelBtn');
-
-            if (banner && bannerCount && bannerTarget) {
-                if (isLogged && equipCount > 0) {
-                    const myOwnNav = activeEquipList.find(n => typeof isSameTechPerson === 'function' && isSameTechPerson(n.techName, curUser));
-                    const displayNav = myOwnNav || activeEquipList[activeEquipList.length - 1];
-                    const canControl = window.canUserControlNavigation(displayNav.techName);
-                    const techDisp = typeof formatTechDisplayName === 'function'
-                        ? formatTechDisplayName(displayNav.techName)
-                        : displayNav.techName;
-
-                    bannerCount.textContent = String(equipCount);
-                    bannerTarget.textContent = `⚡ ${displayNav.placeName} • 👷 ${techDisp} (ถึง ~${displayNav.etaTime || '-'})`;
-
-                    if (finishBtn && cancelBtn) {
-                        if (canControl) {
-                            finishBtn.classList.remove('hidden');
-                            cancelBtn.classList.remove('hidden');
-                            finishBtn.onclick = () => window.finishMyEquipmentNavigation(true, displayNav.techName);
-                            cancelBtn.onclick = () => window.finishMyEquipmentNavigation(false, displayNav.techName);
-                        } else {
-                            finishBtn.classList.add('hidden');
-                            cancelBtn.classList.add('hidden');
-                        }
-                    }
-                    banner.style.display = 'flex';
-                } else {
-                    banner.style.display = 'none';
-                }
-            }
-        }
-
-        function injectEquipNavCardsIntoJobContainer() {
-            const container = document.getElementById('jobCardsContainer');
-            const statusFilter = document.getElementById('filterJobStatus')?.value || 'pending';
-            const keyword = (document.getElementById('searchJobKeyword')?.value || '').toLowerCase().trim();
-            if (!container) return;
-
-            container.querySelectorAll('.equip-traveling-job-card, .equip-traveling-notice-banner').forEach(el => el.remove());
-
-            const activeEquipList = getVisibleActiveEquipNavList().filter(nav => {
-                if (!keyword) return true;
-                return JSON.stringify(nav).toLowerCase().includes(keyword);
-            });
-
-            if (activeEquipList.length === 0) return;
-
-            if (statusFilter === 'traveling' || statusFilter === 'all') {
-                const elSAll = document.getElementById('countShiftAll');
-                if (elSAll) {
-                    const currentShiftAll = parseInt(elSAll.textContent || '0', 10) || 0;
-                    elSAll.textContent = String(currentShiftAll + activeEquipList.length);
-                }
-            }
-
-            if (statusFilter === 'pending') {
-                const hasExistingBanner = container.querySelector('button.bg-gradient-to-r.from-blue-600');
-                if (!hasExistingBanner) {
-                    const noticeBanner = document.createElement('button');
-                    noticeBanner.type = 'button';
-                    noticeBanner.onclick = () => switchStatusTab('traveling');
-                    noticeBanner.className = 'equip-traveling-notice-banner w-full p-3 bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white rounded-2xl shadow-md flex items-center justify-between text-xs font-bold transition mb-2';
-                    noticeBanner.innerHTML = `
-                        <span class="flex items-center gap-1.5">🚗 ขณะนี้กำลังเดินทางไปจุดอุปกรณ์ไฟฟ้า ${activeEquipList.length} จุด</span>
-                        <span class="bg-white/20 px-2.5 py-1 rounded-xl text-[11px]">กดดูเวลาเดินทาง ➔</span>
-                    `;
-                    container.insertBefore(noticeBanner, container.firstChild);
-                }
+        window.stopLabeledPlaceNavigation = function(silent) {
+            if (isStoppingEquipNavInternal) {
+                if (typeof realStopMapNavFn === 'function') return realStopMapNavFn.apply(this, arguments);
                 return;
             }
-
-            if (statusFilter !== 'traveling' && statusFilter !== 'all') return;
-
-            const emptyMsgDiv = container.querySelector('div.text-center.text-slate-400');
-            if (emptyMsgDiv) emptyMsgDiv.remove();
-
-            activeEquipList.forEach(nav => {
-                const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${nav.destLat},${nav.destLon}&travelmode=driving`;
-                const navHtml = typeof formatRealtimeNavHtml === 'function'
-                    ? formatRealtimeNavHtml(nav)
-                    : `<div class="font-bold text-blue-700">🚗 ${nav.statusText || 'กำลังเดินทาง'}</div>`;
-                const safeUserKey = String(nav.techName || '').replace(/'/g, "\\'");
-                const safePlaceId = String(nav.placeId || '').replace(/'/g, "\\'");
-                const canControl = window.canUserControlNavigation(nav.techName);
-                const techDisp = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(nav.techName) : (nav.techName || '-');
-
-                const actionButtonsHtml = canControl
-                    ? `
-                        <button type="button" onclick="finishMyEquipmentNavigation(false, '${safeUserKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition">
-                            ❌ ยกเลิกเดินทาง
-                        </button>
-                      </div>
-                      <button type="button" onclick="finishMyEquipmentNavigation(true, '${safeUserKey}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition">
-                          ✅ ถึงที่หมายแล้ว
-                      </button>
-                    `
-                    : `
-                      </div>
-                      <span class="bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">
-                          🔒 ช่าง ${techDisp} กำลังเดินทาง
-                      </span>
-                    `;
-
-                const card = document.createElement('div');
-                card.className = 'equip-traveling-job-card p-3.5 rounded-2xl border border-sky-300 border-l-[6px] border-l-sky-600 ring-1 ring-sky-100 bg-white shadow-sm space-y-2';
-                card.innerHTML = `
-                    <div class="flex justify-between items-start gap-2">
-                        <div class="min-w-0 flex-1">
-                            <div class="mb-1 flex flex-wrap items-center gap-1">
-                                <span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">🏢 ${nav.ownerGroup || 'กฟส.บึง'}</span>
-                                <span class="inline-block bg-teal-50 text-teal-800 border border-teal-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⚡ แผนที่อุปกรณ์ไฟฟ้า</span>
-                                <span class="inline-block bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⏰ ออก ${nav.departTime || '-'}</span>
-                            </div>
-                            <div class="text-slate-900 text-sm font-extrabold flex items-center gap-1">
-                                <span>⚡</span>
-                                <span>อุปกรณ์: ${nav.placeName}</span>
-                            </div>
-                        </div>
-                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 bg-blue-100 text-blue-700 border-blue-300 animate-pulse">
-                            ${nav.isArrived ? '📍 ถึงหน้างานแล้ว' : '🚗 กำลังเดินทาง'}
-                        </span>
-                    </div>
-                    <div class="text-xs text-slate-600">
-                        📍 พิกัดอุปกรณ์: ${Number(nav.destLat).toFixed(6)}, ${Number(nav.destLon).toFixed(6)}
-                        ${nav.placeNote ? ` | 📝 ${nav.placeNote}` : ''}
-                    </div>
-                    <div class="equip-live-nav-box p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl text-[11px] text-blue-950 space-y-1" data-equip-user="${nav.techName}">
-                        ${navHtml}
-                    </div>
-                    <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100">
-                        <div class="flex flex-wrap gap-1.5">
-                            <a href="${mapsUrl}" target="_blank" class="bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">
-                                🗺️ นำทาง Maps
-                            </a>
-                            <button type="button" onclick="switchTechMainTab('map'); setTimeout(() => { if(typeof focusSinglePinOnMap==='function') focusSinglePinOnMap('${safePlaceId}'); }, 250);" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition">
-                                🎯 ดูในแผนที่อุปกรณ์
-                            </button>
-                            ${actionButtonsHtml}
-                    </div>
-                `;
-                container.insertBefore(card, container.firstChild);
-            });
-        }
-
-        function lockUnauthorizedJobCancelButtons() {
-            const container = document.getElementById('jobCardsContainer');
-            if (!container) return;
-            container.querySelectorAll('button[onclick^="handleCancelNavigation("]').forEach(btn => {
-                const onclickAttr = btn.getAttribute('onclick') || '';
-                const m = onclickAttr.match(/handleCancelNavigation\('([^']+)',\s*'([^']+)'\)/);
-                if (!m) return;
-                const [_, key, jType] = m;
-                const storageKey = jType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
-                const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
-                const item = list.find(i => (jType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
-                if (item && item.techNav && !window.canUserControlNavigation(item.techNav.techName)) {
-                    btn.remove();
+            isStoppingEquipNavInternal = true;
+            try {
+                if (typeof realStopMapNavFn === 'function') {
+                    realStopMapNavFn.apply(this, arguments);
                 }
-            });
-        }
-
-        const _origPushAllJobs = window.pushAllJobsToCloud;
-        if (typeof _origPushAllJobs === 'function') {
-            window.pushAllJobsToCloud = async function(silent = false) {
-                syncCancelRegistryIntoTechLocations();
-                if (typeof isPushingToCloudNow !== 'undefined' && isPushingToCloudNow) {
-                    pendingForceCloudPush = true;
-                    return false;
+                const myName = getCurrentTechCanonicalName();
+                const myKey = normalizeTechKey(myName);
+                const equipMap = getEquipNavMap();
+                const targetKey = equipMap[myKey] ? myKey : Object.keys(equipMap)[0];
+                if (targetKey) {
+                    window.stopEquipmentNavigationByKey(targetKey, false);
                 }
-                const res = await _origPushAllJobs.apply(this, arguments);
-                if (pendingForceCloudPush) {
-                    pendingForceCloudPush = false;
-                    return await window.pushAllJobsToCloud(true);
-                }
-                return res;
-            };
-        }
-
-        const _origMergeCloudJobs = window.mergeCloudJobsToLocal;
-        if (typeof _origMergeCloudJobs === 'function') {
-            window.mergeCloudJobsToLocal = function(cloudJobs) {
-                const cancelMap = getCancelledJobNavMap();
-                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                const cloudJobMap = new Map();
-
-                if (Array.isArray(cloudJobs)) {
-                    cloudJobs.forEach(cJob => {
-                        if (!cJob || cJob.jobType === 'tech_loc') return;
-                        const k = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
-                        cloudJobMap.set(k, cJob);
-                        const localCancelIso = cancelMap[k];
-                        if (localCancelIso) {
-                            const navTime = cJob.techNav?.updatedAt || '';
-                            if (!navTime || localCancelIso >= navTime) {
-                                delete cJob.techNav;
-                                cJob.navCancelledAt = localCancelIso;
-                            }
-                        }
-                    });
-                }
-
-                ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
-                    const isFault = storageKey === 'fault_reports_all';
-                    let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
-                    let modified = false;
-                    list.forEach(item => {
-                        if (!item || !item.techNav) return;
-                        const k = isFault ? item.timestamp : item.dateTimeSaved;
-                        const cJob = cloudJobMap.get(k);
-                        const cancelIso = cancelMap[k] || cJob?.navCancelledAt || '';
-                        const navTime = item.techNav.updatedAt || '';
-                        const isOtherTech = curUser && typeof isSameTechPerson === 'function' && !isSameTechPerson(item.techNav.techName, curUser);
-
-                        if ((cancelIso && (!navTime || cancelIso >= navTime)) || (isOtherTech && cJob && !cJob.techNav)) {
-                            delete item.techNav;
-                            item.navCancelledAt = cancelIso || new Date().toISOString();
-                            modified = true;
-                        }
-                    });
-                    if (modified) localStorage.setItem(storageKey, JSON.stringify(list));
-                });
-
-                return _origMergeCloudJobs.apply(this, arguments);
-            };
-        }
-
-        window.handleCancelNavigation = async function(key, jobType) {
-            const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
-            let list = JSON.parse(localStorage.getItem(storageKey) || '[]');
-            const idx = list.findIndex(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
-            if (idx !== -1 && list[idx].techNav) {
-                const ownerTech = list[idx].techNav.techName;
-                if (!window.canUserControlNavigation(ownerTech)) {
-                    const disp = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(ownerTech) : ownerTech;
-                    if (typeof showToast === 'function') {
-                        showToast(`⛔ เฉพาะผู้กำลังเดินทาง (${disp}) หรือ Admin เท่านั้นที่ยกเลิกการเดินทางนี้ได้`);
-                    }
-                    return;
-                }
+            } finally {
+                isStoppingEquipNavInternal = false;
             }
-
-            if (typeof stopRealtimeGpsWatch === 'function') {
-                stopRealtimeGpsWatch();
-            }
-
-            const existingNav = idx !== -1 ? list[idx].techNav : null;
-            const { iso: cancelIso } = getMonotonicCancelTimestamp(existingNav);
-
-            const cancelMap = getCancelledJobNavMap();
-            cancelMap[key] = cancelIso;
-            saveCancelledJobNavMap(cancelMap);
-
-            if (idx !== -1) {
-                delete list[idx].techNav;
-                list[idx].navCancelledAt = cancelIso;
-                localStorage.setItem(storageKey, JSON.stringify(list));
-            }
-
-            if (typeof cachedCloudJobs !== 'undefined' && Array.isArray(cachedCloudJobs)) {
-                cachedCloudJobs.forEach(cj => {
-                    const ck = cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved;
-                    if (ck === key) {
-                        delete cj.techNav;
-                        cj.navCancelledAt = cancelIso;
-                    }
-                });
-            }
-
-            syncCancelRegistryIntoTechLocations();
-            if (typeof window.renderJobCards === 'function') window.renderJobCards();
-            if (typeof showToast === 'function') showToast("↩️ ยกเลิกการเดินทางใบงานเรียบร้อยแล้ว");
-
-            pendingForceCloudPush = true;
-            await window.pushAllJobsToCloud(true);
         };
 
-        const _origStartNav = window.handleStartNavigation;
-        if (typeof _origStartNav === 'function') {
-            window.handleStartNavigation = async function(key, jobType, gpsLink) {
-                const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
-                const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
-                const item = list.find(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
-                if (item && item.techNav && !window.canUserControlNavigation(item.techNav.techName)) {
-                    if (gpsLink) {
-                        window.open(gpsLink, '_blank');
-                    } else if (typeof showToast === 'function') {
-                        const disp = typeof formatTechDisplayName === 'function' ? formatTechDisplayName(item.techNav.techName) : item.techNav.techName;
-                        showToast(`🚗 งานนี้ช่าง ${disp} กำลังเดินทางอยู่แล้ว`);
-                    }
-                    return;
-                }
-
-                const cancelMap = getCancelledJobNavMap();
-                if (cancelMap[key]) {
-                    delete cancelMap[key];
-                    saveCancelledJobNavMap(cancelMap);
-                    syncCancelRegistryIntoTechLocations();
-                }
-                return await _origStartNav.apply(this, arguments);
-            };
-        }
-
-        // 🛡️ 8. ซิงค์สถานะ activeEquipNav จาก Cloud โดยสั่งหยุดเฉพาะเมื่อเปลี่ยนจาก "กำลังเดินทาง -> ยกเลิก" จริงๆ เท่านั้น
-        const _origMergeLocsBase = window.mergeTechLocationsMap;
-        if (typeof _origMergeLocsBase === 'function') {
-            window.mergeTechLocationsMap = function(cloudLocs) {
-                absorbCancelRegistryFromCloudLocs(cloudLocs);
-
-                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                const localBefore = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
-                const navMap = getEquipNavMap();
-
-                _origMergeLocsBase.apply(this, arguments);
-
-                if (!cloudLocs || typeof cloudLocs !== 'object') return;
-                const localAfter = typeof getTechLocationsMap === 'function' ? getTechLocationsMap() : {};
-                let changed = false;
-
-                Object.keys(cloudLocs).forEach(uKey => {
-                    if (uKey === REGISTRY_LOC_KEY) return;
-                    const cItem = cloudLocs[uKey];
-                    const cNav = cItem?.activeEquipNav;
-                    const prevNav = navMap[uKey] || localBefore[uKey]?.activeEquipNav;
-
-                    const pTime = new Date(prevNav?.updatedAt || 0).getTime() || 0;
-                    const cTime = new Date(cNav?.updatedAt || 0).getTime() || 0;
-                    const isMe = Boolean(curUser && (uKey === curUser || (typeof isSameTechPerson === 'function' && isSameTechPerson(uKey, curUser))));
-                    const wasTravelingBefore = Boolean(prevNav && prevNav.isTraveling === true);
-
-                    // กรณีที่ 1: รายการนำทางนี้ถูกบันทึกในทะเบียนยกเลิกแล้ว
-                    if (cNav && isEquipNavCancelled(uKey, cNav)) {
-                        if (wasTravelingBefore || (isMe && isMapNavBoxCurrentlyVisible())) {
-                            const stopMs = Math.max(cTime, pTime, Date.now());
-                            const stoppedObj = {
-                                isTraveling: false,
-                                cancelledAtMs: stopMs,
-                                updatedAt: new Date(stopMs).toISOString()
-                            };
-                            navMap[uKey] = stoppedObj;
-                            if (localAfter[uKey]) localAfter[uKey].activeEquipNav = stoppedObj;
-                            changed = true;
-                            if (isMe && typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
-                                isStoppingEquipNavInternal = true;
-                                try { realStopMapNavFn(true); } catch (e) {}
-                                isStoppingEquipNavInternal = false;
-                            }
-                        }
-                        return;
-                    }
-
-                    // กรณีที่ 2: ข้อมูลในเครื่องตัวเองใหม่กว่า Cloud
-                    if (prevNav && pTime > cTime) {
-                        if (JSON.stringify(localAfter[uKey]?.activeEquipNav) !== JSON.stringify(prevNav)) {
-                            navMap[uKey] = prevNav;
-                            localAfter[uKey] = {
-                                ...(localAfter[uKey] || cItem || { username: uKey }),
-                                activeEquipNav: prevNav,
-                                lastSeenAt: prevNav.updatedAt || localAfter[uKey]?.lastSeenAt,
-                                updatedAt: prevNav.updatedAt || localAfter[uKey]?.updatedAt
-                            };
-                            if (isMe) navMap[curUser] = prevNav;
-                            changed = true;
-                        }
-                        return;
-                    }
-
-                    // กรณีที่ 3: ข้อมูลจาก Cloud เป็นสถานะไม่ได้เดินทาง
-                    if (!cNav || cNav.isTraveling === false) {
-                        // สั่งหยุดเฉพาะเมื่อก่อนหน้านี้กำลังเดินทางอยู่จริงเท่านั้น (ป้องกันการเด้งซ้ำทุก 3 วินาที)
-                        if (wasTravelingBefore && (!isMe || cTime >= pTime)) {
-                            const stoppedObj = {
-                                isTraveling: false,
-                                cancelledAtMs: cNav?.cancelledAtMs || cTime || Date.now(),
-                                updatedAt: cNav?.updatedAt || new Date().toISOString()
-                            };
-                            navMap[uKey] = stoppedObj;
-                            if (localAfter[uKey]) localAfter[uKey].activeEquipNav = stoppedObj;
-                            changed = true;
-                            if (isMe) {
-                                navMap[curUser] = stoppedObj;
-                                if (typeof realStopMapNavFn === 'function' && !isStoppingEquipNavInternal) {
-                                    isStoppingEquipNavInternal = true;
-                                    try { realStopMapNavFn(true); } catch (e) {}
-                                    isStoppingEquipNavInternal = false;
-                                }
-                            }
-                        }
-                    } else if (cTime > pTime || !prevNav) {
-                        navMap[uKey] = cNav;
-                        localAfter[uKey] = { ...(localAfter[uKey] || cItem), activeEquipNav: cNav };
-                        if (isMe) navMap[curUser] = cNav;
-                        changed = true;
-                    }
-                });
-
-                syncCancelRegistryIntoTechLocations(localAfter);
-                if (changed) {
-                    localStorage.setItem('elec_tech_locations_map', JSON.stringify(localAfter));
-                    saveEquipNavMap(navMap);
-                }
-            };
-        }
-
-        // 9. เชื่อมกับฟังก์ชันเริ่ม/หยุดนำทางในแผนที่อุปกรณ์ไฟฟ้า
-        if (typeof origStartLabeledNav === 'function') {
-            window.startLabeledPlaceNavigation = async function(placeId, openExternalGoogleMaps = false) {
-                try {
-                    const allPins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
-                    const targetPin = allPins.find(p => p && p.id === placeId);
-                    if (targetPin) {
-                        setMyEquipmentNavigation(targetPin);
-                    }
-                } catch (e) {}
-                return await origStartLabeledNav.apply(this, arguments);
-            };
-        }
-
-        if (typeof realStopMapNavFn === 'function') {
-            window.stopLabeledPlaceNavigation = function(silent = false) {
-                if (isStoppingEquipNavInternal) {
-                    return realStopMapNavFn.call(this, true);
-                }
-                const curUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
-                isStoppingEquipNavInternal = true;
-                const res = realStopMapNavFn.call(this, true);
-                isStoppingEquipNavInternal = false;
-                if (!silent) {
-                    window.finishMyEquipmentNavigation(false, curUser);
-                }
-                return res;
-            };
-        }
-
-        // 10. เชื่อมกับ recordCurrentTechGpsLocation
-        const origRecordGps = window.recordCurrentTechGpsLocation;
-        if (typeof origRecordGps === 'function') {
-            window.recordCurrentTechGpsLocation = function(lat, lon) {
-                const res = origRecordGps.apply(this, arguments);
-                const nowMs = Date.now();
-                if (lat && lon && (nowMs - lastGpsEquipRouteUpdateMs > 8000)) {
-                    const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                    const navMap = getEquipNavMap();
-                    const myNav = navMap[curUser];
-                    if (myNav && myNav.isTraveling === true && !isEquipNavCancelled(curUser, myNav)) {
-                        lastGpsEquipRouteUpdateMs = nowMs;
-                        refreshEquipNavWithRealRoute(
-                            curUser,
-                            { lat: parseFloat(lat), lon: parseFloat(lon) },
-                            { lat: myNav.destLat, lon: myNav.destLon },
-                            myNav.navSessionId
-                        );
-                    }
-                }
-                return res;
-            };
-        }
-
-        // 11. เชื่อมกับ handleTechLogout
-        const origLogout = window.handleTechLogout;
-        if (typeof origLogout === 'function') {
-            window.handleTechLogout = async function() {
-                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-                if (curUser) {
-                    await window.finishMyEquipmentNavigation(false, curUser);
-                }
-                const res = await origLogout.apply(this, arguments);
-                updateEquipNavDashboardAndBanner();
-                return res;
-            };
-        }
-
-        // 12. เชื่อมกับ renderJobCards
-        const origRenderJobCards = window.renderJobCards;
-        if (typeof origRenderJobCards === 'function') {
-            window.renderJobCards = function() {
-                const res = origRenderJobCards.apply(this, arguments);
-                lockUnauthorizedJobCancelButtons();
-                updateEquipNavDashboardAndBanner();
-                injectEquipNavCardsIntoJobContainer();
-                return res;
-            };
-        }
-
-        // 13. ซิงค์ข้ามหน้าจอทันทีเมื่อเปิดคู่กับ index.html
-        window.addEventListener('storage', function(e) {
-            if (e.key === EQUIP_NAV_STORAGE_KEY || e.key === 'elec_tech_locations_map' || e.key === CANCELLED_EQUIP_NAV_KEY || e.key === CANCELLED_JOB_NAV_KEY) {
-                updateEquipNavDashboardAndBanner();
-                if (typeof window.renderJobCards === 'function') {
-                    window.renderJobCards();
-                }
-            }
-        });
-
         setInterval(function() {
-            updateEquipNavDashboardAndBanner();
-            document.querySelectorAll('.equip-live-nav-box').forEach(box => {
-                const uKey = box.getAttribute('data-equip-user');
-                const navMap = getEquipNavMap();
-                if (uKey && navMap[uKey] && navMap[uKey].isTraveling && typeof formatRealtimeNavHtml === 'function') {
-                    box.innerHTML = formatRealtimeNavHtml(navMap[uKey]);
-                }
-            });
-        }, 1000);
+            window.syncEquipNavFromTechLocations();
+        }, 2000);
 
         window.addEventListener('DOMContentLoaded', function() {
-            syncCancelRegistryIntoTechLocations();
-            updateEquipNavDashboardAndBanner();
-            injectEquipNavCardsIntoJobContainer();
-            lockUnauthorizedJobCancelButtons();
+            setTimeout(function() {
+                window.syncEquipNavToTechLocations();
+                window.syncEquipNavFromTechLocations();
+                updateEquipNavFloatingBanner();
+                if (typeof window.renderJobCards === 'function') window.renderJobCards();
+            }, 400);
         });
     })();
     </script>
-<!-- ⚡ ระบบ Hyper-Speed Engine v3.1 (รวม ข้อ 1 Delta Patch + ข้อ 2 WebRTC P2P 5ms + ข้อ 3 Optimistic Queue 1ms พร้อมแนบหมุดอุปกรณ์และข้อมูลสำรองครบ 100%) -->
-<script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
-<script>
-(function() {
-    const CHANNEL_NAME = 'pea_smart_grid_hyper_v3';
-    const isTechPage = Boolean(document.getElementById('techMainApp'));
-    const isMainPage = Boolean(document.getElementById('mainAppContent'));
-    const MY_PEER_ID = 'peer_' + Math.random().toString(36).substring(2, 9) + '_' + (Date.now() % 100000);
-
-    const SYNC_KEYS = new Set([
-        'elecReportsComplete_all',
-        'fault_reports_all',
-        'elec_closed_jobs_registry',
-        'elec_deleted_jobs_registry',
-        'elec_tech_locations_map',
-        'elec_active_equip_nav_map_v2',
-        'elec_cancelled_equip_nav_map',
-        'elec_cancelled_job_nav_map',
-        'elec_labeled_places_list',
-        'elec_deleted_labeled_places_map',
-        'elec_deleted_equip_audit_logs'
-    ]);
-
-    const LOCAL_WATCHED_KEYS = new Set([...SYNC_KEYS, 'elec_user_accounts']);
-
-    const _rawGetItem = typeof _origLocalStorageGetItem === 'function'
-        ? _origLocalStorageGetItem
-        : Storage.prototype.getItem;
-    const _prevSetItem = Storage.prototype.setItem;
-
-    let isApplyingRemoteState = false;
-    let uiRefreshTimer = null;
-    const pendingChangedKeys = new Set();
-
-    // =========================================================
-    // 🖥️ 1. อัปเดตหน้าจอทันทีใน 1 เฟรม (16ms Debounce)
-    // =========================================================
-    function scheduleInstantUiRefresh(changedKey) {
-        if (changedKey) pendingChangedKeys.add(changedKey);
-        if (uiRefreshTimer) return;
-
-        uiRefreshTimer = requestAnimationFrame(() => {
-            uiRefreshTimer = null;
-            const keys = Array.from(pendingChangedKeys);
-            pendingChangedKeys.clear();
-
-            try {
-                if (isTechPage) {
-                    if (keys.some(k => k === 'elecReportsComplete_all' || k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
-                        if (typeof checkNewIncomingPendingJobs === 'function') checkNewIncomingPendingJobs();
-                        if (typeof renderJobCards === 'function') renderJobCards();
-                    }
-                    if (keys.some(k => k.includes('equip') || k === 'elec_tech_locations_map' || k.includes('cancelled'))) {
-                        if (typeof renderJobCards === 'function') renderJobCards();
-                        if (typeof updateLiveNavDomElements === 'function') updateLiveNavDomElements();
-                    }
-                    if (keys.some(k => k.includes('labeled') || k.includes('audit'))) {
-                        if (typeof renderLabeledPlacesList === 'function') renderLabeledPlacesList(true);
-                    }
-                }
-
-                if (isMainPage) {
-                    if (keys.some(k => k === 'elecReportsComplete_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
-                        if (typeof loadOutageHistory === 'function') loadOutageHistory();
-                        if (typeof autoFillJobNo === 'function') autoFillJobNo();
-                    }
-                    if (keys.some(k => k === 'fault_reports_all' || k === 'elec_closed_jobs_registry' || k === 'elec_deleted_jobs_registry')) {
-                        if (typeof loadFaultHistory === 'function') loadFaultHistory();
-                    }
-                    if (keys.some(k => k === 'elec_tech_locations_map' || k.includes('equip_nav') || k.includes('cancelled'))) {
-                        if (typeof renderNavEtaBadgesInMainHistory === 'function') renderNavEtaBadgesInMainHistory();
-                    }
-                    keys.forEach(k => {
-                        try { window.dispatchEvent(new StorageEvent('storage', { key: k })); } catch (e) {}
-                    });
-                }
-            } catch (err) {}
-        });
-    }
-
-    // =========================================================
-    // 🔀 2. ผสานข้อมูลสดจาก WebRTC P2P / WebSocket ลงในเครื่อง
-    // =========================================================
-    function applyIncomingLivePacket(key, incomingValStr) {
-        if (!incomingValStr) return;
-        isApplyingRemoteState = true;
-        try {
-            const currentValStr = _rawGetItem.call(localStorage, key);
-            if (currentValStr === incomingValStr) return;
-
-            if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                const isFault = (key === 'fault_reports_all');
-                const kField = isFault ? 'timestamp' : 'dateTimeSaved';
-                const delReg = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_jobs_registry') || '{}');
-                const cancelJobMap = JSON.parse(_rawGetItem.call(localStorage, 'elec_cancelled_job_nav_map') || '{}');
-
-                const localArr = JSON.parse(currentValStr || '[]');
-                const incomingArr = JSON.parse(incomingValStr || '[]');
-                const map = new Map();
-
-                localArr.forEach(item => {
-                    if (item && item[kField] && !delReg[item[kField]]) map.set(item[kField], item);
-                });
-
-                incomingArr.forEach(inItem => {
-                    if (!inItem || !inItem[kField] || delReg[inItem[kField]]) return;
-                    const id = inItem[kField];
-                    const ex = map.get(id);
-                    if (!ex) {
-                        map.set(id, inItem);
-                    } else {
-                        const inRepT = inItem.techReport?.updatedAt || '';
-                        const exRepT = ex.techReport?.updatedAt || '';
-                        const bestReport = inRepT >= exRepT ? (inItem.techReport || ex.techReport) : ex.techReport;
-
-                        const cancelIso = cancelJobMap[id] || ((inItem.navCancelledAt || '') >= (ex.navCancelledAt || '') ? inItem.navCancelledAt : ex.navCancelledAt) || '';
-                        const inNavT = inItem.techNav?.updatedAt || '';
-                        const exNavT = ex.techNav?.updatedAt || '';
-                        let bestNav = inNavT >= exNavT ? (inItem.techNav || ex.techNav) : ex.techNav;
-
-                        const isDone = bestReport && String(bestReport.status || '').includes('เสร็จสิ้น');
-                        if (isDone || (cancelIso && (!bestNav?.updatedAt || cancelIso >= bestNav.updatedAt))) {
-                            bestNav = undefined;
-                        }
-
-                        const merged = { ...ex, ...inItem, techReport: bestReport, navCancelledAt: cancelIso || undefined };
-                        if (!bestReport) delete merged.techReport;
-                        if (bestNav) merged.techNav = bestNav;
-                        else delete merged.techNav;
-                        map.set(id, merged);
-                    }
-                });
-
-                _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(map.values())));
-            } else if (key === 'elec_tech_locations_map' || key === 'elec_closed_jobs_registry' || key === 'elec_deleted_jobs_registry' || key === 'elec_active_equip_nav_map_v2' || key.includes('cancelled')) {
-                const localObj = JSON.parse(currentValStr || '{}');
-                const inObj = JSON.parse(incomingValStr || '{}');
-                if (key === 'elec_tech_locations_map' && typeof window.mergeTechLocationsMap === 'function') {
-                    window.mergeTechLocationsMap(inObj);
-                } else {
-                    _prevSetItem.call(localStorage, key, JSON.stringify({ ...localObj, ...inObj }));
-                }
-            } else if (key === 'elec_labeled_places_list') {
-                const delEquip = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
-                const localPins = JSON.parse(currentValStr || '[]');
-                const inPins = JSON.parse(incomingValStr || '[]');
-                const pinMap = new Map();
-
-                [...localPins, ...inPins].forEach(p => {
-                    if (!p || !p.id) return;
-                    if (delEquip[p.id]) {
-                        const delMs = new Date(delEquip[p.id]).getTime() || 0;
-                        const pinMs = new Date(p.updatedAt || 0).getTime() || 0;
-                        if (pinMs <= delMs) return;
-                    }
-                    const ex = pinMap.get(p.id);
-                    if (!ex || (p.updatedAt || '') >= (ex.updatedAt || '')) {
-                        pinMap.set(p.id, p);
-                    }
-                });
-                _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(pinMap.values())));
-            } else {
-                _prevSetItem.call(localStorage, key, incomingValStr);
-            }
-
-            scheduleInstantUiRefresh(key);
-        } catch (e) {
-        } finally {
-            isApplyingRemoteState = false;
-        }
-    }
-
-    // =========================================================
-    // ⚡ 3. ข้อ 2: ระบบ WebRTC P2P Direct Mesh (5–15ms ในไทย) + MQTT WSS
-    // =========================================================
-    function getTopicBase() {
-        const rawUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '') || 'pea_grid';
-        let hash = 0;
-        for (let i = 0; i < rawUrl.length; i++) {
-            hash = ((hash << 5) - hash) + rawUrl.charCodeAt(i);
-            hash |= 0;
-        }
-        return 'pea_hyper_v3_' + Math.abs(hash);
-    }
-
-    const TOPIC_DATA = getTopicBase() + '/data';
-    const TOPIC_SIGNAL = getTopicBase() + '/sig';
-    const WS_BROKERS = [
-        'wss://broker.emqx.io:8084/mqtt',
-        'wss://broker.hivemq.com:8884/mqtt'
-    ];
-    const RTC_CONFIG = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-    };
-
-    let mqttClient = null;
-    let brokerIdx = 0;
-    const rtcPeers = new Map();
-    const debounceSendTimers = {};
-
-    function setupDataChannelEvents(remotePeerId, dc) {
-        dc.onopen = () => {
-            const peerObj = rtcPeers.get(remotePeerId);
-            if (peerObj) peerObj.isReady = true;
-        };
-        dc.onclose = () => {
-            rtcPeers.delete(remotePeerId);
-        };
-        dc.onmessage = (evt) => {
-            try {
-                const packet = JSON.parse(evt.data);
-                if (packet && packet.type === 'DELTA_KEY' && packet.key && packet.val) {
-                    applyIncomingLivePacket(packet.key, packet.val);
-                } else if (packet && packet.type === 'CLOUD_POKE') {
-                    triggerImmediateCloudPull();
-                }
-            } catch (e) {}
-        };
-    }
-
-    function createPeerConnection(remotePeerId, isInitiator) {
-        if (typeof RTCPeerConnection === 'undefined') return null;
-        if (rtcPeers.size >= 12 && !rtcPeers.has(remotePeerId)) return null;
-
-        try {
-            const pc = new RTCPeerConnection(RTC_CONFIG);
-            const peerEntry = { pc, dc: null, isReady: false };
-            rtcPeers.set(remotePeerId, peerEntry);
-
-            pc.onicecandidate = (evt) => {
-                if (evt.candidate && mqttClient && mqttClient.connected) {
-                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
-                        from: MY_PEER_ID,
-                        to: remotePeerId,
-                        sigType: 'ice',
-                        candidate: evt.candidate
-                    }));
-                }
-            };
-
-            pc.onconnectionstatechange = () => {
-                if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
-                    rtcPeers.delete(remotePeerId);
-                }
-            };
-
-            if (isInitiator) {
-                const dc = pc.createDataChannel('pea_fast_lane', { ordered: true });
-                peerEntry.dc = dc;
-                setupDataChannelEvents(remotePeerId, dc);
-
-                pc.createOffer().then(offer => pc.setLocalDescription(offer)).then(() => {
-                    if (mqttClient && mqttClient.connected) {
-                        mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
-                            from: MY_PEER_ID,
-                            to: remotePeerId,
-                            sigType: 'offer',
-                            sdp: pc.localDescription
-                        }));
-                    }
-                }).catch(() => {});
-            } else {
-                pc.ondatachannel = (evt) => {
-                    peerEntry.dc = evt.channel;
-                    setupDataChannelEvents(remotePeerId, evt.channel);
-                };
-            }
-
-            return peerEntry;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    async function handleWebRtcSignal(msg) {
-        if (!msg || msg.from === MY_PEER_ID) return;
-        if (msg.to && msg.to !== MY_PEER_ID) return;
-
-        const remoteId = msg.from;
-        try {
-            if (msg.sigType === 'hello') {
-                if (MY_PEER_ID < remoteId && !rtcPeers.has(remoteId)) {
-                    createPeerConnection(remoteId, true);
-                } else if (MY_PEER_ID > remoteId && !rtcPeers.has(remoteId) && mqttClient?.connected) {
-                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
-                        from: MY_PEER_ID,
-                        to: remoteId,
-                        sigType: 'hello_ack'
-                    }));
-                }
-            } else if (msg.sigType === 'hello_ack') {
-                if (!rtcPeers.has(remoteId)) {
-                    createPeerConnection(remoteId, true);
-                }
-            } else if (msg.sigType === 'offer') {
-                const peerEntry = createPeerConnection(remoteId, false);
-                if (!peerEntry) return;
-                await peerEntry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-                const answer = await peerEntry.pc.createAnswer();
-                await peerEntry.pc.setLocalDescription(answer);
-                if (mqttClient && mqttClient.connected) {
-                    mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
-                        from: MY_PEER_ID,
-                        to: remoteId,
-                        sigType: 'answer',
-                        sdp: peerEntry.pc.localDescription
-                    }));
-                }
-            } else if (msg.sigType === 'answer') {
-                const peerEntry = rtcPeers.get(remoteId);
-                if (peerEntry && peerEntry.pc.signalingState === 'have-local-offer') {
-                    await peerEntry.pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-                }
-            } else if (msg.sigType === 'ice' && msg.candidate) {
-                const peerEntry = rtcPeers.get(remoteId);
-                if (peerEntry && peerEntry.pc.remoteDescription) {
-                    await peerEntry.pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-                }
-            }
-        } catch (e) {}
-    }
-
-    function initRealtimeTransport() {
-        if (typeof mqtt === 'undefined') return;
-        const brokerUrl = WS_BROKERS[brokerIdx % WS_BROKERS.length];
-
-        try {
-            mqttClient = mqtt.connect(brokerUrl, {
-                clientId: MY_PEER_ID,
-                clean: true,
-                connectTimeout: 4000,
-                reconnectPeriod: 3000
-            });
-
-            mqttClient.on('connect', () => {
-                mqttClient.subscribe([TOPIC_DATA, TOPIC_SIGNAL], { qos: 0 });
-                mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({
-                    from: MY_PEER_ID,
-                    sigType: 'hello'
-                }));
-            });
-
-            mqttClient.on('message', (topic, buf) => {
-                try {
-                    const packet = JSON.parse(buf.toString());
-                    if (!packet) return;
-
-                    if (topic === TOPIC_SIGNAL) {
-                        handleWebRtcSignal(packet);
-                        return;
-                    }
-
-                    if (topic === TOPIC_DATA && packet.sender !== MY_PEER_ID) {
-                        if (packet.type === 'DELTA_KEY' && packet.key && packet.val) {
-                            applyIncomingLivePacket(packet.key, packet.val);
-                        } else if (packet.type === 'CLOUD_POKE') {
-                            triggerImmediateCloudPull();
-                        }
-                    }
-                } catch (e) {}
-            });
-
-            mqttClient.on('error', () => { brokerIdx++; });
-        } catch (e) {}
-    }
-
-    function triggerImmediateCloudPull() {
-        if (isTechPage && typeof syncJobsFromCloud === 'function' && !isSyncingNow) {
-            syncJobsFromCloud(true);
-        } else if (isMainPage && typeof pullFieldReportsFromCloud === 'function' && !isUploadingFromMain) {
-            pullFieldReportsFromCloud();
-        }
-    }
-
-    function broadcastDeltaOverNetwork(key, valStr) {
-        if (!SYNC_KEYS.has(key)) return;
-        clearTimeout(debounceSendTimers[key]);
-
-        debounceSendTimers[key] = setTimeout(() => {
-            try {
-                let payloadStr = valStr;
-                if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                    const arr = JSON.parse(valStr || '[]');
-                    payloadStr = JSON.stringify(arr.slice(0, 25));
-                }
-
-                const packetStr = payloadStr.length < 60000
-                    ? JSON.stringify({ type: 'DELTA_KEY', sender: MY_PEER_ID, key: key, val: payloadStr, ts: Date.now() })
-                    : JSON.stringify({ type: 'CLOUD_POKE', sender: MY_PEER_ID, key: key, ts: Date.now() });
-
-                rtcPeers.forEach(peer => {
-                    if (peer.isReady && peer.dc && peer.dc.readyState === 'open') {
-                        try { peer.dc.send(packetStr); } catch (e) {}
-                    }
-                });
-
-                if (mqttClient && mqttClient.connected) {
-                    mqttClient.publish(TOPIC_DATA, packetStr, { qos: 0 });
-                }
-            } catch (e) {}
-        }, 20);
-    }
-
-    // =========================================================
-    // 🖥️ 4. BroadcastChannel + postMessage (0ms บนเครื่องเดียวกัน)
-    // =========================================================
-    let localChannel = null;
-    try {
-        if ('BroadcastChannel' in window) {
-            localChannel = new BroadcastChannel(CHANNEL_NAME);
-            localChannel.onmessage = (e) => {
-                if (e.data && e.data.type === 'LOCAL_TURBO') scheduleInstantUiRefresh(e.data.key);
-            };
-        }
-    } catch (e) {}
-
-    window.addEventListener('message', (e) => {
-        if (e.data && e.data.type === 'LOCAL_TURBO') scheduleInstantUiRefresh(e.data.key);
-    });
-
-    function broadcastSameDevice(key) {
-        const msg = { type: 'LOCAL_TURBO', key: key, ts: Date.now() };
-        try { if (localChannel) localChannel.postMessage(msg); } catch (e) {}
-        try {
-            if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*');
-            const leftIframe = document.getElementById('leftBrowserIframe');
-            if (leftIframe && leftIframe.contentWindow) leftIframe.contentWindow.postMessage(msg, '*');
-            if (typeof leftPopupWindowRef !== 'undefined' && leftPopupWindowRef && !leftPopupWindowRef.closed) {
-                leftPopupWindowRef.postMessage(msg, '*');
-            }
-        } catch (e) {}
-    }
-
-    Storage.prototype.setItem = function(key, value) {
-        let prevVal = null;
-        if (LOCAL_WATCHED_KEYS.has(key)) {
-            try { prevVal = _rawGetItem.call(this, key); } catch (e) {}
-        }
-        const res = _prevSetItem.apply(this, arguments);
-        if (!isApplyingRemoteState && LOCAL_WATCHED_KEYS.has(key) && prevVal !== value) {
-            broadcastSameDevice(key);
-            broadcastDeltaOverNetwork(key, value);
-        }
-        return res;
-    };
-
-    // =========================================================
-    // 📦 5. ข้อ 1 & ข้อ 3: Delta Patch Builder + 1ms Optimistic Background Queue
-    // =========================================================
-    const syncedJobHashes = new Map();
-    let lastBackupsHash = '';
-    let lastPinsHash = '';
-    let lastDelPinsHash = '';
-    let lastAuditLogsHash = '';
-    let hasCompletedFirstFullBaseline = false;
-
-    let lastGetSnapshotText = null;
-    let lastGetTimeMs = 0;
-    let pendingPostTask = null;
-    let isWorkerRunning = false;
-
-    const _prevFetch = window.fetch;
-
-    function getJobKeyForDiff(job) {
-        if (!job || typeof job !== 'object') return '';
-        if (job.jobType === 'tech_loc') return 'TECH_LOC_REGISTRY';
-        const isFault = job.jobType === 'fault';
-        const rk = isFault ? (job.timestamp || '') : (job.dateTimeSaved || job.timestamp || '');
-        return (isFault ? 'F_' : 'O_') + String(rk);
-    }
-
-    // แนบข้อมูลหมุดอุปกรณ์ ประวัติผู้ลบ และสำรองคลาวด์รายกลุ่มเข้ากับรายการก่อนสร้าง Delta
-    function enrichSaveJobsArrayWithLocalState(jobsArr) {
-        if (!Array.isArray(jobsArr)) return jobsArr;
-        const deletedReg = typeof getDeletedJobsRegistry === 'function' ? getDeletedJobsRegistry() : JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_jobs_registry') || '{}');
-        const groupBackups = JSON.parse(_rawGetItem.call(localStorage, 'elec_cloud_group_backups_map') || '{}');
-        const savedEquipPins = JSON.parse(_rawGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
-        const savedDeletedEquipMap = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
-        const savedDeletedAuditLogs = JSON.parse(_rawGetItem.call(localStorage, 'elec_deleted_equip_audit_logs') || '[]');
-        const savedClearedAuditTs = parseInt(_rawGetItem.call(localStorage, 'elec_cleared_audit_logs_ts') || '0', 10);
-        const overrideMap = window.cloudEditedJobsOverrideMap || {};
-
-        return jobsArr.filter(j => {
-            if (!j) return false;
-            if (j.jobType === 'tech_loc') return true;
-            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-            return !(rk && deletedReg[rk]);
-        }).map(j => {
-            if (j.jobType === 'tech_loc') {
-                return {
-                    ...j,
-                    cloudGroupBackups: Object.keys(groupBackups).length > 0 ? groupBackups : (j.cloudGroupBackups || {}),
-                    electricEquipmentPins: savedEquipPins.length > 0 ? savedEquipPins : (j.electricEquipmentPins || []),
-                    deletedElectricEquipmentMap: Object.keys(savedDeletedEquipMap).length > 0 ? savedDeletedEquipMap : (j.deletedElectricEquipmentMap || {}),
-                    deletedEquipAuditLogs: savedDeletedAuditLogs.length > 0 ? savedDeletedAuditLogs : (j.deletedEquipAuditLogs || []),
-                    clearedAuditLogsTimestamp: savedClearedAuditTs || j.clearedAuditLogsTimestamp || 0
-                };
-            }
-            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-            const mapKey = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
-            if (overrideMap[mapKey]) {
-                return { ...j, ...overrideMap[mapKey] };
-            }
-            return j;
-        });
-    }
-
-    function recordBaselineFromJobsArray(jobsArr) {
-        if (!Array.isArray(jobsArr)) return;
-        const seenKeys = new Set();
-        jobsArr.forEach(j => {
-            if (!j || typeof j !== 'object') return;
-            if (j.jobType === 'tech_loc') {
-                if (j.cloudGroupBackups) lastBackupsHash = JSON.stringify(j.cloudGroupBackups);
-                if (j.electricEquipmentPins) lastPinsHash = JSON.stringify(j.electricEquipmentPins);
-                if (j.deletedElectricEquipmentMap) lastDelPinsHash = JSON.stringify(j.deletedElectricEquipmentMap);
-                if (j.deletedEquipAuditLogs) lastAuditLogsHash = JSON.stringify(j.deletedEquipAuditLogs);
-            } else {
-                const k = getJobKeyForDiff(j);
-                if (k) {
-                    seenKeys.add(k);
-                    syncedJobHashes.set(k, JSON.stringify(j));
-                }
-            }
-        });
-        Array.from(syncedJobHashes.keys()).forEach(k => {
-            if (!seenKeys.has(k)) syncedJobHashes.delete(k);
-        });
-        if (seenKeys.size > 0) hasCompletedFirstFullBaseline = true;
-    }
-
-    function buildDeltaPayloadFromSaveJobs(fullJobsArray) {
-        if (!hasCompletedFirstFullBaseline || !Array.isArray(fullJobsArray)) {
-            return null;
-        }
-
-        const upsertedJobs = [];
-        const currentKeys = new Set();
-        let techLocObj = null;
-
-        fullJobsArray.forEach(j => {
-            if (!j || typeof j !== 'object') return;
-            if (j.jobType === 'tech_loc') {
-                techLocObj = j;
-                return;
-            }
-            const uKey = getJobKeyForDiff(j);
-            if (!uKey) return;
-            currentKeys.add(uKey);
-
-            const jsonStr = JSON.stringify(j);
-            if (syncedJobHashes.get(uKey) !== jsonStr) {
-                upsertedJobs.push(j);
-            }
-        });
-
-        const removedJobKeys = [];
-        syncedJobHashes.forEach((_, oldKey) => {
-            if (!currentKeys.has(oldKey)) {
-                removedJobKeys.push(oldKey);
-            }
-        });
-
-        if (upsertedJobs.length > 40) return null;
-
-        let techLocDelta = null;
-        if (techLocObj) {
-            const curBackupsStr = JSON.stringify(techLocObj.cloudGroupBackups || {});
-            const curPinsStr = JSON.stringify(techLocObj.electricEquipmentPins || []);
-            const curDelPinsStr = JSON.stringify(techLocObj.deletedElectricEquipmentMap || {});
-            const curAuditStr = JSON.stringify(techLocObj.deletedEquipAuditLogs || []);
-
-            const keepBackups = (curBackupsStr === lastBackupsHash);
-            const keepPins = (curPinsStr === lastPinsHash);
-            const keepDelPins = (curDelPinsStr === lastDelPinsHash);
-            const keepAuditLogs = (curAuditStr === lastAuditLogsHash);
-
-            techLocDelta = {
-                jobType: 'tech_loc',
-                dateTimeSaved: 'TECH_LOC_REGISTRY',
-                techLocations: techLocObj.techLocations || {},
-                closedJobsMap: techLocObj.closedJobsMap || {},
-                closedReports: techLocObj.closedReports || {},
-                deletedJobsMap: techLocObj.deletedJobsMap || {},
-                clearedAuditLogsTimestamp: techLocObj.clearedAuditLogsTimestamp || 0,
-                _keepBackups: keepBackups,
-                _keepPins: keepPins,
-                _keepDelPins: keepDelPins,
-                _keepAuditLogs: keepAuditLogs,
-                ...(keepBackups ? {} : { cloudGroupBackups: techLocObj.cloudGroupBackups }),
-                ...(keepPins ? {} : { electricEquipmentPins: techLocObj.electricEquipmentPins }),
-                ...(keepDelPins ? {} : { deletedElectricEquipmentMap: techLocObj.deletedElectricEquipmentMap }),
-                ...(keepAuditLogs ? {} : { deletedEquipAuditLogs: techLocObj.deletedEquipAuditLogs }),
-                updatedAt: new Date().toISOString()
-            };
-        }
-
-        const isGpsTickOnly = (
-            upsertedJobs.length === 0 &&
-            removedJobKeys.length === 0 &&
-            techLocDelta &&
-            techLocDelta._keepBackups &&
-            techLocDelta._keepPins &&
-            techLocDelta._keepDelPins &&
-            techLocDelta._keepAuditLogs
-        );
-
-        return {
-            action: 'patchDelta',
-            ramOnly: isGpsTickOnly && (Date.now() - lastSheetWriteTimeMs < 20000),
-            upsertedJobs: upsertedJobs,
-            removedJobKeys: removedJobKeys,
-            techLocDelta: techLocDelta
-        };
-    }
-
-    let lastSheetWriteTimeMs = 0;
-
-    async function processBackgroundPostQueue() {
-        if (isWorkerRunning || !pendingPostTask) return;
-        isWorkerRunning = true;
-
-        while (pendingPostTask) {
-            const task = pendingPostTask;
-            pendingPostTask = null;
-
-            try {
-                let bodyToSend = task.rawBody;
-                let parsedOrig = null;
-
-                try {
-                    parsedOrig = JSON.parse(task.rawBody);
-                } catch (e) {}
-
-                if (parsedOrig && parsedOrig.action === 'saveJobs' && Array.isArray(parsedOrig.jobs)) {
-                    parsedOrig.jobs = enrichSaveJobsArrayWithLocalState(parsedOrig.jobs);
-                    const deltaObj = buildDeltaPayloadFromSaveJobs(parsedOrig.jobs);
-                    if (deltaObj) {
-                        bodyToSend = JSON.stringify(deltaObj);
-                        if (!deltaObj.ramOnly) lastSheetWriteTimeMs = Date.now();
-                    } else {
-                        bodyToSend = JSON.stringify(parsedOrig);
-                        lastSheetWriteTimeMs = Date.now();
-                    }
-                }
-
-                const res = await _prevFetch.call(window, task.input, {
-                    ...task.init,
-                    body: bodyToSend
-                });
-
-                if (res && res.ok) {
-                    const resJson = await res.clone().json().catch(() => ({}));
-                    if (resJson && resJson.requireFullSync && parsedOrig) {
-                        await _prevFetch.call(window, task.input, {
-                            ...task.init,
-                            body: JSON.stringify(parsedOrig)
-                        });
-                    }
-                    if (parsedOrig && Array.isArray(parsedOrig.jobs)) {
-                        recordBaselineFromJobsArray(parsedOrig.jobs);
-                    }
-                    if (mqttClient && mqttClient.connected) {
-                        mqttClient.publish(TOPIC_DATA, JSON.stringify({
-                            type: 'CLOUD_POKE',
-                            sender: MY_PEER_ID,
-                            ts: Date.now()
-                        }), { qos: 0 });
-                    }
-                }
-            } catch (err) {
-                localStorage.setItem('elec_tech_has_pending_push', 'true');
-            }
-        }
-
-        isWorkerRunning = false;
-    }
-
-    window.fetch = async function(input, init) {
-        const urlStr = typeof input === 'string' ? input : (input?.url || '');
-        const isGasUrl = urlStr.includes('script.google.com');
-        const method = (init && init.method) ? init.method.toUpperCase() : 'GET';
-
-        if (isGasUrl && method === 'GET') {
-            const now = Date.now();
-            const isSavingNow = (typeof isPushingToCloudNow !== 'undefined' && isPushingToCloudNow) ||
-                                (typeof isUploadingFromMain !== 'undefined' && isUploadingFromMain);
-
-            if (isSavingNow && lastGetSnapshotText && (now - lastGetTimeMs < 6000)) {
-                return new Response(lastGetSnapshotText, {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            }
-
-            const response = await _prevFetch.apply(this, arguments);
-            if (response && response.ok) {
-                try {
-                    const cloned = response.clone();
-                    const text = await cloned.text();
-                    if (text && text.includes('"status":"ok"')) {
-                        lastGetSnapshotText = text;
-                        lastGetTimeMs = Date.now();
-                        const parsed = JSON.parse(text);
-                        if (parsed && Array.isArray(parsed.jobs)) {
-                            recordBaselineFromJobsArray(parsed.jobs);
-                        }
-                    }
-                } catch (e) {}
-            }
-            return response;
-        }
-
-        if (isGasUrl && method === 'POST' && init && typeof init.body === 'string') {
-            if (init.body.includes('"saveJobs"')) {
-                try {
-                    const parsedBody = JSON.parse(init.body);
-                    if (parsedBody && Array.isArray(parsedBody.jobs)) {
-                        parsedBody.jobs = enrichSaveJobsArrayWithLocalState(parsedBody.jobs);
-                        init.body = JSON.stringify(parsedBody);
-                        lastGetSnapshotText = JSON.stringify({
-                            status: 'ok',
-                            jobs: parsedBody.jobs,
-                            serverTime: new Date().toISOString()
-                        });
-                        lastGetTimeMs = Date.now();
-                    }
-                } catch (e) {}
-
-                pendingPostTask = { input, init: { ...init }, rawBody: init.body };
-                setTimeout(processBackgroundPostQueue, 5);
-
-                return new Response(JSON.stringify({ status: 'ok', optimistic: true }), {
-                    status: 200,
-                    headers: { 'Content-Type': 'application/json' }
-                });
-            }
-
-            lastGetTimeMs = 0;
-            return await _prevFetch.apply(this, arguments);
-        }
-
-        return _prevFetch.apply(this, arguments);
-    };
-
-    window.addEventListener('DOMContentLoaded', initRealtimeTransport);
-    if (document.readyState === 'interactive' || document.readyState === 'complete') {
-        initRealtimeTransport();
-    }
-
-    setInterval(() => {
-        if (document.hidden || localStorage.getItem('elec_app_logged_in') !== 'true') return;
-        if (mqttClient && mqttClient.connected && rtcPeers.size === 0) {
-            mqttClient.publish(TOPIC_SIGNAL, JSON.stringify({ from: MY_PEER_ID, sigType: 'hello' }));
-        }
-        triggerImmediateCloudPull();
-    }, 3000);
-})();
-</script>
 </body>
 </html>
