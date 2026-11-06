@@ -7954,5 +7954,816 @@
         }
     })();
     </script>
+            <!-- ================= ⚡ ระบบ "แผนที่รายการใบงานซ่อม" (ฉบับสมบูรณ์ 100% กันป๊อปอัปปิดเอง + มาร์คครบทุกใบงานรอแก้ไข) ================= -->
+    <style>
+        /* ให้หน้าต่างบันทึกผลตรวจสอบแสดงทับแผนที่เต็มจอได้เสมอ */
+        #inspectModal {
+            z-index: 1200 !important;
+        }
+
+        /* แอนิเมชันวงแหวนกระพริบเตือนจุดสายฟ้าใบงานรอแก้ไข */
+        @keyframes repairJobPulseRing {
+            0% { transform: scale(0.85); opacity: 0.95; }
+            70% { transform: scale(1.65); opacity: 0; }
+            100% { transform: scale(1.65); opacity: 0; }
+        }
+
+        .repair-job-lightning-wrapper {
+            position: relative;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .repair-job-pulse-ring {
+            position: absolute;
+            inset: -4px;
+            border-radius: 9999px;
+            animation: repairJobPulseRing 1.8s infinite ease-out;
+            pointer-events: none;
+        }
+
+        .repair-job-lightning-pin {
+            position: relative;
+            width: 34px;
+            height: 34px;
+            border-radius: 9999px 9999px 9999px 4px;
+            transform: rotate(-45deg);
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+
+        .repair-job-lightning-pin span {
+            transform: rotate(45deg);
+            font-size: 17px;
+            line-height: 1;
+            filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+        }
+
+        /* ป้ายชื่อกำกับจุดสายฟ้าบนแผนที่รายการใบงานซ่อม */
+        .repair-job-pin-tooltip {
+            background: linear-gradient(135deg, #881337, #be123c) !important;
+            color: #ffffff !important;
+            border: 1.5px solid #fde047 !important;
+            border-radius: 0.55rem !important;
+            padding: 2px 8px !important;
+            font-family: 'Prompt', sans-serif !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35) !important;
+            white-space: nowrap !important;
+        }
+        .repair-job-pin-tooltip::before {
+            border-top-color: #be123c !important;
+        }
+        .repair-job-pin-tooltip.is-traveling-tooltip {
+            background: linear-gradient(135deg, #1e3a8a, #2563eb) !important;
+            border-color: #93c5fd !important;
+        }
+        .repair-job-pin-tooltip.is-traveling-tooltip::before {
+            border-top-color: #2563eb !important;
+        }
+
+        #repairJobsLeafletMap.hide-job-tooltips .repair-job-pin-tooltip {
+            display: none !important;
+        }
+
+        /* โหมดขยายแผนที่รายการใบงานซ่อมเต็มจอ */
+        #repairJobsMapFullscreenBox.repair-map-fullscreen {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 950 !important;
+            background: #0f172a !important;
+            padding: 0.75rem !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        #repairJobsMapFullscreenBox.repair-map-fullscreen #repairJobsMapInnerWrap {
+            flex: 1 1 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        #repairJobsMapFullscreenBox.repair-map-fullscreen #repairJobsLeafletMap {
+            height: calc(100dvh - 4.5rem) !important;
+            min-height: calc(100dvh - 4.5rem) !important;
+            border-radius: 1rem !important;
+        }
+    </style>
+
+    <script>
+    (function() {
+        const SHORT_URL_COORD_CACHE_KEY = 'elec_job_shortlink_coords_cache_v1';
+        let repairJobsMap = null;
+        let repairJobsMarkersLayer = null;
+        let repairTechSelfMarker = null;
+        let repairJobMarkersByKey = {};
+        let currentlyOpenRepairPopupKey = null;
+        let isRepairMapCollapsed = false;
+        let isRepairMapFullscreen = false;
+        let showRepairJobTooltips = true;
+        let lastRepairJobsSignature = '';
+        let hasAutoFittedInitialJobs = false;
+        const resolvingShortUrlsSet = new Set();
+
+        const EXTENDED_AREA_COORDS = {
+            "บึง": { lat: 13.1361, lon: 101.0322 },
+            "บ่อวิน": { lat: 13.0645, lon: 101.1611 },
+            "เขาคันทรง": { lat: 13.1165, lon: 101.2144 },
+            "หนองขาม": { lat: 13.1189, lon: 100.9856 },
+            "สุรศักดิ์": { lat: 13.1592, lon: 100.9581 },
+            "ศรีราชา": { lat: 13.1737, lon: 100.9311 },
+            "แหลมฉบัง": { lat: 13.0825, lon: 100.9167 },
+            "ทุ่งสุขลา": { lat: 13.1058, lon: 100.9242 },
+            "บางพระ": { lat: 13.2142, lon: 100.9461 },
+            "มาบปู": { lat: 13.0519, lon: 101.1558 },
+            "ปลวกแดง": { lat: 12.9736, lon: 101.2153 },
+            "มาบยางพร": { lat: 12.9906, lon: 101.1481 },
+            "ตาสิทธิ์": { lat: 13.0561, lon: 101.2169 },
+            "ละหาร": { lat: 12.9869, lon: 101.2597 }
+        };
+
+        function getShortUrlCoordCache() {
+            try {
+                return JSON.parse(localStorage.getItem(SHORT_URL_COORD_CACHE_KEY) || '{}');
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveShortUrlCoordCache(cacheObj) {
+            try {
+                localStorage.setItem(SHORT_URL_COORD_CACHE_KEY, JSON.stringify(cacheObj || {}));
+            } catch (e) {}
+        }
+
+        function escapeRepairHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // 1. สร้างกรอบ "⚡ แผนที่รายการใบงานซ่อม" ไว้ในหน้า "รายการใบงานซ่อม"
+        function injectRepairJobsMapSection() {
+            if (document.getElementById('repairJobsMapSection')) return;
+            const jobCardsEl = document.getElementById('jobCardsContainer');
+            if (!jobCardsEl || !jobCardsEl.parentElement) return;
+
+            const section = document.createElement('div');
+            section.id = 'repairJobsMapSection';
+            section.className = 'px-4 pt-2 pb-1';
+            section.innerHTML = `
+                <div id="repairJobsMapFullscreenBox" class="bg-white border-2 border-teal-500/80 rounded-2xl shadow-sm overflow-hidden">
+                    <!-- แถบหัวข้อ แผนที่รายการใบงานซ่อม -->
+                    <div class="bg-gradient-to-r from-slate-900 via-teal-900 to-emerald-800 px-3.5 py-2.5 text-white flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-amber-400 text-slate-950 font-extrabold text-sm shadow-sm shrink-0">⚡</span>
+                            <div class="min-w-0">
+                                <div class="text-xs sm:text-sm font-extrabold flex flex-wrap items-center gap-1.5">
+                                    <span>แผนที่รายการใบงานซ่อม</span>
+                                    <span id="repairMapPendingCountBadge" class="bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-white/30 shadow-sm">
+                                        ⚡ รอแก้ไข 0 งาน
+                                    </span>
+                                </div>
+                                <p class="text-[10px] text-emerald-200 truncate">มาร์คจุดสายฟ้าเฉพาะงานรอแก้ไข และลบออกอัตโนมัติเมื่องานเสร็จสิ้น</p>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-1 shrink-0 ml-auto">
+                            <button type="button" onclick="fitAllRepairJobPinsOnMap(true)" class="bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow-sm transition">
+                                🎯 ซูมดูงานรอแก้ไข
+                            </button>
+                            <button type="button" onclick="centerRepairMapOnMyGps()" class="bg-white/15 hover:bg-white/25 text-white px-2 py-1 rounded-xl text-[11px] font-bold transition">
+                                📍 พิกัดฉัน
+                            </button>
+                            <button type="button" id="toggleRepairJobLabelsBtn" onclick="toggleRepairJobTooltips()" class="bg-white/15 hover:bg-white/25 text-white px-2 py-1 rounded-xl text-[11px] font-bold transition">
+                                🏷️ ป้ายชื่อ: เปิด
+                            </button>
+                            <button type="button" id="toggleRepairMapCollapseBtn" onclick="toggleRepairJobsMapCollapse()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold transition">
+                                🔼 ซ่อนแผนที่
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- ตัวแผนที่ Leaflet สำหรับรายการใบงานซ่อม -->
+                    <div id="repairJobsMapInnerWrap" class="relative isolate bg-slate-100">
+                        <div id="repairJobsLeafletMap" class="w-full h-[300px] sm:h-[360px] lg:h-[420px] z-0"></div>
+                        <div class="absolute bottom-3 left-3 z-[400] flex flex-wrap items-center gap-1.5">
+                            <button type="button" onclick="fitAllRepairJobPinsOnMap(true)" class="bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md transition">
+                                ⚡ ดูจุดงานซ่อมทั้งหมด
+                            </button>
+                            <button type="button" id="toggleRepairMapFullscreenBtn" onclick="toggleRepairJobsMapFullscreen()" class="bg-slate-900/90 hover:bg-slate-900 text-white border border-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md transition">
+                                ⛶ ขยายแผนที่เต็มจอ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            jobCardsEl.parentElement.insertBefore(section, jobCardsEl);
+            initRepairJobsLeafletMap();
+        }
+
+        // 2. สร้างแผนที่ Leaflet ประจำแท็บ "แผนที่รายการใบงานซ่อม"
+        function initRepairJobsLeafletMap() {
+            if (repairJobsMap || typeof L === 'undefined') return;
+            const mapEl = document.getElementById('repairJobsLeafletMap');
+            if (!mapEl) return;
+
+            const defaultCenter = (typeof lastKnownTechCoords === 'object' && lastKnownTechCoords)
+                ? [lastKnownTechCoords.lat, lastKnownTechCoords.lon]
+                : [13.1361, 101.0322];
+
+            repairJobsMap = L.map('repairJobsLeafletMap').setView(defaultCenter, 12);
+
+            const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                maxZoom: 20, attribution: '© Google Maps'
+            });
+            const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                maxZoom: 20, attribution: '© Google Maps'
+            });
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19, attribution: '© OpenStreetMap'
+            });
+
+            googleStreets.addTo(repairJobsMap);
+            L.control.layers({
+                "🗺️ แผนที่ถนน (Google)": googleStreets,
+                "🛰️ ดาวเทียม+ชื่อถนน (Google)": googleHybrid,
+                "🌐 OpenStreetMap": osmLayer
+            }, null, { position: 'topright' }).addTo(repairJobsMap);
+
+            repairJobsMarkersLayer = L.layerGroup().addTo(repairJobsMap);
+
+            updateMyTechMarkerOnRepairMap();
+            renderRepairJobsMapMarkers(true);
+        }
+
+        function updateMyTechMarkerOnRepairMap() {
+            if (!repairJobsMap || typeof L === 'undefined') return;
+            if (!lastKnownTechCoords || !isGpsTrackingEnabled) {
+                if (repairTechSelfMarker) {
+                    repairJobsMap.removeLayer(repairTechSelfMarker);
+                    repairTechSelfMarker = null;
+                }
+                return;
+            }
+            const myLatLng = [lastKnownTechCoords.lat, lastKnownTechCoords.lon];
+            const myIcon = L.divIcon({
+                className: '',
+                html: `<div style="width:26px;height:26px;border-radius:9999px;background:#2563eb;border:3px solid #fff;box-shadow:0 0 10px rgba(37,99,235,0.85);display:flex;align-items:center;justify-content:center;font-size:13px;">🚗</div>`,
+                iconSize: [26, 26],
+                iconAnchor: [13, 13]
+            });
+            if (!repairTechSelfMarker) {
+                repairTechSelfMarker = L.marker(myLatLng, { icon: myIcon, zIndexOffset: 950 })
+                    .addTo(repairJobsMap)
+                    .bindPopup('<b>🚗 ตำแหน่งปัจจุบันของคุณ</b>');
+            } else {
+                repairTechSelfMarker.setLatLng(myLatLng);
+            }
+        }
+
+        // 3. ตรวจสอบว่าใบงานนั้นสถานะ "เสร็จสิ้น" แล้วหรือยัง (ถ้าเสร็จสิ้นแล้ว จะไม่นำมามาร์คจุดสายฟ้า)
+        function isJobCompletedStatus(item, jobType) {
+            if (!item) return true;
+            const jobKey = jobType === 'fault' ? item.timestamp : item.dateTimeSaved;
+            const deletedMap = JSON.parse(localStorage.getItem('elec_deleted_jobs_registry') || '{}');
+            if (jobKey && deletedMap[jobKey]) return true;
+
+            if (item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น')) {
+                return true;
+            }
+
+            if (typeof getClosedReportsRegistry === 'function' && jobKey) {
+                const closedMap = getClosedReportsRegistry();
+                const closedRep = closedMap[jobKey];
+                if (closedRep && String(closedRep.status || '').includes('เสร็จสิ้น')) {
+                    if (!item.reopenedAt || (closedRep.updatedAt && closedRep.updatedAt > item.reopenedAt)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 4. สกัดพิกัดจากใบงานซ่อม (รองรับพิกัดตรง, ลิงก์เต็ม, ลิงก์สั้น maps.app.goo.gl และจุดอ้างอิงสำรอง 100%)
+        function resolveRepairJobCoordinates(item, jobKey) {
+            const rawGps = String(item?.techReport?.fieldGps || item?.gps || '').trim();
+            const cache = getShortUrlCoordCache();
+
+            if (jobKey && cache[jobKey] && !isNaN(cache[jobKey].lat) && !isNaN(cache[jobKey].lon)) {
+                return { lat: parseFloat(cache[jobKey].lat), lon: parseFloat(cache[jobKey].lon), isApproxTambon: false };
+            }
+
+            if (typeof extractCoordsFromJob === 'function') {
+                const combinedItem = {
+                    ...item,
+                    gps: `${rawGps} ${item?.gps || ''}`
+                };
+                const extracted = extractCoordsFromJob(combinedItem);
+                if (extracted && !isNaN(extracted.lat) && !isNaN(extracted.lon)) {
+                    if (!extracted.isApproxTambon) {
+                        return extracted;
+                    }
+                    if (/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(rawGps)) {
+                        resolveShortLinkForRepairJobAsync(rawGps, jobKey);
+                    }
+                    return extracted;
+                }
+            }
+
+            if (/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\//i.test(rawGps)) {
+                resolveShortLinkForRepairJobAsync(rawGps, jobKey);
+            }
+
+            // ค้นหาจากชื่อตำบล/พื้นที่เพิ่มเติม
+            const textBlob = `${item?.area || ''} ${item?.address || ''} ${item?.station || ''} ${item?.circuit || ''} ${item?.ownerGroup || ''}`;
+            for (const [areaName, areaCoord] of Object.entries(EXTENDED_AREA_COORDS)) {
+                if (textBlob.includes(areaName)) {
+                    return { lat: areaCoord.lat, lon: areaCoord.lon, isApproxTambon: true };
+                }
+            }
+
+            // พิกัดสำรองกรณีใบงานไม่ได้แนบพิกัด GPS เพื่อให้ขึ้นมาร์คสายฟ้าครบ 100% ทุกงานรอแก้ไข
+            return { lat: 13.1361, lon: 101.0322, isApproxTambon: true };
+        }
+
+        async function resolveShortLinkForRepairJobAsync(rawUrl, jobKey) {
+            if (!rawUrl || !jobKey || resolvingShortUrlsSet.has(jobKey)) return;
+            resolvingShortUrlsSet.add(jobKey);
+            try {
+                const shortMatch = rawUrl.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/[^\s"']+/i);
+                if (!shortMatch) return;
+                const shortUrl = shortMatch[0];
+                const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(shortUrl)}`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const data = await res.json();
+                const blob = `${data?.status?.url || ''} ${data?.contents || ''}`;
+                const m = blob.match(/(?:@|q=|!3d)(-?\d{1,2}\.\d{4,})(?:,|!4d|\s+)(-?\d{2,3}\.\d{4,})/);
+                if (m) {
+                    const lat = parseFloat(m[1]);
+                    const lon = parseFloat(m[2]);
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        const cache = getShortUrlCoordCache();
+                        cache[jobKey] = { lat, lon, updatedAt: Date.now() };
+                        saveShortUrlCoordCache(cache);
+                        lastRepairJobsSignature = '';
+                        renderRepairJobsMapMarkers(true);
+                    }
+                }
+            } catch (e) {
+            } finally {
+                resolvingShortUrlsSet.delete(jobKey);
+            }
+        }
+
+        // 5. ดึงรายการใบงานที่ยัง "รอแก้ไข" (และกำลังเดินทาง) ตามตัวกรองปัจจุบันของหน้าใบงานซ่อม
+        function getPendingRepairJobsForMap() {
+            const selectedJobType = document.getElementById('filterJobType')?.value || 'outage';
+            const shiftFilter = document.getElementById('filterJobShift')?.value || 'all';
+            const selectedDateIso = document.getElementById('filterJobDate')?.value || '';
+            const keyword = (document.getElementById('searchJobKeyword')?.value || '').toLowerCase().trim();
+
+            let targetThaiDateStr = '';
+            if (selectedDateIso) {
+                const [y, m, d] = selectedDateIso.split('-');
+                targetThaiDateStr = `${d}/${m}/${parseInt(y, 10) + 543}`;
+            }
+
+            const outages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+            const faults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
+            const results = [];
+
+            const processList = (list, jType) => {
+                list.forEach(item => {
+                    if (typeof canCurrentUserSeeJob === 'function' && !canCurrentUserSeeJob(item)) return;
+                    // ถ้ารายการแก้ไขเสร็จสิ้นแล้ว ให้ตัดออกทันที (ไม่มาร์คบนแผนที่)
+                    if (isJobCompletedStatus(item, jType)) return;
+
+                    if (targetThaiDateStr && typeof getJobDateDisplay === 'function' && getJobDateDisplay(item, jType) !== targetThaiDateStr) {
+                        return;
+                    }
+                    if (shiftFilter !== 'all' && typeof getEffectiveJobShift === 'function' && getEffectiveJobShift(item, jType) !== shiftFilter) {
+                        return;
+                    }
+                    if (keyword && !JSON.stringify(item).toLowerCase().includes(keyword)) {
+                        return;
+                    }
+
+                    const key = jType === 'fault' ? item.timestamp : item.dateTimeSaved;
+                    if (!key) return;
+                    const coord = resolveRepairJobCoordinates(item, key);
+                    if (!coord) return;
+
+                    results.push({
+                        key,
+                        jobType: jType,
+                        item,
+                        lat: coord.lat,
+                        lon: coord.lon,
+                        isApproxTambon: Boolean(coord.isApproxTambon)
+                    });
+                });
+            };
+
+            if (selectedJobType === 'fault') {
+                processList(faults, 'fault');
+            } else {
+                processList(outages, 'outage');
+            }
+
+            // เยื้องหมุดอัตโนมัติกรณีมีหลายใบงานในจุดเดียวกัน เพื่อไม่ให้หมุดสายฟ้าทับกัน
+            const coordCountMap = {};
+            results.forEach(entry => {
+                const cKey = `${entry.lat.toFixed(4)}_${entry.lon.toFixed(4)}`;
+                const idx = coordCountMap[cKey] || 0;
+                coordCountMap[cKey] = idx + 1;
+                if (idx > 0) {
+                    const angle = (idx * 60) * (Math.PI / 180);
+                    const radius = 0.00018 * Math.ceil(idx / 6);
+                    entry.displayLat = entry.lat + Math.sin(angle) * radius;
+                    entry.displayLon = entry.lon + Math.cos(angle) * radius;
+                } else {
+                    entry.displayLat = entry.lat;
+                    entry.displayLon = entry.lon;
+                }
+            });
+
+            return results;
+        }
+
+        // 6. วาดมาร์คจุดสายฟ้า (⚡) ลงบน "แผนที่รายการใบงานซ่อม" และลบออกอัตโนมัติเมื่อเสร็จสิ้น
+        window.renderRepairJobsMapMarkers = function(forceRedraw = false) {
+            injectRepairJobsMapSection();
+            updateMyTechMarkerOnRepairMap();
+
+            const pendingList = getPendingRepairJobsForMap();
+            const countBadge = document.getElementById('repairMapPendingCountBadge');
+            if (countBadge) {
+                if (pendingList.length > 0) {
+                    countBadge.textContent = `⚡ รอแก้ไข ${pendingList.length} งาน`;
+                    countBadge.className = 'bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-white/30 shadow-sm animate-pulse';
+                } else {
+                    countBadge.textContent = `✅ ไม่มีงานค้างบนแผนที่`;
+                    countBadge.className = 'bg-emerald-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-white/30 shadow-sm';
+                }
+            }
+
+            if (!repairJobsMap || !repairJobsMarkersLayer) return;
+
+            const sig = pendingList
+                .map(p => `${p.key}:${p.displayLat.toFixed(5)},${p.displayLon.toFixed(5)}:${Boolean(p.item.techNav)}:${p.item.techReport?.status || ''}:${p.item.issueType || ''}:${p.item.area || ''}`)
+                .join('|');
+
+            if (!forceRedraw && sig === lastRepairJobsSignature) return;
+            lastRepairJobsSignature = sig;
+
+            const savedOpenPopupKey = currentlyOpenRepairPopupKey;
+            repairJobsMarkersLayer.clearLayers();
+            repairJobMarkersByKey = {};
+
+            if (pendingList.length === 0) {
+                currentlyOpenRepairPopupKey = null;
+                return;
+            }
+
+            pendingList.forEach(entry => {
+                const { key, jobType, item, displayLat, displayLon, isApproxTambon } = entry;
+                const isTraveling = Boolean(item.techNav);
+                const shStr = typeof getEffectiveJobShift === 'function' ? getEffectiveJobShift(item, jobType) : (item.shift || '-');
+                const dStr = typeof getJobDateDisplay === 'function' ? getJobDateDisplay(item, jobType) : (item.reportDate || '-');
+                const tStr = typeof getJobLoggedTimeDisplay === 'function' ? getJobLoggedTimeDisplay(item, jobType) : '-';
+                const grpStr = typeof getJobGroupName === 'function' ? getJobGroupName(item) : 'กฟส.บึง';
+                const urgency = typeof getJobUrgencyInfo === 'function' ? getJobUrgencyInfo(item, jobType) : { dot: '🔴', label: 'ด่วน' };
+
+                let pinGradient = 'linear-gradient(135deg, #e11d48, #9f1239)';
+                let pulseColor = 'rgba(225, 29, 72, 0.55)';
+                if (isTraveling) {
+                    pinGradient = 'linear-gradient(135deg, #2563eb, #1e40af)';
+                    pulseColor = 'rgba(37, 99, 235, 0.55)';
+                } else if (urgency.dot === '🟠') {
+                    pinGradient = 'linear-gradient(135deg, #f97316, #c2410c)';
+                    pulseColor = 'rgba(249, 115, 22, 0.55)';
+                } else if (urgency.dot === '🟡') {
+                    pinGradient = 'linear-gradient(135deg, #eab308, #a16207)';
+                    pulseColor = 'rgba(234, 179, 8, 0.55)';
+                } else if (urgency.dot === '🟢') {
+                    pinGradient = 'linear-gradient(135deg, #10b981, #047857)';
+                    pulseColor = 'rgba(16, 185, 129, 0.55)';
+                }
+
+                const iconHtml = `
+                    <div class="repair-job-lightning-wrapper">
+                        <div class="repair-job-pulse-ring" style="background:${pulseColor};"></div>
+                        <div class="repair-job-lightning-pin" style="background:${pinGradient};">
+                            <span>⚡</span>
+                        </div>
+                    </div>
+                `;
+
+                const jobIcon = L.divIcon({
+                    className: '',
+                    html: iconHtml,
+                    iconSize: [36, 36],
+                    iconAnchor: [18, 34],
+                    popupAnchor: [0, -32]
+                });
+
+                const shortTitle = jobType === 'outage'
+                    ? `${isTraveling ? '🚗' : '⚡'} งานที่ ${item.jobNo || '-'} (กะ ${shStr}) • ${item.issueType || 'ไฟขัดข้อง'}`
+                    : `${isTraveling ? '🚗' : '⚡'} TR/TL: ${item.circuit || '-'} สถานี${item.station || '-'}`;
+
+                const marker = L.marker([displayLat, displayLon], {
+                    icon: jobIcon,
+                    zIndexOffset: 800
+                });
+
+                marker.bindTooltip(escapeRepairHtml(shortTitle), {
+                    permanent: true,
+                    direction: 'top',
+                    offset: [0, -32],
+                    className: `repair-job-pin-tooltip ${isTraveling ? 'is-traveling-tooltip' : ''}`
+                });
+
+                const mapsNavUrl = (item.gps && String(item.gps).startsWith('http'))
+                    ? String(item.gps).trim()
+                    : `https://www.google.com/maps/dir/?api=1&destination=${entry.lat},${entry.lon}&travelmode=driving`;
+                const safeKeyAttr = String(key).replace(/'/g, "\\'");
+                const safeMapsAttr = mapsNavUrl.replace(/'/g, "\\'");
+                const phoneNum = (item.phone && item.phone !== '-') ? String(item.phone).trim() : '';
+                const statusBadgeText = item.techReport?.status
+                    ? item.techReport.status
+                    : (isTraveling ? `🚗 กำลังเดินทาง (${formatTechDisplayName(item.techNav?.techName || 'ช่าง')})` : '⏳ รอแก้ไข');
+
+                const popupHtml = `
+                    <div style="font-family:'Prompt',sans-serif;min-width:255px;" class="space-y-1.5 text-xs">
+                        <div class="flex items-center justify-between gap-1">
+                            <span class="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                                ⚡ ${escapeRepairHtml(statusBadgeText)}
+                            </span>
+                            <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded">
+                                🏢 ${escapeRepairHtml(grpStr)}
+                            </span>
+                        </div>
+
+                        <div class="font-extrabold text-slate-900 text-sm leading-snug pt-0.5">
+                            ${urgency.dot} ${jobType === 'outage'
+                                ? `งานที่ ${escapeRepairHtml(item.jobNo || '-')} (กะ ${escapeRepairHtml(shStr)}) • ${escapeRepairHtml(item.issueType || '-')}`
+                                : `วงจร ${escapeRepairHtml(item.circuit || '-')} สถานี${escapeRepairHtml(item.station || '-')}`}
+                        </div>
+
+                        <div class="text-slate-600 text-[11px] space-y-0.5">
+                            ${jobType === 'outage'
+                                ? `<div>📍 <b>บริเวณ:</b> ${escapeRepairHtml(item.area || '-')}</div>
+                                   <div>🏠 <b>ที่อยู่:</b> ${escapeRepairHtml(item.address || '-')}</div>`
+                                : `<div>🚨 <b>สาเหตุ:</b> ${escapeRepairHtml(item.cause || '-')} (เฟส ${escapeRepairHtml(item.phase || '-')})</div>
+                                   <div>📞 <b>ผู้แจ้ง:</b> ${escapeRepairHtml(item.reporter || '-')}</div>`}
+                            <div>⏰ <b>เวลาแจ้ง:</b> ${escapeRepairHtml(tStr)} (${escapeRepairHtml(dStr)})</div>
+                            ${isApproxTambon ? `<div class="text-amber-700 font-semibold text-[10px]">⚠️ พิกัดอ้างอิงระดับตำบล/พื้นที่ (ใบงานไม่ได้แนบลิงก์ GPS)</div>` : ''}
+                        </div>
+
+                        <div class="pt-1.5 border-t border-slate-200 flex flex-wrap gap-1">
+                            ${phoneNum ? `<a href="tel:${escapeRepairHtml(phoneNum)}" style="background:#f1f5f9;color:#334155;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;text-decoration:none;">📞 โทร</a>` : ''}
+                            <button type="button" onclick="handleStartNavigation('${safeKeyAttr}', '${jobType}', '')" style="background:#0284c7;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">
+                                🚗 ออกเดินทาง
+                            </button>
+                            <button type="button" onclick="handleStartNavigation('${safeKeyAttr}', '${jobType}', '${safeMapsAttr}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">
+                                🗺️ นำทาง Maps
+                            </button>
+                            <button type="button" onclick="openInspectModal('${safeKeyAttr}', '${jobType}')" style="background:#0d9488;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;width:100%;margin-top:2px;">
+                                🛠️ แจ้งผลตรวจสอบ / ปิดงาน
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                marker.bindPopup(popupHtml);
+                marker.on('popupopen', () => { currentlyOpenRepairPopupKey = key; });
+                marker.on('popupclose', () => {
+                    if (currentlyOpenRepairPopupKey === key) currentlyOpenRepairPopupKey = null;
+                });
+                marker.addTo(repairJobsMarkersLayer);
+                repairJobMarkersByKey[key] = marker;
+            });
+
+            // คืนสถานะป๊อปอัปที่กำลังเปิดอยู่ (ป้องกันป๊อปอัปปิดเองเวลาซิงค์)
+            if (savedOpenPopupKey && repairJobMarkersByKey[savedOpenPopupKey]) {
+                repairJobMarkersByKey[savedOpenPopupKey].openPopup();
+            }
+
+            if (!hasAutoFittedInitialJobs && pendingList.length > 0) {
+                hasAutoFittedInitialJobs = true;
+                fitAllRepairJobPinsOnMap(false);
+            }
+        };
+
+        // 7. เพิ่มปุ่ม "⚡ ดูจุดบนแมพ" ในการ์ดใบงานซ่อมที่ยังรอแก้ไข
+        function injectFocusMapButtonsIntoJobCards() {
+            const container = document.getElementById('jobCardsContainer');
+            if (!container) return;
+
+            container.querySelectorAll('button[onclick^="openInspectModal("]').forEach(inspectBtn => {
+                const onclickAttr = inspectBtn.getAttribute('onclick') || '';
+                const m = onclickAttr.match(/openInspectModal\('([^']+)',\s*'([^']+)'\)/);
+                if (!m) return;
+                const jobKey = m[1];
+                const leftBtnGroup = inspectBtn.parentElement?.querySelector('.flex.flex-wrap.gap-1\\.5');
+                if (!leftBtnGroup) return;
+
+                const existingFocusBtn = leftBtnGroup.querySelector('.btn-focus-repair-map');
+                if (!repairJobMarkersByKey[jobKey]) {
+                    if (existingFocusBtn) existingFocusBtn.remove();
+                    return;
+                }
+                if (existingFocusBtn) return;
+
+                const focusBtn = document.createElement('button');
+                focusBtn.type = 'button';
+                focusBtn.className = 'btn-focus-repair-map bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition';
+                focusBtn.innerHTML = '⚡ ดูจุดบนแมพ';
+                focusBtn.onclick = function() {
+                    focusSingleRepairJobOnMap(jobKey);
+                };
+                leftBtnGroup.appendChild(focusBtn);
+            });
+        }
+
+        window.focusSingleRepairJobOnMap = function(jobKey) {
+            if (isRepairMapCollapsed) {
+                toggleRepairJobsMapCollapse();
+            }
+            const marker = repairJobMarkersByKey[jobKey];
+            if (!marker || !repairJobsMap) {
+                if (typeof showToast === 'function') showToast('⚠️ ไม่พบพิกัดของใบงานนี้บนแผนที่');
+                return;
+            }
+            const mapSection = document.getElementById('repairJobsMapSection');
+            if (mapSection && !isRepairMapFullscreen) {
+                mapSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            setTimeout(() => {
+                repairJobsMap.invalidateSize();
+                const latLng = marker.getLatLng();
+                repairJobsMap.setView(latLng, 16);
+                marker.openPopup();
+            }, 150);
+        };
+
+        window.fitAllRepairJobPinsOnMap = function(showFeedback = true) {
+            if (isRepairMapCollapsed) {
+                toggleRepairJobsMapCollapse();
+            }
+            const pendingList = getPendingRepairJobsForMap();
+            if (!repairJobsMap || pendingList.length === 0) {
+                if (showFeedback && typeof showToast === 'function') {
+                    showToast('🎉 ไม่มีใบงานรอแก้ไขค้างอยู่บนแผนที่');
+                }
+                return;
+            }
+            repairJobsMap.invalidateSize();
+            const bounds = pendingList.map(p => [p.displayLat, p.displayLon]);
+            if (lastKnownTechCoords && isGpsTrackingEnabled) {
+                bounds.push([lastKnownTechCoords.lat, lastKnownTechCoords.lon]);
+            }
+            repairJobsMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+            if (showFeedback && typeof showToast === 'function') {
+                showToast(`⚡ ซูมแสดงจุดสายฟ้าใบงานรอแก้ไข (${pendingList.length} งาน)`);
+            }
+        };
+
+        window.centerRepairMapOnMyGps = function() {
+            if (isRepairMapCollapsed) toggleRepairJobsMapCollapse();
+            if (!navigator.geolocation) {
+                if (typeof showToast === 'function') showToast('⚠️ เบราว์เซอร์ไม่รองรับ GPS');
+                return;
+            }
+            if (typeof showToast === 'function') showToast('⏳ กำลังค้นหาพิกัดปัจจุบันของคุณ...');
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    if (typeof recordCurrentTechGpsLocation === 'function') {
+                        recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude);
+                    }
+                    updateMyTechMarkerOnRepairMap();
+                    if (repairJobsMap) {
+                        repairJobsMap.invalidateSize();
+                        repairJobsMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
+                    }
+                    if (typeof showToast === 'function') showToast('📍 ซูมไปยังตำแหน่งปัจจุบันแล้ว');
+                },
+                () => {
+                    if (lastKnownTechCoords && repairJobsMap) {
+                        repairJobsMap.setView([lastKnownTechCoords.lat, lastKnownTechCoords.lon], 15);
+                    } else if (typeof showToast === 'function') {
+                        showToast('⚠️ ไม่สามารถดึงพิกัดได้ กรุณาเปิด Location');
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 7000 }
+            );
+        };
+
+        window.toggleRepairJobTooltips = function() {
+            showRepairJobTooltips = !showRepairJobTooltips;
+            const mapEl = document.getElementById('repairJobsLeafletMap');
+            const btn = document.getElementById('toggleRepairJobLabelsBtn');
+            if (mapEl) {
+                mapEl.classList.toggle('hide-job-tooltips', !showRepairJobTooltips);
+            }
+            if (btn) {
+                btn.textContent = showRepairJobTooltips ? '🏷️ ป้ายชื่อ: เปิด' : '🏷️ ป้ายชื่อ: ปิด';
+            }
+        };
+
+        window.toggleRepairJobsMapCollapse = function() {
+            isRepairMapCollapsed = !isRepairMapCollapsed;
+            const innerWrap = document.getElementById('repairJobsMapInnerWrap');
+            const btn = document.getElementById('toggleRepairMapCollapseBtn');
+            if (innerWrap) {
+                innerWrap.classList.toggle('hidden', isRepairMapCollapsed);
+            }
+            if (btn) {
+                btn.textContent = isRepairMapCollapsed ? '🔽 เปิดแผนที่ใบงาน' : '🔼 ซ่อนแผนที่';
+            }
+            if (!isRepairMapCollapsed && repairJobsMap) {
+                setTimeout(() => repairJobsMap.invalidateSize(), 150);
+            }
+        };
+
+        window.toggleRepairJobsMapFullscreen = function() {
+            const box = document.getElementById('repairJobsMapFullscreenBox');
+            const btn = document.getElementById('toggleRepairMapFullscreenBtn');
+            if (!box) return;
+            if (isRepairMapCollapsed) toggleRepairJobsMapCollapse();
+
+            isRepairMapFullscreen = !isRepairMapFullscreen;
+            box.classList.toggle('repair-map-fullscreen', isRepairMapFullscreen);
+            if (btn) {
+                btn.innerHTML = isRepairMapFullscreen ? '✖️ ย่อกลับขนาดปกติ' : '⛶ ขยายแผนที่เต็มจอ';
+            }
+            setTimeout(() => {
+                if (repairJobsMap) repairJobsMap.invalidateSize();
+            }, 150);
+        };
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isRepairMapFullscreen) {
+                toggleRepairJobsMapFullscreen();
+            }
+        });
+
+        // 8. ซิงค์อัตโนมัติทุกครั้งที่มีการโหลดงาน กรองงาน กดออกเดินทาง หรือบันทึกปิดงานเสร็จสิ้น (โดยไม่ทำให้ป๊อปอัปเด้งปิดเอง)
+        ['renderJobCards', 'submitTechReport', 'handleStartNavigation', 'handleCancelNavigation', 'switchTechMainTab', 'syncJobsFromCloud'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    const res = origFn.apply(this, args);
+                    const isExplicitAction = (fnName === 'submitTechReport' || fnName === 'handleStartNavigation' || fnName === 'handleCancelNavigation');
+                    const refreshMapAndCards = () => {
+                        renderRepairJobsMapMarkers(isExplicitAction);
+                        injectFocusMapButtonsIntoJobCards();
+                        if (fnName === 'switchTechMainTab' && args[0] === 'jobs' && repairJobsMap) {
+                            setTimeout(() => repairJobsMap.invalidateSize(), 180);
+                        }
+                    };
+                    if (res && typeof res.then === 'function') {
+                        res.finally(() => setTimeout(refreshMapAndCards, 60));
+                    } else {
+                        setTimeout(refreshMapAndCards, 40);
+                    }
+                    return res;
+                };
+            }
+        });
+
+        window.addEventListener('storage', (e) => {
+            if (!e.key || e.key === 'elecReportsComplete_all' || e.key === 'fault_reports_all' || e.key === 'elec_closed_jobs_registry' || e.key === 'elec_deleted_jobs_registry') {
+                renderRepairJobsMapMarkers(false);
+                injectFocusMapButtonsIntoJobCards();
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                injectRepairJobsMapSection();
+                renderRepairJobsMapMarkers(true);
+                injectFocusMapButtonsIntoJobCards();
+            }, 450);
+
+            setInterval(() => {
+                if (!document.hidden) {
+                    renderRepairJobsMapMarkers(false);
+                    injectFocusMapButtonsIntoJobCards();
+                }
+            }, 3000);
+        });
+    })();
+    </script>
 </body>
 </html>
