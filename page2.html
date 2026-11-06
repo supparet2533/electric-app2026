@@ -7043,5 +7043,144 @@
         });
     })();
     </script>
+    <!-- 👁️ ระบบสิทธิ์ "ผู้สำรวจ (Viewer - ดูอย่างเดียว)" สำหรับ page2.html -->
+<style>
+    /* ซ่อนปุ่มแก้ไขใบงาน ปุ่มเพิ่ม/ลบ/เปลี่ยนสีหมุดอุปกรณ์ไฟฟ้า สำหรับผู้สำรวจ */
+    body.role-viewer-readonly button[onclick^="openInspectModal"],
+    body.role-viewer-readonly button[onclick^="handleCancelNavigation"],
+    body.role-viewer-readonly button[onclick^="handleStartNavigation"][onclick*="''"],
+    body.role-viewer-readonly button[onclick="openEquipPinModal(null)"],
+    body.role-viewer-readonly button[onclick*="importLabelsFileInput"],
+    body.role-viewer-readonly button[onclick="openClearEquipModal()"],
+    body.role-viewer-readonly button[onclick^="openEquipPinModal("],
+    body.role-viewer-readonly button[onclick^="deleteSingleLabeledPin"],
+    body.role-viewer-readonly button[onclick^="quickChangeSinglePinColor"],
+    body.role-viewer-readonly button[onclick^="startLabeledPlaceNavigation"][onclick*="false"],
+    body.role-viewer-readonly button[onclick^="stopEquipmentNavigationByKey"],
+    body.role-viewer-readonly #peaEquipBannerFinishBtn,
+    body.role-viewer-readonly #peaEquipBannerCancelBtn,
+    body.role-viewer-readonly #mapLongPressHintBadge,
+    body.role-viewer-readonly #adminBulkPinColorBar {
+        display: none !important;
+    }
+</style>
+<script>
+(function() {
+    const VIEWER_LOCK_MSG = "🔒 สิทธิ์ผู้สำรวจ: ดูข้อมูลอย่างเดียว ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้";
+
+    function isViewerRole() {
+        return localStorage.getItem('elec_app_logged_in') === 'true' &&
+               localStorage.getItem('elec_app_current_role') === 'viewer';
+    }
+
+    function applyTechViewerReadOnlyUI() {
+        const isViewer = isViewerRole();
+        document.body.classList.toggle('role-viewer-readonly', isViewer);
+
+        // ปรับป้ายชื่อมุมขวาให้แสดง "👁️ ผู้สำรวจ"
+        const userBadge = document.getElementById('loggedUserDisplayBadge');
+        if (isViewer && userBadge && userBadge.textContent.includes('👷 ผู้ใช้:')) {
+            userBadge.textContent = userBadge.textContent.replace('👷 ผู้ใช้:', '👁️ ผู้สำรวจ (ดูอย่างเดียว):');
+            userBadge.className = 'text-[11px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-0.5 rounded-full truncate';
+        }
+
+        // ซ่อนแถบเลือกสีหมุดในป๊อปอัปและในการ์ดเมื่ออยู่ในโหมดผู้สำรวจ
+        if (isViewer) {
+            document.querySelectorAll('button[onclick^="quickChangeSinglePinColor"]').forEach(btn => {
+                const colorRow = btn.closest('.bg-slate-100, .bg-slate-50');
+                if (colorRow) colorRow.style.display = 'none';
+            });
+        }
+    }
+
+    // 1. บล็อกฟังก์ชันแก้ไขใบงานและหมุดอุปกรณ์ทั้งหมด
+    const blockedTechFunctions = [
+        'openInspectModal', 'submitTechReport', 'handleCancelNavigation',
+        'openEquipPinModal', 'saveEquipPinModal', 'deleteEquipPinFromModal',
+        'deleteSingleLabeledPin', 'openClearEquipModal', 'confirmClearAllEquipPins',
+        'quickChangeSinglePinColor', 'bulkChangeAllPinsColor', 'handleImportLabeledFile',
+        'stopEquipmentNavigationByKey', 'finishMyEquipmentNavigation'
+    ];
+
+    blockedTechFunctions.forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function') {
+            window[fnName] = function(...args) {
+                if (isViewerRole()) {
+                    // ล้างหมุดชั่วคราวกรณีผู้สำรวจเผลอกดค้างบนแผนที่
+                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                    return false;
+                }
+                return origFn.apply(this, args);
+            };
+        }
+    });
+
+    // 2. เมื่อผู้สำรวจกดปุ่ม "🗺️ นำทาง Maps" ในใบงานซ่อม ให้เปิด Google Maps ทันทีโดยไม่เปลี่ยนสถานะใบงาน
+    const origHandleStartNav = window.handleStartNavigation;
+    if (typeof origHandleStartNav === 'function') {
+        window.handleStartNavigation = async function(key, jobType, gpsLink) {
+            if (isViewerRole()) {
+                if (gpsLink) {
+                    window.open(gpsLink, '_blank');
+                    if (typeof showToast === 'function') showToast("🗺️ เปิดแผนที่ Google Maps (โหมดผู้สำรวจ)");
+                } else {
+                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                }
+                return;
+            }
+            return await origHandleStartNav.apply(this, arguments);
+        };
+    }
+
+    // 3. เมื่อผู้สำรวจกดปุ่ม "🗺️ นำทาง Maps" ที่หมุดอุปกรณ์ไฟฟ้า ให้เปิด Google Maps โดยไม่ส่งสถานะกำลังเดินทางเข้าแดชบอร์ด
+    const origStartEquipNav = window.startLabeledPlaceNavigation;
+    if (typeof origStartEquipNav === 'function') {
+        window.startLabeledPlaceNavigation = async function(placeId, openExternalMaps) {
+            if (isViewerRole()) {
+                if (openExternalMaps) {
+                    try {
+                        const list = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                        const pin = list.find(p => p && String(p.id) === String(placeId));
+                        if (pin && pin.lat && (pin.lon ?? pin.lng)) {
+                            const url = `https://www.google.com/maps/dir/?api=1&destination=${pin.lat},${pin.lon ?? pin.lng}&travelmode=driving`;
+                            window.open(url, '_blank');
+                            if (typeof showToast === 'function') showToast(`🗺️ เปิด Google Maps นำทางไป "${pin.name}" (โหมดผู้สำรวจ)`);
+                            return;
+                        }
+                    } catch (e) {}
+                }
+                if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                return;
+            }
+            return await origStartEquipNav.apply(this, arguments);
+        };
+    }
+
+    // 4. ป้องกันเครื่องของผู้สำรวจส่งข้อมูลใบงานหรือหมุดอุปกรณ์ไปเขียนทับบน Cloud
+    const origPushCloud = window.pushAllJobsToCloud;
+    if (typeof origPushCloud === 'function') {
+        window.pushAllJobsToCloud = async function(...args) {
+            if (isViewerRole()) return true;
+            return await origPushCloud.apply(this, args);
+        };
+    }
+
+    ['updateRoleNavigationUI', 'renderJobCards', 'renderLabeledPlacesList'].forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function') {
+            window[fnName] = function(...args) {
+                const res = origFn.apply(this, args);
+                applyTechViewerReadOnlyUI();
+                return res;
+            };
+        }
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(applyTechViewerReadOnlyUI, 250);
+    });
+})();
+</script>
 </body>
 </html>
