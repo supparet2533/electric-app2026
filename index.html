@@ -11462,5 +11462,173 @@
         }, 3000);
     })();
     </script>
+    <!-- 👁️ ระบบสิทธิ์ "ผู้สำรวจ (Viewer - ดูอย่างเดียว)" สำหรับ index.html -->
+<style>
+    /* ซ่อนปุ่มเพิ่ม/แก้ไข/ลบทั้งหมดเมื่อล็อกอินด้วยสิทธิ์ผู้สำรวจ */
+    body.role-viewer-readonly button[onclick*="saveAndCopyFault"],
+    body.role-viewer-readonly button[onclick*="confirmResetFaultForm"],
+    body.role-viewer-readonly button[onclick*="generateOutageMessage"],
+    body.role-viewer-readonly button[onclick*="confirmResetOutageForm"],
+    body.role-viewer-readonly button[onclick*="openStationManageModal"],
+    body.role-viewer-readonly button[onclick*="openTambonManageModal"],
+    body.role-viewer-readonly button[onclick*="openIssueManageModal"],
+    body.role-viewer-readonly button[onclick*="openMeterLinkModal"],
+    body.role-viewer-readonly button[onclick*="openApiKeyModal"],
+    body.role-viewer-readonly button[onclick*="openCaManageModal"],
+    body.role-viewer-readonly button[onclick*="openStripWordsModal"],
+    body.role-viewer-readonly button[onclick^="editFaultItem"],
+    body.role-viewer-readonly button[onclick^="deleteFaultItem"],
+    body.role-viewer-readonly button[onclick^="editOutageItem"],
+    body.role-viewer-readonly button[onclick^="deleteOutageItem"],
+    body.role-viewer-readonly button[onclick^="quickCloseJobFromMainHistory"],
+    body.role-viewer-readonly button[onclick^="stopEquipNavFromMainPage"],
+    body.role-viewer-readonly #cloudDataManageBtn,
+    body.role-viewer-readonly #autoFillCustomerContainer,
+    body.role-viewer-readonly #geminiChatbot {
+        display: none !important;
+    }
+</style>
+<script>
+(function() {
+    const VIEWER_LOCK_MSG = "🔒 บัญชีผู้สำรวจ (ดูอย่างเดียว) ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้";
+
+    function isViewerRole() {
+        return localStorage.getItem('elec_app_logged_in') === 'true' &&
+               localStorage.getItem('elec_app_current_role') === 'viewer';
+    }
+
+    // 1. เพิ่มตัวเลือก "ผู้สำรวจ (viewer)" ในหน้าต่างจัดการผู้ใช้ของ Admin
+    function injectViewerOptionIntoSelects() {
+        const newRoleSel = document.getElementById('newAccountRole');
+        if (newRoleSel && !newRoleSel.querySelector('option[value="viewer"]')) {
+            const opt = document.createElement('option');
+            opt.value = 'viewer';
+            opt.textContent = '👁️ สิทธิ์: ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
+            newRoleSel.appendChild(opt);
+        }
+
+        const editRoleSel = document.getElementById('editAccRoleSelect');
+        if (editRoleSel && !editRoleSel.querySelector('option[value="viewer"]')) {
+            const opt = document.createElement('option');
+            opt.value = 'viewer';
+            opt.textContent = '👁️ ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
+            editRoleSel.appendChild(opt);
+        }
+
+        const filterRoleSel = document.getElementById('filterUserRoleSelect');
+        if (filterRoleSel && !filterRoleSel.querySelector('option[value="viewer"]')) {
+            const opt = document.createElement('option');
+            opt.value = 'viewer';
+            opt.textContent = '👁️ เฉพาะผู้สำรวจ';
+            filterRoleSel.appendChild(opt);
+        }
+    }
+
+    // แปลงป้ายแสดงสิทธิ์ในรายการบัญชีของ Admin ให้แสดง "👁️ ผู้สำรวจ"
+    function patchAdminUserListForViewer() {
+        injectViewerOptionIntoSelects();
+        const container = document.getElementById('userAccountListContainer');
+        if (!container || typeof userAccountsList === 'undefined') return;
+
+        container.querySelectorAll('strong[id^="pw-mask-"]').forEach(pwEl => {
+            const idx = parseInt(pwEl.id.replace('pw-mask-', ''), 10);
+            const acc = userAccountsList[idx];
+            if (!acc || acc.role !== 'viewer') return;
+
+            const card = pwEl.closest('.flex.items-center.justify-between');
+            if (!card) return;
+
+            const nameSpan = card.querySelector('.font-bold.text-slate-800');
+            if (nameSpan && nameSpan.textContent.includes('👷')) {
+                nameSpan.textContent = nameSpan.textContent.replace('👷', '👁️');
+            }
+
+            card.querySelectorAll('span').forEach(sp => {
+                if (sp.textContent.trim() === 'ผู้ใช้ทั่วไป') {
+                    sp.textContent = 'ผู้สำรวจ (ดูอย่างเดียว)';
+                    sp.className = 'text-[10px] px-1.5 py-0.5 rounded font-bold bg-cyan-100 text-cyan-800 border border-cyan-300';
+                }
+            });
+        });
+    }
+
+    // 2. เปิด/ปิดโหมด Read-Only บนหน้าจอหลัก
+    function applyViewerReadOnlyMode() {
+        const isViewer = isViewerRole();
+        document.body.classList.toggle('role-viewer-readonly', isViewer);
+
+        let banner = document.getElementById('viewerReadOnlyBanner');
+        if (isViewer) {
+            if (!banner) {
+                const header = document.querySelector('#mainAppContent .bg-gradient-to-r');
+                if (header) {
+                    banner = document.createElement('div');
+                    banner.id = 'viewerReadOnlyBanner';
+                    banner.className = 'mt-3 bg-cyan-950/80 border border-cyan-400/50 text-cyan-100 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-inner';
+                    banner.innerHTML = '<span>👁️ โหมดผู้สำรวจ: ดูข้อมูลและแผนที่อย่างเดียว (ไม่สามารถเพิ่ม/แก้ไข/ลบข้อมูลได้)</span>';
+                    header.appendChild(banner);
+                }
+            }
+        } else if (banner) {
+            banner.remove();
+        }
+    }
+
+    // 3. ล็อกฟังก์ชันบันทึก/แก้ไข/ลบทั้งหมดเมื่อเป็นสิทธิ์ viewer
+    const blockedFunctions = [
+        'saveAndCopyFault', 'generateOutageMessage', 'saveOutageData',
+        'deleteFaultItem', 'deleteOutageItem', 'editFaultItem', 'editOutageItem',
+        'quickCloseJobFromMainHistory', 'stopEquipNavFromMainPage',
+        'addStation', 'editStation', 'deleteStation',
+        'addIssueItem', 'editIssueItem', 'deleteIssueItem',
+        'addTambon', 'editTambon', 'deleteTambon',
+        'addCaNumber', 'deleteCaNumber', 'clearAllCaNumbers',
+        'importBackupJson', 'restoreFromAutoBackup',
+        'openCloudDataManagerModal', 'backupToCloudByGroup',
+        'restoreGroupBackupFromCloud', 'deleteGroupBackupOnCloud'
+    ];
+
+    blockedFunctions.forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function') {
+            window[fnName] = function(...args) {
+                if (isViewerRole()) {
+                    if (typeof showToast === 'function') showToast(VIEWER_LOCK_MSG);
+                    return false;
+                }
+                return origFn.apply(this, args);
+            };
+        }
+    });
+
+    // ดักจับการเปิดหน้าต่างจัดการผู้ใช้และแก้ไขผู้ใช้ของ Admin
+    ['openUserManageModal', 'renderUserAccountList', 'editUserAccount'].forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function') {
+            window[fnName] = function(...args) {
+                const res = origFn.apply(this, args);
+                setTimeout(patchAdminUserListForViewer, 30);
+                return res;
+            };
+        }
+    });
+
+    const origCheckLogin = window.checkLoginStatus;
+    if (typeof origCheckLogin === 'function') {
+        window.checkLoginStatus = function(...args) {
+            const res = origCheckLogin.apply(this, args);
+            applyViewerReadOnlyMode();
+            return res;
+        };
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        setTimeout(() => {
+            applyViewerReadOnlyMode();
+            injectViewerOptionIntoSelects();
+        }, 200);
+    });
+})();
+</script>
 </body>
 </html>
