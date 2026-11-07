@@ -9076,5 +9076,438 @@
         window.addEventListener('DOMContentLoaded', purgeAllLeftoverScadaData);
     })();
     </script>
+    <!-- 📍 ระบบแปลงลิงก์ย่อ Google Maps อัตโนมัติทุกช่องและทุกหน้าต่าง (ตัวรวมสมบูรณ์สำหรับ index.html และ page2.html) -->
+    <script>
+    (function() {
+        const SHORT_LINK_CACHE_KEY = 'elec_resolved_shortlinks_cache_v2';
+        const SHORT_URL_REGEX = /(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/[A-Za-z0-9_-]+(?:\?[^\s"'<>]*)?/i;
+
+        function getShortLinkCache() {
+            try { return JSON.parse(localStorage.getItem(SHORT_LINK_CACHE_KEY) || '{}'); }
+            catch (e) { return {}; }
+        }
+
+        function saveShortLinkCache(key, coords) {
+            try {
+                const cache = getShortLinkCache();
+                cache[key] = coords;
+                localStorage.setItem(SHORT_LINK_CACHE_KEY, JSON.stringify(cache));
+            } catch (e) {}
+        }
+
+        // ถอดรหัสพิกัดจากรหัสหมุดสถานที่ Google Maps (0x...:0x... S2 Cell ID)
+        function decodeS2CellIdToLatLon(hexStr) {
+            try {
+                const id = BigInt("0x" + hexStr);
+                if (id === 0n) return null;
+                const face = Number(id >> 61n);
+                if (face < 0 || face > 5) return null;
+
+                const posToIJ = [[0, 1, 3, 2], [0, 2, 3, 1], [3, 2, 0, 1], [3, 1, 0, 2]];
+                const posToOrientation = [1, 0, 0, 3];
+                const lookupIJ = new Int32Array(1024);
+
+                function initLookupCell(level, i, j, origOrientation, pos, orientation) {
+                    if (level === 4) {
+                        lookupIJ[(pos << 2) + origOrientation] = (((i << 4) + j) << 2) + orientation;
+                    } else {
+                        level++; i <<= 1; j <<= 1; pos <<= 2;
+                        const r = posToIJ[orientation];
+                        for (let k = 0; k < 4; k++) {
+                            initLookupCell(level, i + (r[k] >> 1), j + (r[k] & 1), origOrientation, pos + k, orientation ^ posToOrientation[k]);
+                        }
+                    }
+                }
+                for (let d = 0; d < 4; d++) initLookupCell(0, 0, 0, d, 0, d);
+
+                let i = 0, j = 0, orientation = face & 1;
+                for (let k = 7; k >= 0; k--) {
+                    const nbits = (k === 7) ? 2 : 4;
+                    const shift = BigInt(k * 2 * 4 + 1);
+                    const mask = (1n << BigInt(2 * nbits)) - 1n;
+                    const bits = Number((id >> shift) & mask);
+                    const val = lookupIJ[(bits << 2) + orientation];
+                    i += (val >> 6) << (k * 4);
+                    j += ((val >> 2) & 15) << (k * 4);
+                    orientation = val & 3;
+                }
+
+                const stToUV = (s) => (s >= 0.5) ? (1 / 3) * (4 * s * s - 1) : (1 / 3) * (1 - 4 * (1 - s) * (1 - s));
+                const u = stToUV((i + 0.5) / 1073741824.0);
+                const v = stToUV((j + 0.5) / 1073741824.0);
+
+                let x, y, z;
+                switch (face) {
+                    case 0: x = 1; y = u; z = v; break;
+                    case 1: x = -u; y = 1; z = v; break;
+                    case 2: x = -u; y = -v; z = 1; break;
+                    case 3: x = -1; y = -v; z = -u; break;
+                    case 4: x = v; y = -1; z = -u; break;
+                    default: x = v; y = u; z = -1; break;
+                }
+                const lat = Math.atan2(z, Math.sqrt(x * x + y * y)) * (180 / Math.PI);
+                const lon = Math.atan2(y, x) * (180 / Math.PI);
+                if (lat >= 5 && lat <= 21 && lon >= 97 && lon <= 106) {
+                    return { lat: lat.toFixed(6), lon: lon.toFixed(6) };
+                }
+            } catch (e) {}
+            return null;
+        }
+
+        function deepParseCoords(rawStr, isHtmlBody = false) {
+            if (!rawStr) return null;
+            let s = String(rawStr)
+                .replace(/\\u0026/gi, '&')
+                .replace(/\\u003d/gi, '=')
+                .replace(/\\u002f/gi, '/')
+                .replace(/\\x26/gi, '&')
+                .replace(/\\x3d/gi, '=')
+                .replace(/&amp;/gi, '&');
+
+            for (let i = 0; i < 3; i++) {
+                try { s = decodeURIComponent(s); } catch (e) {
+                    s = s.replace(/%25/gi, '%').replace(/%40/gi, '@').replace(/%2C/gi, ',')
+                         .replace(/%2B/gi, '+').replace(/%20/gi, ' ').replace(/%3A/gi, ':')
+                         .replace(/%2F/gi, '/').replace(/%3F/gi, '?').replace(/%3D/gi, '=')
+                         .replace(/%26/gi, '&').replace(/%21/gi, '!');
+                }
+            }
+
+            const m3d = s.match(/!3d(-?\d{1,2}\.\d{4,})!4d(-?\d{2,3}\.\d{4,})/);
+            if (m3d) return { lat: parseFloat(m3d[1]).toFixed(6), lon: parseFloat(m3d[2]).toFixed(6) };
+
+            const mCenter = s.match(/center=(-?\d{1,2}\.\d{4,})\s*[,+\s]\s*\+?(-?\d{2,3}\.\d{4,})/i);
+            if (mCenter) return { lat: parseFloat(mCenter[1]).toFixed(6), lon: parseFloat(mCenter[2]).toFixed(6) };
+
+            const mUrl = s.match(/(?:@|q=|ll=|sll=|daddr=|destination=|search\/|place\/|dir\/\/)(-?\d{1,2}\.\d{4,})\s*[,\s+]+\s*\+?(-?\d{2,3}\.\d{4,})/i);
+            if (mUrl) return { lat: parseFloat(mUrl[1]).toFixed(6), lon: parseFloat(mUrl[2]).toFixed(6) };
+
+            const mDms = s.match(/(\d{1,2})[°\s]+(\d{1,2})['’′\s]+([\d.]+)["”″\s]*([NS])[\s,+]*(\d{2,3})[°\s]+(\d{1,2})['’′\s]+([\d.]+)["”″\s]*([EW])/i);
+            if (mDms) {
+                let latDD = parseFloat(mDms[1]) + (parseFloat(mDms[2]) / 60) + (parseFloat(mDms[3]) / 3600);
+                if (mDms[4].toUpperCase() === 'S') latDD = -latDD;
+                let lonDD = parseFloat(mDms[5]) + (parseFloat(mDms[6]) / 60) + (parseFloat(mDms[7]) / 3600);
+                if (mDms[8].toUpperCase() === 'W') lonDD = -lonDD;
+                return { lat: latDD.toFixed(6), lon: lonDD.toFixed(6) };
+            }
+
+            const mFtid = s.match(/(?:!1s|ftid=|\b)0x([0-9a-f]{16}):0x[0-9a-f]{8,16}/i);
+            if (mFtid) {
+                const s2Coords = decodeS2CellIdToLatLon(mFtid[1]);
+                if (s2Coords) return s2Coords;
+            }
+
+            const mNull = s.match(/\[null\s*,\s*null\s*,\s*([5-9]\.\d{4,}|1\d\.\d{4,}|20\.\d{4,})\s*,\s*(9[7-9]\.\d{4,}|10[0-6]\.\d{4,})\]/);
+            if (mNull) return { lat: parseFloat(mNull[1]).toFixed(6), lon: parseFloat(mNull[2]).toFixed(6) };
+
+            const mInit = s.match(/\[\d+\.\d+\s*,\s*(9[7-9]\.\d{4,}|10[0-6]\.\d{4,})\s*,\s*([5-9]\.\d{4,}|1\d\.\d{4,}|20\.\d{4,})\]/);
+            if (mInit) return { lat: parseFloat(mInit[2]).toFixed(6), lon: parseFloat(mInit[1]).toFixed(6) };
+
+            if (!isHtmlBody && s.length < 400) {
+                const mPlain = s.match(/(?:^|[^\d.-])([5-9]\.\d{4,}|1\d\.\d{4,}|20\.\d{4,})\s*[,\s]+\s*\+?(9[7-9]\.\d{4,}|10[0-6]\.\d{4,})(?![\d.])/);
+                if (mPlain) return { lat: parseFloat(mPlain[1]).toFixed(6), lon: parseFloat(mPlain[2]).toFixed(6) };
+            }
+
+            return null;
+        }
+
+        function extractRedirectUrlFromHtml(rawHtml) {
+            if (!rawHtml) return null;
+            let s = String(rawHtml).replace(/\\u0026/gi, '&').replace(/\\u003d/gi, '=').replace(/&amp;/gi, '&');
+            try { s = decodeURIComponent(s); } catch (e) {}
+            const m = s.match(/https?:\/\/(?:www\.)?google\.[a-z.]+\/maps[^\s"'<>\\]+/i) ||
+                      s.match(/https?:\/\/maps\.google\.[a-z.]+\/maps[^\s"'<>\\]+/i);
+            return m ? m[0] : null;
+        }
+
+        async function fetchWithTimeout(url, ms = 6000) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), ms);
+            try {
+                const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+                clearTimeout(timer);
+                return res;
+            } catch (e) {
+                clearTimeout(timer);
+                throw e;
+            }
+        }
+
+        async function queryAllUnshorteners(targetUrl) {
+            const encoded = encodeURIComponent(targetUrl);
+            const tasks = [
+                (async () => {
+                    const r = await fetchWithTimeout(`https://api.microlink.io/?url=${encoded}`, 6000);
+                    if (!r.ok) throw new Error('ml');
+                    const d = await r.json();
+                    const combined = `${d?.data?.url || ''} ${d?.data?.image?.url || ''} ${d?.data?.title || ''} ${d?.data?.description || ''}`;
+                    const c = deepParseCoords(combined, false);
+                    if (c) return { coords: c };
+                    if (d?.data?.url && d.data.url !== targetUrl) return { nextUrl: d.data.url };
+                    throw new Error('no_ml');
+                })(),
+                (async () => {
+                    const r = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encoded}`, 6000);
+                    if (!r.ok) throw new Error('ao');
+                    const d = await r.json();
+                    const c = deepParseCoords(d?.status?.url || '', false) || deepParseCoords(d?.contents || '', true);
+                    if (c) return { coords: c };
+                    const nextUrl = extractRedirectUrlFromHtml(d?.status?.url || '') || extractRedirectUrlFromHtml(d?.contents || '');
+                    if (nextUrl && nextUrl !== targetUrl) return { nextUrl };
+                    throw new Error('no_ao');
+                })(),
+                (async () => {
+                    const r = await fetchWithTimeout(`https://unshorten.me/json/${targetUrl}`, 5500);
+                    if (!r.ok) throw new Error('us');
+                    const d = await r.json();
+                    const rUrl = d?.resolved_url || '';
+                    const c = deepParseCoords(rUrl, false);
+                    if (c) return { coords: c };
+                    const cleanNext = extractRedirectUrlFromHtml(rUrl) || rUrl;
+                    if (cleanNext && cleanNext !== targetUrl) return { nextUrl: cleanNext };
+                    throw new Error('no_us');
+                })(),
+                (async () => {
+                    const r = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encoded}`, 6000);
+                    if (!r.ok) throw new Error('ct');
+                    const t = await r.text();
+                    const c = deepParseCoords(t, true);
+                    if (c) return { coords: c };
+                    const nextUrl = extractRedirectUrlFromHtml(t);
+                    if (nextUrl && nextUrl !== targetUrl) return { nextUrl };
+                    throw new Error('no_ct');
+                })(),
+                (async () => {
+                    const r = await fetchWithTimeout(`https://corsproxy.io/?${encoded}`, 6000);
+                    if (!r.ok) throw new Error('cp');
+                    const t = await r.text();
+                    const c = deepParseCoords(r.url || '', false) || deepParseCoords(t, true);
+                    if (c) return { coords: c };
+                    const nextUrl = extractRedirectUrlFromHtml(t);
+                    if (nextUrl && nextUrl !== targetUrl) return { nextUrl };
+                    throw new Error('no_cp');
+                })()
+            ];
+            return await Promise.any(tasks);
+        }
+
+        window.resolveGoogleShortLinkUniversal = async function(rawInput) {
+            const text = String(rawInput || '').trim();
+            if (!text) return null;
+
+            const direct = deepParseCoords(text, false);
+            if (direct) return direct;
+
+            const match = text.match(SHORT_URL_REGEX);
+            if (!match) return null;
+
+            let fullShortUrl = match[0];
+            if (!/^https?:\/\//i.test(fullShortUrl)) fullShortUrl = 'https://' + fullShortUrl;
+            const cleanShortUrl = fullShortUrl.split('?')[0];
+
+            const cached = getShortLinkCache()[cleanShortUrl] || getShortLinkCache()[fullShortUrl];
+            if (cached && cached.lat && cached.lon) return cached;
+
+            try {
+                const step1 = await queryAllUnshorteners(cleanShortUrl);
+                if (step1?.coords) {
+                    saveShortLinkCache(cleanShortUrl, step1.coords);
+                    return step1.coords;
+                }
+                if (step1?.nextUrl) {
+                    const directNext = deepParseCoords(step1.nextUrl, false);
+                    if (directNext) {
+                        saveShortLinkCache(cleanShortUrl, directNext);
+                        return directNext;
+                    }
+                    const step2 = await queryAllUnshorteners(step1.nextUrl);
+                    if (step2?.coords) {
+                        saveShortLinkCache(cleanShortUrl, step2.coords);
+                        return step2.coords;
+                    }
+                }
+            } catch (e) {
+                console.warn("Shortlink resolve failed:", e);
+            }
+            return null;
+        };
+
+        function enableShortLinkPasteOnCoordInputs() {
+            const coordInputIds = [
+                'newTambonLatInput', 'newTambonLonInput',
+                'editTambonLatInput', 'editTambonLonInput',
+                'equipLatInput', 'equipLonInput'
+            ];
+            coordInputIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.type === 'number') {
+                    el.type = 'text';
+                    el.setAttribute('inputmode', 'decimal');
+                }
+            });
+        }
+
+        function updateNearbyStatusText(inputEl, message, isSuccess) {
+            if (!inputEl || !inputEl.parentElement) return;
+            const container = inputEl.closest('div')?.parentElement || inputEl.parentElement;
+            const candidates = container.querySelectorAll('p, div, span, small');
+            candidates.forEach(el => {
+                if (el === inputEl || el.contains(inputEl)) return;
+                const txt = (el.textContent || '').trim();
+                if (txt.includes('คลายลิงก์') || txt.includes('กำลังคลายลิงก์') || txt.includes('แปลงลิงก์') || el.dataset.shortlinkStatus === 'true') {
+                    el.dataset.shortlinkStatus = 'true';
+                    el.textContent = message;
+                    el.className = isSuccess
+                        ? 'text-[11px] font-bold text-emerald-600 mt-1.5 flex items-center gap-1'
+                        : (message.includes('⏳')
+                            ? 'text-[11px] font-bold text-blue-600 mt-1.5 flex items-center gap-1 animate-pulse'
+                            : 'text-[11px] font-bold text-rose-600 mt-1.5 flex items-center gap-1');
+                    el.classList.remove('hidden');
+                }
+            });
+        }
+
+        async function interceptAndResolveInput(inputEl) {
+            if (!inputEl || inputEl.dataset.resolvingShortLink === 'true') return;
+            const rawVal = inputEl.value || '';
+            const match = rawVal.match(SHORT_URL_REGEX);
+            if (!match) return;
+
+            if (inputEl.id === 'rawCustomerPasteInput' || inputEl.id === 'address') {
+                const gpsEl = document.getElementById('gps');
+                if (gpsEl && gpsEl !== inputEl) {
+                    setTimeout(() => interceptAndResolveInput(gpsEl), 120);
+                }
+                return;
+            }
+
+            inputEl.dataset.resolvingShortLink = 'true';
+            const matchedShortStr = match[0];
+
+            updateNearbyStatusText(inputEl, '⏳ กำลังคลายลิงก์สั้น Google Maps เป็นพิกัด...', false);
+            if (typeof showToast === 'function') showToast('⏳ กำลังแปลงลิงก์ย่อ Google Maps เป็นพิกัด...');
+
+            try {
+                const coords = await window.resolveGoogleShortLinkUniversal(matchedShortStr);
+                if (!coords || !coords.lat || !coords.lon) {
+                    updateNearbyStatusText(inputEl, '⚠️ คลายลิงก์สั้นไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต หรือวางพิกัดตัวเลข', false);
+                    if (typeof showToast === 'function') showToast('⚠️ ไม่สามารถคลายลิงก์ย่อนี้ได้ กรุณาตรวจสอบอินเทอร์เน็ต');
+                    return;
+                }
+
+                const id = inputEl.id || '';
+                const coordPairStr = `${coords.lat}, ${coords.lon}`;
+                const fullMapUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}`;
+
+                // 1. ช่องละติจูด/ลองจิจูดแยกกัน (หน้าจัดการตำบล)
+                if (id.includes('LatInput') || id.includes('LonInput')) {
+                    const prefix = id.replace(/(?:Lat|Lon)Input$/, '');
+                    const latEl = document.getElementById(prefix + 'LatInput');
+                    const lonEl = document.getElementById(prefix + 'LonInput');
+                    if (latEl && lonEl) {
+                        latEl.value = coords.lat;
+                        lonEl.value = coords.lon;
+                        if (typeof showToast === 'function') showToast(`📍 แยกพิกัดสำเร็จ: Lat ${coords.lat}, Lon ${coords.lon}`);
+                        return;
+                    }
+                }
+
+                // 2. ช่องเว็บเบราว์เซอร์ฝั่งซ้าย (#leftBrowserUrlInput)
+                if (id === 'leftBrowserUrlInput') {
+                    const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
+                    inputEl.value = fullMapUrl;
+                    const iframe = document.getElementById('leftBrowserIframe');
+                    if (iframe) iframe.src = embedUrl;
+                    localStorage.setItem('elec_left_browser_last_url', embedUrl);
+                    if (typeof showToast === 'function') showToast(`📍 เปิดแผนที่จากลิงก์ย่อ: ${coordPairStr}`);
+                    return;
+                }
+
+                // 3. แยกตามประเภทหน้า: หน้าหลักใส่ลิงก์เต็ม / หน้าช่าง (เพิ่มป้ายกำกับอุปกรณ์) ใส่พิกัดตัวเลข lat, lon
+                const isMainPageGpsField = (id === 'gps' || id === 'gpsInput' || id === 'ce_gps');
+                if (isMainPageGpsField) {
+                    inputEl.value = (rawVal.trim() === matchedShortStr.trim()) ? fullMapUrl : rawVal.replace(matchedShortStr, fullMapUrl);
+                } else {
+                    inputEl.value = coordPairStr;
+                }
+
+                updateNearbyStatusText(inputEl, `✅ แปลงลิงก์สั้นเป็นพิกัดสำเร็จ: ${coordPairStr}`, true);
+                if (typeof showToast === 'function') showToast(`📍 แปลงลิงก์ย่อสำเร็จ: ${coordPairStr}`);
+
+                // 4. อัปเดตแผนที่พรีวิวในหน้าหลัก (index.html)
+                if (id === 'gps') {
+                    if (typeof updateMapPreview === 'function') updateMapPreview(coords);
+                    if (typeof fetchPlaceNameFromCoords === 'function' && typeof handleAreaAutoFill === 'function') {
+                        const place = await fetchPlaceNameFromCoords(coords.lat, coords.lon);
+                        if (place) handleAreaAutoFill(place);
+                    }
+                    if (typeof saveOutageDraft === 'function') saveOutageDraft();
+                } else if (id === 'gpsInput') {
+                    const container = document.getElementById('mapPreviewContainerTab1');
+                    const iframe = document.getElementById('googleMapIframeTab1');
+                    const label = document.getElementById('mapCoordLabelTab1');
+                    const extLink = document.getElementById('mapExternalLinkTab1');
+                    const embedUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}&hl=th&z=16&output=embed`;
+
+                    if (label) label.textContent = `📍 พิกัด: ${coords.lat}, ${coords.lon}`;
+                    if (extLink) extLink.href = fullMapUrl;
+                    if (container) container.classList.remove('hidden');
+                    if (iframe && iframe.getAttribute('data-loaded-url') !== embedUrl) {
+                        iframe.src = embedUrl;
+                        iframe.setAttribute('data-loaded-url', embedUrl);
+                    }
+                    const tambonVal = document.getElementById('tambonSelect')?.value;
+                    if (tambonVal && typeof fetchLiveWeatherForTambon === 'function') {
+                        fetchLiveWeatherForTambon(tambonVal, true);
+                    }
+                    if (typeof saveFaultDraft === 'function') saveFaultDraft();
+                } else {
+                    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            } finally {
+                delete inputEl.dataset.resolvingShortLink;
+            }
+        }
+
+        ['input', 'change'].forEach(evtType => {
+            document.addEventListener(evtType, function(e) {
+                const t = e.target;
+                if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA')) return;
+                if (t.id === 'rawCustomerPasteInput' || t.id === 'address') return;
+                if (SHORT_URL_REGEX.test(t.value || '')) {
+                    e.stopImmediatePropagation();
+                    interceptAndResolveInput(t);
+                }
+            }, true);
+        });
+
+        document.addEventListener('paste', function(e) {
+            const t = e.target;
+            if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA')) return;
+            setTimeout(() => {
+                if (SHORT_URL_REGEX.test(t.value || '')) {
+                    interceptAndResolveInput(t);
+                }
+            }, 50);
+        }, true);
+
+        ['openTambonManageModal', 'editTambon'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    const res = origFn.apply(this, args);
+                    setTimeout(enableShortLinkPasteOnCoordInputs, 50);
+                    return res;
+                };
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', enableShortLinkPasteOnCoordInputs);
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            enableShortLinkPasteOnCoordInputs();
+        }
+    })();
+    </script>
 </body>
 </html>
