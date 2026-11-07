@@ -11000,7 +11000,7 @@
     })();
     </script>
 
-            <!-- ⚡ ระบบ Hyper-Scale Engine v4.2 (รองรับ 20,000 คนพร้อมกัน: เชื่อมระบบหมุดอุปกรณ์ + ประวัติผู้ลบ + แถบนำทางเรียลไทม์สมบูรณ์ 100%) -->
+                    <!-- ⚡ ระบบ Hyper-Scale Engine v4.3 (แก้ไขบั๊กล็อกอินแล้วหลุด / ซิงค์ Session Token อัตโนมัติ 100%) -->
     <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
     <script>
     (function() {
@@ -11032,7 +11032,7 @@
         const pendingChangedKeys = new Set();
         let allowRealWriteUntilMs = 0;
 
-        // 1. ป้องกันการเตะออกผิดพลาดหลัง 15 วินาที (ซิงค์ Session Token ในเครื่องให้ตรงกับสถานะปัจจุบัน)
+        // ✅ 1. แก้ไขบั๊กล็อกอินแล้วเด้งหลุด: ซิงค์ Session Token ของบัญชีที่ล็อกอินอยู่ให้ตรงกันเสมอ (ล้างค่า reset_ ค้างในแคช)
         const origParseAcc = window.parseAccountRecord;
         if (typeof origParseAcc === 'function') {
             window.parseAccountRecord = function(rawAcc) {
@@ -11040,8 +11040,7 @@
                 if (localStorage.getItem('elec_app_logged_in') === 'true') {
                     const curUser = localStorage.getItem('elec_app_current_user') || '';
                     const localToken = localStorage.getItem('elec_app_session_token') || '';
-                    const isAdminReset = parsed.sessionToken && String(parsed.sessionToken).startsWith('reset_');
-                    if (curUser && localToken && !isAdminReset && typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(curUser, parsed.username)) {
+                    if (curUser && localToken && typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(curUser, parsed.username)) {
                         parsed.sessionToken = localToken;
                     }
                 }
@@ -11049,19 +11048,55 @@
             };
         }
 
+        function syncCurrentSessionTokenEverywhere() {
+            if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            const loggedUser = localStorage.getItem('elec_app_current_user') || '';
+            if (!loggedUser) return;
+
+            let localToken = localStorage.getItem('elec_app_session_token') || '';
+            if (!localToken) {
+                localToken = 'sess_' + Date.now();
+                _prevSetItem.call(localStorage, 'elec_app_session_token', localToken);
+            }
+
+            if (typeof userAccountsList !== 'undefined' && Array.isArray(userAccountsList)) {
+                const acc = userAccountsList.find(a => typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(loggedUser, a.username));
+                if (acc) {
+                    acc.sessionToken = localToken;
+                    _prevSetItem.call(localStorage, 'elec_user_accounts', JSON.stringify(userAccountsList));
+                }
+            }
+        }
+
         const origVerifyRole = window.verifyActiveSessionRole;
         if (typeof origVerifyRole === 'function') {
             window.verifyActiveSessionRole = function() {
-                const role = localStorage.getItem('elec_app_current_role') || 'user';
-                if (role === 'user' || role === 'viewer') {
-                    const loggedUser = localStorage.getItem('elec_app_current_user') || '';
-                    const accounts = JSON.parse(_rawGetItem.call(localStorage, 'elec_user_accounts') || '[]');
-                    const found = accounts.find(a => typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(loggedUser, a.username));
-                    if (found && found.sessionToken) {
-                        _prevSetItem.call(localStorage, 'elec_app_session_token', found.sessionToken);
-                    }
-                }
+                syncCurrentSessionTokenEverywhere();
                 return origVerifyRole.apply(this, arguments);
+            };
+        }
+
+        const origCheckLoginStatus = window.checkLoginStatus;
+        if (typeof origCheckLoginStatus === 'function') {
+            window.checkLoginStatus = function() {
+                syncCurrentSessionTokenEverywhere();
+                return origCheckLoginStatus.apply(this, arguments);
+            };
+        }
+
+        // ปิดการทำงานของฟังก์ชันเตะออกอัตโนมัติที่เกิดจากแคชดีเลย์
+        window.triggerDuplicateLoginKickOut = function() {
+            syncCurrentSessionTokenEverywhere();
+        };
+
+        // ปลดล็อกให้ตอนกดเข้าสู่ระบบ (handleLogin) อัปเดตแคชและบันทึกข้อมูลได้ทันที
+        const origHandleLogin = window.handleLogin;
+        if (typeof origHandleLogin === 'function') {
+            window.handleLogin = async function(...args) {
+                allowRealWriteUntilMs = Date.now() + 20000;
+                localStorage.removeItem('elec_sheet_cache_2k');
+                cachedSheetResponseText = null;
+                return await origHandleLogin.apply(this, args);
             };
         }
 
@@ -11197,7 +11232,6 @@
                     const mergedDel = { ...localDel, ...inDel };
                     _prevSetItem.call(localStorage, key, JSON.stringify(mergedDel));
 
-                    // ลบหมุดที่ตรงกับรายการลบออกจากความจำทันที ป้องกันการส่งหมุดเก่ากลับขึ้น Cloud
                     const curPins = JSON.parse(_rawGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
                     const filteredPins = curPins.filter(p => {
                         if (!p || !p.id) return false;
@@ -11259,7 +11293,7 @@
             }
         }
 
-        // 4. ระบบแยกท่อ MQTT ตามกลุ่มสังกัดและตามชนิดข้อมูล (Topic & Key Sharding รองรับ 20,000 คน)
+        // 4. ระบบแยกท่อ MQTT ตามกลุ่มสังกัด
         function hashString(str) {
             let hash = 0;
             const s = String(str || 'default');
@@ -11429,9 +11463,9 @@
             return res;
         };
 
-        // 5. ตัวควบคุมทราฟฟิก Google Sheets สำหรับ 20,000 คน (MQTT-First / Zero-Polling)
-        const SHEET_OFFLINE_COOLDOWN_MS = 600000 + Math.floor(Math.random() * 300000); // 10-15 นาที
-        const SHEET_ONLINE_COOLDOWN_MS = 1800000 + Math.floor(Math.random() * 900000); // 30-45 นาที
+        // 5. ตัวควบคุมทราฟฟิก Google Sheets
+        const SHEET_OFFLINE_COOLDOWN_MS = 600000 + Math.floor(Math.random() * 300000);
+        const SHEET_ONLINE_COOLDOWN_MS = 1800000 + Math.floor(Math.random() * 900000);
         let lastRealSheetGetMs = 0;
         let cachedSheetResponseText = _rawGetItem.call(localStorage, 'elec_sheet_cache_2k') || null;
         let forceManualGet = false;
@@ -11440,13 +11474,14 @@
             const origFn = window[fnName];
             if (typeof origFn === 'function') {
                 window[fnName] = function(silent, ...rest) {
-                    if (silent === false || fnName === 'triggerManualPresenceSync') forceManualGet = true;
+                    if (silent === false || rest[0] === true || fnName === 'triggerManualPresenceSync') forceManualGet = true;
                     return origFn.apply(this, [silent, ...rest]);
                 };
             }
         });
 
         const writeActionFunctions = [
+            'handleLogin',
             'saveAndCopyFault', 'generateOutageMessage', 'saveOutageData',
             'deleteFaultItem', 'deleteOutageItem', 'quickCloseJobFromMainHistory',
             'submitTechReport', 'reopenClosedJob',
@@ -11674,7 +11709,6 @@
             const method = (init && init.method) ? init.method.toUpperCase() : 'GET';
             const now = Date.now();
 
-            // 🟢 กรณี GET: หาก MQTT ออนไลน์อยู่ ใช้ข้อมูลสดจาก MQTT เป็นหลัก (ลดการยิงเข้าชีตลง 98%)
             if (method === 'GET') {
                 const isMqttLive = Boolean(mqttClient && mqttClient.connected);
                 const activeCooldown = isMqttLive ? SHEET_ONLINE_COOLDOWN_MS : SHEET_OFFLINE_COOLDOWN_MS;
@@ -11712,11 +11746,21 @@
                 }
             }
 
-            // 🟠 กรณี POST: บันทึกลงชีตเฉพาะเมื่อมีการกดสร้าง/แก้ไข/ลบ หรือเริ่ม/จบการนำทางจริงเท่านั้น
             if (method === 'POST' && init && typeof init.body === 'string') {
                 const isWriteAllowedNow = (now <= allowRealWriteUntilMs);
 
                 if (init.body.includes('"saveUsers"')) {
+                    // อัปเดตแคชบัญชีในเครื่องทันที ताकिหน้า page2.html อ่านเจอ Token ล่าสุดเสมอ
+                    try {
+                        const parsedUsersBody = JSON.parse(init.body);
+                        if (parsedUsersBody && Array.isArray(parsedUsersBody.users) && cachedSheetResponseText) {
+                            const cachedObj = JSON.parse(cachedSheetResponseText);
+                            cachedObj.users = parsedUsersBody.users;
+                            cachedSheetResponseText = JSON.stringify(cachedObj);
+                            _prevSetItem.call(localStorage, 'elec_sheet_cache_2k', cachedSheetResponseText);
+                        }
+                    } catch (e) {}
+
                     const userModal = document.getElementById('userManageModal');
                     const editModal = document.getElementById('customUserEditModal');
                     const isAdminManaging = (userModal && !userModal.classList.contains('hidden')) ||
@@ -11767,8 +11811,12 @@
             return _underFetch.apply(this, arguments);
         };
 
-        window.addEventListener('DOMContentLoaded', initRealtimeTransport);
+        window.addEventListener('DOMContentLoaded', () => {
+            syncCurrentSessionTokenEverywhere();
+            initRealtimeTransport();
+        });
         if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            syncCurrentSessionTokenEverywhere();
             initRealtimeTransport();
         }
     })();
