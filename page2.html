@@ -8812,5 +8812,157 @@
         });
     })();
     </script>
+        <!-- ================= 🧹 สคริปต์ล้างข้อมูล SCADA ที่ค้างในระบบ & จัดตำแหน่งบอลลูนหมุดบนจอมือถือ ================= -->
+    <style>
+        /* ตั้งค่ากรอบบอลลูนหมุดบนแผนที่อุปกรณ์ให้เลื่อนขึ้น-ลงได้ลื่นไหลและไม่ชนปุ่มด้านบน */
+        #labeledInteractiveMap .leaflet-popup-pane {
+            z-index: 650 !important;
+        }
+        #labeledInteractiveMap .leaflet-popup-content-wrapper {
+            border-radius: 1rem !important;
+            padding: 2px !important;
+            overflow: hidden !important;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.45) !important;
+        }
+        #labeledInteractiveMap .leaflet-popup-content {
+            margin: 10px 8px 10px 12px !important;
+            max-height: 210px !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
+            touch-action: pan-y !important;
+            overscroll-behavior: contain !important;
+            padding-right: 6px !important;
+        }
+        #labeledInteractiveMap .leaflet-popup-content::-webkit-scrollbar {
+            width: 5px;
+        }
+        #labeledInteractiveMap .leaflet-popup-content::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 9999px;
+        }
+        #labeledInteractiveMap .leaflet-popup-content::-webkit-scrollbar-thumb {
+            background: #0d9488;
+            border-radius: 9999px;
+        }
+        #mapFullscreenContainer.map-is-fullscreen #labeledInteractiveMap .leaflet-popup-content {
+            max-height: 62dvh !important;
+        }
+    </style>
+
+    <script>
+    (function() {
+        // 1. ล้างข้อมูลและแคชของระบบ SCADA ที่อาจค้างอยู่ในเครื่องออกทั้งหมดอัตโนมัติ
+        function purgeAllLeftoverScadaData() {
+            const scadaStorageKeys = [
+                'elec_scada_road_geom_cache_v1',
+                'elec_scada_road_geom_cache_v2',
+                'elec_scada_road_geom_cache_v3',
+                'elec_scada_deleted_edges_v3',
+                'elec_scada_routing_mode'
+            ];
+            scadaStorageKeys.forEach(k => localStorage.removeItem(k));
+
+            try {
+                const rawPins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                if (Array.isArray(rawPins) && rawPins.length > 0) {
+                    let cleaned = false;
+                    rawPins.forEach(p => {
+                        if (!p || typeof p !== 'object') return;
+                        ['scadaIn', 'scadaOut', 'scadaSwitch', 'scadaEquipType', 'scadaWireColor', 'scadaCustomPaths', 'scadaEdgeColors', 'scadaEdgeUpdatedAt'].forEach(prop => {
+                            if (prop in p) {
+                                delete p[prop];
+                                cleaned = true;
+                            }
+                        });
+                    });
+                    if (cleaned) {
+                        localStorage.setItem('elec_labeled_places_list', JSON.stringify(rawPins));
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // 2. จัดตำแหน่งบอลลูนหมุดบนแผนที่อุปกรณ์ไม่ให้ชนขอบบน และเปิดให้ปัดเลื่อนขึ้น-ลงได้
+        if (typeof L !== 'undefined' && L.Popup) {
+            L.Popup.prototype.options.autoPanPaddingTopLeft = [10, 64];
+            L.Popup.prototype.options.autoPanPaddingBottomRight = [10, 16];
+        }
+
+        function enablePopupTouchScroll(popupEl) {
+            if (!popupEl || popupEl.__touchScrollFixed) return;
+            popupEl.__touchScrollFixed = true;
+
+            if (typeof L !== 'undefined' && L.DomEvent) {
+                L.DomEvent.disableScrollPropagation(popupEl);
+                L.DomEvent.disableClickPropagation(popupEl);
+            }
+            ['touchstart', 'touchmove', 'touchend', 'wheel', 'mousedown'].forEach(evtName => {
+                popupEl.addEventListener(evtName, function(e) {
+                    e.stopPropagation();
+                }, { passive: true });
+            });
+        }
+
+        function shiftPopupDownIntoLowerZone(mapInst) {
+            const mapBox = document.getElementById('labeledInteractiveMap');
+            if (!mapBox) return;
+            const popupWrap = mapBox.querySelector('.leaflet-popup-content-wrapper');
+            if (!popupWrap) return;
+
+            const mapRect = mapBox.getBoundingClientRect();
+            const popupRect = popupWrap.getBoundingClientRect();
+            const desiredTopGapPx = 62;
+            const currentTopGapPx = popupRect.top - mapRect.top;
+
+            if (currentTopGapPx < desiredTopGapPx && mapInst && typeof mapInst.panBy === 'function') {
+                const shiftDownPx = Math.round(desiredTopGapPx - currentTopGapPx);
+                mapInst.panBy([0, -shiftDownPx], { animate: true, duration: 0.22 });
+            }
+        }
+
+        if (typeof L !== 'undefined' && !L.__cleanPopupHooked) {
+            L.__cleanPopupHooked = true;
+            const origMap = L.map;
+            L.map = function(idOrEl) {
+                const inst = origMap.apply(this, arguments);
+                const elId = typeof idOrEl === 'string' ? idOrEl : (idOrEl && idOrEl.id);
+                if (elId === 'labeledInteractiveMap') {
+                    inst.on('popupopen', function(e) {
+                        const popupEl = e.popup && e.popup.getElement ? e.popup.getElement()?.querySelector('.leaflet-popup-content') : null;
+                        if (popupEl) enablePopupTouchScroll(popupEl);
+                        const floatingBtns = document.getElementById('mapFloatingActionBtns');
+                        const topHintBadge = document.getElementById('mapLongPressHintBadge');
+                        if (floatingBtns) {
+                            floatingBtns.style.opacity = '0.12';
+                            floatingBtns.style.pointerEvents = 'none';
+                        }
+                        if (topHintBadge) {
+                            topHintBadge.style.opacity = '0';
+                            topHintBadge.style.pointerEvents = 'none';
+                        }
+                        setTimeout(() => shiftPopupDownIntoLowerZone(inst), 60);
+                    });
+
+                    inst.on('popupclose', function() {
+                        const floatingBtns = document.getElementById('mapFloatingActionBtns');
+                        const topHintBadge = document.getElementById('mapLongPressHintBadge');
+                        if (floatingBtns) {
+                            floatingBtns.style.opacity = '1';
+                            floatingBtns.style.pointerEvents = 'auto';
+                        }
+                        if (topHintBadge) {
+                            topHintBadge.style.opacity = '1';
+                        }
+                    });
+                }
+                return inst;
+            };
+        }
+
+        purgeAllLeftoverScadaData();
+        window.addEventListener('DOMContentLoaded', purgeAllLeftoverScadaData);
+    })();
+    </script>
 </body>
 </html>
