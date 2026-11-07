@@ -7181,7 +7181,7 @@
     })();
     </script>
 
-         <!-- ⚡ ระบบ Hyper-Scale Engine v4.2 (รองรับ 20,000 คนพร้อมกัน: เชื่อมระบบหมุดอุปกรณ์ + ประวัติผู้ลบ + แถบนำทางเรียลไทม์สมบูรณ์ 100%) -->
+             <!-- ⚡ ระบบ Hyper-Scale Engine v4.3 (แก้ไขบั๊กล็อกอินแล้วหลุดสำหรับ page2.html + เชื่อมระบบหมุดอุปกรณ์สมบูรณ์ 100%) -->
     <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
     <script>
     (function() {
@@ -7213,16 +7213,69 @@
         const pendingChangedKeys = new Set();
         let allowRealWriteUntilMs = 0;
 
-        // 1. ป้องกันการเตะออกผิดพลาด (ซิงค์ Session Token ในเครื่องให้ตรงกับสถานะปัจจุบัน)
+        // ✅ 1. ป้องกันการเตะออกผิดพลาดใน page2.html และ index.html (ซิงค์ Session Token ให้ตรงกันเสมอทั้งในเครื่องและแคช)
+        function ensureMySessionTokenSyncedInUsers(usersArray) {
+            if (!Array.isArray(usersArray)) return usersArray;
+            if (_rawGetItem.call(localStorage, 'elec_app_logged_in') !== 'true') return usersArray;
+            const curUser = (_rawGetItem.call(localStorage, 'elec_app_current_user') || '').trim();
+            if (!curUser) return usersArray;
+
+            let localToken = _rawGetItem.call(localStorage, 'elec_app_session_token') || '';
+            if (!localToken) {
+                localToken = 'sess_' + Date.now();
+                _prevSetItem.call(localStorage, 'elec_app_session_token', localToken);
+            }
+
+            usersArray.forEach(u => {
+                if (!u || !u.username) return;
+                const isMatch = (typeof isUsernameMatchingAccount === 'function')
+                    ? isUsernameMatchingAccount(curUser, u.username)
+                    : (String(u.username).trim().toLowerCase() === curUser.toLowerCase());
+                if (isMatch) {
+                    u.sessionToken = localToken;
+                    if (typeof u.role === 'string' && u.role.includes('::')) {
+                        const parts = u.role.split('::');
+                        parts[1] = localToken;
+                        u.role = parts.join('::');
+                    }
+                }
+            });
+            return usersArray;
+        }
+
+        function syncCurrentSessionTokenEverywhere() {
+            if (_rawGetItem.call(localStorage, 'elec_app_logged_in') !== 'true') return;
+            const loggedUser = (_rawGetItem.call(localStorage, 'elec_app_current_user') || '').trim();
+            if (!loggedUser) return;
+
+            let localToken = _rawGetItem.call(localStorage, 'elec_app_session_token') || '';
+            if (!localToken) {
+                localToken = 'sess_' + Date.now();
+                _prevSetItem.call(localStorage, 'elec_app_session_token', localToken);
+            }
+
+            if (typeof userAccountsList !== 'undefined' && Array.isArray(userAccountsList)) {
+                ensureMySessionTokenSyncedInUsers(userAccountsList);
+                _prevSetItem.call(localStorage, 'elec_user_accounts', JSON.stringify(userAccountsList));
+            } else {
+                try {
+                    const savedAccs = JSON.parse(_rawGetItem.call(localStorage, 'elec_user_accounts') || '[]');
+                    if (Array.isArray(savedAccs) && savedAccs.length > 0) {
+                        ensureMySessionTokenSyncedInUsers(savedAccs);
+                        _prevSetItem.call(localStorage, 'elec_user_accounts', JSON.stringify(savedAccs));
+                    }
+                } catch (e) {}
+            }
+        }
+
         const origParseAcc = window.parseAccountRecord;
         if (typeof origParseAcc === 'function') {
             window.parseAccountRecord = function(rawAcc) {
                 const parsed = origParseAcc.apply(this, arguments);
-                if (localStorage.getItem('elec_app_logged_in') === 'true') {
-                    const curUser = localStorage.getItem('elec_app_current_user') || '';
-                    const localToken = localStorage.getItem('elec_app_session_token') || '';
-                    const isAdminReset = parsed.sessionToken && String(parsed.sessionToken).startsWith('reset_');
-                    if (curUser && localToken && !isAdminReset && typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(curUser, parsed.username)) {
+                if (_rawGetItem.call(localStorage, 'elec_app_logged_in') === 'true') {
+                    const curUser = _rawGetItem.call(localStorage, 'elec_app_current_user') || '';
+                    const localToken = _rawGetItem.call(localStorage, 'elec_app_session_token') || '';
+                    if (curUser && localToken && typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(curUser, parsed.username)) {
                         parsed.sessionToken = localToken;
                     }
                 }
@@ -7230,21 +7283,31 @@
             };
         }
 
-        const origVerifyRole = window.verifyActiveSessionRole;
-        if (typeof origVerifyRole === 'function') {
-            window.verifyActiveSessionRole = function() {
-                const role = localStorage.getItem('elec_app_current_role') || 'user';
-                if (role === 'user' || role === 'viewer') {
-                    const loggedUser = localStorage.getItem('elec_app_current_user') || '';
-                    const accounts = JSON.parse(_rawGetItem.call(localStorage, 'elec_user_accounts') || '[]');
-                    const found = accounts.find(a => typeof isUsernameMatchingAccount === 'function' && isUsernameMatchingAccount(loggedUser, a.username));
-                    if (found && found.sessionToken) {
-                        _prevSetItem.call(localStorage, 'elec_app_session_token', found.sessionToken);
-                    }
-                }
-                return origVerifyRole.apply(this, arguments);
-            };
-        }
+        ['verifyActiveSessionRole', 'checkLoginStatus', 'checkTechLoginStatus', 'verifyTechSession'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    syncCurrentSessionTokenEverywhere();
+                    return origFn.apply(this, args);
+                };
+            }
+        });
+
+        window.triggerDuplicateLoginKickOut = function() {
+            syncCurrentSessionTokenEverywhere();
+        };
+
+        ['handleLogin', 'handleTechLogin', 'submitTechLogin'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = async function(...args) {
+                    allowRealWriteUntilMs = Date.now() + 20000;
+                    localStorage.removeItem('elec_sheet_cache_2k');
+                    cachedSheetResponseText = null;
+                    return await origFn.apply(this, args);
+                };
+            }
+        });
 
         // 2. เชื่อมระบบยกเลิกนำทางใบงานและลบใบงานให้ซิงค์ทันที
         const origCancelJobNav = window.handleCancelNavigation;
@@ -7378,7 +7441,6 @@
                     const mergedDel = { ...localDel, ...inDel };
                     _prevSetItem.call(localStorage, key, JSON.stringify(mergedDel));
 
-                    // ลบหมุดที่ตรงกับรายการลบออกจากแผนที่ทันที
                     const curPins = JSON.parse(_rawGetItem.call(localStorage, 'elec_labeled_places_list') || '[]');
                     const filteredPins = curPins.filter(p => {
                         if (!p || !p.id) return false;
@@ -7429,6 +7491,10 @@
                         }
                     });
                     _prevSetItem.call(localStorage, key, JSON.stringify(Array.from(pinMap.values())));
+                } else if (key === 'elec_user_accounts') {
+                    const inAccs = JSON.parse(incomingValStr || '[]');
+                    ensureMySessionTokenSyncedInUsers(inAccs);
+                    _prevSetItem.call(localStorage, key, JSON.stringify(inAccs));
                 } else {
                     _prevSetItem.call(localStorage, key, incomingValStr);
                 }
@@ -7440,7 +7506,7 @@
             }
         }
 
-        // 4. ระบบแยกท่อ MQTT ตามกลุ่มสังกัดและตามชนิดข้อมูล (Topic & Key Sharding รองรับ 20,000 คน)
+        // 4. ระบบแยกท่อ MQTT ตามกลุ่มสังกัด
         function hashString(str) {
             let hash = 0;
             const s = String(str || 'default');
@@ -7610,9 +7676,9 @@
             return res;
         };
 
-        // 5. ตัวควบคุมทราฟฟิก Google Sheets สำหรับ 20,000 คน (MQTT-First / Zero-Polling)
-        const SHEET_OFFLINE_COOLDOWN_MS = 600000 + Math.floor(Math.random() * 300000); // 10-15 นาที
-        const SHEET_ONLINE_COOLDOWN_MS = 1800000 + Math.floor(Math.random() * 900000); // 30-45 นาที
+        // 5. ตัวควบคุมทราฟฟิก Google Sheets
+        const SHEET_OFFLINE_COOLDOWN_MS = 600000 + Math.floor(Math.random() * 300000);
+        const SHEET_ONLINE_COOLDOWN_MS = 1800000 + Math.floor(Math.random() * 900000);
         let lastRealSheetGetMs = 0;
         let cachedSheetResponseText = _rawGetItem.call(localStorage, 'elec_sheet_cache_2k') || null;
         let forceManualGet = false;
@@ -7621,13 +7687,14 @@
             const origFn = window[fnName];
             if (typeof origFn === 'function') {
                 window[fnName] = function(silent, ...rest) {
-                    if (silent === false || fnName === 'triggerManualPresenceSync') forceManualGet = true;
+                    if (silent === false || rest[0] === true || fnName === 'triggerManualPresenceSync') forceManualGet = true;
                     return origFn.apply(this, [silent, ...rest]);
                 };
             }
         });
 
         const writeActionFunctions = [
+            'handleLogin', 'handleTechLogin', 'submitTechLogin',
             'saveAndCopyFault', 'generateOutageMessage', 'saveOutageData',
             'deleteFaultItem', 'deleteOutageItem', 'quickCloseJobFromMainHistory',
             'submitTechReport', 'reopenClosedJob',
@@ -7847,6 +7914,19 @@
             isWorkerRunning = false;
         }
 
+        // ฟังก์ชันปรับแก้ JSON ที่ดึงจากชีตให้มี Session Token ตรงกับเครื่องที่ล็อกอินอยู่เสมอ
+        function sanitizeFetchedJsonUsersToken(rawText) {
+            if (!rawText || !rawText.includes('"users"')) return rawText;
+            try {
+                const parsed = JSON.parse(rawText);
+                if (parsed && Array.isArray(parsed.users)) {
+                    ensureMySessionTokenSyncedInUsers(parsed.users);
+                    return JSON.stringify(parsed);
+                }
+            } catch (e) {}
+            return rawText;
+        }
+
         window.fetch = async function(input, init) {
             const urlStr = typeof input === 'string' ? input : (input?.url || '');
             const isGasUrl = urlStr.includes('script.google.com');
@@ -7855,13 +7935,13 @@
             const method = (init && init.method) ? init.method.toUpperCase() : 'GET';
             const now = Date.now();
 
-            // 🟢 กรณี GET: หาก MQTT ออนไลน์อยู่ ใช้ข้อมูลสดจาก MQTT เป็นหลัก (ลดการยิงเข้าชีตลง 98%)
             if (method === 'GET') {
                 const isMqttLive = Boolean(mqttClient && mqttClient.connected);
                 const activeCooldown = isMqttLive ? SHEET_ONLINE_COOLDOWN_MS : SHEET_OFFLINE_COOLDOWN_MS;
 
                 if (!forceManualGet && cachedSheetResponseText && (now - lastRealSheetGetMs < activeCooldown)) {
-                    return new Response(cachedSheetResponseText, {
+                    const safeCached = sanitizeFetchedJsonUsersToken(cachedSheetResponseText);
+                    return new Response(safeCached, {
                         status: 200,
                         headers: { 'Content-Type': 'application/json' }
                     });
@@ -7873,18 +7953,24 @@
                     const response = await _underFetch.apply(this, arguments);
                     if (response && response.ok) {
                         const cloned = response.clone();
-                        const text = await cloned.text();
+                        let text = await cloned.text();
                         if (text && text.includes('"status":"ok"')) {
+                            text = sanitizeFetchedJsonUsersToken(text);
                             cachedSheetResponseText = text;
                             try { _prevSetItem.call(localStorage, 'elec_sheet_cache_2k', text); } catch (e) {}
                             const parsed = JSON.parse(text);
                             if (parsed && Array.isArray(parsed.jobs)) recordBaselineFromJobsArray(parsed.jobs);
+                            return new Response(text, {
+                                status: 200,
+                                headers: { 'Content-Type': 'application/json' }
+                            });
                         }
                     }
                     return response;
                 } catch (err) {
                     if (cachedSheetResponseText) {
-                        return new Response(cachedSheetResponseText, {
+                        const safeCached = sanitizeFetchedJsonUsersToken(cachedSheetResponseText);
+                        return new Response(safeCached, {
                             status: 200,
                             headers: { 'Content-Type': 'application/json' }
                         });
@@ -7893,11 +7979,24 @@
                 }
             }
 
-            // 🟠 กรณี POST: บันทึกลงชีตเฉพาะเมื่อมีการกดสร้าง/แก้ไข/ลบ หรือเริ่ม/จบการนำทางจริงเท่านั้น
             if (method === 'POST' && init && typeof init.body === 'string') {
                 const isWriteAllowedNow = (now <= allowRealWriteUntilMs);
 
                 if (init.body.includes('"saveUsers"')) {
+                    try {
+                        const parsedUsersBody = JSON.parse(init.body);
+                        if (parsedUsersBody && Array.isArray(parsedUsersBody.users)) {
+                            ensureMySessionTokenSyncedInUsers(parsedUsersBody.users);
+                            init.body = JSON.stringify(parsedUsersBody);
+                            if (cachedSheetResponseText) {
+                                const cachedObj = JSON.parse(cachedSheetResponseText);
+                                cachedObj.users = parsedUsersBody.users;
+                                cachedSheetResponseText = JSON.stringify(cachedObj);
+                                _prevSetItem.call(localStorage, 'elec_sheet_cache_2k', cachedSheetResponseText);
+                            }
+                        }
+                    } catch (e) {}
+
                     const userModal = document.getElementById('userManageModal');
                     const editModal = document.getElementById('customUserEditModal');
                     const isAdminManaging = (userModal && !userModal.classList.contains('hidden')) ||
@@ -7948,13 +8047,18 @@
             return _underFetch.apply(this, arguments);
         };
 
-        window.addEventListener('DOMContentLoaded', initRealtimeTransport);
+        window.addEventListener('DOMContentLoaded', () => {
+            syncCurrentSessionTokenEverywhere();
+            initRealtimeTransport();
+        });
         if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            syncCurrentSessionTokenEverywhere();
             initRealtimeTransport();
         }
     })();
     </script>
-                <!-- ================= ⚡ ระบบ "แผนที่รายการใบงานซ่อม" (แก้ปุ่มล้นขอบขวา & แก้ปุ่มย่อแผนที่ตกขอบจอด้านล่าง 100%) ================= -->
+
+    <!-- ================= ⚡ ระบบ "แผนที่รายการใบงานซ่อม" (แก้ปุ่มล้นขอบขวา & แก้ปุ่มย่อแผนที่ตกขอบจอด้านล่าง 100%) ================= -->
     <style>
         /* ให้หน้าต่างบันทึกผลตรวจสอบแสดงทับแผนที่เต็มจอได้เสมอ */
         #inspectModal {
@@ -8126,7 +8230,6 @@
                 .replace(/"/g, '&quot;');
         }
 
-        // 1. สร้างกรอบ "⚡ แผนที่รายการใบงานซ่อม" ไว้ในหน้า "รายการใบงานซ่อม"
         function injectRepairJobsMapSection() {
             if (document.getElementById('repairJobsMapSection')) return;
             const jobCardsEl = document.getElementById('jobCardsContainer');
@@ -8137,7 +8240,6 @@
             section.className = 'px-4 pt-2 pb-1';
             section.innerHTML = `
                 <div id="repairJobsMapFullscreenBox" class="bg-white border-2 border-teal-500/80 rounded-2xl shadow-sm overflow-hidden">
-                    <!-- แถบหัวข้อ แผนที่รายการใบงานซ่อม (จัดปุ่มเป็น Grid 4 ช่อง ไม่ล้นขอบจอ) -->
                     <div id="repairJobsMapHeader" class="bg-gradient-to-r from-slate-900 via-teal-900 to-emerald-800 px-3 py-2.5 text-white space-y-2">
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -8170,7 +8272,6 @@
                         </div>
                     </div>
 
-                    <!-- ตัวแผนที่ Leaflet สำหรับรายการใบงานซ่อม -->
                     <div id="repairJobsMapInnerWrap" class="relative isolate bg-slate-100">
                         <div id="repairJobsLeafletMap" class="w-full h-[300px] sm:h-[360px] lg:h-[420px] z-0"></div>
                         <div class="absolute bottom-3 left-2.5 right-2.5 z-[400] flex items-center justify-between gap-2 pointer-events-none">
@@ -8189,7 +8290,6 @@
             initRepairJobsLeafletMap();
         }
 
-        // 2. สร้างแผนที่ Leaflet ประจำแท็บ "แผนที่รายการใบงานซ่อม"
         function initRepairJobsLeafletMap() {
             if (repairJobsMap || typeof L === 'undefined') return;
             const mapEl = document.getElementById('repairJobsLeafletMap');
@@ -8249,7 +8349,6 @@
             }
         }
 
-        // 3. ตรวจสอบว่าใบงานนั้นสถานะ "เสร็จสิ้น" แล้วหรือยัง (ถ้าเสร็จสิ้นแล้ว จะไม่นำมามาร์คจุดสายฟ้า)
         function isJobCompletedStatus(item, jobType) {
             if (!item) return true;
             const jobKey = jobType === 'fault' ? item.timestamp : item.dateTimeSaved;
@@ -8272,7 +8371,6 @@
             return false;
         }
 
-        // 4. สกัดพิกัดจากใบงานซ่อม (รองรับพิกัดตรง, ลิงก์เต็ม, ลิงก์สั้น maps.app.goo.gl และจุดอ้างอิงสำรอง 100%)
         function resolveRepairJobCoordinates(item, jobKey) {
             const rawGps = String(item?.techReport?.fieldGps || item?.gps || '').trim();
             const cache = getShortUrlCoordCache();
@@ -8341,7 +8439,6 @@
             }
         }
 
-        // 5. ดึงรายการใบงานที่ยัง "รอแก้ไข" (และกำลังเดินทาง) ตามตัวกรองปัจจุบันของหน้าใบงานซ่อม
         function getPendingRepairJobsForMap() {
             const selectedJobType = document.getElementById('filterJobType')?.value || 'outage';
             const shiftFilter = document.getElementById('filterJobShift')?.value || 'all';
@@ -8414,7 +8511,6 @@
             return results;
         }
 
-        // 6. วาดมาร์คจุดสายฟ้า (⚡) ลงบน "แผนที่รายการใบงานซ่อม" และลบออกอัตโนมัติเมื่อเสร็จสิ้น
         window.renderRepairJobsMapMarkers = function(forceRedraw = false) {
             injectRepairJobsMapSection();
             updateMyTechMarkerOnRepairMap();
@@ -8578,7 +8674,6 @@
             }
         };
 
-        // 7. เพิ่มปุ่ม "⚡ ดูจุดบนแมพ" ในการ์ดใบงานซ่อมที่ยังรอแก้ไข
         function injectFocusMapButtonsIntoJobCards() {
             const container = document.getElementById('jobCardsContainer');
             if (!container) return;
@@ -8694,7 +8789,6 @@
             }
         };
 
-        // ปุ่มขวาบน: หากอยู่ในโหมดเต็มจอ จะทำหน้าที่เป็นปุ่ม "✖️ ย่อกลับ" ทันที (กดออกได้ทั้งด้านบนและด้านล่าง)
         window.handleTopRightRepairMapAction = function() {
             if (isRepairMapFullscreen) {
                 toggleRepairJobsMapFullscreen();
@@ -8765,7 +8859,6 @@
             }
         });
 
-        // 8. ซิงค์อัตโนมัติทุกครั้งที่มีการโหลดงาน กรองงาน กดออกเดินทาง หรือบันทึกปิดงานเสร็จสิ้น
         ['renderJobCards', 'submitTechReport', 'handleStartNavigation', 'handleCancelNavigation', 'switchTechMainTab', 'syncJobsFromCloud'].forEach(fnName => {
             const origFn = window[fnName];
             if (typeof origFn === 'function') {
@@ -8812,7 +8905,8 @@
         });
     })();
     </script>
-        <!-- ================= 🧹 สคริปต์ล้างข้อมูล SCADA ที่ค้างในระบบ & จัดตำแหน่งบอลลูนหมุดบนจอมือถือ ================= -->
+
+    <!-- ================= 🧹 สคริปต์ล้างข้อมูล SCADA ที่ค้างในระบบ & จัดตำแหน่งบอลลูนหมุดบนจอมือถือ ================= -->
     <style>
         /* ตั้งค่ากรอบบอลลูนหมุดบนแผนที่อุปกรณ์ให้เลื่อนขึ้น-ลงได้ลื่นไหลและไม่ชนปุ่มด้านบน */
         #labeledInteractiveMap .leaflet-popup-pane {
@@ -8852,7 +8946,6 @@
 
     <script>
     (function() {
-        // 1. ล้างข้อมูลและแคชของระบบ SCADA ที่อาจค้างอยู่ในเครื่องออกทั้งหมดอัตโนมัติ
         function purgeAllLeftoverScadaData() {
             const scadaStorageKeys = [
                 'elec_scada_road_geom_cache_v1',
@@ -8883,7 +8976,6 @@
             } catch (e) {}
         }
 
-        // 2. จัดตำแหน่งบอลลูนหมุดบนแผนที่อุปกรณ์ไม่ให้ชนขอบบน และเปิดให้ปัดเลื่อนขึ้น-ลงได้
         if (typeof L !== 'undefined' && L.Popup) {
             L.Popup.prototype.options.autoPanPaddingTopLeft = [10, 64];
             L.Popup.prototype.options.autoPanPaddingBottomRight = [10, 16];
