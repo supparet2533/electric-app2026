@@ -671,11 +671,22 @@
         <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-4 text-white rounded-t-2xl">
             <div class="flex flex-col gap-3">
                 <div class="w-full">
-                    <h1 class="text-lg sm:text-xl font-bold flex items-center gap-1.5 leading-snug">
+                                      <h1 class="text-lg sm:text-xl font-bold flex items-center gap-1.5 leading-snug">
                         ⚡ ระบบเครื่องมือจัดการงานไฟฟ้า
                     </h1>
                     <p class="text-[11px] sm:text-xs text-blue-100 mt-0.5">เลือกใช้งานระบบด้านล่างเพื่อสลับหน้าต่าง</p>
+                    <!-- 🟢 หลอดไฟเขียวกระพริบแสดงสถานะซิงค์ข้อมูล -->
+                    <div id="topSyncStatusBadge" class="inline-flex items-center gap-2 mt-1.5 bg-slate-900/35 border border-emerald-400/35 px-2.5 py-1 rounded-full backdrop-blur-sm transition-all duration-300">
+                        <span class="relative flex h-2.5 w-2.5 shrink-0">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-90"></span>
+                            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 shadow-[0_0_8px_#34d399]"></span>
+                        </span>
+                        <span id="topSyncText" class="text-[10px] sm:text-[11px] font-medium text-emerald-100 tracking-wide">
+                            ซิงค์ข้อมูลประวัติและใบงานล่าสุดเรียบร้อย!
+                        </span>
+                    </div>
                 </div>
+
                 <div class="flex items-center gap-1.5 shrink-0 flex-wrap w-full justify-start sm:justify-end">
                     <button type="button" id="adminUserManageBtn" onclick="openUserManageModal()" class="hidden bg-amber-500/90 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm items-center gap-1 font-semibold" title="จัดการบัญชีผู้ใช้ (เฉพาะแอดมิน)">
                         👤 <span>ผู้ใช้</span>
@@ -7317,7 +7328,12 @@
                         loadOutageHistory();
                         loadFaultHistory();
                         autoFillJobNo();
-                        showToast(navUpdated ? "🚗 อัปเดตสถานะการเดินทางของช่างแล้ว!" : "✅ ซิงค์ข้อมูลประวัติและใบงานล่าสุดเรียบร้อย!");
+                        const syncTextEl = document.getElementById('topSyncText');
+                        if (syncTextEl) {
+                            const timeNow = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+                            syncTextEl.textContent = (navUpdated ? "อัปเดตสถานะการเดินทางของช่างแล้ว!" : "ซิงค์ข้อมูลประวัติและใบงานล่าสุดเรียบร้อย!") + ` (${timeNow} น.)`;
+                        }
+
                     } else {
                         renderNavEtaBadgesInMainHistory();
                     }
