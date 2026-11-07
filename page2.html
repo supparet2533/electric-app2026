@@ -8058,7 +8058,7 @@
     })();
     </script>
 
-    <!-- ================= ⚡ ระบบ "แผนที่รายการใบงานซ่อม" (แก้ปุ่มล้นขอบขวา & แก้ปุ่มย่อแผนที่ตกขอบจอด้านล่าง 100%) ================= -->
+      <!-- ================= ⚡ ระบบ "แผนที่รายการใบงานซ่อม" (เริ่มต้นที่มุมมอง "ดูจุดงานซ่อมทั้งหมด" อัตโนมัติ 100%) ================= -->
     <style>
         /* ให้หน้าต่างบันทึกผลตรวจสอบแสดงทับแผนที่เต็มจอได้เสมอ */
         #inspectModal {
@@ -8188,7 +8188,7 @@
         let isRepairMapFullscreen = false;
         let showRepairJobTooltips = true;
         let lastRepairJobsSignature = '';
-        let hasAutoFittedInitialJobs = false;
+        let lastAutoFittedCoordsSignature = '';
         const resolvingShortUrlsSet = new Set();
 
         const EXTENDED_AREA_COORDS = {
@@ -8295,10 +8295,7 @@
             const mapEl = document.getElementById('repairJobsLeafletMap');
             if (!mapEl) return;
 
-            const defaultCenter = (typeof lastKnownTechCoords === 'object' && lastKnownTechCoords)
-                ? [lastKnownTechCoords.lat, lastKnownTechCoords.lon]
-                : [13.1361, 101.0322];
-
+            const defaultCenter = [13.1361, 101.0322];
             repairJobsMap = L.map('repairJobsLeafletMap').setView(defaultCenter, 12);
 
             const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
@@ -8322,6 +8319,10 @@
 
             updateMyTechMarkerOnRepairMap();
             renderRepairJobsMapMarkers(true);
+
+            // บังคับเริ่มต้นที่มุมมอง "ดูจุดงานซ่อมทั้งหมด" ทันทีเมื่อโครงสร้างแผนที่โหลดเสร็จ
+            setTimeout(() => fitAllRepairJobPinsOnMap(false), 180);
+            setTimeout(() => fitAllRepairJobPinsOnMap(false), 750);
         }
 
         function updateMyTechMarkerOnRepairMap() {
@@ -8542,6 +8543,7 @@
 
             if (pendingList.length === 0) {
                 currentlyOpenRepairPopupKey = null;
+                lastAutoFittedCoordsSignature = '';
                 return;
             }
 
@@ -8668,9 +8670,11 @@
                 repairJobMarkersByKey[savedOpenPopupKey].openPopup();
             }
 
-            if (!hasAutoFittedInitialJobs && pendingList.length > 0) {
-                hasAutoFittedInitialJobs = true;
-                fitAllRepairJobPinsOnMap(false);
+            // ซูมเข้ามุมมอง "ดูจุดงานซ่อมทั้งหมด" อัตโนมัติเมื่อเปิดหน้าเว็บ หรือเมื่อรายการพิกัดงานซ่อมอัปเดตใหม่
+            const coordsOnlySig = pendingList.map(p => `${p.key}:${p.displayLat.toFixed(5)},${p.displayLon.toFixed(5)}`).join('|');
+            if (coordsOnlySig !== lastAutoFittedCoordsSignature && !currentlyOpenRepairPopupKey) {
+                lastAutoFittedCoordsSignature = coordsOnlySig;
+                setTimeout(() => fitAllRepairJobPinsOnMap(false), 60);
             }
         };
 
@@ -8725,9 +8729,14 @@
             }, 150);
         };
 
+        // โฟกัสเฉพาะกลุ่มจุดใบงานซ่อมทั้งหมด ("ดูจุดงานซ่อมทั้งหมด") โดยไม่ถูกพิกัด GPS ช่างที่อยู่ไกลดึงเฟรมออก
         window.fitAllRepairJobPinsOnMap = function(showFeedback = true) {
             if (isRepairMapCollapsed) {
-                toggleRepairJobsMapCollapse();
+                if (showFeedback) {
+                    toggleRepairJobsMapCollapse();
+                } else {
+                    return;
+                }
             }
             const pendingList = getPendingRepairJobsForMap();
             if (!repairJobsMap || pendingList.length === 0) {
@@ -8738,12 +8747,13 @@
             }
             repairJobsMap.invalidateSize();
             const bounds = pendingList.map(p => [p.displayLat, p.displayLon]);
-            if (lastKnownTechCoords && isGpsTrackingEnabled) {
-                bounds.push([lastKnownTechCoords.lat, lastKnownTechCoords.lon]);
-            }
-            repairJobsMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+            repairJobsMap.fitBounds(bounds, {
+                paddingTopLeft: [45, 55],
+                paddingBottomRight: [45, 52],
+                maxZoom: 16
+            });
             if (showFeedback && typeof showToast === 'function') {
-                showToast(`⚡ ซูมแสดงจุดสายฟ้าใบงานรอแก้ไข (${pendingList.length} งาน)`);
+                showToast(`⚡ ซูมแสดงจุดสายฟ้าใบงานรอแก้ไขทั้งหมด (${pendingList.length} งาน)`);
             }
         };
 
@@ -8832,7 +8842,10 @@
             }
             updateRepairMapControlButtonsText();
             if (!isRepairMapCollapsed && repairJobsMap) {
-                setTimeout(() => repairJobsMap.invalidateSize(), 150);
+                setTimeout(() => {
+                    repairJobsMap.invalidateSize();
+                    fitAllRepairJobPinsOnMap(false);
+                }, 150);
             }
         };
 
@@ -8849,7 +8862,10 @@
             updateRepairMapControlButtonsText();
 
             setTimeout(() => {
-                if (repairJobsMap) repairJobsMap.invalidateSize();
+                if (repairJobsMap) {
+                    repairJobsMap.invalidateSize();
+                    fitAllRepairJobPinsOnMap(false);
+                }
             }, 150);
         };
 
@@ -8869,7 +8885,10 @@
                         renderRepairJobsMapMarkers(isExplicitAction);
                         injectFocusMapButtonsIntoJobCards();
                         if (fnName === 'switchTechMainTab' && args[0] === 'jobs' && repairJobsMap) {
-                            setTimeout(() => repairJobsMap.invalidateSize(), 180);
+                            setTimeout(() => {
+                                repairJobsMap.invalidateSize();
+                                fitAllRepairJobPinsOnMap(false);
+                            }, 180);
                         }
                     };
                     if (res && typeof res.then === 'function') {
@@ -8894,7 +8913,8 @@
                 injectRepairJobsMapSection();
                 renderRepairJobsMapMarkers(true);
                 injectFocusMapButtonsIntoJobCards();
-            }, 450);
+                fitAllRepairJobPinsOnMap(false);
+            }, 400);
 
             setInterval(() => {
                 if (!document.hidden) {
