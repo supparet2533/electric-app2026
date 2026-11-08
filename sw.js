@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pea-smart-tools-v87';
+const CACHE_NAME = 'pea-smart-tools-v88';
 
 // ไฟล์หลักของแอปที่ต้องการเก็บไว้เปิดตอนออฟไลน์
 const STATIC_ASSETS = [
