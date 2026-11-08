@@ -11018,6 +11018,135 @@
 
                     <!-- ⚡ ระบบ Hyper-Scale Engine v4.3 (แก้ไขบั๊กล็อกอินแล้วหลุด / ซิงค์ Session Token อัตโนมัติ 100%) -->
     <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+      <!-- 🔒 ระบบเข้ารหัสข้อมูล MQTT อัตโนมัติ (Payload Encryption + Signature Verification + ปิด Retain) -->
+    <script>
+    (function() {
+        // สร้างกุญแจเข้ารหัสประจำระบบขององค์กร
+        function getOrganizationSecretKey() {
+            const apiUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '') || '';
+            const customSecret = localStorage.getItem('elec_mqtt_secret_key') || 'PEA_SMART_GRID_SECURE_2026';
+            return apiUrl + '::' + customSecret;
+        }
+
+        // สร้างลายเซ็นดิจิทัล (HMAC-like Hash) เพื่อป้องกันคนนอกยิงข้อมูลปลอม
+        function computePacketSignature(payloadStr, ts, secret) {
+            const str = payloadStr + '|' + ts + '|' + secret;
+            let h1 = 0xdeadbeef ^ str.length;
+            let h2 = 0x41c6ce57 ^ str.length;
+            for (let i = 0, ch; i < str.length; i++) {
+                ch = str.charCodeAt(i);
+                h1 = Math.imul(h1 ^ ch, 2654435761);
+                h2 = Math.imul(h2 ^ ch, 1597334677);
+            }
+            h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+            h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+            return (h2 >>> 0).toString(36) + '_' + (h1 >>> 0).toString(36);
+        }
+
+        // เข้ารหัสและถอดรหัสข้อความด้วย Stream Cipher + Base64
+        function xorCipherTransform(text, keyStr) {
+            let out = '';
+            for (let i = 0; i < text.length; i++) {
+                const c = text.charCodeAt(i) ^ keyStr.charCodeAt(i % keyStr.length) ^ ((i * 31) & 0xff);
+                out += String.fromCharCode(c);
+            }
+            return out;
+        }
+
+        function encryptMqttVal(plainStr, ts) {
+            try {
+                const secret = getOrganizationSecretKey() + '#' + (ts % 9973);
+                const utf8Bytes = encodeURIComponent(plainStr);
+                const xored = xorCipherTransform(utf8Bytes, secret);
+                return 'ENC1_' + btoa(xored);
+            } catch (e) {
+                return plainStr;
+            }
+        }
+
+        function decryptMqttVal(cipherStr, ts) {
+            try {
+                if (!cipherStr || !cipherStr.startsWith('ENC1_')) return null;
+                const secret = getOrganizationSecretKey() + '#' + (ts % 9973);
+                const xored = atob(cipherStr.slice(5));
+                const utf8Bytes = xorCipherTransform(xored, secret);
+                return decodeURIComponent(utf8Bytes);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // ดักจับ mqtt.connect เพื่อบังคับเข้ารหัสขาออก และตรวจสอบลายเซ็นขาเข้า
+        if (typeof mqtt !== 'undefined' && typeof mqtt.connect === 'function') {
+            const _origMqttConnect = mqtt.connect;
+            mqtt.connect = function(brokerUrl, options) {
+                const savedMqttUser = localStorage.getItem('elec_mqtt_username');
+                const savedMqttPass = localStorage.getItem('elec_mqtt_password');
+                if (savedMqttUser && savedMqttPass) {
+                    options = { ...options, username: savedMqttUser, password: savedMqttPass };
+                }
+
+                const client = _origMqttConnect.call(this, brokerUrl, options);
+
+                // 1. ล็อกขาออก: ปิด retain: false เสมอ และเข้ารหัสข้อมูลทุกครั้งก่อนส่ง
+                const _origPublish = client.publish;
+                client.publish = function(topic, message, pubOpts, callback) {
+                    try {
+                        const pkt = JSON.parse(message);
+                        if (pkt && pkt.type === 'DELTA_KEY' && pkt.val) {
+                            const ts = pkt.ts || Date.now();
+                            const secret = getOrganizationSecretKey();
+                            const sig = computePacketSignature(pkt.val, ts, secret);
+                            pkt.val = encryptMqttVal(pkt.val, ts);
+                            pkt.ts = ts;
+                            pkt.sig = sig;
+                            message = JSON.stringify(pkt);
+                        }
+                    } catch (e) {}
+
+                    const safeOpts = { ...(pubOpts || {}), qos: 0, retain: false };
+                    return _origPublish.call(this, topic, message, safeOpts, callback);
+                };
+
+                // 2. ล็อกขาเข้า: ตรวจสอบลายเซ็น ถอดรหัส และคืนค่า String ให้ buf.toString() ทำงานได้ถูกต้อง
+                const _origOn = client.on;
+                client.on = function(event, handler) {
+                    if (event === 'message' && typeof handler === 'function') {
+                        const secureHandler = function(topic, buf, packet) {
+                            try {
+                                const rawStr = (buf && typeof buf.toString === 'function') ? buf.toString() : String(buf || '');
+                                const pkt = JSON.parse(rawStr);
+                                if (pkt && pkt.type === 'DELTA_KEY') {
+                                    // รองรับความคลาดเคลื่อนของนาฬิกาแต่ละเครื่องได้ถึง 1 ชั่วโมง (ป้องกันแพ็กเก็ตเก่าข้ามวัน)
+                                    if (!pkt.ts || Math.abs(Date.now() - Number(pkt.ts)) > 3600000) return;
+
+                                    const decryptedVal = decryptMqttVal(pkt.val, pkt.ts);
+                                    if (!decryptedVal) return;
+
+                                    const expectedSig = computePacketSignature(decryptedVal, pkt.ts, getOrganizationSecretKey());
+                                    if (pkt.sig !== expectedSig) return; // ลายเซ็นไม่ตรง = ข้อมูลปลอม ทิ้งทันที
+
+                                    pkt.val = decryptedVal;
+                                    const cleanStr = JSON.stringify(pkt);
+                                    const cleanBuf = new TextEncoder().encode(cleanStr);
+                                    cleanBuf.toString = function() { return cleanStr; };
+                                    return handler.call(this, topic, cleanBuf, packet);
+                                }
+                            } catch (e) {
+                                return;
+                            }
+                        };
+                        return _origOn.call(this, event, secureHandler);
+                    }
+                    return _origOn.apply(this, arguments);
+                };
+
+                return client;
+            };
+        }
+    })();
+    </script>
+
     <script>
     (function() {
         const CHANNEL_NAME = 'pea_smart_grid_hyper_v4';
