@@ -1,23 +1,15 @@
-const CACHE_NAME = 'pea-smart-tools-v86';
+const CACHE_NAME = 'pea-smart-tools-v87';
 
-// ไฟล์หลักที่ต้องการเก็บไว้ให้เปิดตอนออฟไลน์ได้ทันที (ครบทั้งหน้าหลักและหน้าช่าง)
+// ไฟล์หลักของแอปที่ต้องการเก็บไว้เปิดตอนออฟไลน์
 const STATIC_ASSETS = [
   './',
   './index.html',
   './page2.html',
   './manifest-main.json',
-  './manifest.json',
-  'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap',
-  'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js',
-  'https://cdn.jsdelivr.net/npm/chart.js',
-  'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js'
+  './manifest.json'
 ];
 
-// รายชื่อโดเมน API ข้อมูลสดและแผนที่ที่ห้ามแคชเด็ดขาด (ต้องดึงใหม่จากเน็ตเสมอ)
+// รายชื่อโดเมน API ข้อมูลสดและแผนที่ที่ให้วิ่งตรงผ่านอินเทอร์เน็ตเสมอ
 const BYPASS_HOSTS = [
   'script.google.com',
   'script.googleusercontent.com',
@@ -75,8 +67,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. สำหรับหน้าเว็บ HTML (index.html, page2.html) ใช้ระบบ Network-First ป้องกันจอขาว
-  if (req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/')) {
+  // 2. เฉพาะหน้าเว็บ HTML ในโดเมนของเราเองเท่านั้น (ป้องกันไม่ให้ไปบล็อก cdn.tailwindcss.com)
+  const isSameOrigin = (url.origin === self.location.origin);
+  if (isSameOrigin && (req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/'))) {
     event.respondWith(
       fetch(req.url, { cache: 'no-cache' })
         .then((networkRes) => {
@@ -100,7 +93,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. สำหรับไฟล์สคริปต์และฟอนต์ ใช้ Stale-While-Revalidate (เปิดไวทันใจ)
+  // 3. สำหรับไฟล์สคริปต์ภายนอก (เช่น Tailwind CSS, Leaflet, Fonts) ให้ดึงด้วยโหมดปกติของเบราว์เซอร์
   event.respondWith(
     caches.match(req).then((cachedRes) => {
       const fetchPromise = fetch(req)
@@ -111,9 +104,7 @@ self.addEventListener('fetch', (event) => {
           }
           return networkRes;
         })
-        .catch(() => {
-          return cachedRes || new Response('', { status: 408, statusText: 'Offline' });
-        });
+        .catch(() => cachedRes);
 
       return cachedRes || fetchPromise;
     })
