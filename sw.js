@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pea-smart-tools-v84';
+const CACHE_NAME = 'pea-smart-tools-v85';
 
 // ไฟล์หลักที่ต้องการเก็บไว้ให้เปิดตอนออฟไลน์ได้ทันที (ครบทั้งหน้าหลักและหน้าช่าง)
 const STATIC_ASSETS = [
@@ -13,10 +13,11 @@ const STATIC_ASSETS = [
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js'
 ];
 
-// รายชื่อโดเมน API ข้อมูลสดที่ห้ามแคชเด็ดขาด (ต้องดึงใหม่จากเน็ตเสมอ)
+// รายชื่อโดเมน API ข้อมูลสดและแผนที่ที่ห้ามแคชเด็ดขาด (ต้องดึงใหม่จากเน็ตเสมอ)
 const BYPASS_HOSTS = [
   'script.google.com',
   'script.googleusercontent.com',
@@ -26,7 +27,11 @@ const BYPASS_HOSTS = [
   'router.project-osrm.org',
   'api.allorigins.win',
   'api.codetabs.com',
-  'unshorten.me'
+  'api.microlink.io',
+  'corsproxy.io',
+  'unshorten.me',
+  'mt1.google.com',
+  'tile.openstreetmap.org'
 ];
 
 self.addEventListener('install', (event) => {
@@ -65,27 +70,27 @@ self.addEventListener('fetch', (event) => {
   // ข้ามโปรโตคอลพิเศษ เช่น blob:, data:, chrome-extension:
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-  // 1. หากเป็น API ซิงค์ข้อมูลสด ให้วิ่งตรงผ่านอินเทอร์เน็ตเสมอ (ห้ามแคช)
+  // 1. หากเป็น API ซิงค์ข้อมูลสดหรือแผ่นแผนที่ ให้วิ่งตรงผ่านอินเทอร์เน็ตเสมอ
   if (BYPASS_HOSTS.some((host) => url.hostname.includes(host))) {
     return;
   }
 
-  // 2. สำหรับหน้าเว็บ HTML (index.html, page2.html) ใช้ระบบ Network-First
-  // (ถ้ามีเน็ตให้ดึงโค้ดล่าสุดเสมอและอัปเดตแคช ถ้าไม่มีเน็ตให้ดึงจากแคชตามชื่อไฟล์จริง)
+  // 2. สำหรับหน้าเว็บ HTML (index.html, page2.html) ใช้ระบบ Network-First ป้องกันจอขาว
   if (req.mode === 'navigate' || url.pathname.endsWith('.html') || url.pathname.endsWith('/')) {
     event.respondWith(
-      fetch(req)
+      fetch(req.url, { cache: 'no-cache' })
         .then((networkRes) => {
           if (networkRes && networkRes.status === 200) {
             const clone = networkRes.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+            return networkRes;
           }
-          return networkRes;
+          throw new Error('Fallback to cache');
         })
         .catch(() => {
           return caches.match(req, { ignoreSearch: true }).then((cachedRes) => {
             if (cachedRes) return cachedRes;
-            if (url.pathname.endsWith('page2.html')) {
+            if (url.pathname.includes('page2.html')) {
               return caches.match('./page2.html');
             }
             return caches.match('./index.html');
@@ -95,7 +100,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. สำหรับไฟล์สคริปต์ ฟอนต์ ไอคอน และแผนที่ ใช้ Stale-While-Revalidate (เปิดไวทันใจ)
+  // 3. สำหรับไฟล์สคริปต์และฟอนต์ ใช้ Stale-While-Revalidate (เปิดไวทันใจ)
   event.respondWith(
     caches.match(req).then((cachedRes) => {
       const fetchPromise = fetch(req)
