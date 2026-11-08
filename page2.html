@@ -9509,5 +9509,636 @@
         }
     })();
     </script>
-</body>
+    <!-- 🛡️ แพตช์สมบูรณ์ 100% สำหรับ page2.html (บันทึกสถานะเดินทางก่อนเปิด Maps + แก้เปิดใบงานใหม่ + บีบอัดแคชไม่เกิน 50k) -->
+    <style id="fixAllBugsPage2Css">
+        html, body {
+            overflow-x: hidden;
+            overflow-y: auto !important;
+            height: auto !important;
+            touch-action: pan-y pinch-zoom !important;
+        }
+
+        @media (max-width: 1023px) {
+            #jobCardsContainer,
+            #labeledPlacesCardsContainer {
+                max-height: none !important;
+                overflow-y: visible !important;
+            }
+            #repairJobsLeafletMap {
+                height: 220px !important;
+            }
+        }
+
+        #jobCardsContainer > div.sticky {
+            position: relative !important;
+            top: auto !important;
+            z-index: 1 !important;
+        }
+
+        .leaflet-container {
+            z-index: 1 !important;
+        }
+    </style>
+
+    <script>
+    (function() {
+        let lastIdleHeartbeatWriteMs = 0;
+        let cachedAccountsRawStr = '';
+        let cachedParsedAccounts = [];
+        const recentlyCancelledNavKeys = new Map();
+
+        // 1. บังคับอัปเดต Service Worker เพื่อล้างหน้าจอเก่าที่ค้างในแคชมือถือ
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(regs => {
+                regs.forEach(reg => reg.update());
+            });
+        }
+
+        // 2. เพิ่มความเร็ว formatTechDisplayName ด้วย Memory Cache
+        if (typeof window.formatTechDisplayName === 'function') {
+            window.formatTechDisplayName = function(rawNameOrList) {
+                if (!rawNameOrList || rawNameOrList === '-') return '-';
+                const str = String(rawNameOrList).trim();
+                if (str.includes(',')) {
+                    return str.split(',').map(s => window.formatTechDisplayName(s.trim())).join(', ');
+                }
+                const rawStr = localStorage.getItem('elec_user_accounts') || '[]';
+                if (rawStr !== cachedAccountsRawStr) {
+                    cachedAccountsRawStr = rawStr;
+                    try {
+                        cachedParsedAccounts = JSON.parse(rawStr).map(parseAccountRecord);
+                    } catch (e) {
+                        cachedParsedAccounts = [];
+                    }
+                }
+                const matchedAcc = cachedParsedAccounts.find(a => isUsernameMatchingAccount(str, a.username));
+                if (matchedAcc && matchedAcc.displayName) {
+                    const grp = getUserGroupName(matchedAcc.username) || getUserGroupName(str);
+                    if (grp && !matchedAcc.displayName.includes(grp)) {
+                        return `${matchedAcc.displayName} ${grp}`;
+                    }
+                    return matchedAcc.displayName;
+                }
+                return str;
+            };
+        }
+
+        // 3. ป้องกันการโดนเตะออกทันทีเมื่อเปิดแอปกลับมาใช้งานแล้วแตะหน้าจอครั้งแรก
+        if (localStorage.getItem('elec_app_logged_in') === 'true') {
+            localStorage.setItem('elec_app_last_active', Date.now().toString());
+        }
+        window.addEventListener('focus', () => {
+            if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                localStorage.setItem('elec_app_last_active', Date.now().toString());
+            }
+        });
+
+        // 4. ฟังก์ชันปลดล็อกโควตาการเขียนข้อมูลใน Hyper-Scale Engine v4.3
+        window.__unlockCloudWrite = function() {
+            try {
+                if (localStorage.getItem('elec_app_current_role') !== 'viewer' && typeof window.deleteSingleLabeledPin === 'function') {
+                    window.deleteSingleLabeledPin('__unlock_write_quota__');
+                }
+            } catch (e) {}
+        };
+
+        // 5. บีบอัดข้อมูลสำรองใน localStorage และป้องกันการเขียนทับรายการที่ลบหรือเพิ่งยกเลิกนำทาง
+        function slimDownGroupBackupsJson(rawJsonStr) {
+            try {
+                if (!rawJsonStr || rawJsonStr.length <= 16000) return rawJsonStr;
+                const mapObj = JSON.parse(rawJsonStr);
+                Object.keys(mapObj).forEach(grp => {
+                    const b = mapObj[grp];
+                    if (!b || typeof b !== 'object') return;
+                    if (Array.isArray(b.outages)) {
+                        b.outages = b.outages.slice(0, 25).map(o => { const c = { ...o }; delete c.formattedText; return c; });
+                    }
+                    if (Array.isArray(b.faults)) {
+                        b.faults = b.faults.slice(0, 25).map(f => { const c = { ...f }; delete c.formattedText; return c; });
+                    }
+                    if (b.settings && typeof b.settings === 'object') {
+                        delete b.settings.elec_labeled_places_list;
+                        delete b.settings.elec_deleted_labeled_places_map;
+                        delete b.settings.elec_deleted_equip_audit_logs;
+                    }
+                });
+                return JSON.stringify(mapObj);
+            } catch (e) {
+                return '{}';
+            }
+        }
+
+        const _prevSetItemPage2 = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+            if (key === 'elec_deleted_jobs_registry' && typeof value === 'string') {
+                try {
+                    const existingDel = JSON.parse(localStorage.getItem('elec_deleted_jobs_registry') || '{}');
+                    const incomingDel = JSON.parse(value || '{}');
+                    value = JSON.stringify({ ...existingDel, ...incomingDel });
+                } catch (e) {}
+            } else if (key === 'elec_cloud_group_backups_map' && typeof value === 'string') {
+                value = slimDownGroupBackupsJson(value);
+            } else if ((key === 'elecReportsComplete_all' || key === 'fault_reports_all') && typeof value === 'string' && recentlyCancelledNavKeys.size > 0) {
+                try {
+                    const isFault = (key === 'fault_reports_all');
+                    const arr = JSON.parse(value);
+                    let modified = false;
+                    const now = Date.now();
+                    arr.forEach(item => {
+                        const jk = isFault ? item?.timestamp : item?.dateTimeSaved;
+                        const cancelInfo = jk ? recentlyCancelledNavKeys.get(jk) : null;
+                        if (cancelInfo && (now - cancelInfo.ts < 8000) && item.techNav) {
+                            delete item.techNav;
+                            item.navCancelledAt = cancelInfo.iso;
+                            modified = true;
+                        }
+                    });
+                    if (modified) value = JSON.stringify(arr);
+                } catch (e) {}
+            }
+            return _prevSetItemPage2.call(this, key, value);
+        };
+        const existingBackupsStr = localStorage.getItem('elec_cloud_group_backups_map');
+        if (existingBackupsStr && existingBackupsStr.length > 16000) {
+            localStorage.setItem('elec_cloud_group_backups_map', slimDownGroupBackupsJson(existingBackupsStr));
+        }
+
+        // 6. ซิงค์ข้อความผลตรวจสอบ (formattedText) ให้ตรงกับ techReport เสมอ (หากเปิดใบงานใหม่ให้ตัดข้อความผลตรวจสอบเก่าทิ้งทันที)
+        function normalizeJobGpsAndReportText(storageKey, isFault) {
+            try {
+                const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                let changed = false;
+                list.forEach(item => {
+                    if (!item) return;
+                    if (item.gps && item.gps !== '-' && !String(item.gps).startsWith('http')) {
+                        const m = String(item.gps).trim().match(/^(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{2,3}\.\d{4,})$/);
+                        if (m) {
+                            item.gps = `https://www.google.com/maps?q=${m[1]},${m[2]}`;
+                            changed = true;
+                        }
+                    }
+                    const tr = item.techReport;
+                    if (tr && tr.status && tr.status !== 'รอแก้ไข') {
+                        if (tr.fieldGps && tr.fieldGps !== '-' && item.gps !== tr.fieldGps) {
+                            const mGps = String(tr.fieldGps).trim().match(/^(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{2,3}\.\d{4,})$/);
+                            item.gps = mGps ? `https://www.google.com/maps?q=${mGps[1]},${mGps[2]}` : tr.fieldGps;
+                            changed = true;
+                        }
+                        const urgency = typeof getJobUrgencyInfo === 'function'
+                            ? getJobUrgencyInfo(item, isFault ? 'fault' : 'outage')
+                            : { dot: '🔴' };
+                        const jobHeaderLine = !isFault
+                            ? `${urgency.dot} งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'} (${item.issueType || '-'})`
+                            : `${urgency.dot} วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+                        const gpsLineText = tr.fieldGps ? `\n📍 พิกัดหน้างาน : ${tr.fieldGps}` : '';
+                        const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${jobHeaderLine}\n🚦 สถานะ : ${tr.status}\n🔍 สาเหตุจริง : ${tr.realCause || '-'}\n🛠️ การแก้ไข : ${tr.actionTaken || '-'}\n⏰ เวลาเสร็จ : ${tr.finishTime || '-'}\n👷 ผู้ตรวจสอบ : ${tr.inspector || '-'}${gpsLineText}`;
+                        const baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+                        const expectedFullText = `${baseText}\n\n${techOnlyText}`;
+                        if (item.formattedText !== expectedFullText) {
+                            item.formattedText = expectedFullText;
+                            changed = true;
+                        }
+                    } else {
+                        if (item.formattedText && item.formattedText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) {
+                            item.formattedText = item.formattedText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+                            changed = true;
+                        }
+                    }
+                });
+                if (changed) {
+                    localStorage.setItem(storageKey, JSON.stringify(list));
+                }
+            } catch (e) {}
+        }
+
+        // 7. ล้างรายการที่ถูกเปิดใบงานใหม่ (reopenedAt) หรือยกเลิกนำทาง ออกจากทะเบียนและป้องกัน MQTT ดึงค่าเก่ามาทับ
+        function purgeReopenedJobsFromClosedRegistry() {
+            try {
+                const closedReg = typeof getClosedReportsRegistry === 'function'
+                    ? getClosedReportsRegistry()
+                    : JSON.parse(localStorage.getItem('elec_closed_jobs_registry') || '{}');
+                const cancelJobMap = JSON.parse(localStorage.getItem('elec_cancelled_job_nav_map') || '{}');
+                let regChanged = false;
+
+                ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
+                    const isFault = (storageKey === 'fault_reports_all');
+                    const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    let listChanged = false;
+
+                    list.forEach(item => {
+                        if (!item) return;
+                        const k = isFault ? item.timestamp : item.dateTimeSaved;
+
+                        const cancelIso = (k && cancelJobMap[k]) ? cancelJobMap[k] : (item.navCancelledAt || '');
+                        if (cancelIso && item.techNav) {
+                            const cancelMs = new Date(cancelIso).getTime() || 0;
+                            const navMs = new Date(item.techNav.updatedAt || 0).getTime() || 0;
+                            if (cancelMs >= navMs) {
+                                delete item.techNav;
+                                item.navCancelledAt = cancelIso;
+                                listChanged = true;
+                            }
+                        }
+
+                        if (!item.reopenedAt) return;
+                        const reopenMs = new Date(item.reopenedAt).getTime() || 0;
+
+                        if (item.techReport) {
+                            const repMs = new Date(item.techReport.updatedAt || 0).getTime() || 0;
+                            if (reopenMs > repMs) {
+                                delete item.techReport;
+                                listChanged = true;
+                            }
+                        }
+
+                        if (!item.techReport && k && closedReg[k]) {
+                            const closedMs = new Date(closedReg[k]?.updatedAt || 0).getTime() || 0;
+                            if (reopenMs >= closedMs) {
+                                delete closedReg[k];
+                                regChanged = true;
+                            }
+                        }
+                    });
+
+                    if (listChanged) {
+                        localStorage.setItem(storageKey, JSON.stringify(list));
+                    }
+                });
+
+                if (regChanged) {
+                    if (typeof saveClosedReportsRegistry === 'function') {
+                        saveClosedReportsRegistry(closedReg);
+                    } else {
+                        localStorage.setItem('elec_closed_jobs_registry', JSON.stringify(closedReg));
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // เชื่อมเข้ากับทั้ง mergeCloudJobsToLocal และ renderJobCards เพื่อรองรับทั้งข้อมูลจากชีตและ MQTT
+        if (typeof window.mergeCloudJobsToLocal === 'function') {
+            const _origMergeLocal = window.mergeCloudJobsToLocal;
+            window.mergeCloudJobsToLocal = function(cloudJobs) {
+                purgeReopenedJobsFromClosedRegistry();
+                const res = _origMergeLocal.apply(this, arguments);
+                purgeReopenedJobsFromClosedRegistry();
+                normalizeJobGpsAndReportText('elecReportsComplete_all', false);
+                normalizeJobGpsAndReportText('fault_reports_all', true);
+                return res;
+            };
+        }
+
+        if (typeof window.renderJobCards === 'function') {
+            const _prevRenderCards = window.renderJobCards;
+            window.renderJobCards = function() {
+                purgeReopenedJobsFromClosedRegistry();
+                normalizeJobGpsAndReportText('elecReportsComplete_all', false);
+                normalizeJobGpsAndReportText('fault_reports_all', true);
+                return _prevRenderCards.apply(this, arguments);
+            };
+        }
+
+        // 8. แก้บั๊กกดล็อกอินทันทีหลังเปิดเว็บแล้วแจ้งว่ารหัสผิด
+        if (typeof window.handleTechLogin === 'function') {
+            const _origTechLogin = window.handleTechLogin;
+            window.handleTechLogin = async function() {
+                localStorage.removeItem('elec_sheet_cache_2k');
+                if (typeof isSyncingNow !== 'undefined' && isSyncingNow) {
+                    isSyncingNow = false;
+                }
+                return await _origTechLogin.apply(this, arguments);
+            };
+        }
+
+        // 9. ดึงข้อมูลจากชีตจริงทุก 15 วินาที ป้องกันแคชเก่าทับข้อมูลสดจาก MQTT
+        if (typeof window.syncJobsFromCloud === 'function') {
+            const _origSyncCloud = window.syncJobsFromCloud;
+            let syncCount = 0;
+            window.syncJobsFromCloud = async function(silent) {
+                syncCount++;
+                const isLoggingInNow = document.getElementById('techLoginBtn')?.disabled === true;
+                const forceFreshRead = (!silent || isLoggingInNow || syncCount === 1 || syncCount % 3 === 0);
+                if (!forceFreshRead) {
+                    if (typeof renderJobCards === 'function') renderJobCards();
+                    if (typeof window.renderRepairJobsMapMarkers === 'function') window.renderRepairJobsMapMarkers(false);
+                    return;
+                }
+                localStorage.removeItem('elec_sheet_cache_2k');
+                if ((!silent || isLoggingInNow) && typeof isSyncingNow !== 'undefined') {
+                    isSyncingNow = false;
+                }
+                return await _origSyncCloud.call(this, silent, true);
+            };
+        }
+
+        // 10. ปลดล็อกการส่งข้อมูลขึ้นชีต: งานจริง/นำทางส่งทันที ส่วน Heartbeat ขณะเปิดจอนิ่งๆ ส่งทุก 60 วินาที
+        if (typeof window.pushAllJobsToCloud === 'function') {
+            const _origPushAll = window.pushAllJobsToCloud;
+            window.pushAllJobsToCloud = async function(silent) {
+                if (typeof cachedCloudGroupBackups !== 'undefined') {
+                    cachedCloudGroupBackups = null;
+                }
+                purgeReopenedJobsFromClosedRegistry();
+                normalizeJobGpsAndReportText('elecReportsComplete_all', false);
+                normalizeJobGpsAndReportText('fault_reports_all', true);
+                const now = Date.now();
+                const isActivelyNavigating = (typeof activeNavWatchId !== 'undefined' && activeNavWatchId !== null);
+                const hasPendingOffline = localStorage.getItem('elec_tech_has_pending_push') === 'true';
+
+                if (!silent || isActivelyNavigating || hasPendingOffline || (now - lastIdleHeartbeatWriteMs >= 60000)) {
+                    lastIdleHeartbeatWriteMs = now;
+                    window.__unlockCloudWrite();
+                }
+                return await _origPushAll.apply(this, arguments);
+            };
+        }
+
+        // 11. แก้บั๊กกด "นำทาง Maps" บนหมุดอุปกรณ์ไฟฟ้า: บันทึกสถานะเดินทางลงเครื่องก่อนในเสี้ยววินาทีแรก แล้วเปิดแอป Google Maps ทันทีโดยไม่รอ await
+        if (typeof window.startLabeledPlaceNavigation === 'function') {
+            const _origStartEquipNav = window.startLabeledPlaceNavigation;
+            window.startLabeledPlaceNavigation = async function(placeId, openExternalGoogleMaps = false) {
+                window.__unlockCloudWrite();
+                if (openExternalGoogleMaps && localStorage.getItem('elec_app_current_role') !== 'viewer') {
+                    const navPromise = _origStartEquipNav.call(this, placeId, false);
+                    try {
+                        const pins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                        const target = pins.find(p => p && String(p.id) === String(placeId));
+                        if (target && target.lat && (target.lon ?? target.lng)) {
+                            const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${target.lat},${target.lon ?? target.lng}&travelmode=driving`;
+                            window.open(mapsUrl, '_blank');
+                        }
+                    } catch (e) {}
+                    return await navPromise;
+                }
+                return await _origStartEquipNav.apply(this, arguments);
+            };
+        }
+
+        // 12. แก้บั๊กกด "ออกเดินทาง" ซ้ำในงานที่เคยยกเลิกไปแล้ว + บันทึกสถานะเดินทางลง localStorage ก่อนเปิด Google Maps ทันที
+        if (typeof window.handleStartNavigation === 'function') {
+            const _origStartNav = window.handleStartNavigation;
+            window.handleStartNavigation = async function(key, jobType, gpsLink) {
+                window.__unlockCloudWrite();
+                recentlyCancelledNavKeys.delete(key);
+
+                try {
+                    const cancelJobMap = JSON.parse(localStorage.getItem('elec_cancelled_job_nav_map') || '{}');
+                    const prevCancelIso = cancelJobMap[key] || '';
+                    if (cancelJobMap[key]) {
+                        delete cancelJobMap[key];
+                        localStorage.setItem('elec_cancelled_job_nav_map', JSON.stringify(cancelJobMap));
+                    }
+
+                    const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
+                    const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    const item = list.find(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
+                    const prevCancelMs = Math.max(
+                        prevCancelIso ? new Date(prevCancelIso).getTime() : 0,
+                        item?.navCancelledAt ? new Date(item.navCancelledAt).getTime() : 0
+                    );
+                    if (item && item.navCancelledAt) {
+                        delete item.navCancelledAt;
+                        localStorage.setItem(storageKey, JSON.stringify(list));
+                    }
+
+                    if (typeof cachedCloudJobs !== 'undefined' && Array.isArray(cachedCloudJobs)) {
+                        cachedCloudJobs.forEach(cj => {
+                            const ck = cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved;
+                            if (ck === key) delete cj.navCancelledAt;
+                        });
+                    }
+
+                    const targetUrlToOpen = (gpsLink && localStorage.getItem('elec_app_current_role') !== 'viewer') ? gpsLink : '';
+                    const navPromise = _origStartNav.call(this, key, jobType, '');
+
+                    const afterList = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    const afterIdx = afterList.findIndex(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
+                    if (afterIdx !== -1 && afterList[afterIdx].techNav) {
+                        delete afterList[afterIdx].navCancelledAt;
+                        const safeStartMs = Math.max(Date.now(), prevCancelMs + 2000);
+                        afterList[afterIdx].techNav.updatedAt = new Date(safeStartMs).toISOString();
+                        localStorage.setItem(storageKey, JSON.stringify(afterList));
+                    }
+
+                    if (targetUrlToOpen) {
+                        window.open(targetUrlToOpen, '_blank');
+                    }
+
+                    return await navPromise;
+                } catch (e) {
+                    return await _origStartNav.call(this, key, jobType, gpsLink);
+                }
+            };
+        }
+
+        // 13. แก้บั๊กยกเลิกเดินทาง (handleCancelNavigation) ให้ล็อกสถานะยกเลิกทันที
+        if (typeof window.handleCancelNavigation === 'function') {
+            const _origCancelNav = window.handleCancelNavigation;
+            window.handleCancelNavigation = async function(key, jobType) {
+                if (typeof stopRealtimeGpsWatch === 'function') stopRealtimeGpsWatch();
+                window.__unlockCloudWrite();
+                try {
+                    const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
+                    const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    const item = list.find(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
+                    const prevNavMs = item?.techNav?.updatedAt ? new Date(item.techNav.updatedAt).getTime() : 0;
+                    const safeCancelIso = new Date(Math.max(Date.now(), prevNavMs) + 2000).toISOString();
+
+                    recentlyCancelledNavKeys.set(key, { ts: Date.now(), iso: safeCancelIso });
+
+                    const res = await _origCancelNav.apply(this, arguments);
+
+                    const updatedList = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    const idx = updatedList.findIndex(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
+                    if (idx !== -1) {
+                        delete updatedList[idx].techNav;
+                        updatedList[idx].navCancelledAt = safeCancelIso;
+                        localStorage.setItem(storageKey, JSON.stringify(updatedList));
+                    }
+                    return res;
+                } catch (e) {
+                    return await _origCancelNav.apply(this, arguments);
+                }
+            };
+        }
+
+        // 14. แก้บั๊กช่อง #techGpsInput แปลงลิงก์สั้นแล้วปุ่ม "🗺️ นำทาง Maps" หาย
+        function normalizeTechGpsFieldToUrl() {
+            const gpsEl = document.getElementById('techGpsInput');
+            if (!gpsEl || !gpsEl.value) return;
+            const val = gpsEl.value.trim();
+            const m = val.match(/^(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{2,3}\.\d{4,})$/);
+            if (m) {
+                gpsEl.value = `https://www.google.com/maps?q=${m[1]},${m[2]}`;
+            }
+        }
+
+        document.addEventListener('input', function(e) {
+            if (e.target && e.target.id === 'techGpsInput') {
+                normalizeTechGpsFieldToUrl();
+                setTimeout(normalizeTechGpsFieldToUrl, 80);
+            }
+        });
+
+        if (typeof window.submitTechReport === 'function') {
+            const _origSubmitTech = window.submitTechReport;
+            window.submitTechReport = async function() {
+                if (typeof stopRealtimeGpsWatch === 'function') stopRealtimeGpsWatch();
+                const gpsEl = document.getElementById('techGpsInput');
+                if (gpsEl && gpsEl.value && /(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(gpsEl.value) && typeof window.resolveGoogleShortLinkUniversal === 'function') {
+                    try {
+                        const c = await window.resolveGoogleShortLinkUniversal(gpsEl.value);
+                        if (c && c.lat && c.lon) {
+                            gpsEl.value = `https://www.google.com/maps?q=${c.lat},${c.lon}`;
+                        }
+                    } catch (e) {}
+                }
+                normalizeTechGpsFieldToUrl();
+                window.__unlockCloudWrite();
+                return await _origSubmitTech.apply(this, arguments);
+            };
+        }
+
+        // 15. ซ่อนแผนที่จุดงานซ่อมเมื่อดูแท็บ "✅ เสร็จสิ้น" และสั่งคำนวณขนาดแผนที่ใหม่เมื่อสลับกลับมา
+        if (typeof window.switchStatusTab === 'function') {
+            const _origSwitchStatus = window.switchStatusTab;
+            window.switchStatusTab = function(tabValue) {
+                const mapSec = document.getElementById('repairJobsMapSection');
+                if (mapSec) {
+                    if (tabValue === 'done') {
+                        mapSec.classList.add('hidden');
+                    } else {
+                        mapSec.classList.remove('hidden');
+                    }
+                }
+                const res = _origSwitchStatus.apply(this, arguments);
+                if (tabValue !== 'done') {
+                    setTimeout(() => {
+                        window.dispatchEvent(new Event('resize'));
+                        if (typeof window.renderRepairJobsMapMarkers === 'function') {
+                            window.renderRepairJobsMapMarkers(true);
+                        }
+                    }, 80);
+                }
+                return res;
+            };
+        }
+
+        // 16. ให้แผนที่รายการใบงานซ่อมใช้ระบบคลายลิงก์สั้น 5 ชั้นอัตโนมัติ
+        function upgradeRepairJobsShortLinks() {
+            if (typeof window.resolveGoogleShortLinkUniversal !== 'function') return;
+            const cacheKey = 'elec_job_shortlink_coords_cache_v1';
+            let cache = {};
+            try { cache = JSON.parse(localStorage.getItem(cacheKey) || '{}'); } catch (e) {}
+
+            ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
+                const isFault = (storageKey === 'fault_reports_all');
+                const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                list.forEach(async (item) => {
+                    if (!item) return;
+                    const jobKey = isFault ? item.timestamp : item.dateTimeSaved;
+                    const rawGps = String(item?.techReport?.fieldGps || item?.gps || '').trim();
+                    if (!jobKey || cache[jobKey] || !/(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(rawGps)) return;
+
+                    const coords = await window.resolveGoogleShortLinkUniversal(rawGps);
+                    if (coords && coords.lat && coords.lon) {
+                        try {
+                            const latestCache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+                            latestCache[jobKey] = { lat: parseFloat(coords.lat), lon: parseFloat(coords.lon), updatedAt: Date.now() };
+                            localStorage.setItem(cacheKey, JSON.stringify(latestCache));
+                            if (typeof window.renderRepairJobsMapMarkers === 'function') {
+                                window.renderRepairJobsMapMarkers(true);
+                            }
+                        } catch (e) {}
+                    }
+                });
+            });
+        }
+        setInterval(upgradeRepairJobsShortLinks, 6000);
+        setTimeout(upgradeRepairJobsShortLinks, 1200);
+
+        // 17. แก้บั๊กล้างหมุดทั้งหมดแล้วเด้งกลับ และล้างฟิลด์ซ้ำซ้อนก่อนส่งขึ้นชีต
+        const _origFetchPage2 = window.fetch;
+        window.fetch = async function(input, init) {
+            if (init && init.method === 'POST' && typeof init.body === 'string' &&
+                (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
+                try {
+                    purgeReopenedJobsFromClosedRegistry();
+                    normalizeJobGpsAndReportText('elecReportsComplete_all', false);
+                    normalizeJobGpsAndReportText('fault_reports_all', true);
+                    const currentPins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                    const currentLogs = JSON.parse(localStorage.getItem('elec_deleted_equip_audit_logs') || '[]');
+                    const cleanClosedMap = typeof getClosedReportsRegistry === 'function'
+                        ? getClosedReportsRegistry()
+                        : JSON.parse(localStorage.getItem('elec_closed_jobs_registry') || '{}');
+                    const bodyObj = JSON.parse(init.body);
+
+                    if (bodyObj.action === 'saveJobs' && Array.isArray(bodyObj.jobs)) {
+                        const locReg = bodyObj.jobs.find(j => j && j.jobType === 'tech_loc');
+                        if (locReg) {
+                            if (currentPins.length === 0) locReg.electricEquipmentPins = [];
+                            if (currentLogs.length === 0) locReg.deletedEquipAuditLogs = [];
+                            locReg.closedJobsMap = cleanClosedMap;
+                            delete locReg.closedReports;
+                            delete locReg.cloudGroupBackups;
+                            init.body = JSON.stringify(bodyObj);
+                        }
+                    } else if (bodyObj.action === 'patchDelta' && bodyObj.techLocDelta) {
+                        if (currentPins.length === 0) {
+                            bodyObj.techLocDelta._keepPins = false;
+                            bodyObj.techLocDelta.electricEquipmentPins = [];
+                        }
+                        if (currentLogs.length === 0) {
+                            bodyObj.techLocDelta._keepAuditLogs = false;
+                            bodyObj.techLocDelta.deletedEquipAuditLogs = [];
+                        }
+                        bodyObj.techLocDelta.closedJobsMap = cleanClosedMap;
+                        delete bodyObj.techLocDelta.closedReports;
+                        delete bodyObj.techLocDelta.cloudGroupBackups;
+                        init.body = JSON.stringify(bodyObj);
+                    }
+                } catch (e) {}
+            }
+            return _origFetchPage2.apply(this, arguments);
+        };
+
+        // 18. ป้องกันหน้าล็อกอินช่างซ้อนกับหน้าแอปหลัก
+        function syncTechLoginVisibility() {
+            const loginEl = document.getElementById('techLoginScreen');
+            if (!loginEl) return;
+            if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                loginEl.classList.add('hidden');
+                loginEl.style.display = 'none';
+            } else {
+                loginEl.classList.remove('hidden');
+                loginEl.style.display = 'flex';
+            }
+        }
+
+        if (typeof window.checkTechAuth === 'function') {
+            const _origAuth = window.checkTechAuth;
+            window.checkTechAuth = function() {
+                const res = _origAuth.apply(this, arguments);
+                syncTechLoginVisibility();
+                return res;
+            };
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            syncTechLoginVisibility();
+            purgeReopenedJobsFromClosedRegistry();
+            normalizeJobGpsAndReportText('elecReportsComplete_all', false);
+            normalizeJobGpsAndReportText('fault_reports_all', true);
+        });
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            syncTechLoginVisibility();
+            purgeReopenedJobsFromClosedRegistry();
+            normalizeJobGpsAndReportText('elecReportsComplete_all', false);
+            normalizeJobGpsAndReportText('fault_reports_all', true);
+        }
+    })();
+    </script>
+
+
+    </body>
 </html>
