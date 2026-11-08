@@ -12927,6 +12927,135 @@
         }
     })();
     </script>
+    <!-- 🔐 ระบบตรวจรหัสผ่านที่หลังบ้าน 100% (Level 2 Backend Auth สำหรับ index.html) -->
+    <script>
+    (function() {
+        // 1. เปลี่ยนฟังก์ชันล็อกอินให้ส่งไปตรวจสอบที่ Code.gs หลังบ้านโดยตรง
+        window.handleLogin = async function() {
+            const userInput = document.getElementById('loginUsername');
+            const passInput = document.getElementById('loginPassword');
+            const username = (userInput?.value || '').trim();
+            const pass = (passInput?.value || '').trim();
+
+            if (!username || !pass) {
+                showCustomAlert("⚠️ กรุณากรอกรหัสพนักงานและรหัสผ่านให้ครบถ้วน", "⚡ ระบบจัดการงานไฟฟ้า");
+                return;
+            }
+
+            const loginBtn = document.querySelector('#loginScreen button[onclick="handleLogin()"]');
+            const origBtnText = loginBtn ? loginBtn.textContent : 'เข้าสู่ระบบ';
+            if (loginBtn) {
+                loginBtn.disabled = true;
+                loginBtn.textContent = '⏳ กำลังตรวจสอบรหัสผ่านที่เซิร์ฟเวอร์...';
+            }
+
+            try {
+                if (typeof window.__unlockCloudWrite === 'function') window.__unlockCloudWrite();
+                localStorage.removeItem('elec_sheet_cache_2k');
+
+                const now = Date.now();
+                const newSessionToken = 'sess_' + now + '_' + Math.random().toString(36).substring(2, 8);
+                const res = await fetch(getActiveCloudApiUrl(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'verifyLogin',
+                        username: username,
+                        password: pass,
+                        sessionToken: newSessionToken
+                    })
+                });
+                const data = await res.json();
+
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = origBtnText;
+                }
+
+                if (data && data.status === 'ok' && data.authenticated && data.user) {
+                    if (Array.isArray(data.users) && data.users.length > 0) {
+                        userAccountsList = data.users.map(parseAccountRecord);
+                        localStorage.setItem('elec_user_accounts', JSON.stringify(userAccountsList));
+                    }
+
+                    const fullCanonicalName = normalizeUsernameFormat(data.user.username);
+                    const boundGroup = getUserGroupName(fullCanonicalName);
+                    const userRole = data.user.role || 'user';
+                    const activeToken = data.user.sessionToken || newSessionToken;
+
+                    localStorage.setItem('elec_app_logged_in', 'true');
+                    localStorage.setItem('elec_app_current_user', fullCanonicalName);
+                    localStorage.setItem('elec_app_current_group', boundGroup);
+                    localStorage.setItem('elec_app_current_role', userRole);
+                    localStorage.setItem('elec_app_session_token', activeToken);
+                    localStorage.setItem('elec_app_last_active', Date.now().toString());
+
+                    if (userInput) userInput.value = '';
+                    if (passInput) passInput.value = '';
+
+                    if (userRole === 'tech') {
+                        window.location.href = 'page2.html';
+                        return;
+                    }
+
+                    checkLoginStatus();
+                    if (typeof loadOutageHistory === 'function') loadOutageHistory();
+                    if (typeof loadFaultHistory === 'function') loadFaultHistory();
+                    showToast(`🔓 ยินดีต้อนรับคุณ ${formatTechDisplayName(fullCanonicalName)}`);
+                } else {
+                    showCustomAlert("❌ รหัสพนักงาน หรือ รหัสผ่านไม่ถูกต้อง กรุณาลองอีกครั้ง", "⚡ ระบบจัดการงานไฟฟ้า");
+                    if (passInput) {
+                        passInput.value = '';
+                        passInput.focus();
+                    }
+                }
+            } catch (err) {
+                if (loginBtn) {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = origBtnText;
+                }
+                showCustomAlert("⚠️ ไม่สามารถติดต่อเซิร์ฟเวอร์ตรวจสอบรหัสผ่านได้ กรุณาตรวจสอบอินเทอร์เน็ต", "⚡ ระบบจัดการงานไฟฟ้า");
+            }
+        };
+
+        // 2. ซ่อนปุ่ม "👁️ ดู" รหัสผ่านในหน้าจัดการผู้ใช้ของ Admin (แสดงสถานะเข้ารหัส SHA-256 แทน)
+        const _origRenderUserList = window.renderUserAccountList;
+        if (typeof _origRenderUserList === 'function') {
+            window.renderUserAccountList = function(...args) {
+                const res = _origRenderUserList.apply(this, args);
+                document.querySelectorAll('button[onclick^="togglePasswordMask"]').forEach(btn => btn.remove());
+                document.querySelectorAll('strong[id^="pw-mask-"]').forEach(el => {
+                    el.textContent = '🔒 เข้ารหัส SHA-256';
+                    el.className = 'text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold';
+                });
+                return res;
+            };
+        }
+
+        // 3. ปรับหน้าต่างแก้ไขบัญชีของ Admin ให้เว้นว่างช่องรหัสผ่านได้หากไม่ต้องการเปลี่ยนรหัสเดิม
+        const _origEditUserAcc = window.editUserAccount;
+        if (typeof _origEditUserAcc === 'function') {
+            window.editUserAccount = function(index) {
+                _origEditUserAcc.apply(this, arguments);
+                const pInput = document.getElementById('editAccPasswordInput');
+                const saveBtn = document.getElementById('editAccSaveBtn');
+                if (pInput) {
+                    pInput.value = '';
+                    pInput.placeholder = 'เว้นว่างไว้หากใช้รหัสผ่านเดิม (พิมพ์ใหม่เพื่อเปลี่ยน)';
+                }
+                if (saveBtn && pInput) {
+                    const origClick = saveBtn.onclick;
+                    saveBtn.onclick = function() {
+                        if (!pInput.value.trim()) {
+                            pInput.value = 'UNCHANGED';
+                        }
+                        if (typeof origClick === 'function') origClick.apply(this, arguments);
+                    };
+                }
+            };
+        }
+    })();
+    </script>
 
 </body>
 </html>
