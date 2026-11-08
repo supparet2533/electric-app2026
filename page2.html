@@ -1063,8 +1063,8 @@
     
                 btn.disabled = true;
                 btn.textContent = "⏳ กำลังตรวจสอบบัญชี...";
-                await syncJobsFromCloud(true);
-    
+                await syncJobsFromCloud(false);
+
                 const rawAccounts = JSON.parse(localStorage.getItem('elec_user_accounts') || '[{"username":"admin","password":"1234","role":"admin"}]');
                 const accounts = rawAccounts.map(parseAccountRecord);
                 const foundIdx = accounts.findIndex(a => isUsernameMatchingAccount(u, a.username) && a.password === p);
@@ -10267,8 +10267,21 @@
             }
         })();
         </script>
-        <!-- 🔐 ระบบตรวจรหัสผ่านที่หลังบ้าน 100% (Level 2 Backend Auth สำหรับ page2.html) -->
+    <!-- 🔐 ระบบตรวจรหัสผ่านที่หลังบ้าน 100% (Level 2 Backend Auth + Auto-Shard สำหรับ page2.html) -->
     <script>
+        // แนบชื่อกลุ่มสังกัด (group) และสิทธิ์ (role) ไปกับคำสั่งซิงค์ทุกครั้ง เพื่อให้ Code.gs เปิดไฟล์ชีตประจำ กฟส. อัตโนมัติ
+        const _prevFetchForAutoShard = window.fetch;
+        window.fetch = async function(input, init) {
+            if (typeof input === 'string' && input.includes('script.google.com') && !input.includes('group=')) {
+                const curGroup = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
+                                 localStorage.getItem('elec_app_current_group') || '';
+                const curRole = localStorage.getItem('elec_app_current_role') || 'user';
+                const sep = input.includes('?') ? '&' : '?';
+                input = `${input}${sep}group=${encodeURIComponent(curGroup)}&role=${encodeURIComponent(curRole)}`;
+            }
+            return _prevFetchForAutoShard.call(this, input, init);
+        };
+
     (function() {
         // 1. เปลี่ยนฟังก์ชันล็อกอินหน้าช่างให้ตรวจสอบรหัสผ่านที่ Code.gs หลังบ้านโดยตรง
         window.handleTechLogin = async function() {
@@ -10291,7 +10304,7 @@
 
                 const now = Date.now();
                 const newSessionToken = 'sess_' + now + '_' + Math.random().toString(36).substring(2, 8);
-                const res = await fetch(getActiveCloudApiUrl(), {
+                const res = await fetch(CLOUD_USER_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({
@@ -10314,6 +10327,12 @@
                         localStorage.setItem('elec_user_accounts', JSON.stringify(parsedUsers));
                     }
 
+                    if (data.targetApiUrl && String(data.targetApiUrl).startsWith('https://script.google.com/')) {
+                        localStorage.setItem('elec_cloud_user_api_url', String(data.targetApiUrl).trim());
+                    } else {
+                        localStorage.removeItem('elec_cloud_user_api_url');
+                    }
+
                     const fullCanonicalName = normalizeUsernameFormat(data.user.username);
                     const boundGroup = getUserGroupName(fullCanonicalName);
                     const activeToken = data.user.sessionToken || newSessionToken;
@@ -10329,7 +10348,7 @@
                     document.getElementById('techUsername').value = '';
                     document.getElementById('techPassword').value = '';
                     checkTechAuth();
-                    await syncJobsFromCloud(true);
+                    await syncJobsFromCloud(false);
                     initTechGpsTracker();
                     renderJobCards();
                     showToast(`🔓 ยินดีต้อนรับคุณ ${formatTechDisplayName(fullCanonicalName)}`);
@@ -10345,7 +10364,7 @@
             }
         };
 
-        // 2. เปลี่ยนการยืนยันรหัสผ่านตอนกด "ล้างข้อมูลหมุดอุปกรณ์ไฟฟ้า" ให้ตรวจรหัสผ่านจริงกับหลังบ้าน (เลิกฝังรหัส 1234 ในโค้ด)
+        // 2. เปลี่ยนการยืนยันรหัสผ่านตอนกด "ล้างข้อมูลหมุดอุปกรณ์ไฟฟ้า" ให้ตรวจรหัสผ่านจริงกับหลังบ้าน
         const _origConfirmClearPins = window.confirmClearAllEquipPins;
         if (typeof _origConfirmClearPins === 'function') {
             window.confirmClearAllEquipPins = async function() {
@@ -10359,7 +10378,7 @@
                 showToast("⏳ กำลังตรวจสอบรหัสผ่านกับเซิร์ฟเวอร์...");
                 try {
                     const curUser = localStorage.getItem('elec_app_current_user') || '';
-                    const res = await fetch(getActiveCloudApiUrl(), {
+                    const res = await fetch(CLOUD_USER_API_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
@@ -10370,7 +10389,6 @@
                     });
                     const data = await res.json();
                     if (data && data.status === 'ok' && data.verified) {
-                        // เมื่อหลังบ้านยืนยันรหัสผ่านถูกต้อง ให้ส่งค่าผ่านด่านฟังก์ชันเดิมเพื่อสั่งล้างหมุดทันที
                         if (passInput) passInput.value = '1234';
                         return _origConfirmClearPins.apply(this, arguments);
                     } else {
@@ -10382,6 +10400,6 @@
             };
         }
     })();
-    </script>
+    </script> 
     </body>
     </html>
