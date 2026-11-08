@@ -10267,7 +10267,7 @@
             }
         })();
         </script>
-    <!-- 🔐 ระบบตรวจรหัสผ่านที่หลังบ้าน 100% (Level 2 Backend Auth + Auto-Shard สำหรับ page2.html) -->
+    <!-- 🔐 ระบบตรวจรหัสผ่านที่หลังบ้าน 100% + Auto-Shard + แก้จอกระพริบและกันหน้าจอเด้ง (สำหรับ page2.html) -->
     <script>
         // แนบชื่อกลุ่มสังกัด (group) และสิทธิ์ (role) ไปกับคำสั่งซิงค์ทุกครั้ง เพื่อให้ Code.gs เปิดไฟล์ชีตประจำ กฟส. อัตโนมัติ
         const _prevFetchForAutoShard = window.fetch;
@@ -10283,6 +10283,124 @@
         };
 
     (function() {
+        // =========================================================================
+        // 🛡️ ระบบป้องกันหน้าจอกระพริบ (Anti-Flicker) และล็อกตำแหน่ง Scroll ไม่ให้เด้งขึ้นบนสุด
+        // =========================================================================
+        let lastRenderedCardsSignature = '';
+
+        function injectFocusButtonsSync() {
+            const container = document.getElementById('jobCardsContainer');
+            if (!container) return;
+            container.querySelectorAll('button[onclick^="openInspectModal("]').forEach(inspectBtn => {
+                const onclickAttr = inspectBtn.getAttribute('onclick') || '';
+                const m = onclickAttr.match(/openInspectModal\('([^']+)',\s*'([^']+)'\)/);
+                if (!m) return;
+                const jobKey = m[1];
+                const leftBtnGroup = inspectBtn.parentElement?.querySelector('.flex.flex-wrap.gap-1\\.5');
+                if (!leftBtnGroup) return;
+
+                // เช็กว่างานนี้เสร็จสิ้นหรือยัง ถ้ายังไม่เสร็จให้แสดงปุ่มดูจุดบนแมพทันทีโดยไม่ต้องรอ 40ms
+                const cardEl = inspectBtn.closest('.rounded-2xl');
+                const isDoneCard = cardEl && cardEl.innerHTML.includes('เสร็จสิ้น');
+                const existingFocusBtn = leftBtnGroup.querySelector('.btn-focus-repair-map');
+
+                if (isDoneCard) {
+                    if (existingFocusBtn) existingFocusBtn.remove();
+                    return;
+                }
+                if (existingFocusBtn) return;
+
+                const focusBtn = document.createElement('button');
+                focusBtn.type = 'button';
+                focusBtn.className = 'btn-focus-repair-map bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition';
+                focusBtn.innerHTML = '⚡ ดูจุดบนแมพ';
+                focusBtn.onclick = function() {
+                    if (typeof window.focusSingleRepairJobOnMap === 'function') {
+                        window.focusSingleRepairJobOnMap(jobKey);
+                    }
+                };
+                leftBtnGroup.appendChild(focusBtn);
+            });
+        }
+
+        function computeJobCardsRenderSignature() {
+            try {
+                const jobType = document.getElementById('filterJobType')?.value || 'outage';
+                const statusFilter = document.getElementById('filterJobStatus')?.value || 'pending';
+                const shiftFilter = document.getElementById('filterJobShift')?.value || 'all';
+                const dateFilter = document.getElementById('filterJobDate')?.value || '';
+                const sortOrder = document.getElementById('sortJobOrder')?.value || 'shift_job_asc';
+                const keyword = (document.getElementById('searchJobKeyword')?.value || '').trim().toLowerCase();
+                const curUser = localStorage.getItem('elec_app_current_user') || '';
+                const curRole = localStorage.getItem('elec_app_current_role') || '';
+                const curGroup = localStorage.getItem('elec_app_current_group') || '';
+
+                const storageKey = jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
+                const rawList = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                const closedReg = typeof getClosedReportsRegistry === 'function' ? getClosedReportsRegistry() : {};
+
+                const jobsSig = rawList.map(item => {
+                    if (!item) return '';
+                    const k = jobType === 'outage' ? item.dateTimeSaved : item.timestamp;
+                    const tr = item.techReport || closedReg[k] || {};
+                    const nav = item.techNav || null;
+                    const rec = (!tr.status && !nav && typeof findNearestTechForJob === 'function') ? findNearestTechForJob(item) : null;
+                    return [
+                        k, item.jobNo, item.shift, item.reportDate, item.time,
+                        item.issueType, item.circuit, item.station, item.area, item.address,
+                        item.phone, item.gps, item.workerName, item.ownerGroup,
+                        item.reopenedAt || '', item.navCancelledAt || '',
+                        tr.status || '', tr.realCause || '', tr.actionTaken || '', tr.finishTime || '', tr.inspector || '',
+                        nav ? 'NAV:' + (nav.techName || '') + ':' + Boolean(nav.isArrived) : 'NO_NAV',
+                        rec ? 'REC:' + (rec.techName || '') + ':' + (rec.distanceKm || '') : 'NO_REC'
+                    ].join('~');
+                }).join('|');
+
+                const equipNavItems = typeof window.getActiveEquipmentNavItems === 'function' ? window.getActiveEquipmentNavItems() : [];
+                const equipSig = equipNavItems.map(n => `${n.id}:${n.placeTitle}:${n.isTraveling}`).join('|');
+
+                return `${jobType}#${statusFilter}#${shiftFilter}#${dateFilter}#${sortOrder}#${keyword}#${curUser}#${curRole}#${curGroup}##${equipSig}##${jobsSig}`;
+            } catch (e) {
+                return String(Date.now());
+            }
+        }
+
+        const _baseRenderJobCards = window.renderJobCards;
+        if (typeof _baseRenderJobCards === 'function') {
+            window.renderJobCards = function(...args) {
+                const container = document.getElementById('jobCardsContainer');
+                const newSig = computeJobCardsRenderSignature();
+
+                // หากข้อมูลใบงานและตัวกรองเหมือนเดิมทุกประการ ไม่ต้องล้างการ์ดวาดใหม่ (อัปเดตเฉพาะเวลานับถอยหลัง)
+                if (container && container.children.length > 0 && newSig === lastRenderedCardsSignature) {
+                    injectFocusButtonsSync();
+                    if (typeof updateLiveNavDomElements === 'function') updateLiveNavDomElements();
+                    return;
+                }
+                lastRenderedCardsSignature = newSig;
+
+                // ล็อกความสูงและตำแหน่ง Scroll ก่อนวาดการ์ดใหม่ ป้องกันหน้าจอกระตุกหรือเด้งกลับขึ้นบนสุด
+                const savedScrollY = window.scrollY;
+                const prevHeight = container ? container.offsetHeight : 0;
+                if (container && prevHeight > 100) {
+                    container.style.minHeight = prevHeight + 'px';
+                }
+
+                const res = _baseRenderJobCards.apply(this, args);
+                injectFocusButtonsSync();
+
+                if (container) {
+                    requestAnimationFrame(() => {
+                        container.style.minHeight = '';
+                        if (savedScrollY > 0 && Math.abs(window.scrollY - savedScrollY) > 40) {
+                            window.scrollTo(0, savedScrollY);
+                        }
+                    });
+                }
+                return res;
+            };
+        }
+
         // 1. เปลี่ยนฟังก์ชันล็อกอินหน้าช่างให้ตรวจสอบรหัสผ่านที่ Code.gs หลังบ้านโดยตรง
         window.handleTechLogin = async function() {
             const u = document.getElementById('techUsername')?.value.trim() || '';
@@ -10347,6 +10465,7 @@
 
                     document.getElementById('techUsername').value = '';
                     document.getElementById('techPassword').value = '';
+                    lastRenderedCardsSignature = '';
                     checkTechAuth();
                     await syncJobsFromCloud(false);
                     initTechGpsTracker();
@@ -10400,6 +10519,6 @@
             };
         }
     })();
-    </script> 
+    </script>
     </body>
     </html>
