@@ -12270,5 +12270,534 @@
         }
     })();
     </script>
+    <!-- 🛡️ แพตช์สมบูรณ์ 100% สำหรับ index.html (แก้เปิดใบงานใหม่จากหน้าช่าง + บีบอัดแคชไม่เกินลิมิตชีต 50k + แก้สกรอลล์) -->
+    <style id="fixAllBugsIndexCss">
+        html, body {
+            overflow-x: hidden;
+            overflow-y: auto !important;
+            height: auto !important;
+            touch-action: pan-y pinch-zoom !important;
+        }
+        @media (max-width: 1023px) {
+            #historyListFault,
+            #historyListOutage {
+                max-height: none !important;
+                overflow-y: visible !important;
+            }
+            #leftBrowserDock:not(.mobile-force-open) {
+                display: none !important;
+            }
+        }
+        .tab-content.active {
+            animation: none !important;
+            transform: none !important;
+        }
+        #sortable-tab1 > div:focus-within,
+        #sortable-tab2 > div:focus-within {
+            position: relative !important;
+            z-index: 60 !important;
+        }
+    </style>
+
+     <script>
+    (function() {
+        let isSilentAutoBackupRunning = false;
+
+        // 1. อัปเดต Service Worker ทันทีและรีเซ็ตเวลาใช้งานเมื่อเปิดหน้าจอ
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(regs => {
+                regs.forEach(reg => reg.update());
+            });
+        }
+        if (localStorage.getItem('elec_app_logged_in') === 'true') {
+            localStorage.setItem('elec_app_last_active', Date.now().toString());
+        }
+        window.addEventListener('focus', () => {
+            if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                localStorage.setItem('elec_app_last_active', Date.now().toString());
+            }
+        });
+
+        // 2. ฟังก์ชันปลดล็อกโควตาการเขียน และบังคับดึงข้อมูลสดจาก Google Sheets
+        window.__unlockCloudWrite = function() {
+            if (isSilentAutoBackupRunning) return;
+            try {
+                if (localStorage.getItem('elec_app_current_role') !== 'viewer' && typeof window.stopEquipNavFromMainPage === 'function') {
+                    window.stopEquipNavFromMainPage('');
+                }
+            } catch (e) {}
+        };
+
+        window.__forceCloudRead = function() {
+            try {
+                localStorage.removeItem('elec_sheet_cache_2k');
+                if (typeof window.fetchUserAccountsFromCloud === 'function') {
+                    const prevTs = typeof lastCloudSaveTimestamp !== 'undefined' ? lastCloudSaveTimestamp : 0;
+                    if (typeof lastCloudSaveTimestamp !== 'undefined') lastCloudSaveTimestamp = Date.now();
+                    window.fetchUserAccountsFromCloud(false, false);
+                    if (typeof lastCloudSaveTimestamp !== 'undefined') lastCloudSaveTimestamp = prevTs;
+                }
+            } catch (e) {}
+        };
+
+        // 3. บีบอัดข้อมูลสำรองแยกกลุ่ม (elec_cloud_group_backups_map) ใน localStorage ไม่ให้เกินพิกัด 50,000 ตัวอักษรของ Google Sheets
+        function slimDownGroupBackupsJson(rawJsonStr) {
+            try {
+                if (!rawJsonStr || rawJsonStr.length <= 16000) return rawJsonStr;
+                const mapObj = JSON.parse(rawJsonStr);
+                Object.keys(mapObj).forEach(grp => {
+                    const b = mapObj[grp];
+                    if (!b || typeof b !== 'object') return;
+                    if (Array.isArray(b.outages)) {
+                        b.outages = b.outages.slice(0, 25).map(o => {
+                            const copy = { ...o };
+                            delete copy.formattedText;
+                            return copy;
+                        });
+                    }
+                    if (Array.isArray(b.faults)) {
+                        b.faults = b.faults.slice(0, 25).map(f => {
+                            const copy = { ...f };
+                            delete copy.formattedText;
+                            return copy;
+                        });
+                    }
+                    if (b.settings && typeof b.settings === 'object') {
+                        delete b.settings.elec_labeled_places_list;
+                        delete b.settings.elec_deleted_labeled_places_map;
+                        delete b.settings.elec_deleted_equip_audit_logs;
+                    }
+                });
+                return JSON.stringify(mapObj);
+            } catch (e) {
+                return '{}';
+            }
+        }
+
+        const _prevSetItemIndex = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+            if (key === 'elec_cloud_group_backups_map' && typeof value === 'string') {
+                value = slimDownGroupBackupsJson(value);
+            }
+            return _prevSetItemIndex.call(this, key, value);
+        };
+        const existingBackupsStr = localStorage.getItem('elec_cloud_group_backups_map');
+        if (existingBackupsStr && existingBackupsStr.length > 16000) {
+            localStorage.setItem('elec_cloud_group_backups_map', slimDownGroupBackupsJson(existingBackupsStr));
+        }
+
+        // 4. ล้างสถานะและข้อความผลตรวจสอบท้ายใบงานออกอัตโนมัติ หากใบงานถูกช่างกดเปิดใบงานใหม่ (reopenedAt > techReport.updatedAt)
+        function cleanReopenedJobsInMainStorage() {
+            try {
+                const rawGet = typeof _origLocalStorageGetItem === 'function' ? _origLocalStorageGetItem : Storage.prototype.getItem;
+                const closedReg = typeof getClosedJobsRegistry === 'function' ? getClosedJobsRegistry() : {};
+                const cancelJobMap = JSON.parse(rawGet.call(localStorage, 'elec_cancelled_job_nav_map') || '{}');
+                let regChanged = false;
+
+                ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
+                    const isFault = (storageKey === 'fault_reports_all');
+                    const list = JSON.parse(rawGet.call(localStorage, storageKey) || '[]');
+                    let listChanged = false;
+
+                    list.forEach(item => {
+                        if (!item) return;
+                        const k = isFault ? item.timestamp : item.dateTimeSaved;
+
+                        const cancelIso = (k && cancelJobMap[k]) ? cancelJobMap[k] : (item.navCancelledAt || '');
+                        if (cancelIso && item.techNav) {
+                            const cancelMs = new Date(cancelIso).getTime() || 0;
+                            const navMs = new Date(item.techNav.updatedAt || 0).getTime() || 0;
+                            if (cancelMs >= navMs) {
+                                delete item.techNav;
+                                item.navCancelledAt = cancelIso;
+                                listChanged = true;
+                            }
+                        }
+
+                        if (!item.reopenedAt) return;
+                        const reopenMs = new Date(item.reopenedAt).getTime() || 0;
+
+                        if (item.techReport) {
+                            const repMs = new Date(item.techReport.updatedAt || 0).getTime() || 0;
+                            if (reopenMs > repMs) {
+                                delete item.techReport;
+                                listChanged = true;
+                            }
+                        }
+
+                        if (!item.techReport) {
+                            if (k && closedReg[k]) {
+                                const closedMs = new Date(closedReg[k]?.updatedAt || 0).getTime() || 0;
+                                if (reopenMs >= closedMs) {
+                                    delete closedReg[k];
+                                    regChanged = true;
+                                }
+                            }
+                            if (item.formattedText && item.formattedText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) {
+                                item.formattedText = item.formattedText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+                                listChanged = true;
+                            }
+                        }
+                    });
+
+                    if (listChanged) {
+                        localStorage.setItem(storageKey, JSON.stringify(list));
+                    }
+                });
+
+                if (regChanged && typeof syncClosedRegistryObject === 'function') {
+                    syncClosedRegistryObject(closedReg);
+                }
+            } catch (e) {}
+        }
+
+        if (typeof window.loadOutageHistory === 'function') {
+            const _prevLoadOutage = window.loadOutageHistory;
+            window.loadOutageHistory = function() {
+                cleanReopenedJobsInMainStorage();
+                return _prevLoadOutage.apply(this, arguments);
+            };
+        }
+        if (typeof window.loadFaultHistory === 'function') {
+            const _prevLoadFault = window.loadFaultHistory;
+            window.loadFaultHistory = function() {
+                cleanReopenedJobsInMainStorage();
+                return _prevLoadFault.apply(this, arguments);
+            };
+        }
+
+        // 5. ป้องกัน backupToCloudByGroup(true) ตอนเปิดเว็บ 4 วินาทีแรก ไม่ให้แอบส่งข้อมูลเก่าขึ้นไปทับบนชีต
+        if (typeof window.backupToCloudByGroup === 'function') {
+            const _origBackupGroup = window.backupToCloudByGroup;
+            window.backupToCloudByGroup = async function(silent = false) {
+                if (silent === true) {
+                    isSilentAutoBackupRunning = true;
+                    try {
+                        return await _origBackupGroup.apply(this, arguments);
+                    } finally {
+                        isSilentAutoBackupRunning = false;
+                    }
+                }
+                window.__unlockCloudWrite();
+                return await _origBackupGroup.apply(this, arguments);
+            };
+        }
+
+        // 6. แก้บั๊ก parseOutageDateTimeToMs ให้รองรับเวลาทั้งแบบ ":" และ "." บนมือถือทุกรุ่น
+        if (typeof window.parseOutageDateTimeToMs === 'function') {
+            window.parseOutageDateTimeToMs = function(item) {
+                if (!item) return 0;
+                if (item.createdAtMs) return Number(item.createdAtMs);
+                if (!item.dateTimeSaved) return 0;
+                try {
+                    const parts = String(item.dateTimeSaved).trim().split(/\s+/);
+                    const dParts = (parts[0] || '').split('/');
+                    if (dParts.length !== 3) return 0;
+                    const day = parseInt(dParts[0], 10) || 1;
+                    const month = (parseInt(dParts[1], 10) || 1) - 1;
+                    let year = parseInt(dParts[2], 10) || 2569;
+                    if (year > 2400) year -= 543;
+                    const tParts = (parts[1] || '00:00:00').split(/[:\.]/);
+                    const hr = parseInt(tParts[0] || 0, 10) || 0;
+                    const min = parseInt(tParts[1] || 0, 10) || 0;
+                    const sec = parseInt(tParts[2] || 0, 10) || 0;
+                    return new Date(year, month, day, hr, min, sec).getTime() || 0;
+                } catch (e) {
+                    return 0;
+                }
+            };
+        }
+
+        // 7. แก้บั๊ก autoFillJobNo ให้เช็กทั้ง "กะ" และ "วันที่แจ้ง" (ป้องกันเลขงานรันต่อจากวันเก่า)
+        if (typeof window.autoFillJobNo === 'function') {
+            window.autoFillJobNo = function() {
+                if (typeof editingOutageId !== 'undefined' && editingOutageId) return;
+                const jobNoEl = document.getElementById('jobNo');
+                if (localStorage.getItem('elec_shift_job_reset_lock') === 'true') {
+                    if (jobNoEl) jobNoEl.value = 1;
+                    return;
+                }
+                const currentShift = String(document.getElementById('shift')?.value || '').trim();
+                const currentReportDate = String(document.getElementById('reportDate')?.value || '').trim();
+                if (!currentShift || !jobNoEl) return;
+
+                let allHistory = [];
+                try {
+                    const raw = typeof runWithGroupViewFilter === 'function'
+                        ? runWithGroupViewFilter(() => JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]'), this, [])
+                        : JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+                    allHistory = Array.isArray(raw) ? raw : [];
+                } catch (e) { allHistory = []; }
+
+                const sameShiftTodayJobs = allHistory.filter(item => {
+                    if (!item) return false;
+                    const itemShift = String(item.shift || '').trim();
+                    const itemDate = String(item.reportDate || (item.dateTimeSaved ? item.dateTimeSaved.split(' ')[0] : '')).trim();
+                    return itemShift === currentShift && (!currentReportDate || itemDate === currentReportDate);
+                });
+
+                let maxJobNo = 0;
+                sameShiftTodayJobs.forEach(item => {
+                    const n = parseInt(item.jobNo, 10);
+                    if (!isNaN(n) && n > maxJobNo) maxJobNo = n;
+                });
+
+                jobNoEl.value = maxJobNo + 1;
+            };
+        }
+
+        // 8. แก้บั๊ก restoreOutageDraft ดึงเลขงานเก่ามาทับทั้งที่ไม่ได้พิมพ์งานค้างไว้
+        if (typeof window.restoreOutageDraft === 'function') {
+            const _origRestoreOutage = window.restoreOutageDraft;
+            window.restoreOutageDraft = function() {
+                try {
+                    const saved = localStorage.getItem('elec_draft_tab2_outage');
+                    if (!saved) return;
+                    const draft = JSON.parse(saved);
+                    const hasActiveContent = Boolean(
+                        (draft.issueType && draft.issueType.trim()) ||
+                        (draft.workerName && draft.workerName.trim()) ||
+                        (draft.area && draft.area.trim()) ||
+                        (draft.address && draft.address.trim()) ||
+                        (draft.phone && draft.phone.trim()) ||
+                        (draft.gps && draft.gps.trim())
+                    );
+                    if (!hasActiveContent) {
+                        localStorage.removeItem('elec_draft_tab2_outage');
+                        if (typeof window.autoFillJobNo === 'function') window.autoFillJobNo();
+                        return;
+                    }
+                } catch (e) {}
+                return _origRestoreOutage.apply(this, arguments);
+            };
+        }
+
+        // 9. ดึงข้อมูลสดจาก Google Sheets ทุกๆ 15 วินาที พร้อมป้องกันข้อมูลเก่าบนชีตเขียนทับข้อมูลที่ใหม่กว่าจาก MQTT
+        function protectNewerLocalStateAfterPull(storageKey, isFault, prePullMap) {
+            try {
+                const rawGet = typeof _origLocalStorageGetItem === 'function' ? _origLocalStorageGetItem : Storage.prototype.getItem;
+                const cancelJobMap = JSON.parse(rawGet.call(localStorage, 'elec_cancelled_job_nav_map') || '{}');
+                const list = JSON.parse(rawGet.call(localStorage, storageKey) || '[]');
+                let modified = false;
+
+                list.forEach(item => {
+                    if (!item) return;
+                    const k = isFault ? item.timestamp : item.dateTimeSaved;
+                    const prev = k ? prePullMap.get(k) : null;
+
+                    if (prev) {
+                        if (prev.reopenedAt && (!item.reopenedAt || prev.reopenedAt > item.reopenedAt)) {
+                            item.reopenedAt = prev.reopenedAt;
+                            modified = true;
+                        }
+                        if (prev.techReport && item.techReport) {
+                            const prevRepMs = new Date(prev.techReport.updatedAt || 0).getTime() || 0;
+                            const curRepMs = new Date(item.techReport.updatedAt || 0).getTime() || 0;
+                            if (prevRepMs > curRepMs) {
+                                item.techReport = prev.techReport;
+                                item.formattedText = prev.formattedText;
+                                item.gps = prev.gps;
+                                modified = true;
+                            }
+                        }
+                        const bestCancel = [item.navCancelledAt || '', prev.navCancelledAt || '', cancelJobMap[k] || ''].sort().pop();
+                        if (bestCancel) {
+                            item.navCancelledAt = bestCancel;
+                            const cancelMs = new Date(bestCancel).getTime() || 0;
+                            const navMs = new Date(item.techNav?.updatedAt || 0).getTime() || 0;
+                            if (cancelMs >= navMs && item.techNav) {
+                                delete item.techNav;
+                                modified = true;
+                            }
+                        }
+                    }
+                });
+
+                if (modified) {
+                    localStorage.setItem(storageKey, JSON.stringify(list));
+                }
+            } catch (e) {}
+        }
+
+        if (typeof window.pullFieldReportsFromCloud === 'function') {
+            const _origPull = window.pullFieldReportsFromCloud;
+            let pullCount = 0;
+            window.pullFieldReportsFromCloud = async function(forceNow) {
+                pullCount++;
+                const isFocusOrManual = Boolean(forceNow);
+                if (!isFocusOrManual && pullCount !== 1 && pullCount % 3 !== 0) {
+                    cleanReopenedJobsInMainStorage();
+                    if (typeof renderNavEtaBadgesInMainHistory === 'function') {
+                        renderNavEtaBadgesInMainHistory();
+                    }
+                    return;
+                }
+
+                const rawGet = typeof _origLocalStorageGetItem === 'function' ? _origLocalStorageGetItem : Storage.prototype.getItem;
+                const preOutages = new Map(JSON.parse(rawGet.call(localStorage, 'elecReportsComplete_all') || '[]').map(o => [o?.dateTimeSaved, o]));
+                const preFaults = new Map(JSON.parse(rawGet.call(localStorage, 'fault_reports_all') || '[]').map(f => [f?.timestamp, f]));
+
+                window.__forceCloudRead();
+                const res = await _origPull.apply(this, arguments);
+
+                protectNewerLocalStateAfterPull('elecReportsComplete_all', false, preOutages);
+                protectNewerLocalStateAfterPull('fault_reports_all', true, preFaults);
+                cleanReopenedJobsInMainStorage();
+                return res;
+            };
+        }
+
+        // 10. ปลดล็อกให้ syncJobsWithFieldPage ส่งข้อมูลขึ้น Google Sheets ได้ทันทีเมื่อมีการกระทำจริง
+        if (typeof window.syncJobsWithFieldPage === 'function') {
+            const _origSync = window.syncJobsWithFieldPage;
+            window.syncJobsWithFieldPage = async function() {
+                cleanReopenedJobsInMainStorage();
+                if (!isSilentAutoBackupRunning) {
+                    window.__unlockCloudWrite();
+                }
+                return await _origSync.apply(this, arguments);
+            };
+        }
+
+        if (typeof window.triggerManualPresenceSync === 'function') {
+            window.triggerManualPresenceSync = async function() {
+                window.__forceCloudRead();
+                if (typeof window.pullFieldReportsFromCloud === 'function') await window.pullFieldReportsFromCloud(true);
+                if (typeof window.syncJobsWithFieldPage === 'function') await window.syncJobsWithFieldPage();
+                if (typeof showToast === 'function' && localStorage.getItem('elec_app_current_role') === 'admin') {
+                    showToast("🟢 อัปเดตสถานะผู้ใช้ออนไลน์ล่าสุดแล้ว");
+                }
+            };
+        }
+
+        // 11. แก้ AI Model 404 + ป้องกันหมุด/ประวัติการลบเด้งกลับเมื่อสั่งล้างทั้งหมด
+        const _origFetchIndex = window.fetch;
+        window.fetch = async function(input, init) {
+            if (typeof input === 'string' && input.includes('generativelanguage.googleapis.com')) {
+                input = input
+                    .replace('models/gemini-3.8-flash-preview:', 'models/gemini-2.5-flash:')
+                    .replace('models/gemini-3.8-flash:', 'models/gemini-2.5-flash:');
+            }
+
+            if (init && init.method === 'POST' && typeof init.body === 'string' &&
+                (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
+                try {
+                    cleanReopenedJobsInMainStorage();
+                    const currentPins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
+                    const currentLogs = JSON.parse(localStorage.getItem('elec_deleted_equip_audit_logs') || '[]');
+                    const bodyObj = JSON.parse(init.body);
+
+                    if (bodyObj.action === 'saveJobs' && Array.isArray(bodyObj.jobs)) {
+                        const locReg = bodyObj.jobs.find(j => j && j.jobType === 'tech_loc');
+                        if (locReg) {
+                            if (currentPins.length === 0) locReg.electricEquipmentPins = [];
+                            if (currentLogs.length === 0) locReg.deletedEquipAuditLogs = [];
+                            delete locReg.closedReports;
+                            init.body = JSON.stringify(bodyObj);
+                        }
+                    } else if (bodyObj.action === 'patchDelta' && bodyObj.techLocDelta) {
+                        if (currentPins.length === 0) {
+                            bodyObj.techLocDelta._keepPins = false;
+                            bodyObj.techLocDelta.electricEquipmentPins = [];
+                        }
+                        if (currentLogs.length === 0) {
+                            bodyObj.techLocDelta._keepAuditLogs = false;
+                            bodyObj.techLocDelta.deletedEquipAuditLogs = [];
+                        }
+                        delete bodyObj.techLocDelta.closedReports;
+                        init.body = JSON.stringify(bodyObj);
+                    }
+                } catch (e) {}
+            }
+
+            return _origFetchIndex.apply(this, arguments);
+        };
+
+        // 12. ป้องกันบั๊กชื่อสถานี/ตำบล/อาการเสีย มีเครื่องหมาย ' หรือ " แล้วกดเลือกไม่ได้ (ทำงานเฉพาะตอนที่เมนูยังเปิดค้างอยู่ ไม่ทำงานซ้ำ 2 รอบ)
+        document.addEventListener('click', function(e) {
+            const li = e.target.closest('#stationSortableList > li, #tambonSortableList > li, #issueSortableList > li');
+            if (!li || (e.target.className && String(e.target.className).includes('drag-handle'))) return;
+            const val = li.getAttribute('data-value');
+            if (!val) return;
+            const parentId = li.parentElement?.id;
+            if (parentId === 'stationSortableList') {
+                const menu = document.getElementById('stationDropdownMenu');
+                if (menu && !menu.classList.contains('hidden') && typeof selectStation === 'function') selectStation(val);
+            } else if (parentId === 'tambonSortableList') {
+                const menu = document.getElementById('tambonDropdownMenu');
+                if (menu && !menu.classList.contains('hidden') && typeof selectTambon === 'function') selectTambon(val);
+            } else if (parentId === 'issueSortableList') {
+                const menu = document.getElementById('issueDropdownMenu');
+                if (menu && !menu.classList.contains('hidden') && typeof selectIssueType === 'function') selectIssueType(val);
+            }
+        });
+
+        // 13. ป้องกันหน้าล็อกอินแสดงซ้อนกับหน้าหลัก และจัดการ Iframe ฝั่งซ้าย
+        function syncLoginScreenVisibility() {
+            const loginScreen = document.getElementById('loginScreen');
+            const mainApp = document.getElementById('mainAppContent');
+            if (!loginScreen || !mainApp) return;
+            if (localStorage.getItem('elec_app_logged_in') === 'true') {
+                loginScreen.classList.add('hidden');
+                loginScreen.style.display = 'none';
+                mainApp.style.display = '';
+            } else {
+                loginScreen.style.display = 'flex';
+                mainApp.classList.add('hidden');
+                mainApp.style.display = 'none';
+            }
+        }
+
+        if (typeof window.closeLeftWebBrowser === 'function') {
+            const _origClose = window.closeLeftWebBrowser;
+            window.closeLeftWebBrowser = function() {
+                const dock = document.getElementById('leftBrowserDock');
+                if (dock) dock.classList.remove('mobile-force-open');
+                const iframe = document.getElementById('leftBrowserIframe');
+                if (iframe) iframe.src = 'about:blank';
+                return _origClose.apply(this, arguments);
+            };
+        }
+
+        if (typeof window.openLeftWebBrowser === 'function') {
+            const _origOpen = window.openLeftWebBrowser;
+            window.openLeftWebBrowser = function() {
+                const dock = document.getElementById('leftBrowserDock');
+                if (dock) dock.classList.add('mobile-force-open');
+                return _origOpen.apply(this, arguments);
+            };
+        }
+
+        if (typeof window.checkLoginStatus === 'function') {
+            const _origCheck = window.checkLoginStatus;
+            window.checkLoginStatus = function() {
+                const res = _origCheck.apply(this, arguments);
+                syncLoginScreenVisibility();
+                return res;
+            };
+        }
+
+        function syncAllCaBadges() {
+            try {
+                const list = JSON.parse(localStorage.getItem('overdue_ca_list') || '[]');
+                document.querySelectorAll('#caCountBadge').forEach(el => {
+                    el.textContent = list.length;
+                });
+            } catch (e) {}
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            syncLoginScreenVisibility();
+            cleanReopenedJobsInMainStorage();
+            setTimeout(syncAllCaBadges, 300);
+        });
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            syncLoginScreenVisibility();
+            cleanReopenedJobsInMainStorage();
+            syncAllCaBadges();
+        }
+    })();
+    </script>
+
 </body>
 </html>
