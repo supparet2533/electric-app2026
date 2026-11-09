@@ -1,6 +1,6 @@
     <!DOCTYPE html>
     <html lang="th">
-    <head>
+       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>ระบบช่างตรวจสอบหน้างาน</title>
@@ -17,12 +17,12 @@
         <meta name="application-name" content="ช่างไฟฟ้า">
         <meta name="theme-color" content="#0f766e">
     
-        <!-- โลโก้อิโมจิผสม 🛠️ + ⚡ สำหรับทางลัดหน้าจอโฮม -->
+        <!-- โลโก้อิโมจิผสม 🛠️ + ⚡ สำหรับทางลัดหน้าจอโฮม และล็อกไฟล์ manifest.json ถาวร -->
         <link id="favIconPng" rel="icon" type="image/png" sizes="512x512" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
         <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
-        <link id="webManifestLink" rel="manifest">
+        <link id="webManifestLink" rel="manifest" href="manifest.json">
     
-        <!-- สคริปต์สร้างอิโมจิใหม่ (🛠️ ซ้อนกับ ⚡) ขนาด 512x512 แบบทันที เพื่อให้ Chrome สร้างทางลัดพร้อมรูปโลโก้ -->
+        <!-- สคริปต์วาดไอคอน PNG คมชัดสำหรับหน้าจอโฮม (ไม่ทับลิงก์ manifest.json) -->
         <script>
             (function() {
                 try {
@@ -75,27 +75,10 @@
                     ctx.fillText('⚡', 266, 252);
     
                     const pngUrl = canvas.toDataURL('image/png');
-    
                     const favPng = document.getElementById('favIconPng');
                     const touchPng = document.getElementById('appleTouchIconPng');
                     if (favPng) favPng.href = pngUrl;
                     if (touchPng) touchPng.href = pngUrl;
-    
-                    const manifest = {
-                        name: "ระบบช่างตรวจสอบหน้างาน",
-                        short_name: "ช่างไฟฟ้า",
-                        start_url: window.location.href,
-                        display: "standalone",
-                        background_color: "#0f766e",
-                        theme_color: "#0f766e",
-                        icons: [
-                            { src: pngUrl, sizes: "192x192", type: "image/png", purpose: "any maskable" },
-                            { src: pngUrl, sizes: "512x512", type: "image/png", purpose: "any maskable" }
-                        ]
-                    };
-                    const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-                    const manifestLink = document.getElementById('webManifestLink');
-                    if (manifestLink) manifestLink.href = URL.createObjectURL(manifestBlob);
                 } catch (e) {}
             })();
         </script>
@@ -108,6 +91,7 @@
             input:focus, select:focus, textarea:focus { background-color: #fff; border-color: #2563eb !important; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
         </style>
     </head>
+
     <body class="min-h-screen py-4 px-3 sm:py-8 flex justify-center items-start">
     
         <!-- ================= 🔐 หน้าล็อกอิน (ใช้หน้าเดียวกับระบบหลัก Smart Grid SVG) ================= -->
@@ -10520,5 +10504,419 @@
         }
     })();
     </script>
+    <!-- 🎙️ ระบบสั่งปิดงานด้วยเสียงพูดครั้งเดียว (One-Tap Voice Close สำหรับ page2.html - ฉบับเสถียร 100% ทุกอุปกรณ์) -->
+    <style>
+        body.role-viewer-readonly .btn-voice-quick-close,
+        body.role-viewer-readonly #oneTapVoiceModalBox {
+            display: none !important;
+        }
+        @keyframes voicePulseWave {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.55); }
+            50% { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(225, 29, 72, 0); }
+        }
+        .voice-listening-active {
+            animation: voicePulseWave 1.2s infinite ease-in-out;
+        }
+    </style>
+
+    <script>
+    (function() {
+        let activeVoiceRecognition = null;
+        let autoSubmitVoiceTimer = null;
+
+        function isViewerReadOnly() {
+            return localStorage.getItem('elec_app_logged_in') === 'true' &&
+                   localStorage.getItem('elec_app_current_role') === 'viewer';
+        }
+
+        function stopActiveVoiceSession() {
+            if (autoSubmitVoiceTimer) {
+                clearTimeout(autoSubmitVoiceTimer);
+                autoSubmitVoiceTimer = null;
+            }
+            if (activeVoiceRecognition) {
+                try { activeVoiceRecognition.abort(); } catch (e) {}
+                activeVoiceRecognition = null;
+            }
+        }
+
+        // 1. แปลงคำพูดภาษาไทยเป็นตัวเลขและหน่วยทางไฟฟ้ามาตรฐาน
+        function normalizeElectricalSpeechText(rawText) {
+            if (!rawText) return '';
+            let s = String(rawText).trim();
+
+            const thaiNumMap = [
+                ['หนึ่งร้อย', '100'], ['สองร้อย', '200'], ['ห้าสิบ', '50'], ['สี่สิบ', '40'],
+                ['สามสิบ', '30'], ['ยี่สิบห้า', '25'], ['ยี่สิบ', '20'], ['สิบห้า', '15'],
+                ['สิบสอง', '12'], ['สิบ', '10'], ['แปด', '8'], ['หก', '6'], ['ห้า', '5'],
+                ['สี่', '4'], ['สาม', '3'], ['สอง', '2'], ['หนึ่ง', '1']
+            ];
+            thaiNumMap.forEach(([word, num]) => {
+                s = s.replace(new RegExp(word + '\\s*(?=แอม|เค|เส้น|เฟส|ลูก|ต้น)', 'g'), num + ' ');
+            });
+
+            s = s.replace(/(\d+)\s*(?:แอมป์|แอมแปร์|แอม|amps?|a(?![a-zA-Z]))/gi, '$1A')
+                 .replace(/(\d+)\s*(?:เค(?![ก-๙])|k(?![a-zA-Z]))/gi, '$1K')
+                 .replace(/(\d+)\s*(?:เควีเอ|เคพีเอ|kva)/gi, '$1 kVA')
+                 .replace(/ดร๊อป|ดร็อป/g, 'ดรอป')
+                 .replace(/เบรคเกอร์/g, 'เบรกเกอร์')
+                 .replace(/คัทเอาท์|คัตเอาท์/g, 'คัตเอาต์')
+                 .replace(/ช๊อต/g, 'ช็อต');
+
+            return s.replace(/\s+/g, ' ').trim();
+        }
+
+        // 2. วิเคราะห์และแยกประโยคเสียงพูดออกเป็น [สถานะ, สาเหตุจริง, การแก้ไข]
+        function parseVoiceCloseSentence(rawTranscript) {
+            const cleanText = normalizeElectricalSpeechText(rawTranscript);
+            if (!cleanText) {
+                return {
+                    status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
+                    realCause: 'ตรวจสอบแล้วกระแสไฟปกติ',
+                    actionTaken: 'ดำเนินการตรวจสอบและจ่ายไฟคืนปกติ'
+                };
+            }
+
+            let status = 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
+            if (/(รอพัสดุ|ส่งต่อแผนก|ส่งต่อ|ตั้งเสาใหม่|รอหม้อแปลง)/.test(cleanText)) {
+                status = 'ส่งต่อแผนกอื่น / รอพัสดุ';
+            } else if (/(กำลังดำเนินการ|กำลังทำ|ยังไม่เสร็จ|อยู่ระหว่าง)/.test(cleanText)) {
+                status = 'กำลังดำเนินการ';
+            }
+
+            const actionSplitRegex = /\s*(?=(?:ดำเนินการ|ทำการ|แก้ไขโดย|แก้ไข|เปลี่ยน|ใส่ฟิวส์|ใส่ดรอป|สับดรอป|ยกดรอป|ต่อสาย|พันเทป|กวดขั้ว|ขันขั้ว|ตัดกิ่งไม้|ตัดต้นไม้|รอนกิ่งไม้|นำสัตว์ออก|เอาสัตว์ออก|เขี่ยออก|ยกเบรกเกอร์|ออนเบรกเกอร์|สับคัตเอาต์|ทดลองจ่ายไฟ|จ่ายไฟคืน|จ่ายไฟแล้ว|จ่ายไฟปกติ))/i;
+
+            let causePart = cleanText;
+            let actionPart = '';
+
+            const splitMatch = cleanText.match(actionSplitRegex);
+            if (splitMatch && splitMatch.index > 0) {
+                causePart = cleanText.substring(0, splitMatch.index).trim();
+                actionPart = cleanText.substring(splitMatch.index).trim();
+            }
+
+            const ratingMatch = cleanText.match(/(\d+\s*(?:A|K|kVA))(?![a-zA-Z])/i);
+            const ratingStr = ratingMatch ? ratingMatch[1].replace(/\s+/g, '') : '';
+
+            let cleanCause = causePart.replace(/(\d+\s*(?:A|K))(?![a-zA-Z])/gi, '').replace(/\s+/g, ' ').trim();
+            if (!cleanCause) cleanCause = causePart;
+            if (ratingStr && /ฟิวส์|ดรอป/.test(cleanCause) && !cleanCause.includes(ratingStr)) {
+                cleanCause = `${cleanCause} (ขนาด ${ratingStr})`;
+            }
+
+            let finalAction = actionPart;
+            const isShortGenericAction = !finalAction || /^(?:เปลี่ยนเสร็จ|แก้ไขเสร็จ|ทำเสร็จ|เสร็จแล้ว|เรียบร้อย)?\s*(?:จ่ายไฟคืนแล้ว|จ่ายไฟแล้ว|จ่ายไฟปกติ|จ่ายไฟเรียบร้อย)?$/.test(finalAction);
+
+            if (isShortGenericAction) {
+                if (/ฟิวส์แรงต่ำ/.test(cleanCause)) {
+                    finalAction = `เปลี่ยนฟิวส์แรงต่ำ${ratingStr ? ' ' + ratingStr : ''} เสร็จสิ้น จ่ายไฟคืนปกติ`;
+                } else if (/ฟิวส์แรงสูง|ดรอปเอาต์|ดรอป/.test(cleanCause)) {
+                    finalAction = `เปลี่ยนฟิวส์แรงสูง (Drop Out Fuse)${ratingStr ? ' ' + ratingStr : ''} จ่ายไฟคืนปกติ`;
+                } else if (/กิ่งไม้|ต้นไม้/.test(cleanCause)) {
+                    finalAction = `ตัดรอนกิ่งไม้พ้นแนวสายไฟ จ่ายไฟคืนปกติ`;
+                } else if (/สัตว์|งู|นก|กระรอก/.test(cleanCause)) {
+                    finalAction = `นำสัตว์ออกจากระบบจำหน่ายและตรวจสอบอุปกรณ์ จ่ายไฟคืนปกติ`;
+                } else if (/หลวม|ช็อต/.test(cleanCause)) {
+                    finalAction = `กวดขั้วต่อสายและพันเทปฉนวนใหม่ จ่ายไฟคืนปกติ`;
+                } else if (/เบรกเกอร์|คัตเอาต์/.test(cleanCause)) {
+                    finalAction = `ตรวจสอบและยกเบรกเกอร์จ่ายไฟคืนปกติ`;
+                } else if (/ปกติ/.test(cleanCause)) {
+                    finalAction = `ตรวจสอบระบบจ่ายไฟปกติ แจ้งผู้ใช้ไฟเรียบร้อย`;
+                } else {
+                    finalAction = `ดำเนินการแก้ไขเรียบร้อย${ratingStr ? ' (' + ratingStr + ')' : ''} จ่ายไฟคืนปกติ`;
+                }
+            } else {
+                if (ratingStr && /เปลี่ยน/.test(finalAction) && !finalAction.includes(ratingStr)) {
+                    finalAction = finalAction.replace(/เปลี่ยน(?:ฟิวส์)?/, `เปลี่ยนฟิวส์ ${ratingStr} `);
+                }
+                if (status.includes('เสร็จสิ้น') && !/จ่ายไฟ/.test(finalAction)) {
+                    finalAction += ' จ่ายไฟคืนปกติ';
+                }
+            }
+
+            return {
+                status: status,
+                realCause: cleanCause.replace(/\s+/g, ' ').trim(),
+                actionTaken: finalAction.replace(/\s+/g, ' ').trim()
+            };
+        }
+
+        // 3. สร้างกล่องควบคุมการสั่งงานด้วยเสียงในหน้าต่าง #inspectModal
+        function ensureVoiceControlBoxInModal() {
+            const summaryEl = document.getElementById('modalJobSummary');
+            if (!summaryEl || document.getElementById('oneTapVoiceModalBox')) return;
+
+            const box = document.createElement('div');
+            box.id = 'oneTapVoiceModalBox';
+            box.className = 'p-3 bg-gradient-to-r from-rose-50 via-amber-50 to-teal-50 border-2 border-teal-400 rounded-2xl space-y-2 shadow-sm';
+            box.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <span class="font-extrabold text-teal-950 text-xs flex items-center gap-1.5">
+                        <span class="text-base">🎙️</span>
+                        <span>พูดประโยคเดียว (แยกสาเหตุ + แก้ไข + ปิดงานอัตโนมัติ)</span>
+                    </span>
+                </div>
+                <div class="text-[11px] text-slate-600 leading-snug">
+                    ตัวอย่าง: <span class="font-bold text-teal-800">"ฟิวส์แรงต่ำขาด 30 แอมป์ เปลี่ยนเสร็จจ่ายไฟแล้ว"</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-0.5">
+                    <button type="button" id="btnVoiceCloseCopy" onclick="triggerOneTapVoiceInModal(false)" class="bg-teal-600 hover:bg-teal-700 text-white font-extrabold py-2 px-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5">
+                        🎙️ พูดปิดงาน & คัดลอก
+                    </button>
+                    <button type="button" id="btnVoiceCloseLine" onclick="triggerOneTapVoiceInModal(true)" class="bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-2 px-2.5 rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5">
+                        🎙️ พูดปิดงาน & ส่ง LINE
+                    </button>
+                </div>
+                <div id="voiceAutoCloseStatusBanner" class="hidden p-2.5 bg-white border border-teal-300 rounded-xl space-y-1.5">
+                    <div id="voiceRecognizedPreviewText" class="text-xs font-bold text-slate-800 break-words"></div>
+                    <div class="flex items-center justify-between gap-2 pt-1">
+                        <span id="voiceCountdownLabel" class="text-[11px] font-extrabold text-emerald-700 animate-pulse">⏳ กำลังบันทึกปิดงานอัตโนมัติ...</span>
+                        <div class="flex gap-1.5">
+                            <button type="button" onclick="cancelVoiceAutoSubmit()" class="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-lg text-[11px] font-bold transition">
+                                ✋ หยุดเพื่อแก้ไขเอง
+                            </button>
+                            <button type="button" id="btnVoiceConfirmNow" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-sm transition">
+                                ✅ ปิดงานทันที
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            summaryEl.insertAdjacentElement('afterend', box);
+        }
+
+        window.cancelVoiceAutoSubmit = function() {
+            if (autoSubmitVoiceTimer) {
+                clearTimeout(autoSubmitVoiceTimer);
+                autoSubmitVoiceTimer = null;
+            }
+            const countdownLabel = document.getElementById('voiceCountdownLabel');
+            if (countdownLabel) {
+                countdownLabel.textContent = '✏️ หยุดการปิดงานอัตโนมัติแล้ว (ตรวจสอบหรือแก้ไขข้อความด้านล่างได้เลย)';
+                countdownLabel.className = 'text-[11px] font-bold text-amber-700';
+            }
+            if (typeof showToast === 'function') {
+                showToast('✋ หยุดการส่งอัตโนมัติแล้ว คุณสามารถแก้ไขข้อความในช่องได้เลย');
+            }
+        };
+
+        window.triggerOneTapVoiceInModal = function(sendLine = false) {
+            if (isViewerReadOnly()) return;
+            ensureVoiceControlBoxInModal();
+
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) {
+                if (typeof showCustomAlert === 'function') {
+                    showCustomAlert('เบราว์เซอร์ของคุณไม่รองรับการสั่งงานด้วยเสียง แนะนำให้เปิดผ่าน Google Chrome ครับ', '🎙️ ไม่รองรับไมโครโฟน');
+                }
+                return;
+            }
+
+            stopActiveVoiceSession();
+
+            const btnCopy = document.getElementById('btnVoiceCloseCopy');
+            const btnLine = document.getElementById('btnVoiceCloseLine');
+            const banner = document.getElementById('voiceAutoCloseStatusBanner');
+            const previewEl = document.getElementById('voiceRecognizedPreviewText');
+            const countdownEl = document.getElementById('voiceCountdownLabel');
+            const confirmNowBtn = document.getElementById('btnVoiceConfirmNow');
+
+            const activeBtn = sendLine ? btnLine : btnCopy;
+            const origBtnHtml = activeBtn ? activeBtn.innerHTML : '';
+
+            const rec = new SR();
+            activeVoiceRecognition = rec;
+            rec.lang = 'th-TH';
+            rec.interimResults = false;
+            rec.maxAlternatives = 1;
+
+            rec.onstart = function() {
+                if (activeBtn) {
+                    activeBtn.classList.add('voice-listening-active', 'bg-rose-600');
+                    activeBtn.innerHTML = '🔴 กำลังฟัง... พูดได้เลยครับ';
+                }
+                if (banner) banner.classList.remove('hidden');
+                if (previewEl) previewEl.innerHTML = '🎙️ <span class="text-rose-600">กำลังฟังเสียงพูดของคุณ...</span>';
+                if (countdownEl) countdownEl.textContent = 'พูดสาเหตุและการแก้ไข เช่น "ฟิวส์แรงต่ำขาด 30 แอมป์ เปลี่ยนเสร็จจ่ายไฟแล้ว"';
+                if (typeof showToast === 'function') {
+                    showToast('🎙️ กำลังฟัง... พูดสาเหตุและการแก้ไขได้เลยครับ');
+                }
+            };
+
+            rec.onresult = function(event) {
+                const transcript = (event.results?.[0]?.[0]?.transcript || '').trim();
+                const parsed = parseVoiceCloseSentence(transcript);
+
+                const statusEl = document.getElementById('techStatusInput');
+                const causeEl = document.getElementById('techCauseInput');
+                const actionEl = document.getElementById('techActionInput');
+
+                if (statusEl) statusEl.value = parsed.status;
+                if (causeEl) {
+                    causeEl.value = parsed.realCause;
+                    causeEl.classList.add('ring-2', 'ring-emerald-400', 'bg-emerald-50/50');
+                    setTimeout(() => causeEl.classList.remove('ring-2', 'ring-emerald-400', 'bg-emerald-50/50'), 2000);
+                }
+                if (actionEl) {
+                    actionEl.value = parsed.actionTaken;
+                    actionEl.classList.add('ring-2', 'ring-emerald-400', 'bg-emerald-50/50');
+                    setTimeout(() => actionEl.classList.remove('ring-2', 'ring-emerald-400', 'bg-emerald-50/50'), 2000);
+                }
+
+                const gpsEl = document.getElementById('techGpsInput');
+                if (gpsEl && !gpsEl.value.trim() && typeof lastKnownTechCoords === 'object' && lastKnownTechCoords) {
+                    gpsEl.value = `https://www.google.com/maps?q=${lastKnownTechCoords.lat.toFixed(6)},${lastKnownTechCoords.lon.toFixed(6)}`;
+                }
+
+                if (banner) banner.classList.remove('hidden');
+                if (previewEl) {
+                    previewEl.innerHTML = `🗣️ เสียงที่รับได้: <span class="text-teal-700">"${transcript}"</span>`;
+                }
+                if (countdownEl) {
+                    countdownEl.textContent = sendLine
+                        ? '⏳ กำลังบันทึกปิดงานและเปิด LINE อัตโนมัติใน 1.8 วินาที...'
+                        : '⏳ กำลังบันทึกปิดงานและคัดลอกข้อความใน 1.8 วินาที...';
+                    countdownEl.className = 'text-[11px] font-extrabold text-emerald-700 animate-pulse';
+                }
+
+                const executeSubmit = function() {
+                    if (autoSubmitVoiceTimer) {
+                        clearTimeout(autoSubmitVoiceTimer);
+                        autoSubmitVoiceTimer = null;
+                    }
+                    if (banner) banner.classList.add('hidden');
+                    if (typeof window.__unlockCloudWrite === 'function') window.__unlockCloudWrite();
+                    if (typeof submitTechReport === 'function') {
+                        submitTechReport(sendLine);
+                    }
+                };
+
+                if (confirmNowBtn) {
+                    confirmNowBtn.onclick = executeSubmit;
+                }
+
+                autoSubmitVoiceTimer = setTimeout(executeSubmit, 1800);
+            };
+
+            rec.onerror = function(err) {
+                if (banner) banner.classList.add('hidden');
+                if (err.error === 'not-allowed') {
+                    if (typeof showCustomAlert === 'function') {
+                        showCustomAlert('กรุณากดอนุญาตการใช้ไมโครโฟนที่แถบตั้งค่าของเบราว์เซอร์ Chrome ก่อนใช้งานครับ', '🎙️ ไมโครโฟนถูกบล็อก');
+                    }
+                } else if (err.error !== 'aborted' && typeof showToast === 'function') {
+                    showToast('⚠️ ไม่ได้ยินเสียงพูด กรุณากดปุ่มไมค์แล้วพูดใหม่อีกครั้ง');
+                }
+            };
+
+            rec.onend = function() {
+                if (activeBtn) {
+                    activeBtn.classList.remove('voice-listening-active', 'bg-rose-600');
+                    activeBtn.innerHTML = origBtnHtml;
+                }
+                activeVoiceRecognition = null;
+            };
+
+            try { rec.start(); } catch (e) {}
+        };
+
+        // 4. กดปุ่ม "🎙️ พูดปิดงาน" จากการ์ดใบงานโดยตรง (เรียกเปิดไมค์ทันทีใน User Gesture เดียวกัน)
+        window.quickVoiceCloseFromCard = function(jobKey, jobType) {
+            if (isViewerReadOnly()) return;
+            if (typeof openInspectModal === 'function') {
+                openInspectModal(jobKey, jobType);
+            }
+            ensureVoiceControlBoxInModal();
+            const banner = document.getElementById('voiceAutoCloseStatusBanner');
+            if (banner) banner.classList.add('hidden');
+            window.triggerOneTapVoiceInModal(false);
+        };
+
+        // ป้องกันไมค์ชนกันกรณีช่างกดปุ่มไมค์เล็กในช่องพิมพ์ซ้ำ
+        const _origStartVoice = window.startVoice;
+        if (typeof _origStartVoice === 'function') {
+            window.startVoice = function(inputId) {
+                stopActiveVoiceSession();
+                return _origStartVoice.apply(this, arguments);
+            };
+        }
+
+        // 5. แทรกปุ่ม "🎙️ พูดปิดงาน" หน้าปุ่มแจ้งผลตรวจสอบโดยไม่ทำให้ปุ่มแยกบรรทัดกัน
+        function injectVoiceQuickCloseButtonsSync() {
+            if (isViewerReadOnly()) return;
+            const container = document.getElementById('jobCardsContainer');
+            if (!container) return;
+
+            container.querySelectorAll('button[onclick^="openInspectModal("]').forEach(inspectBtn => {
+                const parentRow = inspectBtn.parentElement;
+                if (!parentRow || parentRow.querySelector('.btn-voice-quick-close')) return;
+
+                const onclickAttr = inspectBtn.getAttribute('onclick') || '';
+                const m = onclickAttr.match(/openInspectModal\('([^']+)',\s*'([^']+)'\)/);
+                if (!m) return;
+                const jobKey = m[1];
+                const jobType = m[2];
+
+                const cardEl = inspectBtn.closest('.rounded-2xl');
+                const statusBadge = cardEl ? cardEl.querySelector('span.rounded-full') : null;
+                if (statusBadge && statusBadge.textContent.includes('เสร็จสิ้น')) return;
+
+                // ให้กลุ่มปุ่มฝั่งซ้ายดันพื้นที่ที่เหลือไปขวาสุด เพื่อให้ปุ่มพูดปิดงานกับปุ่มแจ้งผลตรวจสอบอยู่ติดกันเสมอ
+                const leftGroup = parentRow.querySelector('.flex.flex-wrap.gap-1\\.5');
+                if (leftGroup) leftGroup.classList.add('mr-auto');
+
+                const voiceBtn = document.createElement('button');
+                voiceBtn.type = 'button';
+                voiceBtn.className = 'btn-voice-quick-close bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-xl text-xs font-extrabold shadow-sm transition flex items-center gap-1 shrink-0';
+                voiceBtn.innerHTML = '🎙️ พูดปิดงาน';
+                voiceBtn.title = 'กดแล้วพูดประโยคเดียวเพื่อกรอกสาเหตุ การแก้ไข และปิดงานอัตโนมัติ';
+                voiceBtn.onclick = function() {
+                    window.quickVoiceCloseFromCard(jobKey, jobType);
+                };
+
+                parentRow.insertBefore(voiceBtn, inspectBtn);
+            });
+        }
+
+        const _prevOpenInspectModal = window.openInspectModal;
+        if (typeof _prevOpenInspectModal === 'function') {
+            window.openInspectModal = function(...args) {
+                stopActiveVoiceSession();
+                const res = _prevOpenInspectModal.apply(this, args);
+                ensureVoiceControlBoxInModal();
+                const banner = document.getElementById('voiceAutoCloseStatusBanner');
+                if (banner) banner.classList.add('hidden');
+                return res;
+            };
+        }
+
+        const _prevCloseInspectModal = window.closeInspectModal;
+        if (typeof _prevCloseInspectModal === 'function') {
+            window.closeInspectModal = function(...args) {
+                stopActiveVoiceSession();
+                return _prevCloseInspectModal.apply(this, arguments);
+            };
+        }
+
+        const _prevRenderCardsForVoice = window.renderJobCards;
+        if (typeof _prevRenderCardsForVoice === 'function') {
+            window.renderJobCards = function(...args) {
+                const res = _prevRenderCardsForVoice.apply(this, args);
+                injectVoiceQuickCloseButtonsSync();
+                return res;
+            };
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            ensureVoiceControlBoxInModal();
+            setTimeout(injectVoiceQuickCloseButtonsSync, 200);
+        });
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            ensureVoiceControlBoxInModal();
+            injectVoiceQuickCloseButtonsSync();
+        }
+    })();
+    </script>
+
     </body>
     </html>
