@@ -2,7 +2,7 @@
 // ⚡ PEA SMART GRID — SERVICE WORKER v95 (sw.js)
 // แก้แคชค้างบน GitHub Pages (บังคับ no-cache ไฟล์ระบบ + กัน cache.addAll พังจากไฟล์ 404)
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v95';
+const CACHE_NAME = 'pea-smart-tools-v96';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 
 const APP_SHELL_ASSETS = [
