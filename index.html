@@ -13130,5 +13130,1042 @@
             }
         })();
     </script>
+        <!-- ==================== ⚡ ระบบเชื่อมผังวงจร SCADA เข้ากับหน้าหลัก & ป้องกันหมุดหายบนคลาวด์ (สำหรับ index.html) ==================== -->
+    <style id="peaMainScadaBridgeStyles">
+        body.role-viewer-readonly .scada-main-edit-only {
+            display: none !important;
+        }
+        @keyframes scadaFieldFlash {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.65); background-color: #ecfdf5; }
+            100% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); background-color: #ffffff; }
+        }
+        .scada-filled-flash {
+            animation: scadaFieldFlash 0.9s ease-out;
+            border-color: #10b981 !important;
+        }
+    </style>
+
+    <!-- 📐 Modal นำเข้าข้อมูลสวิตช์และอุปกรณ์ SCADA จาก AutoCAD / Excel (รองรับครบ 9 สัญลักษณ์) -->
+    <div id="scadaCadImportModal" class="fixed inset-0 bg-slate-900/65 hidden z-[195] flex items-center justify-center p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
+            <div class="px-4 py-3 bg-gradient-to-r from-slate-900 via-teal-900 to-emerald-800 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-sm flex items-center gap-2">📐 นำเข้าอุปกรณ์สวิตช์จาก AutoCAD / Excel</h3>
+                <button type="button" onclick="closeScadaCadImportModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
+            </div>
+
+            <div class="p-4 space-y-3 text-xs overflow-y-auto flex-1 bg-slate-50">
+                <div class="p-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-950 space-y-1">
+                    <div class="font-bold flex items-center justify-between">
+                        <span>🏢 นำเข้าสู่กลุ่มสังกัด:</span>
+                        <span id="scadaCadImportGroupBadge" class="bg-teal-700 text-white px-2.5 py-0.5 rounded-md text-[11px] font-extrabold">กฟส.บึง</span>
+                    </div>
+                    <p class="text-[11px] text-teal-800 leading-relaxed">
+                        วางข้อมูลจาก Excel หรือ AutoCAD Data Extraction (คั่นด้วยลูกน้ำ <code>,</code> หรือ Tab) บรรทัดละ 1 อุปกรณ์ รองรับสัญลักษณ์ <b>CB/RC, VB, VS, VSC, S, DF, TAP, GEN, PIN</b>
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1">📋 รูปแบบคอลัมน์: <span class="font-mono text-[11px] text-indigo-700">รหัสสวิตช์, Lat, Lon, ประเภท, SCADA_ID, วงจร, สถานะ(C/O/F), คำเตือนInterlock</span></label>
+                    <textarea id="scadaCadRawTextInput" rows="7"
+                        placeholder="ตัวอย่าง:&#10;BNF06CB-01, 13.13610, 101.03220, CB, 1006, BNF06, C,&#10;BNF06VS-601, 13.12850, 101.04520, VS, 3419, BNF06, C,&#10;BNG6S-04, 13.11420, 101.06210, S, , BNG6, O, ไม่มีล็อคคาน&#10;BNU1DF-11, 13.10540, 101.07890, DF, , BNU1, C, ฟิวส์ 30K"
+                        class="w-full px-3 py-2.5 text-xs font-mono bg-white border border-slate-300 rounded-xl focus:outline-none"></textarea>
+                </div>
+
+                <div class="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span>💡 ใส่เฉพาะ 3 คอลัมน์แรก (รหัส, Lat, Lon) ระบบก็เดาสัญลักษณ์ให้อัตโนมัติ</span>
+                    <button type="button" onclick="document.getElementById('scadaCadRawTextInput').value=''" class="text-rose-600 hover:underline font-bold">🧹 ล้างช่อง</button>
+                </div>
+            </div>
+
+            <div class="p-3 bg-white border-t flex justify-end gap-2 shrink-0">
+                <button type="button" onclick="closeScadaCadImportModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition">ยกเลิก</button>
+                <button type="button" onclick="processScadaCadBatchImport()" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs shadow transition">📥 นำเข้าสู่ผัง SCADA</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📱 แถบลอยสลับกลับฟอร์ม TR/TL บนมือถือเมื่อเปิดผัง SCADA เต็มจอ -->
+    <div id="mobileScadaReturnBar" class="hidden fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] items-center gap-2 bg-slate-900/95 text-white px-4 py-2.5 rounded-full shadow-2xl border border-teal-400/50 text-xs font-bold backdrop-blur-md">
+        <span id="mobileScadaReturnText" class="truncate max-w-[210px]">⚡ เลือกสวิตช์จากผัง SCADA</span>
+        <button type="button" onclick="closeLeftWebBrowser()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded-full text-[11px] font-extrabold shadow transition shrink-0">
+            กลับหน้าฟอร์ม ➔
+        </button>
+    </div>
+
+    <script>
+    (function() {
+        const SCADA_BRIDGE_CHANNEL = 'pea_scada_form_bridge_v1';
+        let lastHandledPacketTs = 0;
+        let isExplicitLeftBrowserAction = false;
+        let isTrimmingMainAuditLogs = false;
+        const rawStorageGet = typeof _origLocalStorageGetItem === 'function' ? _origLocalStorageGetItem : Storage.prototype.getItem;
+
+        function escHtmlMain(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function isMainViewerOnly() {
+            return localStorage.getItem('elec_app_logged_in') === 'true' &&
+                   localStorage.getItem('elec_app_current_role') === 'viewer';
+        }
+
+        function getMyMainGroup() {
+            if (typeof getCurrentUserGroup === 'function') {
+                const g = getCurrentUserGroup();
+                if (g && g.trim()) return g.trim();
+            }
+            return (localStorage.getItem('elec_app_current_group') || 'กฟส.บึง').trim();
+        }
+
+        function getVisibleScadaPinsInMain() {
+            try {
+                const allPins = JSON.parse(rawStorageGet.call(localStorage, 'elec_labeled_places_list') || '[]');
+                const delMap = JSON.parse(rawStorageGet.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+                const role = localStorage.getItem('elec_app_current_role') || 'user';
+                const myGrp = getMyMainGroup();
+
+                return (Array.isArray(allPins) ? allPins : []).filter(p => {
+                    if (!p || !p.id) return false;
+                    if (delMap[p.id]) {
+                        const delMs = new Date(delMap[p.id]).getTime() || 0;
+                        const pinMs = new Date(p.updatedAt || 0).getTime() || 0;
+                        if (pinMs <= delMs) return false;
+                    }
+                    if (role === 'admin' && !localStorage.getItem('elec_app_current_group')) return true;
+                    return (p.ownerGroup || 'กฟส.บึง').trim() === myGrp;
+                });
+            } catch (e) { return []; }
+        }
+
+        // 1. ป้องกันการเผลอล้างหมุดอุปกรณ์บนคลาวด์เมื่อเปิด index.html บนเบราว์เซอร์ใหม่ที่ยังไม่มีแคชหมุด + คุมขนาด Audit Logs
+        function trimMainAuditLogsQuota(logsArr) {
+            if (!Array.isArray(logsArr)) return [];
+            let trimmed = logsArr.slice(0, 50);
+            if (JSON.stringify(trimmed).length > 10000) {
+                trimmed = trimmed.map((log, idx) => {
+                    if (idx < 10 || !Array.isArray(log?.scadaLines)) return log;
+                    const copy = { ...log };
+                    copy.scadaLines = copy.scadaLines.map(l => { const c = { ...l }; delete c.w; return c; });
+                    return copy;
+                });
+            }
+            return trimmed;
+        }
+
+        function rescueCloudPinsBeforePostIfEmpty() {
+            try {
+                const currentPins = JSON.parse(rawStorageGet.call(localStorage, 'elec_labeled_places_list') || '[]');
+                if (Array.isArray(currentPins) && currentPins.length > 0) return;
+
+                const delEquipMap = JSON.parse(rawStorageGet.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+                let candidateJobs = Array.isArray(cachedCloudJobs) ? cachedCloudJobs : [];
+                if (candidateJobs.length === 0) {
+                    const sheetCache = JSON.parse(rawStorageGet.call(localStorage, 'elec_sheet_cache_2k') || '{}');
+                    if (Array.isArray(sheetCache.jobs)) candidateJobs = sheetCache.jobs;
+                }
+
+                const locEntry = candidateJobs.find(j => j && j.jobType === 'tech_loc');
+                if (Array.isArray(locEntry?.electricEquipmentPins) && locEntry.electricEquipmentPins.length > 0) {
+                    const surviving = locEntry.electricEquipmentPins.filter(p => {
+                        if (!p || !p.id) return false;
+                        if (!delEquipMap[p.id]) return true;
+                        return (new Date(p.updatedAt || 0).getTime() || 0) > (new Date(delEquipMap[p.id]).getTime() || 0);
+                    });
+                    if (surviving.length > 0) {
+                        localStorage.setItem('elec_labeled_places_list', JSON.stringify(surviving));
+                    }
+                }
+            } catch (e) {}
+        }
+
+        const _prevSetStorageMainPatch = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+            if (key === 'elec_deleted_equip_audit_logs' && typeof value === 'string' && !isTrimmingMainAuditLogs) {
+                try {
+                    isTrimmingMainAuditLogs = true;
+                    value = JSON.stringify(trimMainAuditLogsQuota(JSON.parse(value)));
+                } catch (e) {} finally { isTrimmingMainAuditLogs = false; }
+            }
+            return _prevSetStorageMainPatch.call(this, key, value);
+        };
+
+        const _prevFetchMainPatch = window.fetch;
+        window.fetch = async function(input, init) {
+            if (init && init.method === 'POST' && typeof init.body === 'string' &&
+                (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
+                rescueCloudPinsBeforePostIfEmpty();
+            }
+            return _prevFetchMainPatch.apply(this, arguments);
+        };
+
+        // อัปเดตสถานะออฟไลน์ทันทีเมื่อกดยืนยันออกจากระบบในหน้าหลัก
+        const _origCheckLoginForLogout = window.checkLoginStatus;
+        if (typeof _origCheckLoginForLogout === 'function') {
+            let wasLoggedBefore = localStorage.getItem('elec_app_logged_in') === 'true';
+            let lastKnownUser = localStorage.getItem('elec_app_current_user') || '';
+            window.checkLoginStatus = function(...args) {
+                const nowLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+                if (nowLogged) {
+                    lastKnownUser = localStorage.getItem('elec_app_current_user') || lastKnownUser;
+                } else if (wasLoggedBefore && lastKnownUser) {
+                    try {
+                        const locMap = JSON.parse(rawStorageGet.call(localStorage, 'elec_tech_locations_map') || '{}');
+                        const nowIso = new Date().toISOString();
+                        if (locMap[lastKnownUser]) {
+                            locMap[lastKnownUser] = { ...locMap[lastKnownUser], isOnline: false, lastSeenAt: nowIso, updatedAt: nowIso };
+                            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+                        }
+                    } catch (e) {}
+                    lastKnownUser = '';
+                }
+                wasLoggedBefore = nowLogged;
+                return _origCheckLoginForLogout.apply(this, args);
+            };
+        }
+
+        // 2. ป้องกันพรีวิว Google Maps อัตโนมัติไปเตะหน้า page2.html ที่เปิดค้างไว้ฝั่งซ้ายหลุด
+        ['navigateLeftBrowser', 'pasteClipboardToLeftBrowser'].forEach(fnName => {
+            const origFn = window[fnName];
+            if (typeof origFn === 'function') {
+                window[fnName] = function(...args) {
+                    isExplicitLeftBrowserAction = true;
+                    try { return origFn.apply(this, args); }
+                    finally { setTimeout(() => { isExplicitLeftBrowserAction = false; }, 300); }
+                };
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (e.target?.closest?.('#leftBrowserBookmarksBar')) {
+                isExplicitLeftBrowserAction = true;
+                setTimeout(() => { isExplicitLeftBrowserAction = false; }, 350);
+            }
+        }, true);
+
+        const _origLoadLeftUrl = window.loadLeftBrowserUrl;
+        if (typeof _origLoadLeftUrl === 'function') {
+            window.loadLeftBrowserUrl = function(rawUrl) {
+                const dock = document.getElementById('leftBrowserDock');
+                const iframe = document.getElementById('leftBrowserIframe');
+                const isDockOpen = dock && !dock.classList.contains('hidden');
+                const currentSrc = iframe ? (iframe.getAttribute('src') || '') : '';
+                if (!isExplicitLeftBrowserAction && isDockOpen && currentSrc.includes('page2.html') && String(rawUrl || '').includes('output=embed')) {
+                    return;
+                }
+                return _origLoadLeftUrl.apply(this, arguments);
+            };
+        }
+
+        // 3. เปิดผังวงจร SCADA เทียบเคียงฝั่งซ้าย และสั่งสลับเข้าแท็บแผนที่อุปกรณ์อัตโนมัติ
+        window.openScadaDiagramWorkspace = function() {
+            isExplicitLeftBrowserAction = true;
+            localStorage.setItem('elec_left_browser_last_url', 'page2.html');
+            if (typeof openLeftWebBrowser === 'function') openLeftWebBrowser();
+
+            const iframe = document.getElementById('leftBrowserIframe');
+            if (iframe) {
+                if (!(iframe.getAttribute('src') || '').includes('page2.html')) {
+                    iframe.src = 'page2.html';
+                }
+                let attempts = 0;
+                const switchTimer = setInterval(() => {
+                    attempts++;
+                    try {
+                        if (iframe.contentWindow && typeof iframe.contentWindow.switchTechMainTab === 'function') {
+                            iframe.contentWindow.switchTechMainTab('map');
+                            clearInterval(switchTimer);
+                        }
+                    } catch (e) {}
+                    if (attempts >= 25) clearInterval(switchTimer);
+                }, 160);
+            }
+
+            if (window.innerWidth < 1024) {
+                const mobBar = document.getElementById('mobileScadaReturnBar');
+                if (mobBar) { mobBar.classList.remove('hidden'); mobBar.classList.add('flex'); }
+            }
+            setTimeout(() => { isExplicitLeftBrowserAction = false; }, 350);
+            if (typeof showToast === 'function') showToast('⚡ เปิดผังวงจร SCADA แล้ว (คลิกสวิตช์เพื่อส่งรหัสเข้าฟอร์มได้เลย)');
+        };
+
+        const _origCloseLeftBrowser = window.closeLeftWebBrowser;
+        if (typeof _origCloseLeftBrowser === 'function') {
+            window.closeLeftWebBrowser = function(...args) {
+                const mobBar = document.getElementById('mobileScadaReturnBar');
+                if (mobBar) { mobBar.classList.add('hidden'); mobBar.classList.remove('flex'); }
+                return _origCloseLeftBrowser.apply(this, args);
+            };
+        }
+
+        // 4. ซิงค์ชื่อสวิตช์เข้า Autocomplete และแสดงกรอบแจ้งเตือน Interlock เรียลไทม์ในฟอร์มแท็บ 1
+        function syncScadaPinsIntoAutocomplete() {
+            if (typeof saveEquipmentHistory !== 'function') return;
+            const pins = getVisibleScadaPinsInMain();
+            if (pins.length === 0) return;
+            saveEquipmentHistory(pins.map(p => `${p.name}${p.scadaNode?.id ? ` (ID ${p.scadaNode.id})` : ''}`));
+        }
+
+        function checkAndRenderFormScadaWarnings() {
+            const container = document.getElementById('scadaFormLiveAlertBox');
+            if (!container) return;
+
+            const activeInputs = [
+                { role: 'อุปกรณ์เห็นฟอลต์', val: (document.getElementById('deviceInput')?.value || '').trim() },
+                { role: 'ปลดอุปกรณ์', val: (document.getElementById('disconnectDeviceInput')?.value || '').trim() },
+                { role: 'จ่ายไฟชนอุปกรณ์', val: (document.getElementById('powerUpToDeviceInput')?.value || '').trim() }
+            ].filter(x => x.val && x.val !== '-');
+
+            if (activeInputs.length === 0) {
+                container.classList.add('hidden');
+                container.innerHTML = '';
+                return;
+            }
+
+            const symMap = { CB: '■', RC: '■', VB: '▣', VS: '◆', VSC: '●', S: '_/  _', DF: '&', TAP: '•', GEN: 'Ⓖ', PIN: '⚡' };
+            const pins = getVisibleScadaPinsInMain();
+            const alertsHtml = [];
+            const matchedIds = new Set();
+
+            activeInputs.forEach(inp => {
+                const cleanQuery = inp.val.replace(/\(\s*ID\s*[^)]+\)/i, '').trim().toLowerCase();
+                if (!cleanQuery) return;
+                const matchedPin = pins.find(p => String(p.name || '').trim().toLowerCase() === cleanQuery);
+                if (!matchedPin || matchedIds.has(matchedPin.id + '_' + inp.role)) return;
+                matchedIds.add(matchedPin.id + '_' + inp.role);
+
+                const nd = matchedPin.scadaNode || {};
+                const sym = symMap[nd.t] || '⚡';
+                const stateText = nd.st === 'O' ? '⚪ ปกติปลด (N.O.)' : (nd.st === 'F' ? '🔴 ชำรุด/ห้ามสับ' : '🟢 ปกติสับ (NC)');
+                const warnLine = nd.lk ? `<div class="text-rose-700 font-extrabold mt-0.5">🚨 คำเตือน Interlock / หน้างาน: ${escHtmlMain(nd.lk)}</div>` : '';
+                const noteLine = matchedPin.note ? `<div class="text-slate-600 text-[10px]">📝 ${escHtmlMain(matchedPin.note)}</div>` : '';
+                const gpsUrl = `https://www.google.com/maps?q=${Number(matchedPin.lat).toFixed(6)},${Number(matchedPin.lon).toFixed(6)}`;
+
+                alertsHtml.push(`
+                    <div class="p-2.5 rounded-xl border ${nd.lk || nd.st === 'F' ? 'bg-rose-50 border-rose-300' : 'bg-teal-50/80 border-teal-200'} text-xs space-y-0.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-bold text-slate-800">${escHtmlMain(sym)} ${escHtmlMain(inp.role)}: <span class="text-teal-800">${escHtmlMain(matchedPin.name)}</span> ${nd.id ? `<span class="font-mono text-[11px] bg-slate-800 text-amber-300 px-1.5 py-0.5 rounded">ID ${escHtmlMain(nd.id)}</span>` : ''}</span>
+                            <button type="button" onclick="applyScadaSwitchGpsToTab1('${gpsUrl}')" class="shrink-0 bg-white hover:bg-slate-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg text-[10px] font-bold shadow-sm">📍 ใช้พิกัดจุดนี้</button>
+                        </div>
+                        <div class="text-[11px] font-semibold text-slate-600">สถานะในผัง: ${stateText} ${nd.fd ? `• วงจร ${escHtmlMain(nd.fd)}` : ''}</div>
+                        ${noteLine}${warnLine}
+                    </div>
+                `);
+            });
+
+            container.innerHTML = alertsHtml.join('');
+            container.classList.toggle('hidden', alertsHtml.length === 0);
+        }
+
+        function flashInputHighlight(el) {
+            if (!el) return;
+            el.classList.remove('scada-filled-flash');
+            void el.offsetWidth;
+            el.classList.add('scada-filled-flash');
+        }
+
+        window.applyScadaSwitchGpsToTab1 = function(gpsUrl) {
+            const gpsEl = document.getElementById('gpsInput');
+            if (!gpsEl || !gpsUrl) return;
+            gpsEl.value = gpsUrl;
+            gpsEl.dispatchEvent(new Event('input', { bubbles: true }));
+            flashInputHighlight(gpsEl);
+            if (typeof saveFaultDraft === 'function') saveFaultDraft();
+            if (typeof showToast === 'function') showToast('📍 ดึงพิกัดสวิตช์ลงช่อง GPS แล้ว');
+        };
+
+        // 5. ตัวรับรหัสสวิตช์และพิกัดเมื่อคลิกปุ่มส่งจากผัง SCADA (page2.html -> index.html)
+        function handleIncomingScadaFormFill(pkt) {
+            if (!pkt || pkt.type !== 'SCADA_FILL_FAULT_FORM' || isMainViewerOnly()) return;
+            if (pkt.ts && pkt.ts === lastHandledPacketTs) return;
+            if (pkt.ts) lastHandledPacketTs = pkt.ts;
+
+            if (typeof switchTab === 'function') switchTab('tab1');
+
+            const sysSel = document.getElementById('systemSelect');
+            if (sysSel && !sysSel.value) {
+                sysSel.value = '22kV';
+                if (typeof updateCircuitDropdown === 'function') updateCircuitDropdown();
+            }
+
+            const cirSel = document.getElementById('circuitSelect');
+            if (cirSel && !cirSel.value) {
+                const mFd = `${pkt.feeder || ''} ${pkt.code || ''}`.match(/(?:^|\b)(?:F|[A-Z]{3}0?)([1-9]|1[0-5])(?:\b|VS|VSC|S|VB|RC|CB|DF|-)/i);
+                if (mFd) {
+                    const cand = 'F' + parseInt(mFd[1], 10);
+                    if (cirSel.querySelector(`option[value="${cand}"]`)) cirSel.value = cand;
+                }
+            }
+
+            let targetInput = null, roleLabel = '';
+            if (pkt.fieldRole === 'device') {
+                targetInput = document.getElementById('deviceInput');
+                roleLabel = '📟 อุปกรณ์เห็นฟอลต์';
+            } else if (pkt.fieldRole === 'disconnect') {
+                targetInput = document.getElementById('disconnectDeviceInput');
+                roleLabel = '🔌 ปัจจุบันปลดอุปกรณ์';
+                const powerUpEl = document.getElementById('powerUpToDeviceInput');
+                if (powerUpEl) { powerUpEl.value = pkt.code || ''; flashInputHighlight(powerUpEl); }
+            } else if (pkt.fieldRole === 'powerup') {
+                targetInput = document.getElementById('powerUpToDeviceInput');
+                roleLabel = '⚡ จ่ายไฟมาชนอุปกรณ์';
+                const pTimeEl = document.getElementById('powerUpTimeInput');
+                if (pTimeEl && !pTimeEl.value.trim()) {
+                    const now = new Date();
+                    pTimeEl.value = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
+                    flashInputHighlight(pTimeEl);
+                }
+            }
+
+            if (targetInput && pkt.code) {
+                targetInput.value = pkt.code;
+                flashInputHighlight(targetInput);
+                if (typeof saveEquipmentHistory === 'function') saveEquipmentHistory([pkt.code]);
+            }
+
+            const gpsEl = document.getElementById('gpsInput');
+            if (gpsEl && pkt.gps && (pkt.fieldRole === 'device' || !gpsEl.value.trim())) {
+                gpsEl.value = pkt.gps;
+                gpsEl.dispatchEvent(new Event('input', { bubbles: true }));
+                flashInputHighlight(gpsEl);
+            }
+
+            checkAndRenderFormScadaWarnings();
+            if (typeof saveFaultDraft === 'function') saveFaultDraft();
+            const mobText = document.getElementById('mobileScadaReturnText');
+            if (mobText) mobText.textContent = `✅ ใส่ ${pkt.code} แล้ว`;
+            if (typeof showToast === 'function') showToast(`⚡ กรอก "${pkt.code}" ลงช่อง ${roleLabel} แล้ว!`);
+        }
+
+        window.addEventListener('message', e => { if (e.data?.type === 'SCADA_FILL_FAULT_FORM') handleIncomingScadaFormFill(e.data); });
+        try {
+            if ('BroadcastChannel' in window) {
+                const bc = new BroadcastChannel(SCADA_BRIDGE_CHANNEL);
+                bc.onmessage = e => { if (e.data?.type === 'SCADA_FILL_FAULT_FORM') handleIncomingScadaFormFill(e.data); };
+            }
+        } catch (e) {}
+
+        window.addEventListener('storage', e => {
+            if (e.key === 'elec_scada_form_bridge_pkt' && e.newValue) {
+                try { handleIncomingScadaFormFill(JSON.parse(e.newValue)); } catch (err) {}
+            } else if (e.key === 'elec_labeled_places_list') {
+                syncScadaPinsIntoAutocomplete();
+                checkAndRenderFormScadaWarnings();
+            }
+        });
+
+        // 6. นำเข้าตารางสวิตช์จาก AutoCAD / Excel เข้าสู่ผัง SCADA (รองรับครบทั้ง 9 สัญลักษณ์ของ page2.html v5.0)
+        window.openScadaCadImportModal = function() {
+            if (isMainViewerOnly()) return;
+            const grpBadge = document.getElementById('scadaCadImportGroupBadge');
+            if (grpBadge) grpBadge.textContent = getMyMainGroup();
+            document.getElementById('scadaCadImportModal')?.classList.remove('hidden');
+        };
+        window.closeScadaCadImportModal = () => document.getElementById('scadaCadImportModal')?.classList.add('hidden');
+
+        window.processScadaCadBatchImport = async function() {
+            if (isMainViewerOnly()) return;
+            const rawText = (document.getElementById('scadaCadRawTextInput')?.value || '').trim();
+            if (!rawText) {
+                if (typeof showToast === 'function') showToast('⚠️ กรุณาวางข้อมูลตารางสวิตช์ก่อนกดนำเข้า');
+                return;
+            }
+
+            rescueCloudPinsBeforePostIfEmpty();
+            const myGroup = getMyMainGroup();
+            const curUser = (localStorage.getItem('elec_app_current_user') || 'admin').trim();
+            const nowIso = new Date().toISOString();
+            const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+            const existingPins = JSON.parse(rawStorageGet.call(localStorage, 'elec_labeled_places_list') || '[]');
+            const delMap = JSON.parse(rawStorageGet.call(localStorage, 'elec_deleted_labeled_places_map') || '{}');
+            let addedCount = 0, updatedCount = 0;
+
+            lines.forEach((line, idx) => {
+                if (idx === 0 && /lat|lon|รหัส|name/i.test(line)) return;
+                const cols = line.includes('\t') ? line.split('\t').map(c => c.trim()) : line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+                if (cols.length < 3) return;
+
+                const codeName = cols[0];
+                let lat = parseFloat(cols[1]), lon = parseFloat(cols[2]);
+                if (!codeName || isNaN(lat) || isNaN(lon)) return;
+                if (lat > 90 && lon < 90) { const tmp = lat; lat = lon; lon = tmp; }
+
+                let eqType = (cols[3] || '').toUpperCase().trim();
+                if (eqType === 'CB') eqType = 'RC';
+                if (!['PIN', 'TAP', 'VS', 'VSC', 'S', 'DF', 'RC', 'VB', 'GEN'].includes(eqType)) {
+                    if (/(?:\bCB\b|\bRC\b)/i.test(codeName)) eqType = 'RC';
+                    else if (/(?:\bVB\b|\bYB\b)/i.test(codeName)) eqType = 'VB';
+                    else if (/(?:\bDF|\bFCO|&)/i.test(codeName)) eqType = 'DF';
+                    else if (/t-tap|จุดแทป/i.test(codeName)) eqType = 'TAP';
+                    else if (/VS/i.test(codeName)) eqType = 'VS';
+                    else if (/\bG\b|SPP|VSPP/i.test(codeName)) eqType = 'GEN';
+                    else if (/S-?\d+/i.test(codeName)) eqType = 'S';
+                    else eqType = 'VS';
+                }
+
+                const scadaId = (cols[4] || '').replace(/^ID\s*/i, '').trim();
+                let feeder = (cols[5] || '').toUpperCase().trim();
+                if (!feeder) {
+                    const mFd = codeName.match(/^([A-Z]{3}\s*0?\d{1,2})/i);
+                    if (mFd) feeder = mFd[1].replace(/\s+/g, '').toUpperCase();
+                }
+
+                let state = (cols[6] || 'C').toUpperCase().trim();
+                if (!['C', 'O', 'F'].includes(state)) state = /NO|OPEN|ปลด/i.test(state) ? 'O' : 'C';
+                const interlockWarn = (cols.slice(7).join(', ') || '').trim();
+
+                const existIdx = existingPins.findIndex(p =>
+                    (p?.ownerGroup || 'กฟส.บึง').trim() === myGroup &&
+                    String(p?.name || '').trim().toLowerCase() === codeName.toLowerCase()
+                );
+
+                const prevCol = existIdx !== -1 ? (existingPins[existIdx]?.scadaNode?.col || '#10b981') : '#10b981';
+                const scadaNode = {
+                    t: eqType, st: state, col: prevCol,
+                    ...(scadaId ? { id: scadaId } : {}),
+                    ...(feeder ? { fd: feeder } : {}),
+                    ...(interlockWarn ? { lk: interlockWarn } : {})
+                };
+                const pinColor = state === 'C' ? (existIdx !== -1 ? (existingPins[existIdx].pinColor || 'green') : 'green') : (state === 'O' ? 'yellow' : 'red');
+
+                if (existIdx !== -1) {
+                    delete delMap[existingPins[existIdx].id];
+                    existingPins[existIdx] = {
+                        ...existingPins[existIdx],
+                        name: codeName, lat, lon, pinColor,
+                        ...(eqType === 'TAP' ? { isTTap: true } : {}),
+                        note: interlockWarn || existingPins[existIdx].note || '',
+                        scadaNode, updatedBy: curUser, updatedAt: nowIso
+                    };
+                    updatedCount++;
+                } else {
+                    existingPins.unshift({
+                        id: 'eqp_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
+                        name: codeName, note: interlockWarn || '', lat, lon, pinColor,
+                        ...(eqType === 'TAP' ? { isTTap: true } : {}),
+                        scadaNode, ownerGroup: myGroup, ownerUser: curUser, updatedAt: nowIso
+                    });
+                    addedCount++;
+                }
+            });
+
+            if (addedCount === 0 && updatedCount === 0) {
+                if (typeof showToast === 'function') showToast('❌ ไม่พบข้อมูลพิกัดที่ถูกต้อง กรุณาตรวจสอบรูปแบบ รหัส, Lat, Lon');
+                return;
+            }
+
+            if (typeof window.__unlockCloudWrite === 'function') window.__unlockCloudWrite();
+            localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(delMap));
+            localStorage.setItem('elec_labeled_places_list', JSON.stringify(existingPins));
+
+            syncScadaPinsIntoAutocomplete();
+            checkAndRenderFormScadaWarnings();
+            window.closeScadaCadImportModal();
+            document.getElementById('scadaCadRawTextInput').value = '';
+
+            if (typeof syncJobsWithFieldPage === 'function') await syncJobsWithFieldPage();
+            if (typeof showToast === 'function') showToast(`✅ นำเข้าผัง SCADA สำเร็จ (เพิ่มใหม่ ${addedCount} จุด, อัปเดต ${updatedCount} จุด)`);
+        };
+
+        // 7. แทรกปุ่มเปิดผัง SCADA และปุ่มนำเข้า CAD บนหัวข้อแท็บ 1 (TR/TL)
+        function injectScadaButtonsIntoMainUI() {
+            const tab1Header = document.querySelector('#tab1 > div.flex.justify-between.items-center');
+            if (tab1Header && !document.getElementById('tab1ScadaActionBtns')) {
+                const btnWrap = document.createElement('div');
+                btnWrap.id = 'tab1ScadaActionBtns';
+                btnWrap.className = 'flex items-center gap-1.5 flex-wrap';
+                btnWrap.innerHTML = `
+                    <button type="button" onclick="openScadaDiagramWorkspace()" class="bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold shadow-sm transition flex items-center gap-1">
+                        ⚡ เปิดผัง SCADA
+                    </button>
+                    <button type="button" onclick="openScadaCadImportModal()" class="scada-main-edit-only bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1" title="นำเข้าตารางสวิตช์จาก AutoCAD / Excel">
+                        📐 นำเข้า CAD
+                    </button>
+                `;
+                tab1Header.appendChild(btnWrap);
+            }
+
+            const deviceFieldEl = document.getElementById('deviceField');
+            if (deviceFieldEl && !document.getElementById('scadaFormLiveAlertBox')) {
+                const alertBox = document.createElement('div');
+                alertBox.id = 'scadaFormLiveAlertBox';
+                alertBox.className = 'hidden space-y-1.5 mt-2';
+                deviceFieldEl.insertAdjacentElement('beforebegin', alertBox);
+            }
+
+            ['deviceInput', 'disconnectDeviceInput', 'powerUpToDeviceInput'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el.dataset.scadaWarnBound) {
+                    el.dataset.scadaWarnBound = 'true';
+                    el.addEventListener('input', checkAndRenderFormScadaWarnings);
+                    el.addEventListener('change', checkAndRenderFormScadaWarnings);
+                }
+            });
+
+            const bmBar = document.getElementById('leftBrowserBookmarksBar');
+            if (bmBar && !document.getElementById('leftBmScadaQuickBtn')) {
+                const scadaBmBtn = document.createElement('button');
+                scadaBmBtn.type = 'button';
+                scadaBmBtn.id = 'leftBmScadaQuickBtn';
+                scadaBmBtn.onclick = window.openScadaDiagramWorkspace;
+                scadaBmBtn.className = 'px-2.5 py-0.5 bg-teal-600 hover:bg-teal-500 text-white rounded-md font-bold shrink-0 border border-teal-400 shadow-sm transition';
+                scadaBmBtn.innerHTML = '⚡ ผังวงจร SCADA';
+                bmBar.insertBefore(scadaBmBtn, bmBar.children[1] || null);
+            }
+        }
+
+        const _origRenderLeftBookmarks = window.renderLeftBrowserBookmarks;
+        if (typeof _origRenderLeftBookmarks === 'function') {
+            window.renderLeftBrowserBookmarks = function(...args) {
+                const res = _origRenderLeftBookmarks.apply(this, args);
+                injectScadaButtonsIntoMainUI();
+                return res;
+            };
+        }
+
+        const _origResetFault = window.resetFaultForm;
+        if (typeof _origResetFault === 'function') {
+            window.resetFaultForm = function(...args) {
+                const res = _origResetFault.apply(this, args);
+                setTimeout(checkAndRenderFormScadaWarnings, 30);
+                return res;
+            };
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                rescueCloudPinsBeforePostIfEmpty();
+                injectScadaButtonsIntoMainUI();
+                syncScadaPinsIntoAutocomplete();
+                checkAndRenderFormScadaWarnings();
+            }, 300);
+        });
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            rescueCloudPinsBeforePostIfEmpty();
+            injectScadaButtonsIntoMainUI();
+            syncScadaPinsIntoAutocomplete();
+            checkAndRenderFormScadaWarnings();
+        }
+    })();
+    </script>
+    <!-- ==================== จบระบบเชื่อมผังวงจร SCADA สำหรับ index.html ==================== -->
+    <!-- 🛡️ แพตช์ประสานลำดับสคริปต์ขั้นสุดท้าย (ปลดล็อกแคชดึงสด + สลับท่อ MQTT ตามสิทธิ์ + ล็อกสิทธิ์ Viewer) -->
+    <script>
+    (function() {
+        const rawGet = typeof _origLocalStorageGetItem === 'function' ? _origLocalStorageGetItem : Storage.prototype.getItem;
+        const rawSet = typeof _origStorageSetItem === 'function' ? _origStorageSetItem : Storage.prototype.setItem;
+
+        // 1. กู้คืนกลไกปลดล็อก forceManualGet ให้ดึงข้อมูลสดจาก Google Sheets ได้จริงทุก 15 วินาทีและตอนกดรีเฟรชมือ
+        window.__forceCloudRead = function() {
+            try {
+                localStorage.removeItem('elec_sheet_cache_2k');
+                if (typeof window.refreshCloudDataInManager === 'function') {
+                    const prevRole = rawGet.call(localStorage, 'elec_app_current_role');
+                    rawSet.call(localStorage, 'elec_app_current_role', 'tech');
+                    try { window.refreshCloudDataInManager(false); } catch (e) {}
+                    if (prevRole !== null) rawSet.call(localStorage, 'elec_app_current_role', prevRole);
+                    else localStorage.removeItem('elec_app_current_role');
+                }
+            } catch (e) {}
+        };
+
+        const _prevFetchUsersCloud = window.fetchUserAccountsFromCloud;
+        if (typeof _prevFetchUsersCloud === 'function') {
+            window.fetchUserAccountsFromCloud = async function(silent = true, forceFetch = false) {
+                if (!silent || forceFetch) window.__forceCloudRead();
+                return await _prevFetchUsersCloud.apply(this, arguments);
+            };
+        }
+
+        // 2. สลับท่อรับข้อมูล MQTT ทันทีเมื่อล็อกอินเปลี่ยนสิทธิ์ (เช่น Admin เข้าดูทุกสาขาโดยไม่ต้องกด F5)
+        let activeMqttRef = null;
+        let lastMqttAuthSig = '';
+
+        function hashTopicStr(str) {
+            let h = 0;
+            const s = String(str || 'default');
+            for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
+            return Math.abs(h);
+        }
+
+        function refreshMqttTopicsByRole() {
+            if (!activeMqttRef || !activeMqttRef.connected) return;
+            const isLogged = rawGet.call(localStorage, 'elec_app_logged_in') === 'true';
+            const role = isLogged ? (rawGet.call(localStorage, 'elec_app_current_role') || 'user') : 'guest';
+            const grp = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
+                        rawGet.call(localStorage, 'elec_app_current_group') || 'กฟส.บึง';
+            const sig = `${role}::${grp}`;
+            if (sig === lastMqttAuthSig) return;
+            lastMqttAuthSig = sig;
+
+            const rawUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '') || 'pea_grid';
+            const base = 'pea_hyper_v4_' + hashTopicStr(rawUrl);
+            const shard = encodeURIComponent(String(grp).trim() || 'DEFAULT');
+
+            try {
+                if (role === 'admin') {
+                    activeMqttRef.subscribe([`${base}/grp/+/+`, `${base}/global/+`], { qos: 0 });
+                } else {
+                    activeMqttRef.unsubscribe(`${base}/grp/+/+`, () => {
+                        if (isLogged) activeMqttRef.subscribe([`${base}/grp/${shard}/+`, `${base}/global/+`], { qos: 0 });
+                    });
+                }
+            } catch (e) {}
+        }
+
+        if (typeof mqtt !== 'undefined' && typeof mqtt.connect === 'function') {
+            const _prevMqttConnect = mqtt.connect;
+            mqtt.connect = function(...args) {
+                const client = _prevMqttConnect.apply(this, args);
+                activeMqttRef = client;
+                client.on('connect', () => { lastMqttAuthSig = ''; refreshMqttTopicsByRole(); });
+                return client;
+            };
+        }
+
+        const _prevCheckLoginFinal = window.checkLoginStatus;
+        if (typeof _prevCheckLoginFinal === 'function') {
+            window.checkLoginStatus = function(...args) {
+                const res = _prevCheckLoginFinal.apply(this, args);
+                refreshMqttTopicsByRole();
+                return res;
+            };
+        }
+
+        // 3. แก้ตัวเลือกสิทธิ์ "ผู้สำรวจ (viewer)" ตอนกดแก้ไขครั้งแรก และแสดงป้ายสิทธิ์ในหน้าออนไลน์ของ Admin
+        const _prevEditAccFinal = window.editUserAccount;
+        if (typeof _prevEditAccFinal === 'function') {
+            window.editUserAccount = function(index) {
+                const res = _prevEditAccFinal.apply(this, arguments);
+                const roleSel = document.getElementById('editAccRoleSelect');
+                if (roleSel) {
+                    if (!roleSel.querySelector('option[value="viewer"]')) {
+                        const opt = document.createElement('option');
+                        opt.value = 'viewer';
+                        opt.textContent = '👁️ ผู้สำรวจ (ดูอย่างเดียว ห้ามแก้ไข)';
+                        roleSel.appendChild(opt);
+                    }
+                    if (typeof userAccountsList !== 'undefined' && userAccountsList[index]) {
+                        roleSel.value = userAccountsList[index].role || 'user';
+                    }
+                }
+                return res;
+            };
+        }
+
+        function patchViewerBadgeInOnlineModal() {
+            const listEl = document.getElementById('onlineUsersListContainer');
+            if (!listEl || typeof userAccountsList === 'undefined') return;
+            const viewerNames = userAccountsList
+                .filter(a => a && a.role === 'viewer')
+                .map(a => typeof formatTechDisplayName === 'function' ? formatTechDisplayName(a.username) : a.username);
+            if (viewerNames.length === 0) return;
+
+            listEl.querySelectorAll(':scope > div').forEach(card => {
+                const titleEl = card.querySelector('.font-bold.text-slate-800');
+                if (!titleEl) return;
+                if (viewerNames.some(n => n && titleEl.textContent.includes(n))) {
+                    titleEl.textContent = titleEl.textContent.replace('👷', '👁️');
+                    card.querySelectorAll('span').forEach(sp => {
+                        if (sp.textContent.trim() === 'สิทธิ์: ผู้ใช้ทั่วไป') sp.textContent = 'สิทธิ์: ผู้สำรวจ (ดูอย่างเดียว)';
+                    });
+                }
+            });
+        }
+
+        ['openOnlineUsersModal', 'triggerManualPresenceSync'].forEach(fn => {
+            const orig = window[fn];
+            if (typeof orig === 'function') {
+                window[fn] = async function(...args) {
+                    const r = await orig.apply(this, args);
+                    patchViewerBadgeInOnlineModal();
+                    return r;
+                };
+            }
+        });
+
+        // 4. ป้องกันข้อมูลสายไฟ scadaLines ในเครื่องถูกคลาวด์เขียนทับเมื่อ updatedAt เท่ากัน + จัดหัวข้อแท็บ 1 บนจอมือถือ
+        const _prevPullFinal = window.pullFieldReportsFromCloud;
+        if (typeof _prevPullFinal === 'function') {
+            window.pullFieldReportsFromCloud = async function(...args) {
+                const prePins = new Map(
+                    JSON.parse(rawGet.call(localStorage, 'elec_labeled_places_list') || '[]')
+                        .filter(p => p && p.id)
+                        .map(p => [p.id, p])
+                );
+                const res = await _prevPullFinal.apply(this, args);
+                try {
+                    const postPins = JSON.parse(rawGet.call(localStorage, 'elec_labeled_places_list') || '[]');
+                    let restored = false;
+                    const merged = postPins.map(p => {
+                        const prev = p && prePins.get(p.id);
+                        if (prev && (prev.updatedAt || '') >= (p.updatedAt || '') &&
+                            JSON.stringify(prev.scadaLines || []) !== JSON.stringify(p.scadaLines || [])) {
+                            restored = true;
+                            return prev;
+                        }
+                        return p;
+                    });
+                    if (restored) localStorage.setItem('elec_labeled_places_list', JSON.stringify(merged));
+                } catch (e) {}
+                patchViewerBadgeInOnlineModal();
+                return res;
+            };
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const tab1Header = document.querySelector('#tab1 > div.flex.justify-between.items-center');
+            if (tab1Header) tab1Header.classList.add('flex-wrap', 'gap-1.5');
+            setTimeout(refreshMqttTopicsByRole, 600);
+        });
+    })();
+    </script>
+    <!-- 🛡️ แพตช์ปิดบั๊กกรณีพิเศษ (กันค้างโหมดแก้ไขข้ามกะ + ซิงค์แก้ไขเนื้อหาใบงาน + จัดแถบมือถือ + กั้นหมุดข้ามสาขา) -->
+    <style id="peaEdgeCaseFixStyles">
+        @media (max-width: 1023px) {
+            #leftBrowserDock > div:first-child {
+                flex-wrap: wrap !important;
+                row-gap: 0.35rem !important;
+            }
+            #leftBrowserDock #leftBrowserUrlInput {
+                min-width: 140px !important;
+            }
+        }
+    </style>
+    <script>
+    (function() {
+        const rawGet = typeof _origLocalStorageGetItem === 'function' ? _origLocalStorageGetItem : Storage.prototype.getItem;
+        const LAST_GROUP_SESSION_KEY = 'elec_last_logged_group_name';
+        let isPullingCloudNow = false;
+
+        // 1. ล้างโหมดแก้ไขที่ค้างข้ามเซสชันทันทีเมื่อเปิดหน้าใหม่ และแสดงแถบแจ้งเตือนชัดเจนขณะอยู่ในโหมดแก้ไข
+        function clearStuckEditModes() {
+            if (typeof setEditingFaultId === 'function') setEditingFaultId(null);
+            if (typeof setEditingOutageId === 'function') setEditingOutageId(null);
+            document.getElementById('activeEditBannerTab1')?.remove();
+            document.getElementById('activeEditBannerTab2')?.remove();
+        }
+
+        function showActiveEditBanner(tabNum, labelText) {
+            const bannerId = 'activeEditBannerTab' + tabNum;
+            document.getElementById(bannerId)?.remove();
+            const targetForm = document.getElementById('sortable-tab' + tabNum);
+            if (!targetForm) return;
+
+            const bar = document.createElement('div');
+            bar.id = bannerId;
+            bar.className = 'p-2.5 mb-3 bg-amber-50 border-2 border-amber-400 rounded-xl flex items-center justify-between gap-2 text-xs font-bold text-amber-900 shadow-sm';
+            bar.innerHTML = `
+                <span class="truncate">📝 กำลังแก้ไขรายการเดิม (${labelText})</span>
+                <button type="button" onclick="${tabNum === 1 ? 'resetFaultForm()' : 'resetOutageForm()'}" class="shrink-0 bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-extrabold transition">
+                    ❌ ยกเลิกแก้ไข
+                </button>
+            `;
+            targetForm.insertAdjacentElement('beforebegin', bar);
+        }
+
+        clearStuckEditModes();
+
+        const _prevEditFault = window.editFaultItem;
+        if (typeof _prevEditFault === 'function') {
+            window.editFaultItem = function(ts) {
+                const r = _prevEditFault.apply(this, arguments);
+                if (typeof editingFaultId !== 'undefined' && editingFaultId) {
+                    showActiveEditBanner(1, document.getElementById('circuitSelect')?.value || 'TR/TL');
+                }
+                return r;
+            };
+        }
+
+        const _prevEditOutage = window.editOutageItem;
+        if (typeof _prevEditOutage === 'function') {
+            window.editOutageItem = function(dt) {
+                const r = _prevEditOutage.apply(this, arguments);
+                if (typeof editingOutageId !== 'undefined' && editingOutageId) {
+                    showActiveEditBanner(2, 'งานที่ ' + (document.getElementById('jobNo')?.value || '-'));
+                }
+                return r;
+            };
+        }
+
+        ['resetFaultForm', 'saveAndCopyFault'].forEach(fn => {
+            const orig = window[fn];
+            if (typeof orig === 'function') {
+                window[fn] = function(...args) {
+                    const r = orig.apply(this, args);
+                    document.getElementById('activeEditBannerTab1')?.remove();
+                    return r;
+                };
+            }
+        });
+
+        ['resetOutageForm', 'generateOutageMessage'].forEach(fn => {
+            const orig = window[fn];
+            if (typeof orig === 'function') {
+                window[fn] = function(...args) {
+                    const r = orig.apply(this, args);
+                    document.getElementById('activeEditBannerTab2')?.remove();
+                    return r;
+                };
+            }
+        });
+
+        // 2. ประทับเวลา editedAt อัตโนมัติเมื่อแก้ไขเนื้อหาใบงาน และซิงค์ฟิลด์ที่ถูกแก้ไขจากเครื่องอื่นลงเครื่องทันที
+        function getCoreJobSignature(item, isFault) {
+            if (!item) return '';
+            return isFault
+                ? `${item.time}|${item.system}|${item.circuit}|${item.station}|${item.cause}|${item.count}|${item.tlStatus}|${item.phase}|${item.currA}|${item.currB}|${item.currC}|${item.currG}|${item.distance}|${item.zone}|${item.weather}|${item.presentCurr}|${item.device}|${item.disconnectDevice}|${item.powerUpToDevice}|${item.reporter}|${item.gps}`
+                : `${item.reportDate}|${item.jobNo}|${item.shift}|${item.issueType}|${item.workerName}|${item.area}|${item.address}|${item.phone}|${item.gps}`;
+        }
+
+        const _prevSetItemEdge = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+            if (!isPullingCloudNow && typeof value === 'string' && (key === 'elecReportsComplete_all' || key === 'fault_reports_all')) {
+                try {
+                    const isFault = (key === 'fault_reports_all');
+                    const kField = isFault ? 'timestamp' : 'dateTimeSaved';
+                    const oldArr = JSON.parse(rawGet.call(localStorage, key) || '[]');
+                    const oldMap = new Map(oldArr.filter(x => x && x[kField]).map(x => [x[kField], x]));
+                    const newArr = JSON.parse(value);
+                    let stamped = false;
+
+                    newArr.forEach(item => {
+                        if (!item || !item[kField]) return;
+                        const prev = oldMap.get(item[kField]);
+                        if (prev && getCoreJobSignature(prev, isFault) !== getCoreJobSignature(item, isFault) && item.editedAt === prev.editedAt) {
+                            item.editedAt = new Date().toISOString();
+                            stamped = true;
+                        }
+                    });
+                    if (stamped) value = JSON.stringify(newArr);
+                } catch (e) {}
+            }
+            return _prevSetItemEdge.call(this, key, value);
+        };
+
+        const _prevPullEdge = window.pullFieldReportsFromCloud;
+        if (typeof _prevPullEdge === 'function') {
+            window.pullFieldReportsFromCloud = async function(...args) {
+                isPullingCloudNow = true;
+                try {
+                    const res = await _prevPullEdge.apply(this, args);
+                    if (Array.isArray(cachedCloudJobs) && cachedCloudJobs.length > 0) {
+                        ['elecReportsComplete_all', 'fault_reports_all'].forEach(storageKey => {
+                            const isFault = (storageKey === 'fault_reports_all');
+                            const kField = isFault ? 'timestamp' : 'dateTimeSaved';
+                            const list = JSON.parse(rawGet.call(localStorage, storageKey) || '[]');
+                            const cMap = new Map(
+                                cachedCloudJobs
+                                    .filter(j => j && j.jobType === (isFault ? 'fault' : 'outage') && j[kField])
+                                    .map(j => [j[kField], j])
+                            );
+                            let updated = false;
+                            list.forEach((locItem, idx) => {
+                                const cJob = locItem && cMap.get(locItem[kField]);
+                                if (!cJob) return;
+                                if ((cJob.editedAt || '') > (locItem.editedAt || '')) {
+                                    list[idx] = {
+                                        ...locItem,
+                                        ...cJob,
+                                        techReport: locItem.techReport || cJob.techReport,
+                                        techNav: locItem.techNav || cJob.techNav
+                                    };
+                                    if (!list[idx].techReport) delete list[idx].techReport;
+                                    if (!list[idx].techNav) delete list[idx].techNav;
+                                    updated = true;
+                                }
+                            });
+                            if (updated) {
+                                _prevSetItemEdge.call(localStorage, storageKey, JSON.stringify(list));
+                                if (isFault && typeof loadFaultHistory === 'function') loadFaultHistory();
+                                if (!isFault && typeof loadOutageHistory === 'function') loadOutageHistory();
+                            }
+                        });
+                    }
+                    return res;
+                } finally {
+                    isPullingCloudNow = false;
+                }
+            };
+        }
+
+        // 3. กั้นหมุดอุปกรณ์และประวัติการลบไม่ให้ปนข้ามสาขาเมื่อสลับล็อกอินหลายบัญชีในคอมเครื่องเดียว
+        const _prevCheckLoginEdge = window.checkLoginStatus;
+        if (typeof _prevCheckLoginEdge === 'function') {
+            window.checkLoginStatus = function(...args) {
+                const isLogged = rawGet.call(localStorage, 'elec_app_logged_in') === 'true';
+                if (isLogged) {
+                    const role = rawGet.call(localStorage, 'elec_app_current_role') || 'user';
+                    const curGrp = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
+                                   rawGet.call(localStorage, 'elec_app_current_group') || '';
+                    const lastGrp = rawGet.call(localStorage, LAST_GROUP_SESSION_KEY) || '';
+                    if (curGrp && lastGrp && curGrp !== lastGrp && role !== 'admin') {
+                        clearStuckEditModes();
+                        try {
+                            const pins = JSON.parse(rawGet.call(localStorage, 'elec_labeled_places_list') || '[]');
+                            const onlyMyGroupPins = pins.filter(p => p && (p.ownerGroup || 'กฟส.บึง').trim() === curGrp);
+                            _prevSetItemEdge.call(localStorage, 'elec_labeled_places_list', JSON.stringify(onlyMyGroupPins));
+                        } catch (e) {}
+                    }
+                    if (curGrp) _prevSetItemEdge.call(localStorage, LAST_GROUP_SESSION_KEY, curGrp);
+                } else {
+                    clearStuckEditModes();
+                }
+                return _prevCheckLoginEdge.apply(this, arguments);
+            };
+        }
+
+        const _prevFetchEdge = window.fetch;
+        window.fetch = async function(input, init) {
+            if (init && init.method === 'POST' && typeof init.body === 'string' &&
+                (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
+                const role = rawGet.call(localStorage, 'elec_app_current_role') || 'user';
+                const curGrp = ((typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
+                               rawGet.call(localStorage, 'elec_app_current_group') || '').trim();
+                if (role !== 'admin' && curGrp) {
+                    try {
+                        const b = JSON.parse(init.body);
+                        const filterPins = arr => Array.isArray(arr) ? arr.filter(p => p && (p.ownerGroup || 'กฟส.บึง').trim() === curGrp) : arr;
+                        const filterLogs = arr => Array.isArray(arr) ? arr.filter(l => l && (l.ownerGroup || 'กฟส.บึง').trim() === curGrp) : arr;
+                        if (b.action === 'saveJobs' && Array.isArray(b.jobs)) {
+                            const reg = b.jobs.find(j => j && j.jobType === 'tech_loc');
+                            if (reg) {
+                                if (Array.isArray(reg.electricEquipmentPins)) reg.electricEquipmentPins = filterPins(reg.electricEquipmentPins);
+                                if (Array.isArray(reg.deletedEquipAuditLogs)) reg.deletedEquipAuditLogs = filterLogs(reg.deletedEquipAuditLogs);
+                                init.body = JSON.stringify(b);
+                            }
+                        } else if (b.action === 'patchDelta' && b.techLocDelta) {
+                            if (Array.isArray(b.techLocDelta.electricEquipmentPins)) b.techLocDelta.electricEquipmentPins = filterPins(b.techLocDelta.electricEquipmentPins);
+                            if (Array.isArray(b.techLocDelta.deletedEquipAuditLogs)) b.techLocDelta.deletedEquipAuditLogs = filterLogs(b.techLocDelta.deletedEquipAuditLogs);
+                            init.body = JSON.stringify(b);
+                        }
+                    } catch (e) {}
+                }
+            }
+            return _prevFetchEdge.apply(this, arguments);
+        };
+
+        // 4. รับรหัสสวิตช์อัตโนมัติบนมือถือแม้กดสลับไปหน้า page2.html แบบเต็มจอแล้วย้อนกลับมาหน้าหลัก
+        function consumePendingMobileScadaPacket() {
+            try {
+                const rawPkt = rawGet.call(localStorage, 'elec_scada_form_bridge_pkt');
+                if (!rawPkt) return;
+                localStorage.removeItem('elec_scada_form_bridge_pkt');
+                const pkt = JSON.parse(rawPkt);
+                if (pkt && pkt.type === 'SCADA_FILL_FAULT_FORM' && pkt.ts && (Date.now() - Number(pkt.ts) < 120000)) {
+                    setTimeout(() => window.postMessage(pkt, '*'), 150);
+                }
+            } catch (e) {}
+        }
+
+        window.addEventListener('DOMContentLoaded', consumePendingMobileScadaPacket);
+        window.addEventListener('pageshow', consumePendingMobileScadaPacket);
+    })();
+    </script>
+
 </body>
 </html>
