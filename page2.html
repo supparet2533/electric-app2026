@@ -16201,6 +16201,198 @@
     };
 })();
 </script>
+<!-- 🔒 จำกัดสิทธิ์แก้ไขผังวงจร SCADA เฉพาะ "ผู้ใช้งานทั่วไป (user)" และ "แอดมิน (admin)" เท่านั้น -->
+<style id="peaScadaRoleLockStyles">
+    body.role-scada-readonly .scada-edit-only,
+    body.role-scada-readonly #btnTogglePinMoveMode,
+    body.role-scada-readonly #btnToggleWireMoveMode,
+    body.role-scada-readonly #btnToggleScadaDrawMode,
+    body.role-scada-readonly #scadaDrawActivePanel,
+    body.role-scada-readonly #scadaMoveWirePanel,
+    body.role-scada-readonly #scadaMovePinPanel,
+    body.role-scada-readonly #scadaFloatingDrawUndoBar,
+    body.role-scada-readonly #mapLongPressHintBadge,
+    body.role-scada-readonly #adminBulkPinColorBar,
+    body.role-scada-readonly button[onclick="openEquipPinModal(null)"],
+    body.role-scada-readonly button[onclick*="importLabelsFileInput"],
+    body.role-scada-readonly button[onclick="openClearEquipModal()"],
+    body.role-scada-readonly button[onclick^="openEquipPinModal("],
+    body.role-scada-readonly button[onclick^="deleteSingleLabeledPin"],
+    body.role-scada-readonly button[onclick^="quickChangeSinglePinColor"],
+    body.role-scada-readonly button[onclick^="sendEquipToMainFaultForm"],
+    body.role-scada-readonly div:has(> button[onclick^="quickChangeSinglePinColor"]),
+    body.role-scada-readonly div:has(> div > button[onclick^="quickChangeSinglePinColor"]),
+    body.role-scada-readonly div:has(> button[onclick^="sendEquipToMainFaultForm"]) {
+        display: none !important;
+    }
+</style>
 
-    </body>
-    </html>
+<script>
+    (function() {
+        const SCADA_LOCK_MSG = '🔒 เฉพาะ "ผู้ใช้งานทั่วไป" และ "แอดมิน" เท่านั้นที่แก้ไขผัง SCADA ได้';
+        let scadaLockMapRef = null;
+        
+        if (typeof L !== 'undefined' && L.Map) {
+            L.Map.addInitHook(function() {
+                if (this.getContainer?.()?.id === 'labeledInteractiveMap') {
+                    scadaLockMapRef = this;
+                    this.on('popupopen', () => setTimeout(hideLegacyColorRowsInDom, 30));
+                }
+            });
+        }
+        
+        function canCurrentUserEditScada() {
+            if (localStorage.getItem('elec_app_logged_in') !== 'true') return false;
+            const role = (localStorage.getItem('elec_app_current_role') || '').trim();
+            return role === 'admin' || role === 'user';
+        }
+        
+        function clearTempLongPressPinIfLocked() {
+            if (scadaLockMapRef) {
+                const toRemove = [];
+                scadaLockMapRef.eachLayer(layer => {
+                    if (layer?.options?.zIndexOffset === 1000 && typeof layer.getPopup === 'function' && !layer.getPopup()) {
+                        toRemove.push(layer);
+                    }
+                });
+                toRemove.forEach(l => { try { scadaLockMapRef.removeLayer(l); } catch (e) {} });
+            }
+            document.querySelectorAll('#labeledInteractiveMap .leaflet-marker-icon').forEach(el => {
+                if (el.textContent && el.textContent.includes('📍')) el.remove();
+            });
+        }
+        
+        function hideLegacyColorRowsInDom() {
+            if (canCurrentUserEditScada()) return;
+            document.querySelectorAll('button[onclick^="quickChangeSinglePinColor"]').forEach(btn => {
+                const row = btn.closest('.bg-slate-100, .bg-slate-50');
+                if (row) row.style.display = 'none';
+            });
+            document.querySelectorAll('button[onclick^="sendEquipToMainFaultForm"]').forEach(btn => {
+                const row = btn.parentElement;
+                if (row) row.style.display = 'none';
+            });
+        }
+        
+        function syncScadaReadOnlyBadge() {
+            const toolbar = document.getElementById('scadaControlToolbar');
+            if (!toolbar) return;
+            const headerRight = toolbar.querySelector(':scope > div:first-child > div:last-child');
+            if (!headerRight) return;
+            
+            let badge = document.getElementById('scadaRoleReadOnlyBadge');
+            if (!canCurrentUserEditScada()) {
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.id = 'scadaRoleReadOnlyBadge';
+                    badge.className = 'bg-slate-800 text-amber-300 border border-amber-400/40 px-2.5 py-1 rounded-xl text-[10px] font-bold';
+                    badge.textContent = '🔒 ดูผังอย่างเดียว (แก้ไขได้เฉพาะผู้ใช้ทั่วไป/แอดมิน)';
+                    headerRight.appendChild(badge);
+                }
+            } else if (badge) {
+                badge.remove();
+            }
+        }
+        
+        function applyScadaRolePermissionUI() {
+            const editable = canCurrentUserEditScada();
+            document.body.classList.toggle('role-scada-readonly', !editable);
+            
+            // หากสลับบัญชีมาเป็นช่างหรือผู้สำรวจ ให้ปิดโหมดวาด/ขยับสาย/ขยับหมุดที่อาจเปิดค้างไว้ทันที
+            if (!editable) {
+                const mapEl = document.getElementById('labeledInteractiveMap');
+                if (mapEl) {
+                    if (mapEl.classList.contains('scada-draw-cursor') && typeof origModeFns.toggleScadaDrawMode === 'function') {
+                        origModeFns.toggleScadaDrawMode(false);
+                    }
+                    if (mapEl.classList.contains('scada-move-wire-active') && typeof origModeFns.toggleScadaWireMoveMode === 'function') {
+                        origModeFns.toggleScadaWireMoveMode(false);
+                    }
+                    if (mapEl.classList.contains('scada-move-pin-active') && typeof origModeFns.toggleScadaPinMoveMode === 'function') {
+                        origModeFns.toggleScadaPinMoveMode(false);
+                    }
+                }
+                hideLegacyColorRowsInDom();
+            }
+            syncScadaReadOnlyBadge();
+        }
+        
+        const origModeFns = {
+            toggleScadaDrawMode: window.toggleScadaDrawMode,
+            toggleScadaWireMoveMode: window.toggleScadaWireMoveMode,
+            toggleScadaPinMoveMode: window.toggleScadaPinMoveMode
+        };
+        
+        const scadaProtectedFunctions = [
+            'toggleScadaDrawMode', 'startDrawFromPopupPin', 'undoScadaDrawOnePoint', 'redoScadaDrawOnePoint', 'resetScadaDrawSource',
+            'toggleScadaWireMoveMode', 'startInteractiveWireMove', 'undoScadaWireMove', 'straightenSelectedWire',
+            'toggleScadaPinMoveMode', 'startSinglePinMoveFromPopup', 'undoScadaPinMove',
+            'quickSwitchScadaState', 'openScadaNodeModal', 'saveScadaNodeModal', 'resetScadaNodeToDefaultPin',
+            'openScadaColorPaletteModal', 'confirmScadaPaletteSelection',
+            'createTTapOnScadaEdge', 'quickDeleteTTapFromPopup',
+            'toggleScadaEdgePower', 'toggleScadaEdgeUgStyle', 'cycleScadaEdgeSide', 'straightenScadaEdge',
+            'cycleScadaEdgeJumpLayer', 'flipScadaEdgeJumpDir', 'deleteScadaEdge',
+            'openEquipPinModal', 'saveEquipPinModal', 'deleteEquipPinFromModal', 'deleteSingleLabeledPin',
+            'openClearEquipModal', 'confirmClearAllEquipPins', 'quickChangeSinglePinColor',
+            'bulkChangeAllPinsColor', 'handleImportLabeledFile', 'sendEquipToMainFaultForm'
+        ];
+        
+        function bindScadaFunctionLocks() {
+            scadaProtectedFunctions.forEach(fnName => {
+                const origFn = window[fnName];
+                if (typeof origFn !== 'function' || origFn.__scadaRoleLocked) return;
+                
+                const wrapped = function(...args) {
+                    // อนุญาตเฉพาะสัญญาณปลดล็อกโควตาการส่งใบงานซ่อมของช่างในระบบเบื้องหลัง
+                    if (fnName === 'deleteSingleLabeledPin' && args[0] === '__unlock_write_quota__') {
+                        return origFn.apply(this, args);
+                    }
+                    if (!canCurrentUserEditScada()) {
+                        clearTempLongPressPinIfLocked();
+                        setTimeout(() => {
+                            clearTempLongPressPinIfLocked();
+                            if (typeof showToast === 'function') showToast(SCADA_LOCK_MSG);
+                        }, 25);
+                        return false;
+                    }
+                    return origFn.apply(this, args);
+                };
+                wrapped.__scadaRoleLocked = true;
+                window[fnName] = wrapped;
+            });
+        }
+        
+        ['checkTechAuth', 'updateRoleNavigationUI', 'renderLabeledPlacesList', 'switchTechMainTab'].forEach(fnName => {
+            const orig = window[fnName];
+            if (typeof orig === 'function') {
+                window[fnName] = function(...args) {
+                    const res = orig.apply(this, args);
+                    bindScadaFunctionLocks();
+                    applyScadaRolePermissionUI();
+                    return res;
+                };
+            }
+        });
+        
+        window.addEventListener('storage', (e) => {
+            if (!e.key || e.key === 'elec_app_current_role' || e.key === 'elec_app_logged_in') {
+                applyScadaRolePermissionUI();
+            }
+        });
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                bindScadaFunctionLocks();
+                applyScadaRolePermissionUI();
+            }, 320);
+        });
+        if (document.readyState === 'interactive' || document.readyState === 'complete') {
+            setTimeout(() => {
+                bindScadaFunctionLocks();
+                applyScadaRolePermissionUI();
+            }, 200);
+        }
+    })();
+</script> 
+</body>
+</html>
