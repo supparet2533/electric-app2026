@@ -16394,5 +16394,584 @@
         }
     })();
 </script> 
+<!-- ==================== 🚀 ระบบเพิ่มความลื่นไหลผังวงจรขนาดใหญ่ (Canvas + Smart LOD + Viewport Culling + Lazy List) ==================== -->
+<style id="peaScadaTurboPerformanceStyles">
+    /* พักการวาดป้ายชื่อชั่วคราวขณะกำลังถ่างนิ้วซูมแผนที่ เพื่อให้แอนิเมชันซูมลื่น 60 FPS */
+    #labeledInteractiveMap.scada-zoom-animating .labeled-pin-tooltip {
+        opacity: 0 !important;
+        transition: none !important;
+    }
+    /* ซ่อนแถบเปลี่ยนสีในการ์ดที่โหลดเพิ่มอัตโนมัติเมื่ออยู่ในโหมดดูอย่างเดียว */
+    body.role-viewer-readonly div:has(> button[onclick^="quickChangeSinglePinColor"]),
+    body.role-viewer-readonly div:has(> div > button[onclick^="quickChangeSinglePinColor"]),
+    body.role-scada-readonly div:has(> button[onclick^="quickChangeSinglePinColor"]),
+    body.role-scada-readonly div:has(> div > button[onclick^="quickChangeSinglePinColor"]) {
+        display: none !important;
+    }
+</style>
+
+<script>
+(function() {
+    const LOD_MODE_KEY = 'elec_scada_lod_mode';
+    const CARD_PAGE_BATCH = 40;
+    const ADAPTIVE_LOD_MIN_PINS = 100;
+
+    let lodMode = localStorage.getItem(LOD_MODE_KEY) || 'auto'; // 'auto' | 'all'
+    let turboMap = null;
+    let scadaCanvasRenderer = null;
+    let equipMarkersGroupRef = null;
+    const lodPinPool = new Map();
+
+    let hiddenByLodCount = 0;
+    let currentTopoEpoch = 1;
+    let syncMarkersRafId = null;
+    let zoomAnimClearTimer = null;
+    let scadaSymbolSyncTimer = null;
+
+    // =========================================================================
+    // 1. แคชข้อมูลหมุดและรายการลบใน RAM (ลดภาระ JSON.parse ซ้ำซ้อนหลักพันครั้งต่อเฟรม)
+    // =========================================================================
+    let cachedDelRawStr = null;
+    let cachedDelParsedObj = {};
+    let cachedPinsRawStr = null;
+    const cachedPinsByIdMap = new Map();
+    let hasMainBackboneSwitches = false;
+
+    const _origGetItemTurbo = Storage.prototype.getItem;
+    const _origSetItemTurbo = Storage.prototype.setItem;
+    const _origRemoveItemTurbo = Storage.prototype.removeItem;
+    const _origJsonParse = JSON.parse;
+
+    function syncDelMapCache() {
+        const raw = _origGetItemTurbo.call(localStorage, 'elec_deleted_labeled_places_map') || '{}';
+        if (raw !== cachedDelRawStr) {
+            cachedDelRawStr = raw;
+            try { cachedDelParsedObj = _origJsonParse(raw) || {}; } catch (e) { cachedDelParsedObj = {}; }
+        }
+    }
+
+    function refreshPinsRamIndex() {
+        const raw = _origGetItemTurbo.call(localStorage, 'elec_labeled_places_list') || '[]';
+        if (raw === cachedPinsRawStr) return;
+        cachedPinsRawStr = raw;
+        currentTopoEpoch++;
+        cachedPinsByIdMap.clear();
+        hasMainBackboneSwitches = false;
+        try {
+            const arr = _origJsonParse(raw);
+            if (Array.isArray(arr)) {
+                arr.forEach(p => {
+                    if (!p || !p.id) return;
+                    cachedPinsByIdMap.set(p.id, p);
+                    const t = p.scadaNode?.t;
+                    if (t === 'RC' || t === 'CB' || t === 'VB' || t === 'VS' || t === 'VSC' || t === 'S' || t === 'GEN') {
+                        hasMainBackboneSwitches = true;
+                    }
+                });
+            }
+        } catch (e) {}
+    }
+
+    JSON.parse = function(text, reviver) {
+        if (!reviver && typeof text === 'string') {
+            if (text === '{}' || text === '') return {};
+            if (text === cachedDelRawStr && cachedDelRawStr.length > 2) {
+                return { ...cachedDelParsedObj };
+            }
+        }
+        return _origJsonParse.apply(this, arguments);
+    };
+
+    syncDelMapCache();
+    refreshPinsRamIndex();
+
+    Storage.prototype.setItem = function(key, value) {
+        const res = _origSetItemTurbo.apply(this, arguments);
+        if (key === 'elec_deleted_labeled_places_map') {
+            syncDelMapCache();
+            currentTopoEpoch++;
+        } else if (key === 'elec_labeled_places_list') {
+            refreshPinsRamIndex();
+        }
+        return res;
+    };
+
+    Storage.prototype.removeItem = function(key) {
+        const res = _origRemoveItemTurbo.apply(this, arguments);
+        if (key === 'elec_deleted_labeled_places_map') syncDelMapCache();
+        else if (key === 'elec_labeled_places_list') refreshPinsRamIndex();
+        return res;
+    };
+
+    window.addEventListener('storage', (e) => {
+        if (!e.key || e.key === 'elec_deleted_labeled_places_map') {
+            syncDelMapCache();
+            currentTopoEpoch++;
+        }
+        if (!e.key || e.key === 'elec_labeled_places_list') {
+            refreshPinsRamIndex();
+        }
+    });
+
+    // =========================================================================
+    // 2. เรนเดอร์เส้นสายไฟและสะพานโค้งข้ามสายด้วย HTML5 Canvas แผ่นเดียว
+    // =========================================================================
+    function isAnyEditModeActive() {
+        const mapEl = document.getElementById('labeledInteractiveMap');
+        if (!mapEl) return false;
+        return mapEl.classList.contains('scada-draw-cursor') ||
+               mapEl.classList.contains('scada-move-wire-active') ||
+               mapEl.classList.contains('scada-move-pin-active');
+    }
+
+    function ensureScadaCanvasRenderer(mapInst) {
+        if (!mapInst || typeof L === 'undefined' || !L.canvas) return null;
+        if (scadaCanvasRenderer && scadaCanvasRenderer._map === mapInst) return scadaCanvasRenderer;
+
+        if (!mapInst.getPane('scadaUnifiedLinesPane')) {
+            const p = mapInst.createPane('scadaUnifiedLinesPane');
+            p.style.zIndex = '389';
+        }
+
+        scadaCanvasRenderer = L.canvas({ pane: 'scadaUnifiedLinesPane', padding: 0.35 });
+
+        // ข้ามการระบายสีเส้นรับคลิกโปร่งใส (opacity: 0) เพื่อลดงาน GPU ครึ่งหนึ่ง แต่ยังคลิกเปิดบอลลูนได้ครบ 100%
+        const origFillStroke = scadaCanvasRenderer._fillStroke;
+        scadaCanvasRenderer._fillStroke = function(ctx, layer) {
+            if (layer?.options && layer.options.opacity === 0 && !layer.options.fill) return;
+            return origFillStroke.call(this, ctx, layer);
+        };
+
+        // ป้องกันเส้นรับคลิกบน Canvas แย่งรับคลิกขณะอยู่ในโหมดวาดสาย ขยับสาย หรือขยับหมุด
+        const origOnClick = scadaCanvasRenderer._onClick;
+        if (typeof origOnClick === 'function') {
+            scadaCanvasRenderer._onClick = function(e) {
+                if (isAnyEditModeActive()) return;
+                return origOnClick.call(this, e);
+            };
+        }
+        const origOnMouseMove = scadaCanvasRenderer._onMouseMove;
+        if (typeof origOnMouseMove === 'function') {
+            scadaCanvasRenderer._onMouseMove = function(e) {
+                if (isAnyEditModeActive()) return;
+                return origOnMouseMove.call(this, e);
+            };
+        }
+
+        return scadaCanvasRenderer;
+    }
+
+    if (typeof L !== 'undefined') {
+        const _origPolyline = L.polyline;
+        L.polyline = function(latlngs, options) {
+            if (options && options.pane === 'scadaUnifiedLinesPane' && turboMap) {
+                const renderer = ensureScadaCanvasRenderer(turboMap);
+                if (renderer) options = { ...options, renderer };
+            }
+            return _origPolyline.call(this, latlngs, options);
+        };
+
+        const _origCircleMarker = L.circleMarker;
+        L.circleMarker = function(latlng, options) {
+            if (options && options.pane === 'scadaUnifiedLinesPane' && turboMap) {
+                const renderer = ensureScadaCanvasRenderer(turboMap);
+                if (renderer) options = { ...options, renderer };
+            }
+            return _origCircleMarker.call(this, latlng, options);
+        };
+    }
+
+    // =========================================================================
+    // 3. ระบบ Smart Zoom LOD + Viewport Culling (ซ่อนหมุดนอกจอและหมุดย่อยมุมสูง)
+    // =========================================================================
+    const _origGroupAddLayer = (typeof L !== 'undefined' && L.LayerGroup) ? L.LayerGroup.prototype.addLayer : null;
+    const _origGroupRemoveLayer = (typeof L !== 'undefined' && L.LayerGroup) ? L.LayerGroup.prototype.removeLayer : null;
+    const _origGroupClearLayers = (typeof L !== 'undefined' && L.LayerGroup) ? L.LayerGroup.prototype.clearLayers : null;
+
+    function extractPinIdFromLayer(layer) {
+        if (!layer || typeof layer.getPopup !== 'function') return null;
+        if (layer.__turboCachedPinId !== undefined) return layer.__turboCachedPinId;
+        const content = layer.getPopup()?.getContent();
+        if (typeof content !== 'string') return null;
+        const m = content.match(/openEquipPinModal\('([^']+)'\)/);
+        layer.__turboCachedPinId = m ? m[1] : null;
+        return layer.__turboCachedPinId;
+    }
+
+    function evaluatePinVisibility(pinId, markerLayer, zoom, paddedBounds, totalGroupPins, editModeOn, hasSearchKw) {
+        if (!markerLayer) return { mount: false, hiddenByLod: false };
+        if (markerLayer.isPopupOpen && markerLayer.isPopupOpen()) {
+            return { mount: true, hiddenByLod: false };
+        }
+
+        const ll = markerLayer.getLatLng ? markerLayer.getLatLng() : null;
+        if (ll && paddedBounds && !paddedBounds.contains(ll)) {
+            return { mount: false, hiddenByLod: false };
+        }
+
+        if (lodMode === 'all' || hasSearchKw || totalGroupPins < ADAPTIVE_LOD_MIN_PINS) {
+            return { mount: true, hiddenByLod: false };
+        }
+        if (editModeOn && zoom >= 13) {
+            return { mount: true, hiddenByLod: false };
+        }
+
+        const pin = cachedPinsByIdMap.get(pinId);
+        if (!pin) return { mount: true, hiddenByLod: false };
+
+        const nd = pin.scadaNode || {};
+        const eqType = nd.t || (pin.isTTap ? 'TAP' : 'PIN');
+        const st = nd.st || 'C';
+
+        // แสดงสวิตช์หลักในโครงข่ายและจุดที่ทริป/ชำรุดเสมอทุกระดับซูม
+        const isBackboneSwitch = (eqType === 'RC' || eqType === 'CB' || eqType === 'VB' ||
+                                  eqType === 'VS' || eqType === 'VSC' || eqType === 'S' || eqType === 'GEN');
+        if (isBackboneSwitch || st === 'F') {
+            return { mount: true, hiddenByLod: false };
+        }
+
+        if (zoom < 13) {
+            if (!hasMainBackboneSwitches && eqType === 'PIN' && !pin.isTTap) {
+                return { mount: true, hiddenByLod: false };
+            }
+            return { mount: false, hiddenByLod: true };
+        }
+        if (zoom < 14 && (eqType === 'TAP' || pin.isTTap)) {
+            return { mount: false, hiddenByLod: true };
+        }
+        return { mount: true, hiddenByLod: false };
+    }
+
+    function triggerScadaSymbolSyncForNewMarkers() {
+        if (scadaSymbolSyncTimer) clearTimeout(scadaSymbolSyncTimer);
+        scadaSymbolSyncTimer = setTimeout(() => {
+            if (typeof window.onScadaFeederFilterChange === 'function') {
+                const curFd = document.getElementById('scadaFeederFilterSelect')?.value || 'ALL';
+                window.onScadaFeederFilterChange(curFd);
+            }
+            if (equipMarkersGroupRef) {
+                equipMarkersGroupRef.eachLayer(l => { l.__turboTopoEpoch = currentTopoEpoch; });
+            }
+        }, 20);
+    }
+
+    function syncLodAndViewportMarkersNow() {
+        if (!turboMap || !equipMarkersGroupRef || lodPinPool.size === 0) {
+            hiddenByLodCount = 0;
+            updateLodToolbarButtonUI();
+            return;
+        }
+
+        refreshPinsRamIndex();
+        const zoom = turboMap.getZoom() ?? 12;
+        const paddedBounds = turboMap.getBounds ? turboMap.getBounds().pad(0.28) : null;
+        const totalGroupPins = lodPinPool.size;
+        const editModeOn = isAnyEditModeActive();
+        const hasSearchKw = Boolean((document.getElementById('searchLabeledPinInput')?.value || '').trim());
+
+        let lodSkipped = 0;
+        let mountedNeedsSymbolSync = false;
+
+        lodPinPool.forEach((marker, pinId) => {
+            const res = evaluatePinVisibility(pinId, marker, zoom, paddedBounds, totalGroupPins, editModeOn, hasSearchKw);
+            if (res.hiddenByLod) lodSkipped++;
+
+            const isMounted = equipMarkersGroupRef.hasLayer(marker);
+            if (res.mount && !isMounted) {
+                _origGroupAddLayer.call(equipMarkersGroupRef, marker);
+                if (marker.__turboTopoEpoch !== currentTopoEpoch || !marker.__uniIconSig) {
+                    mountedNeedsSymbolSync = true;
+                }
+            } else if (!res.mount && isMounted) {
+                _origGroupRemoveLayer.call(equipMarkersGroupRef, marker);
+            } else if (res.mount && isMounted && marker.__turboTopoEpoch !== currentTopoEpoch) {
+                mountedNeedsSymbolSync = true;
+            }
+        });
+
+        hiddenByLodCount = lodSkipped;
+        updateLodToolbarButtonUI();
+
+        if (mountedNeedsSymbolSync) {
+            triggerScadaSymbolSyncForNewMarkers();
+        }
+    }
+
+    function scheduleLodViewportSync() {
+        if (syncMarkersRafId) return;
+        syncMarkersRafId = requestAnimationFrame(() => {
+            syncMarkersRafId = null;
+            syncLodAndViewportMarkersNow();
+        });
+    }
+
+    if (typeof L !== 'undefined' && L.LayerGroup && _origGroupAddLayer && _origGroupClearLayers) {
+        L.LayerGroup.prototype.addLayer = function(layer) {
+            if (this._map && this._map === turboMap) {
+                const pinId = extractPinIdFromLayer(layer);
+                if (pinId) {
+                    equipMarkersGroupRef = this;
+                    lodPinPool.set(pinId, layer);
+
+                    const zoom = turboMap.getZoom() ?? 12;
+                    const paddedBounds = turboMap.getBounds ? turboMap.getBounds().pad(0.28) : null;
+                    const editModeOn = isAnyEditModeActive();
+                    const hasSearchKw = Boolean((document.getElementById('searchLabeledPinInput')?.value || '').trim());
+                    const check = evaluatePinVisibility(pinId, layer, zoom, paddedBounds, Math.max(lodPinPool.size, cachedPinsByIdMap.size), editModeOn, hasSearchKw);
+
+                    scheduleLodViewportSync();
+                    if (!check.mount) return this;
+                }
+            }
+            return _origGroupAddLayer.call(this, layer);
+        };
+
+        L.LayerGroup.prototype.clearLayers = function() {
+            if (this === equipMarkersGroupRef) {
+                lodPinPool.clear();
+                hiddenByLodCount = 0;
+            }
+            return _origGroupClearLayers.call(this);
+        };
+
+        // หากสั่งเปิดบอลลูนหมุดที่ถูกพักไว้นอกจอ (เช่น กดค้นหาแล้วซูมไปหา) ให้เมานต์หมุดลงแผนที่ทันทีก่อนเปิดบอลลูน
+        const _origMarkerOpenPopup = L.Marker.prototype.openPopup;
+        L.Marker.prototype.openPopup = function() {
+            if (!this._map && equipMarkersGroupRef) {
+                const pinId = extractPinIdFromLayer(this);
+                if (pinId && lodPinPool.has(pinId)) {
+                    _origGroupAddLayer.call(equipMarkersGroupRef, this);
+                    triggerScadaSymbolSyncForNewMarkers();
+                }
+            }
+            return _origMarkerOpenPopup.apply(this, arguments);
+        };
+    }
+
+    // =========================================================================
+    // 4. ปุ่มสลับโหมดลดกระตุก (Smart LOD) บนแถบเครื่องมือผังวงจร SCADA
+    // =========================================================================
+    window.toggleScadaSmartLodMode = function() {
+        lodMode = (lodMode === 'auto') ? 'all' : 'auto';
+        localStorage.setItem(LOD_MODE_KEY, lodMode);
+        syncLodAndViewportMarkersNow();
+        if (typeof showToast === 'function') {
+            showToast(lodMode === 'auto'
+                ? '🚀 โหมดลดกระตุกอัตโนมัติ: ซ่อนจุดย่อยเมื่อซูมมุมสูง (<13)'
+                : '👁️ แสดงหมุดครบทุกชนิดในทุกระดับซูม');
+        }
+    };
+
+    function updateLodToolbarButtonUI() {
+        let btn = document.getElementById('btnToggleScadaSmartLod');
+        if (!btn) {
+            const linesBtn = document.getElementById('btnToggleScadaLines');
+            if (!linesBtn || !linesBtn.parentElement) return;
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = 'btnToggleScadaSmartLod';
+            btn.onclick = window.toggleScadaSmartLodMode;
+            linesBtn.parentElement.insertBefore(btn, linesBtn);
+        }
+
+        if (lodMode === 'auto') {
+            btn.textContent = hiddenByLodCount > 0
+                ? `🚀 ลดกระตุก (ย่อ ${hiddenByLodCount})`
+                : '🚀 ลดกระตุก: อัตโนมัติ';
+            btn.title = 'ซ่อนจุด T-Tap และหมุดย่อยอัตโนมัติเมื่อซูมออกมุมสูง (<13) คลิกเพื่อสลับเป็นแสดงทั้งหมด';
+            btn.className = 'bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/50 px-2.5 py-1 rounded-xl text-[11px] font-bold transition';
+        } else {
+            btn.textContent = '👁️ หมุด: แสดงครบ';
+            btn.title = 'แสดงหมุดทุกชนิดในทุกระดับซูม คลิกเพื่อเปิดโหมดลดกระตุกอัตโนมัติ';
+            btn.className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2.5 py-1 rounded-xl text-[11px] font-bold transition';
+        }
+    }
+
+    function attachTurboEngineToMap(mapInst) {
+        if (!mapInst || turboMap === mapInst) return;
+        turboMap = mapInst;
+        ensureScadaCanvasRenderer(mapInst);
+
+        mapInst.on('zoomstart', () => {
+            if (zoomAnimClearTimer) clearTimeout(zoomAnimClearTimer);
+            document.getElementById('labeledInteractiveMap')?.classList.add('scada-zoom-animating');
+        });
+
+        mapInst.on('zoomend', () => {
+            syncLodAndViewportMarkersNow();
+            zoomAnimClearTimer = setTimeout(() => {
+                document.getElementById('labeledInteractiveMap')?.classList.remove('scada-zoom-animating');
+            }, 80);
+        });
+
+        mapInst.on('moveend', () => {
+            scheduleLodViewportSync();
+        });
+    }
+
+    if (typeof L !== 'undefined' && L.Map) {
+        L.Map.addInitHook(function() {
+            if (this.getContainer?.()?.id === 'labeledInteractiveMap') {
+                attachTurboEngineToMap(this);
+            }
+        });
+    }
+
+    ['toggleScadaDrawMode', 'toggleScadaWireMoveMode', 'toggleScadaPinMoveMode'].forEach(fnName => {
+        const origFn = window[fnName];
+        if (typeof origFn === 'function') {
+            window[fnName] = function(...args) {
+                const res = origFn.apply(this, args);
+                setTimeout(syncLodAndViewportMarkersNow, 30);
+                return res;
+            };
+        }
+    });
+
+    // =========================================================================
+    // 5. แบ่งโหลดการ์ดรายการอุปกรณ์ทีละ 40 รายการ (Lazy Pagination) + Debounce ช่องค้นหา
+    // =========================================================================
+    let lazyCardsQueue = [];
+    let lazyTotalCount = 0;
+    let lazyMountedCount = 0;
+    let lazyScrollObserver = null;
+    let searchInputDebounceTimer = null;
+
+    function applyReadOnlyGuardOnAppendedCards(rootEl) {
+        if (!rootEl) return;
+        if (document.body.classList.contains('role-viewer-readonly') || document.body.classList.contains('role-scada-readonly')) {
+            rootEl.querySelectorAll('button[onclick^="quickChangeSinglePinColor"]').forEach(btn => {
+                const row = btn.closest('.bg-slate-100, .bg-slate-50');
+                if (row) row.style.display = 'none';
+            });
+        }
+    }
+
+    window.appendNextEquipCardsBatch = function() {
+        const container = document.getElementById('labeledPlacesCardsContainer');
+        if (!container || lazyCardsQueue.length === 0) return;
+
+        const oldSentinel = document.getElementById('equipLazyLoadSentinelBtn');
+        if (oldSentinel) oldSentinel.remove();
+
+        const nextBatch = lazyCardsQueue.splice(0, CARD_PAGE_BATCH);
+        const frag = document.createDocumentFragment();
+        nextBatch.forEach(cardEl => frag.appendChild(cardEl));
+        container.appendChild(frag);
+        lazyMountedCount += nextBatch.length;
+
+        applyReadOnlyGuardOnAppendedCards(container);
+
+        if (lazyCardsQueue.length > 0) {
+            mountLazySentinelButton(container);
+        } else if (lazyScrollObserver) {
+            lazyScrollObserver.disconnect();
+            lazyScrollObserver = null;
+        }
+    };
+
+    function mountLazySentinelButton(container) {
+        if (!container || lazyCardsQueue.length === 0) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'equipLazyLoadSentinelBtn';
+        btn.onclick = window.appendNextEquipCardsBatch;
+        btn.className = 'w-full py-2.5 px-4 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-xl text-xs font-extrabold transition shadow-sm';
+        btn.textContent = `⬇️ แสดงเพิ่มอีก ${Math.min(CARD_PAGE_BATCH, lazyCardsQueue.length)} รายการ (แสดงแล้ว ${lazyMountedCount} จาก ${lazyTotalCount} จุด)`;
+        container.appendChild(btn);
+
+        if ('IntersectionObserver' in window) {
+            if (lazyScrollObserver) lazyScrollObserver.disconnect();
+            lazyScrollObserver = new IntersectionObserver((entries) => {
+                if (entries.some(e => e.isIntersecting)) {
+                    window.appendNextEquipCardsBatch();
+                }
+            }, { root: null, rootMargin: '260px' });
+            lazyScrollObserver.observe(btn);
+        }
+    }
+
+    const _origRenderLabeledList = window.renderLabeledPlacesList;
+    if (typeof _origRenderLabeledList === 'function') {
+        window.renderLabeledPlacesList = function(updateMapMarkers = false) {
+            const container = document.getElementById('labeledPlacesCardsContainer');
+            if (!container) {
+                const r = _origRenderLabeledList.apply(this, arguments);
+                scheduleLodViewportSync();
+                return r;
+            }
+
+            if (lazyScrollObserver) {
+                lazyScrollObserver.disconnect();
+                lazyScrollObserver = null;
+            }
+            lazyCardsQueue = [];
+            lazyTotalCount = 0;
+            lazyMountedCount = 0;
+
+            const nativeAppend = container.appendChild;
+            let interceptedCount = 0;
+
+            container.appendChild = function(childNode) {
+                // หากเป็นกล่องข้อความว่างตอนไม่มีข้อมูล ให้แสดงตามปกติ
+                if (childNode?.classList?.contains('border-dashed')) {
+                    return nativeAppend.call(container, childNode);
+                }
+                interceptedCount++;
+                if (interceptedCount <= CARD_PAGE_BATCH) {
+                    lazyMountedCount++;
+                    return nativeAppend.call(container, childNode);
+                }
+                lazyCardsQueue.push(childNode);
+                return childNode;
+            };
+
+            let result;
+            try {
+                result = _origRenderLabeledList.apply(this, arguments);
+            } finally {
+                delete container.appendChild;
+            }
+
+            lazyTotalCount = interceptedCount;
+            if (lazyCardsQueue.length > 0) {
+                mountLazySentinelButton(container);
+            }
+            updateLodToolbarButtonUI();
+            scheduleLodViewportSync();
+            return result;
+        };
+    }
+
+    // หน่วงจังหวะการกรองแผนที่ขณะพิมพ์รหัสสวิตช์เร็วๆ ไม่ให้คีย์บอร์ดมือถือหน่วง
+    const _origOnSearchInput = window.onSearchEquipInputChange;
+    if (typeof _origOnSearchInput === 'function') {
+        window.onSearchEquipInputChange = function(rawValue) {
+            if (searchInputDebounceTimer) clearTimeout(searchInputDebounceTimer);
+            searchInputDebounceTimer = setTimeout(() => {
+                _origOnSearchInput.call(window, rawValue);
+            }, 140);
+        };
+    }
+
+    const toolbarWatcher = new MutationObserver(() => {
+        if (document.getElementById('scadaControlToolbar') && !document.getElementById('btnToggleScadaSmartLod')) {
+            updateLodToolbarButtonUI();
+        }
+    });
+
+    function initScadaTurboEngine() {
+        updateLodToolbarButtonUI();
+        scheduleLodViewportSync();
+        toolbarWatcher.observe(document.body, { childList: true, subtree: true });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => setTimeout(initScadaTurboEngine, 300));
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        setTimeout(initScadaTurboEngine, 180);
+    }
+})();
+</script>
+<!-- ==================== จบระบบเพิ่มความลื่นไหลผังวงจรขนาดใหญ่ ==================== -->
 </body>
 </html>
