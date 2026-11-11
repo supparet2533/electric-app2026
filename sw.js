@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pea-smart-tools-v91';
+const CACHE_NAME = 'pea-smart-tools-v92';
 
 // 1. ไฟล์หลักของแอป (บังคับดึงสดจากเซิร์ฟเวอร์ทุกครั้งที่เปลี่ยนเลขเวอร์ชัน CACHE_NAME)
 const STATIC_ASSETS = [
