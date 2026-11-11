@@ -24,7 +24,7 @@
     ];
     const THAI_DAYS_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
-        const PM_CATEGORIES = {
+            const PM_CATEGORIES = {
         tree: {
             key: 'tree',
             icon: '🌳',
@@ -68,7 +68,7 @@
         patrol: {
             key: 'patrol',
             icon: '🛠️',
-            name: 'สวิชชิ่งแผนดับไฟปฏิบัติงาน',
+            name: 'แผนดับไฟปฏิบัติงาน / อื่นๆ',
             pillCls: 'bg-purple-100 text-purple-800 border-purple-300',
             barBg: '#7c3aed',
             defaultColor: 'purple'
