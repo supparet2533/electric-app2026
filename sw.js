@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v95 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v97 (sw.js)
 // รองรับการแคชไฟล์โมดูล shared-core.js, tech-jobs.js, scada-engine.js, main-app.js
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v96';
+const CACHE_NAME = 'pea-smart-tools-v97';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 
 const CORE_ASSETS = [
