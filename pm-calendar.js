@@ -1,7 +1,7 @@
 // ============================================================================
-// 📅📍 PEA SMART GRID — MAINTENANCE SCHEDULE & WORK PLAN PINS ENGINE v6.5 (pm-calendar.js)
-// ระบบปฏิทินแผนงานบำรุงรักษา + หมุดแผนงานบนแผนที่ (SCADA / แผนที่ซ่อม / ปฏิทิน) + แจ้งเตือน 00:00 & 07:00
-// พาทที่ 1 / 3 : Config, Pin Themes, Dynamic Leaflet Loader, Sync Bus & Alert Scheduler
+// 📅📍 PEA SMART GRID — MAINTENANCE SCHEDULE & WORK PLAN PINS ENGINE v6.6 (pm-calendar.js)
+// ระบบปฏิทินแผนงานบำรุงรักษา + หมุดแผนงาน + HOTLINE + ท่อซิงค์ Cloud/MQTT รายชิ้นอัตโนมัติ
+// พาทที่ 1 / 4 : Config, HOTLINE Category, Direct Cloud/Fetch/Broadcast Sync & Alert Engine
 // ============================================================================
 (function () {
     'use strict';
@@ -14,6 +14,7 @@
     const PM_SHOW_MAP_PINS_KEY = 'elec_pm_show_pins_on_map';
     const PM_MAP_FILTER_MODE_KEY = 'elec_pm_map_pin_filter_mode';
     const PM_LOC_PREFIX = '__PM_SCHEDULE__';
+    const PM_SYNC_CHANNEL = 'pea_pm_live_sync_v1';
 
     const MAX_TOMBSTONE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
     const MAX_CLOUD_SYNC_ITEMS = 120;
@@ -24,7 +25,7 @@
     ];
     const THAI_DAYS_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 
-            const PM_CATEGORIES = {
+    const PM_CATEGORIES = {
         tree: {
             key: 'tree',
             icon: '🌳',
@@ -36,7 +37,7 @@
         scada: {
             key: 'scada',
             icon: '⚡',
-            name: 'ตรวจสวิตช์ / อุปกรณ์ SCADA',
+            name: 'ดับไฟ',
             pillCls: 'bg-sky-100 text-sky-800 border-sky-300',
             barBg: '#0284c7',
             defaultColor: 'sky'
@@ -44,7 +45,7 @@
         tr: {
             key: 'tr',
             icon: '🔌',
-            name: 'บำรุงรักษาหม้อแปลง / โหลด',
+            name: 'เชื่อมสาย',
             pillCls: 'bg-amber-100 text-amber-900 border-amber-300',
             barBg: '#f59e0b',
             defaultColor: 'amber'
@@ -52,7 +53,7 @@
         thermo: {
             key: 'thermo',
             icon: '🔥',
-            name: 'ส่องกล้องความร้อน (Thermo)',
+            name: 'แก้จุดร้อน/ส่องกล้องความร้อน',
             pillCls: 'bg-rose-100 text-rose-800 border-rose-300',
             barBg: '#e11d48',
             defaultColor: 'rose'
@@ -68,7 +69,7 @@
         patrol: {
             key: 'patrol',
             icon: '🛠️',
-            name: 'แผนดับไฟปฏิบัติงาน / อื่นๆ',
+            name: 'แผนสวิชชิ่งดับไฟปฏิบัติงาน',
             pillCls: 'bg-purple-100 text-purple-800 border-purple-300',
             barBg: '#7c3aed',
             defaultColor: 'purple'
@@ -92,17 +93,16 @@
     let selectedDateIso = toLocalIsoDate(nowInit);
     let editingPlanId = null;
     let currentFilterStatus = 'day';
-    let calendarLeftViewMode = 'grid'; // 'grid' | 'map'
+    let calendarLeftViewMode = 'grid';
     let isTechStripCollapsed = false;
 
     let isPmSoundEnabled = localStorage.getItem(PM_SOUND_KEY) !== 'false';
     let showScadaDuePins = localStorage.getItem(PM_SHOW_SCADA_DUE_KEY) !== 'false';
     let showPmPinsOnMaps = localStorage.getItem(PM_SHOW_MAP_PINS_KEY) !== 'false';
-    let pmMapFilterMode = localStorage.getItem(PM_MAP_FILTER_MODE_KEY) || 'pending'; // 'pending' | 'alert'
+    let pmMapFilterMode = localStorage.getItem(PM_MAP_FILTER_MODE_KEY) || 'pending';
     let isSyncingPmInternal = false;
     let lastCheckedAlertMinuteKey = '';
 
-    // ตัวแปรควบคุมแผนที่และโหมดปัก/ย้ายหมุดแผนงาน
     let scadaMapRef = null;
     let scadaPmLayer = null;
     let scadaPmMarkersById = {};
@@ -122,8 +122,16 @@
     let pmPinMoveTargetId = null;
     let leafletLoadPromise = null;
 
+    let pmBroadcast = null;
+    try { if ('BroadcastChannel' in window) pmBroadcast = new BroadcastChannel(PM_SYNC_CHANNEL); } catch (e) {}
+
+    // บังคับอัปเดต Service Worker ทันทีเมื่อมีเวอร์ชันใหม่บน GitHub
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.update())).catch(() => {});
+    }
+
     // ========================================================================
-    // 1. โหลดไลบรารีแผนที่อัตโนมัติ (สำหรับ index.html) & ฟังก์ชันวันที่/สิทธิ์
+    // 1. โหลดไลบรารีแผนที่อัตโนมัติ & ฟังก์ชันจัดการวันที่/สิทธิ์
     // ========================================================================
     function rawGet(key) {
         return Core && typeof Core.rawStorageGet === 'function'
@@ -148,10 +156,7 @@
                 if (typeof bindLeafletMapHooks === 'function') bindLeafletMapHooks();
                 resolve(true);
             };
-            script.onerror = () => {
-                leafletLoadPromise = null;
-                resolve(false);
-            };
+            script.onerror = () => { leafletLoadPromise = null; resolve(false); };
             document.head.appendChild(script);
         });
         return leafletLoadPromise;
@@ -161,10 +166,7 @@
         const d = dateObj instanceof Date ? dateObj : new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
-
-    function getTodayIso() {
-        return toLocalIsoDate(new Date());
-    }
+    function getTodayIso() { return toLocalIsoDate(new Date()); }
 
     function parseIsoToMidnightMs(isoStr) {
         if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(isoStr).trim())) return NaN;
@@ -173,25 +175,21 @@
     }
 
     function calcDaysUntil(targetIso, baseIso = getTodayIso()) {
-        const tMs = parseIsoToMidnightMs(targetIso);
-        const bMs = parseIsoToMidnightMs(baseIso);
-        if (isNaN(tMs) || isNaN(bMs)) return 99999;
-        return Math.round((tMs - bMs) / 86400000);
+        const tMs = parseIsoToMidnightMs(targetIso), bMs = parseIsoToMidnightMs(baseIso);
+        return (isNaN(tMs) || isNaN(bMs)) ? 99999 : Math.round((tMs - bMs) / 86400000);
     }
 
     function addMonthsToIsoDate(isoStr, monthsToAdd) {
         if (!isoStr || !/^\d{4}-\d{2}-\d{2}$/.test(isoStr)) return getTodayIso();
         const [y, m, d] = isoStr.split('-').map(Number);
-        const target = new Date(y, (m - 1) + Number(monthsToAdd || 0), d);
-        return toLocalIsoDate(target);
+        return toLocalIsoDate(new Date(y, (m - 1) + Number(monthsToAdd || 0), d));
     }
 
     function formatThaiDateFull(isoStr) {
         if (!isoStr || !String(isoStr).includes('-')) return '-';
         const [y, m, d] = String(isoStr).split('-').map(Number);
         if (!y || !m || !d) return isoStr;
-        const dow = THAI_DAYS_SHORT[new Date(y, m - 1, d).getDay()] || '';
-        return `${dow} ${d} ${THAI_MONTHS[m - 1]} ${y + 543}`;
+        return `${THAI_DAYS_SHORT[new Date(y, m - 1, d).getDay()] || ''} ${d} ${THAI_MONTHS[m - 1]} ${y + 543}`;
     }
 
     function formatThaiDateShort(isoStr) {
@@ -234,9 +232,7 @@
         return (plan.ownerGroup || 'กฟส.บึง').trim() === getActivePmGroup();
     }
 
-    function getCategoryMeta(catKey) {
-        return PM_CATEGORIES[catKey] || PM_CATEGORIES.scada;
-    }
+    function getCategoryMeta(catKey) { return PM_CATEGORIES[catKey] || PM_CATEGORIES.scada; }
 
     function getPlanPinVisualTheme(item) {
         const cat = getCategoryMeta(item?.category);
@@ -244,53 +240,40 @@
             ? item.pinColor
             : cat.defaultColor;
         const cMeta = PM_PIN_COLORS[chosenKey] || PM_PIN_COLORS.sky;
-        return {
-            icon: cat.icon,
-            catName: cat.name,
-            hex: cMeta.hex,
-            grad: cMeta.grad
-        };
+        return { icon: cat.icon, catName: cat.name, hex: cMeta.hex, grad: cMeta.grad };
     }
 
     // ========================================================================
-    // 2. คลังข้อมูลหมุดแผนงาน & ซิงค์อัตโนมัติผ่าน MQTT + Google Sheets
+    // 2. ท่อซิงค์แผนงาน PM แบบรายชิ้น (Cloud Fetch Hook + MQTT + BroadcastChannel)
     // ========================================================================
     function prunePmPlansArray(rawArr) {
         if (!Array.isArray(rawArr)) return [];
-        const now = Date.now();
-        const byId = new Map();
-
+        const now = Date.now(), byId = new Map();
         rawArr.forEach(item => {
             if (!item || !item.id) return;
             const updMs = new Date(item.updatedAt || 0).getTime() || 0;
             if (item.pmDeleted && updMs > 0 && (now - updMs > MAX_TOMBSTONE_AGE_MS)) return;
-            const existing = byId.get(item.id);
-            const exMs = existing ? (new Date(existing.updatedAt || 0).getTime() || 0) : -1;
-            if (!existing || updMs >= exMs) {
-                byId.set(item.id, item);
-            }
+            const ex = byId.get(item.id);
+            const exMs = ex ? (new Date(ex.updatedAt || 0).getTime() || 0) : -1;
+            if (!ex || updMs >= exMs) byId.set(item.id, item);
         });
-
-        return Array.from(byId.values()).sort((a, b) => {
-            const dCmp = String(a.date || '').localeCompare(String(b.date || ''));
-            if (dCmp !== 0) return dCmp;
-            return String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''));
-        });
+        return Array.from(byId.values()).sort((a, b) =>
+            String(a.date || '').localeCompare(String(b.date || '')) ||
+            String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''))
+        );
     }
 
     function loadPmPlansFromStorage() {
-        try {
-            pmPlans = prunePmPlansArray(JSON.parse(rawGet(PM_STORAGE_KEY) || '[]'));
-        } catch (e) {
-            pmPlans = [];
-        }
+        try { pmPlans = prunePmPlansArray(JSON.parse(rawGet(PM_STORAGE_KEY) || '[]')); }
+        catch (e) { pmPlans = []; }
         return pmPlans;
     }
 
     function buildCloudCarrierMapForGroup(groupName) {
         const now = Date.now();
-        const relevant = pmPlans.filter(p => (p.ownerGroup || 'กฟส.บึง').trim() === groupName);
-        const prioritized = relevant
+        const out = {};
+        pmPlans
+            .filter(p => (p.ownerGroup || 'กฟส.บึง').trim() === groupName)
             .filter(p => {
                 if (p.pmDeleted) return (now - (new Date(p.updatedAt || 0).getTime() || 0)) <= MAX_TOMBSTONE_AGE_MS;
                 if (p.status === 'done') {
@@ -299,40 +282,134 @@
                 }
                 return true;
             })
-            .slice(-MAX_CLOUD_SYNC_ITEMS);
-
-        const out = {};
-        prioritized.forEach(p => { out[p.id] = p; });
+            .slice(-MAX_CLOUD_SYNC_ITEMS)
+            .forEach(p => { out[p.id] = p; });
         return out;
     }
+
+    function mergeIncomingPmItems(incomingArr) {
+        if (!Array.isArray(incomingArr) || incomingArr.length === 0) return false;
+        loadPmPlansFromStorage();
+        const beforeSig = JSON.stringify(pmPlans);
+        const merged = prunePmPlansArray([...pmPlans, ...incomingArr]);
+        if (JSON.stringify(merged) !== beforeSig) {
+            pmPlans = merged;
+            localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(pmPlans));
+            if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
+            checkAndTriggerScheduledPmAlerts(false);
+            return true;
+        }
+        return false;
+    }
+
+    function broadcastPmLocalInstant() {
+        const pkt = { type: 'PM_PLANS_SYNC', plans: pmPlans, ts: Date.now() };
+        try { pmBroadcast?.postMessage(pkt); } catch (e) {}
+        try {
+            if (window.parent && window.parent !== window) window.parent.postMessage(pkt, '*');
+            const leftIf = document.getElementById('leftBrowserIframe');
+            if (leftIf?.contentWindow) leftIf.contentWindow.postMessage(pkt, '*');
+        } catch (e) {}
+    }
+
+    if (pmBroadcast) {
+        pmBroadcast.onmessage = (e) => {
+            if (e.data?.type === 'PM_PLANS_SYNC' && Array.isArray(e.data.plans)) mergeIncomingPmItems(e.data.plans);
+        };
+    }
+    window.addEventListener('message', (e) => {
+        if (e.data?.type === 'PM_PLANS_SYNC' && Array.isArray(e.data.plans)) mergeIncomingPmItems(e.data.plans);
+    });
+    window.addEventListener('storage', (e) => {
+        if (e.key === PM_STORAGE_KEY && e.newValue) {
+            try { mergeIncomingPmItems(JSON.parse(e.newValue)); } catch (err) {}
+        }
+    });
+
+    function writePmShardsIntoLocMap(locMapObj) {
+        const locMap = locMapObj || getTechLocationsMap();
+        const groups = new Set([getActivePmGroup()]);
+        pmPlans.forEach(p => { if (p?.ownerGroup) groups.add(p.ownerGroup.trim()); });
+        const nowIso = new Date().toISOString();
+
+        groups.forEach(grp => {
+            if (!grp) return;
+            const prevShard = locMap[PM_LOC_PREFIX + grp]?.pmPlansMap || {};
+            const localShard = buildCloudCarrierMapForGroup(grp);
+            const combinedShard = { ...prevShard };
+            Object.entries(localShard).forEach(([id, item]) => {
+                const ex = combinedShard[id];
+                if (!ex || (new Date(item.updatedAt || 0).getTime() || 0) >= (new Date(ex.updatedAt || 0).getTime() || 0)) {
+                    combinedShard[id] = item;
+                }
+            });
+            locMap[PM_LOC_PREFIX + grp] = {
+                isSystemRegistry: true,
+                username: '',
+                group: grp,
+                isOnline: false,
+                gpsDisabled: true,
+                lat: null,
+                lon: null,
+                pmPlansMap: combinedShard,
+                lastSeenAt: nowIso,
+                updatedAt: nowIso
+            };
+        });
+        return locMap;
+    }
+
+    // ดักซิงค์กับ Google Sheets โดยตรงทุกจังหวะ POST และ GET เพื่อให้แผนงาน PM และใบงานเชื่อมถึงกัน 100%
+    const _origFetchForPm = window.fetch;
+    window.fetch = async function (input, init) {
+        const urlStr = typeof input === 'string' ? input : (input?.url || '');
+        const isGas = urlStr.includes('script.google.com');
+
+        if (isGas && init && init.method === 'POST' && typeof init.body === 'string' &&
+            (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
+            try {
+                loadPmPlansFromStorage();
+                const bodyObj = JSON.parse(init.body);
+                const targetReg = bodyObj.action === 'saveJobs' && Array.isArray(bodyObj.jobs)
+                    ? bodyObj.jobs.find(j => j && j.jobType === 'tech_loc')
+                    : bodyObj.techLocDelta;
+
+                if (targetReg) {
+                    targetReg.techLocations = writePmShardsIntoLocMap(targetReg.techLocations || {});
+                    init = { ...init, body: JSON.stringify(bodyObj) };
+                }
+            } catch (e) {}
+        }
+
+        const response = await _origFetchForPm.call(this, input, init);
+
+        if (isGas && (!init || !init.method || init.method.toUpperCase() === 'GET')) {
+            try {
+                const cloned = response.clone();
+                const data = await cloned.json();
+                const locReg = Array.isArray(data?.jobs) ? data.jobs.find(j => j && j.jobType === 'tech_loc') : null;
+                if (locReg?.techLocations) {
+                    const cloudItems = [];
+                    Object.keys(locReg.techLocations).forEach(k => {
+                        if (k.startsWith(PM_LOC_PREFIX) && locReg.techLocations[k]?.pmPlansMap) {
+                            Object.values(locReg.techLocations[k].pmPlansMap).forEach(it => { if (it?.id) cloudItems.push(it); });
+                        }
+                    });
+                    if (cloudItems.length > 0) mergeIncomingPmItems(cloudItems);
+                }
+            } catch (e) {}
+        }
+        return response;
+    };
 
     async function savePmPlansAndSync(pushCloud = true) {
         pmPlans = prunePmPlansArray(pmPlans);
         localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(pmPlans));
+        broadcastPmLocalInstant();
 
         isSyncingPmInternal = true;
         try {
-            const locMap = getTechLocationsMap();
-            const groups = new Set([getActivePmGroup()]);
-            pmPlans.forEach(p => { if (p?.ownerGroup) groups.add(p.ownerGroup.trim()); });
-
-            const nowIso = new Date().toISOString();
-            groups.forEach(grp => {
-                if (!grp) return;
-                locMap[PM_LOC_PREFIX + grp] = {
-                    isSystemRegistry: true,
-                    username: '',
-                    group: grp,
-                    isOnline: false,
-                    gpsDisabled: true,
-                    lat: null,
-                    lon: null,
-                    pmPlansMap: buildCloudCarrierMapForGroup(grp),
-                    lastSeenAt: nowIso,
-                    updatedAt: nowIso
-                };
-            });
-
+            const locMap = writePmShardsIntoLocMap(getTechLocationsMap());
             if (Core && typeof Core.unlockCloudWrite === 'function') Core.unlockCloudWrite(20000);
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
         } finally {
@@ -342,42 +419,28 @@
         if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
 
         if (pushCloud) {
+            if (Core && typeof Core.unlockCloudWrite === 'function') Core.unlockCloudWrite(20000);
             if (typeof window.syncJobsWithFieldPage === 'function') {
+                if (typeof window.pullFieldReportsFromCloud === 'function') await window.pullFieldReportsFromCloud(true);
                 await window.syncJobsWithFieldPage();
             } else if (typeof window.pushAllJobsToCloud === 'function') {
-                await window.pushAllJobsToCloud(true);
+                await window.pushAllJobsToCloud(false);
             }
         }
     }
 
     function syncPmPlansFromLocationsMap() {
         if (isSyncingPmInternal) return false;
-        loadPmPlansFromStorage();
-
         const locMap = getTechLocationsMap();
         const incomingList = [];
-
         Object.keys(locMap).forEach(k => {
             if (!k.startsWith(PM_LOC_PREFIX)) return;
             const pMap = locMap[k]?.pmPlansMap;
             if (pMap && typeof pMap === 'object') {
-                Object.values(pMap).forEach(item => {
-                    if (item && item.id) incomingList.push(item);
-                });
+                Object.values(pMap).forEach(item => { if (item?.id) incomingList.push(item); });
             }
         });
-
-        if (incomingList.length === 0) return false;
-        const beforeSig = JSON.stringify(pmPlans);
-        const merged = prunePmPlansArray([...pmPlans, ...incomingList]);
-        if (JSON.stringify(merged) !== beforeSig) {
-            pmPlans = merged;
-            localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(pmPlans));
-            if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
-            checkAndTriggerScheduledPmAlerts(false);
-            return true;
-        }
-        return false;
+        return mergeIncomingPmItems(incomingList);
     }
 
     function getVirtualScadaDueItems() {
@@ -412,24 +475,18 @@
                 ownerGroup: (p.ownerGroup || 'กฟส.บึง').trim(),
                 status: 'pending'
             }));
-        } catch (e) {
-            return [];
-        }
+        } catch (e) { return []; }
     }
 
     function getAllVisibleCalendarItems() {
         loadPmPlansFromStorage();
-        const realVisible = pmPlans.filter(canSeePmPlan);
-        const virtualPins = getVirtualScadaDueItems();
-        return [...realVisible, ...virtualPins].sort((a, b) => {
+        return [...pmPlans.filter(canSeePmPlan), ...getVirtualScadaDueItems()].sort((a, b) => {
             if (a.status !== b.status) return a.status === 'done' ? 1 : -1;
-            const dCmp = String(a.date || '').localeCompare(String(b.date || ''));
-            if (dCmp !== 0) return dCmp;
-            return String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''));
+            return String(a.date || '').localeCompare(String(b.date || '')) ||
+                   String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''));
         });
     }
 
-    // คัดกรองรายการที่มีพิกัดสำหรับนำไปปักแสดงเป็น "หมุดแผนงาน" บนแผนที่
     function getPlottablePmMapPins(forExternalMap = true) {
         const todayIso = getTodayIso();
         return getAllVisibleCalendarItems().filter(item => {
@@ -437,8 +494,7 @@
             if (item.status === 'done') return false;
             if (isNaN(parseFloat(item.lat)) || isNaN(parseFloat(item.lon))) return false;
             if (pmMapFilterMode === 'alert') {
-                const daysLeft = calcDaysUntil(item.date, todayIso);
-                return daysLeft <= Number(item.notifyDaysBefore ?? 3);
+                return calcDaysUntil(item.date, todayIso) <= Number(item.notifyDaysBefore ?? 3);
             }
             return true;
         });
@@ -454,10 +510,7 @@
             .map(item => {
                 const daysLeft = calcDaysUntil(item.date, todayIso);
                 const warnDays = Number(item.notifyDaysBefore ?? 3);
-                let alertLevel = null;
-                if (daysLeft < 0) alertLevel = 'overdue';
-                else if (daysLeft === 0) alertLevel = 'today';
-                else if (daysLeft <= warnDays) alertLevel = 'upcoming';
+                const alertLevel = daysLeft < 0 ? 'overdue' : (daysLeft === 0 ? 'today' : (daysLeft <= warnDays ? 'upcoming' : null));
                 return alertLevel ? { ...item, daysLeft, alertLevel } : null;
             })
             .filter(Boolean)
@@ -535,7 +588,7 @@
         }
         if (typeof showPmAlertSummaryModal === 'function') showPmAlertSummaryModal(roundTitle, candidates);
     }
-    // ===== จบพาทที่ 1 / 3 ของไฟล์ pm-calendar.js (นำพาทที่ 2 / 3 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+    // ===== จบพาทที่ 1 / 4 ของไฟล์ pm-calendar.js (ต่อเข้ากับพาทที่ 2 / 4 เดิมได้เลยครับ) =====
         // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ pm-calendar.js (วางต่อจากพาทที่ 1 / 3) =====
 
     // ========================================================================
