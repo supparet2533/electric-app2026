@@ -1093,7 +1093,8 @@
                             <button type="button" id="pmSoundToggleBtn" onclick="togglePmSoundSetting()" class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold">🔔 เสียง: เปิด</button>
                             <button type="button" onclick="exportPmPlansToExcel()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow">📊 Excel</button>
                             <button type="button" onclick="shareDailyOrAlertSummaryToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow">💬 สรุปส่ง LINE</button>
-                            <button type="button" onclick="closePmCalendarModal()" class="text-white/80 hover:text-white text-2xl font-bold leading-none px-1.5">&times;</button>
+<button type="button" onclick="closePmCalendarModal()" class="bg-rose-600 hover:bg-rose-700 active:scale-95 text-white border-2 border-white/75 px-3.5 py-1 rounded-xl text-[11px] font-extrabold shadow-md transition">✕ ออก</button>
+
                         </div>
                     </div>
 
@@ -1620,19 +1621,61 @@
         isQuickInlineBoxVisible = false;
         setPmDesktopModalWidth(desktopModalWidthMode || '65vw');
 
+        // ปรับขนาดช่องวันที่บนมือถือให้พอดีหน้าจอ เห็นครบเต็มเดือน 1-31 โดยปุ่มไม่ตัดบรรทัด
+        if (!document.getElementById('pmFullMonthFitStyle')) {
+            const fitSt = document.createElement('style');
+            fitSt.id = 'pmFullMonthFitStyle';
+            fitSt.textContent = `
+                @media (max-width: 639px) {
+                    #pmCalendarModal .pm-day-cell { min-height: 50px !important; padding: 3px !important; }
+                    #pmCalendarDaysGrid { gap: 4px !important; }
+                }
+                #pmCalendarMonthTitle, #pmCalendarGridPanel button[onclick="jumpPmCalendarToday()"] {
+                    white-space: nowrap;
+                }
+            `;
+            document.head.appendChild(fitSt);
+        }
+
+        // บังคับเปิดหน้าตารางปฏิทินรายเดือนเสมอทุกครั้งที่กดเข้ามา
+        calendarLeftViewMode = 'grid';
+        document.getElementById('pmCalendarGridPanel')?.classList.remove('hidden');
+        document.getElementById('pmCalendarMapPanel')?.classList.add('hidden');
+        const btnGrid = document.getElementById('pmViewTab-grid');
+        const btnMap = document.getElementById('pmViewTab-map');
+        if (btnGrid) btnGrid.className = 'px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm';
+        if (btnMap) btnMap.className = 'px-3 py-1 rounded-lg text-slate-600 hover:bg-slate-200/60';
+
+        // ตั้งเป็นเดือนและวันปัจจุบันอัตโนมัติ (หรือตามวันที่ระบุ)
         if (presetDateIso && /^\d{4}-\d{2}-\d{2}$/.test(presetDateIso)) {
             selectedDateIso = presetDateIso;
             const [y, m] = presetDateIso.split('-').map(Number);
             viewYear = y;
             viewMonth = m - 1;
-            currentFilterStatus = 'day';
+        } else {
+            const now = new Date();
+            viewYear = now.getFullYear();
+            viewMonth = now.getMonth();
+            selectedDateIso = toLocalIsoDate(now);
         }
+        currentFilterStatus = 'day';
+
+        // แสดงหน้าต่างก่อนสั่งวาดตาราง เพื่อให้วันที่เต็มเดือนแสดงขึ้นมาทันทีทุกครั้ง
+        const calModal = document.getElementById('pmCalendarModal');
+        calModal?.classList.remove('hidden');
+
+        renderPmCalendarGrid();
+        renderPmSelectedDayList();
         refreshPmAllViews();
-        document.getElementById('pmCalendarModal')?.classList.remove('hidden');
-        if (calendarLeftViewMode === 'map') {
-            setTimeout(() => calendarMapInstance?.invalidateSize(), 150);
+
+        // เลื่อนมุมมองกลับไปด้านบนสุดที่ตารางเดือนเสมอ
+        const scrollWrap = calModal?.querySelector('.pm-desktop-split');
+        if (scrollWrap) {
+            scrollWrap.scrollTop = 0;
+            requestAnimationFrame(() => { scrollWrap.scrollTop = 0; });
         }
     }
+
 
     function closePmCalendarModal() {
         isQuickInlineBoxVisible = false;
