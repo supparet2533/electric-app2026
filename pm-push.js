@@ -1,7 +1,7 @@
 // ============================================================================
 // 📲 PEA SMART GRID — FIREBASE WEB PUSH CLIENT MODULE (pm-push.js)
 // ผูกเครื่องรับแจ้งเตือนแม้ปัดปิดแอป + ซิงค์เฉพาะตารางเวลาเตือนไร้ข้อมูลลับขึ้นหลังบ้าน
-// โปรเจกต์: SamSrikacha (samsrikacha-da210)
+// โปรเจกต์: SamSrikacha (samsrikacha-da210) — รุ่นลดภาระคิวซิงค์ตอนเปิดแอป
 // ============================================================================
 (function () {
     'use strict';
@@ -21,10 +21,13 @@
 
     const PUSH_TOKEN_KEY = 'elec_pm_fcm_token_v1';
     const PUSH_TOKEN_GRP_KEY = 'elec_pm_fcm_group_v1';
+    const SAVED_SCHED_SIG_KEY = 'elec_pm_push_sched_sig_v1';
     const PM_STORAGE_KEY = 'elec_pm_calendar_plans_v1';
 
     let fcmMessagingInstance = null;
-    let lastSyncedScheduleSig = '';
+    let lastSyncedScheduleSig = localStorage.getItem(SAVED_SCHED_SIG_KEY) || '';
+    let syncDebounceTimer = null;
+    let isSyncInFlight = false;
 
     function notifyMsg(msg) {
         if (typeof window.showToast === 'function') window.showToast(msg);
@@ -85,9 +88,9 @@
         return res.json();
     }
 
-    // ซิงค์เฉพาะโครงสร้างเวลาเตือน (ตัดชื่อแผนงาน รหัสอุปกรณ์ และพิกัดออก 100%)
+    // ซิงค์เฉพาะเมื่อตารางเวลาเปลี่ยนจริง (ตัดชื่อแผนงาน รหัสอุปกรณ์ และพิกัดออก 100%)
     async function syncStrippedScheduleToBackend(force = false) {
-        if (localStorage.getItem('elec_app_logged_in') !== 'true') return;
+        if (isSyncInFlight || localStorage.getItem('elec_app_logged_in') !== 'true') return;
         const grp = getUserGroup();
         let rawPlans = [];
         try { rawPlans = JSON.parse(localStorage.getItem(PM_STORAGE_KEY) || '[]'); } catch (e) {}
@@ -126,11 +129,19 @@
 
         const sig = grp + '__' + JSON.stringify(stripped);
         if (!force && sig === lastSyncedScheduleSig) return;
-        lastSyncedScheduleSig = sig;
 
+        isSyncInFlight = true;
         try {
-            await postToGas({ action: 'pmPushSyncSchedule', group: grp, schedule: stripped });
-        } catch (e) {}
+            const res = await postToGas({ action: 'pmPushSyncSchedule', group: grp, schedule: stripped });
+            if (res && res.ok) {
+                lastSyncedScheduleSig = sig;
+                _origSetItem.call(localStorage, SAVED_SCHED_SIG_KEY, sig);
+            }
+        } catch (e) {
+            // หากออฟไลน์จะลองซิงค์ใหม่รอบถัดไปอัตโนมัติ
+        } finally {
+            isSyncInFlight = false;
+        }
     }
 
     async function enableBackgroundPushAlerts() {
@@ -168,8 +179,8 @@
             }
 
             await syncStrippedScheduleToBackend(true);
-            localStorage.setItem(PUSH_TOKEN_KEY, token);
-            localStorage.setItem(PUSH_TOKEN_GRP_KEY, grp);
+            _origSetItem.call(localStorage, PUSH_TOKEN_KEY, token);
+            _origSetItem.call(localStorage, PUSH_TOKEN_GRP_KEY, grp);
             updatePushBtnUI();
 
             const testRes = await postToGas({ action: 'pmPushTest', token, group: grp, pageUrl: pageFile });
@@ -202,11 +213,13 @@
         }
     }
 
+    // รวมจังหวะการบันทึกแผนงานต่อเนื่องให้ยิงซิงค์หลังบ้านเพียงครั้งเดียว (Debounce 1.5 วินาที)
     const _origSetItem = localStorage.setItem;
     localStorage.setItem = function (key, val) {
         _origSetItem.apply(this, arguments);
         if (key === PM_STORAGE_KEY) {
-            setTimeout(() => syncStrippedScheduleToBackend(false), 600);
+            if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+            syncDebounceTimer = setTimeout(() => syncStrippedScheduleToBackend(false), 1500);
         }
     };
 
@@ -220,8 +233,17 @@
 
     function bootPmPushClient() {
         window.requestPmBrowserNotificationPermission = enableBackgroundPushAlerts;
+
+        // 1. อัปเดตปุ่มหน้าจอทันทีโดยไม่แตะเครือข่าย (ไม่รบกวนการโหลดใบงานหลัก)
         setTimeout(() => {
             updatePushBtnUI();
+            if (location.search.includes('openPm=1') && typeof window.openPmCalendarModal === 'function') {
+                window.openPmCalendarModal();
+            }
+        }, 1000);
+
+        // 2. หน่วงงานเช็กซิงค์เบื้องหลังออกไป 6 วินาที ให้ระบบรันเลขงานและโหลดใบงานหลักเสร็จก่อน
+        setTimeout(() => {
             syncStrippedScheduleToBackend(false);
 
             const savedToken = localStorage.getItem(PUSH_TOKEN_KEY);
@@ -229,14 +251,10 @@
             if (savedToken && localStorage.getItem('elec_app_logged_in') === 'true' && savedGrp !== getUserGroup()) {
                 const pageFile = location.pathname.includes('page2') ? './page2.html?openPm=1' : './index.html?openPm=1';
                 postToGas({ action: 'pmPushRegister', token: savedToken, group: getUserGroup(), pageUrl: pageFile })
-                    .then(() => localStorage.setItem(PUSH_TOKEN_GRP_KEY, getUserGroup()))
+                    .then(() => _origSetItem.call(localStorage, PUSH_TOKEN_GRP_KEY, getUserGroup()))
                     .catch(() => {});
             }
-
-            if (location.search.includes('openPm=1') && typeof window.openPmCalendarModal === 'function') {
-                setTimeout(() => window.openPmCalendarModal(), 900);
-            }
-        }, 1600);
+        }, 6000);
 
         setInterval(updatePushBtnUI, 3000);
     }
