@@ -1,14 +1,14 @@
 // ============================================================================
-// 📅📍 PEA SMART GRID — MAINTENANCE SCHEDULE & WORK PLAN PINS ENGINE v6.6 (pm-calendar.js)
-// ระบบปฏิทินแผนงานบำรุงรักษา + หมุดแผนงาน + HOTLINE + ท่อซิงค์ Cloud/MQTT รายชิ้นอัตโนมัติ
-// พาทที่ 1 / 4 : Config, HOTLINE Category, Direct Cloud/Fetch/Broadcast Sync & Alert Engine
+// 📅⏰ PEA SMART GRID — MAINTENANCE SCHEDULE & CUSTOM ALERT ENGINE v6.8 (pm-calendar.js)
+// ระบบปฏิทินแผนงานบำรุงรักษา + หมุดแผนงาน + ตั้งเวลาเตือนแยกแต่ละงานได้อิสระ + เตือนแม้ออกจากระบบ
+// พาทที่ 1 / 4 : Config, Per-Task Custom Alert Time Engine, Cloud/MQTT Sync & Auth Cache
 // ============================================================================
 (function () {
     'use strict';
 
     const Core = window.PeaCore;
     const PM_STORAGE_KEY = 'elec_pm_calendar_plans_v1';
-    const PM_ACK_LOG_KEY = 'elec_pm_alert_ack_log_v1';
+    const PM_ACK_LOG_KEY = 'elec_pm_alert_ack_log_v2';
     const PM_SOUND_KEY = 'elec_pm_alert_sound_enabled';
     const PM_SHOW_SCADA_DUE_KEY = 'elec_pm_show_scada_due_pins';
     const PM_SHOW_MAP_PINS_KEY = 'elec_pm_show_pins_on_map';
@@ -16,6 +16,13 @@
     const PM_LOC_PREFIX = '__PM_SCHEDULE__';
     const PM_SYNC_CHANNEL = 'pea_pm_live_sync_v1';
 
+    const PM_LAST_GROUP_KEY = 'elec_pm_last_group_v1';
+    const PM_LAST_USER_KEY = 'elec_pm_last_user_v1';
+    const PM_LAST_ROLE_KEY = 'elec_pm_last_role_v1';
+    const PM_LAST_API_URL_KEY = 'elec_pm_last_api_url_v1';
+    const PM_HAS_SESSION_HISTORY_KEY = 'elec_pm_has_session_history_v1';
+
+    const DEFAULT_STANDARD_ALERT_TIMES = ['00:00', '07:00'];
     const MAX_TOMBSTONE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
     const MAX_CLOUD_SYNC_ITEMS = 120;
 
@@ -27,52 +34,28 @@
 
     const PM_CATEGORIES = {
         tree: {
-            key: 'tree',
-            icon: '🌳',
-            name: 'ตัดรอนกิ่งไม้ใกล้แนวสาย',
-            pillCls: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-            barBg: '#10b981',
-            defaultColor: 'emerald'
+            key: 'tree', icon: '🌳', name: 'ตัดรอนกิ่งไม้ใกล้แนวสาย',
+            pillCls: 'bg-emerald-100 text-emerald-800 border-emerald-300', barBg: '#10b981', defaultColor: 'emerald'
         },
         scada: {
-            key: 'scada',
-            icon: '⚡',
-            name: 'ดับไฟ',
-            pillCls: 'bg-sky-100 text-sky-800 border-sky-300',
-            barBg: '#0284c7',
-            defaultColor: 'sky'
+            key: 'scada', icon: '⚡', name: 'ตรวจสวิตช์ / อุปกรณ์ SCADA',
+            pillCls: 'bg-sky-100 text-sky-800 border-sky-300', barBg: '#0284c7', defaultColor: 'sky'
         },
         tr: {
-            key: 'tr',
-            icon: '🔌',
-            name: 'เชื่อมสาย',
-            pillCls: 'bg-amber-100 text-amber-900 border-amber-300',
-            barBg: '#f59e0b',
-            defaultColor: 'amber'
+            key: 'tr', icon: '🔌', name: 'บำรุงรักษาหม้อแปลง / โหลด',
+            pillCls: 'bg-amber-100 text-amber-900 border-amber-300', barBg: '#f59e0b', defaultColor: 'amber'
         },
         thermo: {
-            key: 'thermo',
-            icon: '🔥',
-            name: 'แก้จุดร้อน/ส่องกล้องความร้อน',
-            pillCls: 'bg-rose-100 text-rose-800 border-rose-300',
-            barBg: '#e11d48',
-            defaultColor: 'rose'
+            key: 'thermo', icon: '🔥', name: 'ส่องกล้องความร้อน (Thermo)',
+            pillCls: 'bg-rose-100 text-rose-800 border-rose-300', barBg: '#e11d48', defaultColor: 'rose'
         },
         hotline: {
-            key: 'hotline',
-            icon: '🦺',
-            name: 'HOTLINE เข้าทำงาน',
-            pillCls: 'bg-orange-100 text-orange-900 border-orange-300',
-            barBg: '#ea580c',
-            defaultColor: 'orange'
+            key: 'hotline', icon: '🦺', name: 'HOTLINE เข้าทำงาน',
+            pillCls: 'bg-orange-100 text-orange-900 border-orange-300', barBg: '#ea580c', defaultColor: 'orange'
         },
         patrol: {
-            key: 'patrol',
-            icon: '🛠️',
-            name: 'แผนสวิชชิ่งดับไฟปฏิบัติงาน',
-            pillCls: 'bg-purple-100 text-purple-800 border-purple-300',
-            barBg: '#7c3aed',
-            defaultColor: 'purple'
+            key: 'patrol', icon: '🛠️', name: 'แผนดับไฟปฏิบัติงาน / อื่นๆ',
+            pillCls: 'bg-purple-100 text-purple-800 border-purple-300', barBg: '#7c3aed', defaultColor: 'purple'
         }
     };
 
@@ -96,6 +79,9 @@
     let calendarLeftViewMode = 'grid';
     let isTechStripCollapsed = false;
 
+    let tempFormCustomTimes = [];
+    let lastActivePopupAckTokens = [];
+
     let isPmSoundEnabled = localStorage.getItem(PM_SOUND_KEY) !== 'false';
     let showScadaDuePins = localStorage.getItem(PM_SHOW_SCADA_DUE_KEY) !== 'false';
     let showPmPinsOnMaps = localStorage.getItem(PM_SHOW_MAP_PINS_KEY) !== 'false';
@@ -103,59 +89,136 @@
     let isSyncingPmInternal = false;
     let lastCheckedAlertMinuteKey = '';
 
-    let scadaMapRef = null;
-    let scadaPmLayer = null;
-    let scadaPmMarkersById = {};
-    let repairMapRef = null;
-    let repairPmLayer = null;
-    let repairPmMarkersById = {};
-
-    let calendarMapInstance = null;
-    let calendarPmLayer = null;
-    let calendarPmMarkersById = {};
-
-    let formMiniMap = null;
-    let formMiniMarker = null;
-    let isFormMiniMapOpen = false;
-
-    let pmPinDropModeActive = false;
-    let pmPinMoveTargetId = null;
-    let leafletLoadPromise = null;
+    let scadaMapRef = null, scadaPmLayer = null, scadaPmMarkersById = {};
+    let repairMapRef = null, repairPmLayer = null, repairPmMarkersById = {};
+    let calendarMapInstance = null, calendarPmLayer = null, calendarPmMarkersById = {};
+    let formMiniMap = null, formMiniMarker = null, isFormMiniMapOpen = false;
+    let pmPinDropModeActive = false, pmPinMoveTargetId = null, leafletLoadPromise = null;
 
     let pmBroadcast = null;
     try { if ('BroadcastChannel' in window) pmBroadcast = new BroadcastChannel(PM_SYNC_CHANNEL); } catch (e) {}
 
-    // บังคับอัปเดต Service Worker ทันทีเมื่อมีเวอร์ชันใหม่บน GitHub
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.update())).catch(() => {});
     }
 
     // ========================================================================
-    // 1. โหลดไลบรารีแผนที่อัตโนมัติ & ฟังก์ชันจัดการวันที่/สิทธิ์
+    // 1. ฟังก์ชันจัดการเวลาเตือนรายแผนงาน, วันที่ พ.ศ. & จำสิทธิ์กลุ่มสังกัด
     // ========================================================================
     function rawGet(key) {
-        return Core && typeof Core.rawStorageGet === 'function'
-            ? Core.rawStorageGet(key)
-            : localStorage.getItem(key);
+        return Core && typeof Core.rawStorageGet === 'function' ? Core.rawStorageGet(key) : localStorage.getItem(key);
+    }
+
+    function normalizeTimeHHMM(rawStr) {
+        if (!rawStr) return '';
+        const m = String(rawStr).trim().replace(/\./g, ':').match(/^(\d{1,2})\s*:\s*(\d{1,2})/);
+        if (!m) return '';
+        const hh = parseInt(m[1], 10), mm = parseInt(m[2], 10);
+        if (isNaN(hh) || isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return '';
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+
+    function timeHHMMToMinutes(hhmm) {
+        const clean = normalizeTimeHHMM(hhmm);
+        if (!clean) return -1;
+        const [h, m] = clean.split(':').map(Number);
+        return h * 60 + m;
+    }
+
+    function normalizeCustomTimesArray(arr) {
+        if (!Array.isArray(arr)) return [];
+        const set = new Set();
+        arr.forEach(t => {
+            const clean = normalizeTimeHHMM(t);
+            if (clean) set.add(clean);
+        });
+        return Array.from(set).sort((a, b) => timeHHMMToMinutes(a) - timeHHMMToMinutes(b));
+    }
+
+    function getPlanEffectiveAlertConfig(item) {
+        const customTimes = normalizeCustomTimesArray(item?.customAlertTimes || []);
+        const rawMode = item?.alertMode || (customTimes.length > 0 ? 'both' : 'standard');
+
+        if (rawMode === 'off') {
+            return { mode: 'off', customTimes, allTimes: [], badgeLabel: '🔕 ปิดเตือน' };
+        }
+        if (rawMode === 'custom_only') {
+            return {
+                mode: 'custom_only',
+                customTimes,
+                allTimes: customTimes,
+                badgeLabel: customTimes.length > 0 ? `⏰ เตือน ${customTimes.join(', ')} น.` : '🔕 ยังไม่ระบุเวลา'
+            };
+        }
+        if (rawMode === 'both') {
+            const combined = normalizeCustomTimesArray([...DEFAULT_STANDARD_ALERT_TIMES, ...customTimes]);
+            return {
+                mode: 'both',
+                customTimes,
+                allTimes: combined,
+                badgeLabel: customTimes.length > 0 ? `🔔 ปกติ + ⏰ ${customTimes.join(', ')} น.` : '🔔 00:00, 07:00 น.'
+            };
+        }
+        return {
+            mode: 'standard',
+            customTimes,
+            allTimes: [...DEFAULT_STANDARD_ALERT_TIMES],
+            badgeLabel: '🔔 00:00, 07:00 น.'
+        };
+    }
+
+    function isUserCurrentlyLoggedIn() { return rawGet('elec_app_logged_in') === 'true'; }
+
+    function rememberActiveAuthForLoggedOutAlerts() {
+        if (!isUserCurrentlyLoggedIn()) return;
+        const curUser = (rawGet('elec_app_current_user') || '').trim();
+        const curRole = (rawGet('elec_app_current_role') || 'user').trim();
+        const curGrp = ((typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') || rawGet('elec_app_current_group') || '').trim();
+        const apiUrl = (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '').trim();
+
+        localStorage.setItem(PM_HAS_SESSION_HISTORY_KEY, 'true');
+        if (curUser) localStorage.setItem(PM_LAST_USER_KEY, curUser);
+        if (curRole) localStorage.setItem(PM_LAST_ROLE_KEY, curRole);
+        localStorage.setItem(PM_LAST_GROUP_KEY, curGrp);
+        if (apiUrl) localStorage.setItem(PM_LAST_API_URL_KEY, apiUrl);
+    }
+
+    function hasRememberedPmSession() {
+        if (isUserCurrentlyLoggedIn() || rawGet(PM_HAS_SESSION_HISTORY_KEY) === 'true') return true;
+        if (rawGet(PM_LAST_GROUP_KEY) || rawGet('elec_last_logged_group_name')) return true;
+        try { return JSON.parse(rawGet(PM_STORAGE_KEY) || '[]').some(p => p && !p.pmDeleted); } catch (e) { return false; }
+    }
+
+    function getEffectiveRoleAndExplicitGroup() {
+        if (isUserCurrentlyLoggedIn()) {
+            return {
+                role: rawGet('elec_app_current_role') || 'user',
+                explicitGroup: ((typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') || rawGet('elec_app_current_group') || '').trim()
+            };
+        }
+        return {
+            role: rawGet(PM_LAST_ROLE_KEY) || 'user',
+            explicitGroup: (rawGet(PM_LAST_GROUP_KEY) || rawGet('elec_last_logged_group_name') || '').trim()
+        };
+    }
+
+    function getActivePmGroup() {
+        const { explicitGroup } = getEffectiveRoleAndExplicitGroup();
+        if (explicitGroup) return explicitGroup;
+        return (pmPlans.find(p => p && !p.pmDeleted && p.ownerGroup)?.ownerGroup || 'กฟส.บึง').trim();
     }
 
     function ensureLeafletReady() {
         if (typeof L !== 'undefined' && L.map) return Promise.resolve(true);
         if (leafletLoadPromise) return leafletLoadPromise;
-
         leafletLoadPromise = new Promise((resolve) => {
             if (!document.querySelector('link[href*="leaflet.css"]')) {
-                const link = document.createElement('link');
-                link.rel = 'stylesheet';
-                link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-                document.head.appendChild(link);
+                const link = document.createElement('link'); link.rel = 'stylesheet';
+                link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(link);
             }
             const script = document.createElement('script');
             script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-            script.onload = () => {
-                if (typeof bindLeafletMapHooks === 'function') bindLeafletMapHooks();
-                resolve(true);
-            };
+            script.onload = () => { if (typeof bindLeafletMapHooks === 'function') bindLeafletMapHooks(); resolve(true); };
             script.onerror = () => { leafletLoadPromise = null; resolve(false); };
             document.head.appendChild(script);
         });
@@ -188,63 +251,42 @@
     function formatThaiDateFull(isoStr) {
         if (!isoStr || !String(isoStr).includes('-')) return '-';
         const [y, m, d] = String(isoStr).split('-').map(Number);
-        if (!y || !m || !d) return isoStr;
-        return `${THAI_DAYS_SHORT[new Date(y, m - 1, d).getDay()] || ''} ${d} ${THAI_MONTHS[m - 1]} ${y + 543}`;
+        return (!y || !m || !d) ? isoStr : `${THAI_DAYS_SHORT[new Date(y, m - 1, d).getDay()] || ''} ${d} ${THAI_MONTHS[m - 1]} ${y + 543}`;
     }
-
     function formatThaiDateShort(isoStr) {
         if (!isoStr || !String(isoStr).includes('-')) return '-';
         const [y, m, d] = String(isoStr).split('-').map(Number);
         return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y + 543}`;
     }
-
     function formatThaiDayMonthShort(isoStr) {
         if (!isoStr || !String(isoStr).includes('-')) return '';
         const [, m, d] = String(isoStr).split('-').map(Number);
         return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
     }
 
-    function getActivePmGroup() {
-        const g = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
-                  rawGet('elec_app_current_group') || '';
-        return g.trim() || 'กฟส.บึง';
-    }
-
     function canManagePmSchedule() {
-        return rawGet('elec_app_logged_in') === 'true' &&
-               !isViewerRole() &&
-               canCurrentUserEditScada() &&
-               !(Core && Core.simSandbox && Core.simSandbox.active);
+        return isUserCurrentlyLoggedIn() && !isViewerRole() && canCurrentUserEditScada() && !(Core?.simSandbox?.active);
     }
-
     function canCompletePmTask() {
-        return rawGet('elec_app_logged_in') === 'true' &&
-               !isViewerRole() &&
-               !(Core && Core.simSandbox && Core.simSandbox.active);
+        return isUserCurrentlyLoggedIn() && !isViewerRole() && !(Core?.simSandbox?.active);
     }
-
     function canSeePmPlan(plan) {
         if (!plan || plan.pmDeleted) return false;
-        const role = rawGet('elec_app_current_role') || 'user';
-        const myGrp = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
-                      rawGet('elec_app_current_group') || '';
-        if (role === 'admin' && !myGrp) return true;
+        const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
+        if (role === 'admin' && !explicitGroup) return true;
         return (plan.ownerGroup || 'กฟส.บึง').trim() === getActivePmGroup();
     }
-
     function getCategoryMeta(catKey) { return PM_CATEGORIES[catKey] || PM_CATEGORIES.scada; }
 
     function getPlanPinVisualTheme(item) {
         const cat = getCategoryMeta(item?.category);
-        const chosenKey = (item?.pinColor && PM_PIN_COLORS[item.pinColor] && item.pinColor !== 'auto')
-            ? item.pinColor
-            : cat.defaultColor;
+        const chosenKey = (item?.pinColor && PM_PIN_COLORS[item.pinColor] && item.pinColor !== 'auto') ? item.pinColor : cat.defaultColor;
         const cMeta = PM_PIN_COLORS[chosenKey] || PM_PIN_COLORS.sky;
         return { icon: cat.icon, catName: cat.name, hex: cMeta.hex, grad: cMeta.grad };
     }
 
     // ========================================================================
-    // 2. ท่อซิงค์แผนงาน PM แบบรายชิ้น (Cloud Fetch Hook + MQTT + BroadcastChannel)
+    // 2. ท่อซิงค์แผนงาน PM (Cloud Fetch Hook + MQTT + ดึงข้อมูลแม้อยู่หน้าล็อกอิน)
     // ========================================================================
     function prunePmPlansArray(rawArr) {
         if (!Array.isArray(rawArr)) return [];
@@ -254,40 +296,29 @@
             const updMs = new Date(item.updatedAt || 0).getTime() || 0;
             if (item.pmDeleted && updMs > 0 && (now - updMs > MAX_TOMBSTONE_AGE_MS)) return;
             const ex = byId.get(item.id);
-            const exMs = ex ? (new Date(ex.updatedAt || 0).getTime() || 0) : -1;
-            if (!ex || updMs >= exMs) byId.set(item.id, item);
+            if (!ex || updMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) byId.set(item.id, item);
         });
         return Array.from(byId.values()).sort((a, b) =>
-            String(a.date || '').localeCompare(String(b.date || '')) ||
-            String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''))
+            String(a.date || '').localeCompare(String(b.date || '')) || String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''))
         );
     }
 
     function loadPmPlansFromStorage() {
-        try { pmPlans = prunePmPlansArray(JSON.parse(rawGet(PM_STORAGE_KEY) || '[]')); }
-        catch (e) { pmPlans = []; }
+        try { pmPlans = prunePmPlansArray(JSON.parse(rawGet(PM_STORAGE_KEY) || '[]')); } catch (e) { pmPlans = []; }
         return pmPlans;
     }
 
     function buildCloudCarrierMapForGroup(groupName) {
-        const now = Date.now();
-        const out = {};
+        const now = Date.now(), out = {};
         pmPlans
             .filter(p => (p.ownerGroup || 'กฟส.บึง').trim() === groupName)
-            .filter(p => {
-                if (p.pmDeleted) return (now - (new Date(p.updatedAt || 0).getTime() || 0)) <= MAX_TOMBSTONE_AGE_MS;
-                if (p.status === 'done') {
-                    const dMs = parseIsoToMidnightMs(p.date);
-                    return isNaN(dMs) || (now - dMs) <= (90 * 86400000);
-                }
-                return true;
-            })
+            .filter(p => p.pmDeleted ? (now - (new Date(p.updatedAt || 0).getTime() || 0)) <= MAX_TOMBSTONE_AGE_MS : (p.status !== 'done' || isNaN(parseIsoToMidnightMs(p.date)) || (now - parseIsoToMidnightMs(p.date)) <= 90 * 86400000))
             .slice(-MAX_CLOUD_SYNC_ITEMS)
             .forEach(p => { out[p.id] = p; });
         return out;
     }
 
-    function mergeIncomingPmItems(incomingArr) {
+    function mergeIncomingPmItems(incomingArr, triggerAlertCheck = true) {
         if (!Array.isArray(incomingArr) || incomingArr.length === 0) return false;
         loadPmPlansFromStorage();
         const beforeSig = JSON.stringify(pmPlans);
@@ -296,10 +327,32 @@
             pmPlans = merged;
             localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(pmPlans));
             if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
-            checkAndTriggerScheduledPmAlerts(false);
+            if (triggerAlertCheck) checkAndTriggerScheduledPmAlerts(false);
             return true;
         }
         return false;
+    }
+
+    async function pullPmPlansWhileLoggedOut() {
+        if (isUserCurrentlyLoggedIn() || !hasRememberedPmSession() || (Core && Core.isEmbeddedIframe) || !navigator.onLine) return false;
+        const baseApiUrl = (rawGet(PM_LAST_API_URL_KEY) || (typeof getActiveCloudApiUrl === 'function' ? getActiveCloudApiUrl() : '')).trim();
+        if (!baseApiUrl) return false;
+        try {
+            const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
+            if (Core && typeof Core.forceCloudRead === 'function') Core.forceCloudRead();
+            const sep = baseApiUrl.includes('?') ? '&' : '?';
+            const res = await fetch(`${baseApiUrl}${sep}group=${encodeURIComponent(explicitGroup || getActivePmGroup())}&role=${encodeURIComponent(role)}&t=${Date.now()}`, { cache: 'no-store' });
+            const data = await res.json();
+            const locReg = Array.isArray(data?.jobs) ? data.jobs.find(j => j && j.jobType === 'tech_loc') : null;
+            if (!locReg?.techLocations) return false;
+            const cloudItems = [];
+            Object.keys(locReg.techLocations).forEach(k => {
+                if (k.startsWith(PM_LOC_PREFIX) && locReg.techLocations[k]?.pmPlansMap) {
+                    Object.values(locReg.techLocations[k].pmPlansMap).forEach(it => { if (it?.id) cloudItems.push(it); });
+                }
+            });
+            return mergeIncomingPmItems(cloudItems, false);
+        } catch (e) { return false; }
     }
 
     function broadcastPmLocalInstant() {
@@ -307,86 +360,50 @@
         try { pmBroadcast?.postMessage(pkt); } catch (e) {}
         try {
             if (window.parent && window.parent !== window) window.parent.postMessage(pkt, '*');
-            const leftIf = document.getElementById('leftBrowserIframe');
-            if (leftIf?.contentWindow) leftIf.contentWindow.postMessage(pkt, '*');
+            document.getElementById('leftBrowserIframe')?.contentWindow?.postMessage(pkt, '*');
         } catch (e) {}
     }
 
-    if (pmBroadcast) {
-        pmBroadcast.onmessage = (e) => {
-            if (e.data?.type === 'PM_PLANS_SYNC' && Array.isArray(e.data.plans)) mergeIncomingPmItems(e.data.plans);
-        };
-    }
-    window.addEventListener('message', (e) => {
-        if (e.data?.type === 'PM_PLANS_SYNC' && Array.isArray(e.data.plans)) mergeIncomingPmItems(e.data.plans);
-    });
-    window.addEventListener('storage', (e) => {
-        if (e.key === PM_STORAGE_KEY && e.newValue) {
-            try { mergeIncomingPmItems(JSON.parse(e.newValue)); } catch (err) {}
-        }
-    });
+    if (pmBroadcast) pmBroadcast.onmessage = (e) => { if (e.data?.type === 'PM_PLANS_SYNC') mergeIncomingPmItems(e.data.plans); };
+    window.addEventListener('message', (e) => { if (e.data?.type === 'PM_PLANS_SYNC') mergeIncomingPmItems(e.data.plans); });
+    window.addEventListener('storage', (e) => { if (e.key === PM_STORAGE_KEY && e.newValue) { try { mergeIncomingPmItems(JSON.parse(e.newValue)); } catch (err) {} } });
 
     function writePmShardsIntoLocMap(locMapObj) {
         const locMap = locMapObj || getTechLocationsMap();
         const groups = new Set([getActivePmGroup()]);
         pmPlans.forEach(p => { if (p?.ownerGroup) groups.add(p.ownerGroup.trim()); });
         const nowIso = new Date().toISOString();
-
         groups.forEach(grp => {
             if (!grp) return;
-            const prevShard = locMap[PM_LOC_PREFIX + grp]?.pmPlansMap || {};
-            const localShard = buildCloudCarrierMapForGroup(grp);
-            const combinedShard = { ...prevShard };
-            Object.entries(localShard).forEach(([id, item]) => {
+            const combinedShard = { ...(locMap[PM_LOC_PREFIX + grp]?.pmPlansMap || {}) };
+            Object.entries(buildCloudCarrierMapForGroup(grp)).forEach(([id, item]) => {
                 const ex = combinedShard[id];
-                if (!ex || (new Date(item.updatedAt || 0).getTime() || 0) >= (new Date(ex.updatedAt || 0).getTime() || 0)) {
-                    combinedShard[id] = item;
-                }
+                if (!ex || (new Date(item.updatedAt || 0).getTime() || 0) >= (new Date(ex.updatedAt || 0).getTime() || 0)) combinedShard[id] = item;
             });
             locMap[PM_LOC_PREFIX + grp] = {
-                isSystemRegistry: true,
-                username: '',
-                group: grp,
-                isOnline: false,
-                gpsDisabled: true,
-                lat: null,
-                lon: null,
-                pmPlansMap: combinedShard,
-                lastSeenAt: nowIso,
-                updatedAt: nowIso
+                isSystemRegistry: true, username: '', group: grp, isOnline: false, gpsDisabled: true,
+                lat: null, lon: null, pmPlansMap: combinedShard, lastSeenAt: nowIso, updatedAt: nowIso
             };
         });
         return locMap;
     }
 
-    // ดักซิงค์กับ Google Sheets โดยตรงทุกจังหวะ POST และ GET เพื่อให้แผนงาน PM และใบงานเชื่อมถึงกัน 100%
     const _origFetchForPm = window.fetch;
     window.fetch = async function (input, init) {
         const urlStr = typeof input === 'string' ? input : (input?.url || '');
         const isGas = urlStr.includes('script.google.com');
-
-        if (isGas && init && init.method === 'POST' && typeof init.body === 'string' &&
-            (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
+        if (isGas && init && init.method === 'POST' && typeof init.body === 'string' && (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"'))) {
             try {
                 loadPmPlansFromStorage();
                 const bodyObj = JSON.parse(init.body);
-                const targetReg = bodyObj.action === 'saveJobs' && Array.isArray(bodyObj.jobs)
-                    ? bodyObj.jobs.find(j => j && j.jobType === 'tech_loc')
-                    : bodyObj.techLocDelta;
-
-                if (targetReg) {
-                    targetReg.techLocations = writePmShardsIntoLocMap(targetReg.techLocations || {});
-                    init = { ...init, body: JSON.stringify(bodyObj) };
-                }
+                const targetReg = bodyObj.action === 'saveJobs' && Array.isArray(bodyObj.jobs) ? bodyObj.jobs.find(j => j && j.jobType === 'tech_loc') : bodyObj.techLocDelta;
+                if (targetReg) { targetReg.techLocations = writePmShardsIntoLocMap(targetReg.techLocations || {}); init = { ...init, body: JSON.stringify(bodyObj) }; }
             } catch (e) {}
         }
-
         const response = await _origFetchForPm.call(this, input, init);
-
         if (isGas && (!init || !init.method || init.method.toUpperCase() === 'GET')) {
             try {
-                const cloned = response.clone();
-                const data = await cloned.json();
+                const data = await response.clone().json();
                 const locReg = Array.isArray(data?.jobs) ? data.jobs.find(j => j && j.jobType === 'tech_loc') : null;
                 if (locReg?.techLocations) {
                     const cloudItems = [];
@@ -403,41 +420,32 @@
     };
 
     async function savePmPlansAndSync(pushCloud = true) {
+        rememberActiveAuthForLoggedOutAlerts();
         pmPlans = prunePmPlansArray(pmPlans);
         localStorage.setItem(PM_STORAGE_KEY, JSON.stringify(pmPlans));
         broadcastPmLocalInstant();
-
         isSyncingPmInternal = true;
         try {
             const locMap = writePmShardsIntoLocMap(getTechLocationsMap());
-            if (Core && typeof Core.unlockCloudWrite === 'function') Core.unlockCloudWrite(20000);
+            if (Core?.unlockCloudWrite) Core.unlockCloudWrite(20000);
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
-        } finally {
-            isSyncingPmInternal = false;
-        }
-
+        } finally { isSyncingPmInternal = false; }
         if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
-
         if (pushCloud) {
-            if (Core && typeof Core.unlockCloudWrite === 'function') Core.unlockCloudWrite(20000);
+            if (Core?.unlockCloudWrite) Core.unlockCloudWrite(20000);
             if (typeof window.syncJobsWithFieldPage === 'function') {
                 if (typeof window.pullFieldReportsFromCloud === 'function') await window.pullFieldReportsFromCloud(true);
                 await window.syncJobsWithFieldPage();
-            } else if (typeof window.pushAllJobsToCloud === 'function') {
-                await window.pushAllJobsToCloud(false);
-            }
+            } else if (typeof window.pushAllJobsToCloud === 'function') await window.pushAllJobsToCloud(false);
         }
     }
 
     function syncPmPlansFromLocationsMap() {
         if (isSyncingPmInternal) return false;
-        const locMap = getTechLocationsMap();
-        const incomingList = [];
+        const locMap = getTechLocationsMap(), incomingList = [];
         Object.keys(locMap).forEach(k => {
-            if (!k.startsWith(PM_LOC_PREFIX)) return;
-            const pMap = locMap[k]?.pmPlansMap;
-            if (pMap && typeof pMap === 'object') {
-                Object.values(pMap).forEach(item => { if (item?.id) incomingList.push(item); });
+            if (k.startsWith(PM_LOC_PREFIX) && locMap[k]?.pmPlansMap) {
+                Object.values(locMap[k].pmPlansMap).forEach(item => { if (item?.id) incomingList.push(item); });
             }
         });
         return mergeIncomingPmItems(incomingList);
@@ -448,60 +456,39 @@
         try {
             const pins = JSON.parse(rawGet('elec_labeled_places_list') || '[]');
             const delMap = JSON.parse(rawGet('elec_deleted_labeled_places_map') || '{}');
-            const role = rawGet('elec_app_current_role') || 'user';
-            const myGrp = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
-                          rawGet('elec_app_current_group') || '';
-
-            return pins.filter(p => {
-                if (!p || !p.id || !p.dueDate || delMap[p.id]) return false;
-                if (role === 'admin' && !myGrp) return true;
-                return (p.ownerGroup || 'กฟส.บึง').trim() === getActivePmGroup();
-            }).map(p => ({
-                id: 'scada_due_' + p.id,
-                isScadaPinDue: true,
-                linkedPinId: p.id,
-                title: `ครบกำหนดหมุด: ${p.name}`,
-                category: 'scada',
-                pinColor: 'auto',
-                date: String(p.dueDate).trim(),
-                timeSlot: '08.30 น.',
-                notifyDaysBefore: 3,
-                equipCode: p.name || '',
-                feeder: p.scadaNode?.fd || '',
-                note: p.note || 'ตั้งเตือนวันครบกำหนดจากผังอุปกรณ์ไฟฟ้า',
-                lat: parseFloat(p.lat),
-                lon: parseFloat(p.lon),
-                gpsLink: `https://www.google.com/maps?q=${Number(p.lat).toFixed(6)},${Number(p.lon).toFixed(6)}`,
-                ownerGroup: (p.ownerGroup || 'กฟส.บึง').trim(),
-                status: 'pending'
-            }));
+            const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
+            return pins.filter(p => p?.id && p.dueDate && !delMap[p.id] && ((role === 'admin' && !explicitGroup) || (p.ownerGroup || 'กฟส.บึง').trim() === getActivePmGroup()))
+                .map(p => ({
+                    id: 'scada_due_' + p.id, isScadaPinDue: true, linkedPinId: p.id,
+                    title: `ครบกำหนดหมุด: ${p.name}`, category: 'scada', pinColor: 'auto',
+                    alertMode: 'standard', customAlertTimes: [],
+                    date: String(p.dueDate).trim(), timeSlot: '08.30 น.', notifyDaysBefore: 3,
+                    equipCode: p.name || '', feeder: p.scadaNode?.fd || '', note: p.note || 'ตั้งเตือนวันครบกำหนดจากผังอุปกรณ์ไฟฟ้า',
+                    lat: parseFloat(p.lat), lon: parseFloat(p.lon), gpsLink: `https://www.google.com/maps?q=${Number(p.lat).toFixed(6)},${Number(p.lon).toFixed(6)}`,
+                    ownerGroup: (p.ownerGroup || 'กฟส.บึง').trim(), status: 'pending'
+                }));
         } catch (e) { return []; }
     }
 
     function getAllVisibleCalendarItems() {
         loadPmPlansFromStorage();
-        return [...pmPlans.filter(canSeePmPlan), ...getVirtualScadaDueItems()].sort((a, b) => {
-            if (a.status !== b.status) return a.status === 'done' ? 1 : -1;
-            return String(a.date || '').localeCompare(String(b.date || '')) ||
-                   String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''));
-        });
+        return [...pmPlans.filter(canSeePmPlan), ...getVirtualScadaDueItems()].sort((a, b) =>
+            (a.status !== b.status ? (a.status === 'done' ? 1 : -1) : 0) ||
+            String(a.date || '').localeCompare(String(b.date || '')) || String(a.timeSlot || '').localeCompare(String(b.timeSlot || ''))
+        );
     }
 
     function getPlottablePmMapPins(forExternalMap = true) {
         const todayIso = getTodayIso();
         return getAllVisibleCalendarItems().filter(item => {
-            if (item.isScadaPinDue && forExternalMap) return false;
-            if (item.status === 'done') return false;
+            if ((item.isScadaPinDue && forExternalMap) || item.status === 'done') return false;
             if (isNaN(parseFloat(item.lat)) || isNaN(parseFloat(item.lon))) return false;
-            if (pmMapFilterMode === 'alert') {
-                return calcDaysUntil(item.date, todayIso) <= Number(item.notifyDaysBefore ?? 3);
-            }
-            return true;
+            return pmMapFilterMode === 'alert' ? calcDaysUntil(item.date, todayIso) <= Number(item.notifyDaysBefore ?? 3) : true;
         });
     }
 
     // ========================================================================
-    // 3. ระบบแจ้งเตือนอัตโนมัติ 2 รอบ (00.00 น. และ 07.00 น.)
+    // 3. เอนจินประเมินเวลาแจ้งเตือนรายแผนงาน (รองรับเวลาที่ตั้งเอง + รอบ 00:00 / 07:00)
     // ========================================================================
     function getAlertCandidatesForToday() {
         const todayIso = getTodayIso();
@@ -517,28 +504,37 @@
             .sort((a, b) => a.daysLeft - b.daysLeft);
     }
 
-    function getCurrentAlertRoundInfo() {
-        const now = new Date();
-        const isMorning = now.getHours() >= 7;
-        return {
-            slotKey: `${toLocalIsoDate(now)}_${isMorning ? '07' : '00'}`,
-            roundTitle: isMorning
-                ? '🌅 แจ้งเตือนหมุดแผนงานบำรุงรักษารอบเช้า (07.00 น.)'
-                : '🌙 แจ้งเตือนหมุดแผนงานบำรุงรักษารอบเที่ยงคืน (00.00 น.)'
-        };
+    function getAckLogMap() { try { return JSON.parse(rawGet(PM_ACK_LOG_KEY) || '{}'); } catch (e) { return {}; } }
+
+    function getDailyAckBucketKey(dateIso = getTodayIso()) {
+        const who = (rawGet('elec_app_current_user') || rawGet(PM_LAST_USER_KEY) || 'station').trim();
+        return `${who}__${getActivePmGroup()}__${dateIso}`;
     }
 
-    function getAckLogMap() {
-        try { return JSON.parse(rawGet(PM_ACK_LOG_KEY) || '{}'); } catch (e) { return {}; }
+    function preAckPastSlotsForPlanToday(planObj) {
+        if (!planObj?.id) return;
+        const now = new Date(), curMin = now.getHours() * 60 + now.getMinutes(), todayIso = toLocalIsoDate(now);
+        const cfg = getPlanEffectiveAlertConfig(planObj);
+        const pastSlots = cfg.allTimes.filter(t => timeHHMMToMinutes(t) < curMin);
+        if (pastSlots.length === 0) return;
+
+        const ackMap = getAckLogMap(), bKey = getDailyAckBucketKey(todayIso), gKey = `__GRP__${getActivePmGroup()}__${todayIso}`;
+        const setB = new Set(ackMap[bKey] || []), setG = new Set(ackMap[gKey] || []);
+        pastSlots.forEach(t => { setB.add(`${planObj.id}@${t}`); setG.add(`${planObj.id}@${t}`); });
+        ackMap[bKey] = Array.from(setB); ackMap[gKey] = Array.from(setG);
+        localStorage.setItem(PM_ACK_LOG_KEY, JSON.stringify(ackMap));
     }
 
     function acknowledgeCurrentPmAlertRound() {
-        const curUser = (rawGet('elec_app_current_user') || 'guest').trim();
-        const { slotKey } = getCurrentAlertRoundInfo();
-        const ackMap = getAckLogMap();
-        ackMap[`${curUser}__${getActivePmGroup()}__${slotKey}`] = getAlertCandidatesForToday().map(c => c.id);
+        const todayIso = getTodayIso(), ackMap = getAckLogMap();
+        const bKey = getDailyAckBucketKey(todayIso), gKey = `__GRP__${getActivePmGroup()}__${todayIso}`;
+        const setB = new Set(ackMap[bKey] || []), setG = new Set(ackMap[gKey] || []);
+
+        lastActivePopupAckTokens.forEach(tok => { setB.add(tok); setG.add(tok); });
+        ackMap[bKey] = Array.from(setB); ackMap[gKey] = Array.from(setG);
+
         const keys = Object.keys(ackMap);
-        if (keys.length > 80) keys.slice(0, keys.length - 80).forEach(k => delete ackMap[k]);
+        if (keys.length > 60) keys.slice(0, keys.length - 60).forEach(k => delete ackMap[k]);
         localStorage.setItem(PM_ACK_LOG_KEY, JSON.stringify(ackMap));
         document.getElementById('pmAlertPopupModal')?.classList.add('hidden');
         showToast('✅ รับทราบการแจ้งเตือนแผนงานรอบนี้แล้ว');
@@ -551,7 +547,7 @@
             const AudioCtx = window.AudioContext || window.webkitAudioContext;
             if (!AudioCtx) return;
             const ctx = new AudioCtx();
-            if (ctx.state === 'suspended') ctx.resume();
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
             [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
                 const osc = ctx.createOscillator(), gain = ctx.createGain();
                 osc.type = 'triangle';
@@ -559,40 +555,80 @@
                 gain.gain.setValueAtTime(0.16, ctx.currentTime + idx * 0.14);
                 gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.14 + 0.28);
                 osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(ctx.currentTime + idx * 0.14);
-                osc.stop(ctx.currentTime + idx * 0.14 + 0.28);
+                osc.start(ctx.currentTime + idx * 0.14); osc.stop(ctx.currentTime + idx * 0.14 + 0.28);
             });
             setTimeout(() => { if (ctx?.close) ctx.close().catch(() => {}); }, 1200);
         } catch (e) {}
     }
 
-    function checkAndTriggerScheduledPmAlerts(forceShow = false) {
-        if (rawGet('elec_app_logged_in') !== 'true' || (Core && Core.isEmbeddedIframe)) return;
-        const candidates = getAlertCandidatesForToday();
-        if (typeof updatePmHeaderBadgesAndStrip === 'function') updatePmHeaderBadgesAndStrip(candidates);
-        if (candidates.length === 0) return;
+    async function fireCornerSystemNotification(roundTitle, list, tagSuffix) {
+        if ((Core && Core.isEmbeddedIframe) || !('Notification' in window) || Notification.permission !== 'granted') return;
+        const opts = {
+            body: `🏢 ${getActivePmGroup()}: แจ้งเตือน ${list.length} งาน\n• ${list.slice(0, 2).map(c => `${c.title} (${c.latestSlot || ''} น.)`).join('\n• ')}`,
+            tag: 'pea-pm-alert-' + tagSuffix, renotify: true, requireInteraction: true
+        };
+        try {
+            const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+            if (reg?.showNotification) return await reg.showNotification(roundTitle, opts);
+        } catch (e) {}
+        try {
+            const n = new Notification(roundTitle, opts);
+            n.onclick = () => { window.focus(); if (isUserCurrentlyLoggedIn() && typeof openPmCalendarModal === 'function') openPmCalendarModal(); n.close(); };
+        } catch (e) {}
+    }
 
-        const curUser = (rawGet('elec_app_current_user') || 'guest').trim();
-        const { slotKey, roundTitle } = getCurrentAlertRoundInfo();
-        const ackedIds = new Set(getAckLogMap()[`${curUser}__${getActivePmGroup()}__${slotKey}`] || []);
-        if (!forceShow && !candidates.some(c => !ackedIds.has(c.id))) return;
+    function checkAndTriggerScheduledPmAlerts(forceShow = false) {
+        rememberActiveAuthForLoggedOutAlerts();
+        if ((Core && Core.isEmbeddedIframe) || !hasRememberedPmSession()) return;
+
+        const allCandidates = getAlertCandidatesForToday();
+        if (typeof updatePmHeaderBadgesAndStrip === 'function' && isUserCurrentlyLoggedIn()) {
+            updatePmHeaderBadgesAndStrip(allCandidates);
+        }
+        if (allCandidates.length === 0) return;
+
+        const now = new Date(), curMin = now.getHours() * 60 + now.getMinutes(), todayIso = toLocalIsoDate(now);
+        const ackMap = getAckLogMap();
+        const ackedSet = new Set([
+            ...(ackMap[getDailyAckBucketKey(todayIso)] || []),
+            ...(isUserCurrentlyLoggedIn() ? [] : (ackMap[`__GRP__${getActivePmGroup()}__${todayIso}`] || []))
+        ]);
+
+        const triggeredItems = [];
+        const tokensToAck = [];
+
+        allCandidates.forEach(item => {
+            const cfg = getPlanEffectiveAlertConfig(item);
+            if (!forceShow && (cfg.mode === 'off' || cfg.allTimes.length === 0)) return;
+            const reached = cfg.allTimes.filter(t => timeHHMMToMinutes(t) <= curMin);
+            const unacked = reached.filter(t => !ackedSet.has(`${item.id}@${t}`));
+
+            if (forceShow || unacked.length > 0) {
+                reached.forEach(t => tokensToAck.push(`${item.id}@${t}`));
+                triggeredItems.push({ ...item, latestSlot: unacked[unacked.length - 1] || reached[reached.length - 1] || cfg.badgeLabel });
+            }
+        });
+
+        if (triggeredItems.length === 0) return;
+        lastActivePopupAckTokens = tokensToAck;
+
+        const topSlot = triggeredItems[0]?.latestSlot || '';
+        const roundTitle = topSlot === '00:00'
+            ? '🌙 แจ้งเตือนแผนงานบำรุงรักษารอบเที่ยงคืน (00.00 น.)'
+            : (topSlot === '07:00' ? '🌅 แจ้งเตือนแผนงานบำรุงรักษารอบเช้า (07.00 น.)' : `⏰ แจ้งเตือนตามเวลาแผนงาน (${topSlot} น.)`);
 
         playPmAlertChime();
-        if ('Notification' in window && Notification.permission === 'granted') {
-            try {
-                new Notification(roundTitle, {
-                    body: `${getActivePmGroup()}: มีแผนบำรุงรักษา ${candidates.length} รายการ (1. ${candidates[0]?.title || ''})`,
-                    tag: 'pea-pm-alert-' + slotKey
-                });
-            } catch (e) {}
-        }
-        if (typeof showPmAlertSummaryModal === 'function') showPmAlertSummaryModal(roundTitle, candidates);
+        fireCornerSystemNotification(roundTitle, triggeredItems, `${todayIso}_${topSlot}`);
+        if (typeof showPmAlertSummaryModal === 'function') showPmAlertSummaryModal(roundTitle, triggeredItems);
     }
-    // ===== จบพาทที่ 1 / 4 ของไฟล์ pm-calendar.js (ต่อเข้ากับพาทที่ 2 / 4 เดิมได้เลยครับ) =====
-        // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ pm-calendar.js (วางต่อจากพาทที่ 1 / 3) =====
+    // ===== จบพาทที่ 1 / 4 ของไฟล์ pm-calendar.js (นำพาทที่ 2 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+        // ===== เริ่มพาทที่ 2 / 4 ของไฟล์ pm-calendar.js (วางต่อจากพาทที่ 1 / 4 รุ่น v6.8) =====
+
+    let isQuickInlineBoxVisible = false;
+    let desktopModalWidthMode = '65vw';
 
     // ========================================================================
-    // 4. สไตล์ชีตหมุดแผนงาน, ปุ่มบนแถบเมนู & แถบคิวแผนงานในหน้าช่าง
+    // 4. สไตล์ชีต (ขยายปฏิทิน 65% บนจอคอม), ปุ่มแถบเมนู & แถบคิวแผนงานหน้าช่าง
     // ========================================================================
     function injectPmCalendarStyles() {
         if (document.getElementById('peaPmCalendarStyles')) return;
@@ -601,6 +637,17 @@
         st.textContent = `
             .pm-day-cell { min-height: 60px; transition: all 0.15s ease; }
             @media (min-width: 640px) { .pm-day-cell { min-height: 76px; } }
+            @media (min-width: 1024px) {
+                #pmCalendarModal .pm-calendar-dialog {
+                    width: var(--pm-desktop-w, 65vw) !important;
+                    max-width: var(--pm-desktop-w, 65vw) !important;
+                    min-height: 84dvh;
+                }
+                #pmCalendarModal .pm-desktop-split {
+                    grid-template-columns: minmax(0, 65fr) minmax(0, 35fr) !important;
+                }
+                .pm-day-cell { min-height: 94px; padding: 6px !important; }
+            }
             .pm-day-cell:hover { background-color: #f0f9ff; border-color: #60a5fa; }
             .pm-day-selected { background-color: #eff6ff !important; border-color: #2563eb !important; box-shadow: inset 0 0 0 1.5px #2563eb; }
             .pm-badge-pulse { animation: pmPulseGlow 1.8s infinite ease-in-out; }
@@ -619,6 +666,23 @@
             body.role-viewer-readonly .pm-edit-only, body.scada-sim-active .pm-edit-only { display: none !important; }
         `;
         document.head.appendChild(st);
+    }
+
+    function setPmDesktopModalWidth(widthVal) {
+        desktopModalWidthMode = widthVal || '65vw';
+        const dlg = document.querySelector('#pmCalendarModal .pm-calendar-dialog');
+        if (dlg) dlg.style.setProperty('--pm-desktop-w', desktopModalWidthMode);
+        ['65vw', '80vw', '95vw'].forEach(w => {
+            const btn = document.getElementById('pmDesktopWBtn-' + w);
+            if (btn) {
+                btn.className = w === desktopModalWidthMode
+                    ? 'px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-extrabold text-[10px]'
+                    : 'px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]';
+            }
+        });
+        if (calendarLeftViewMode === 'map') {
+            setTimeout(() => calendarMapInstance?.invalidateSize(), 120);
+        }
     }
 
     function injectPmButtonsIntoScadaToolbar() {
@@ -712,7 +776,7 @@
         ['pmMainAlertCountBadge', 'pmTechAlertCountBadge'].forEach(id => {
             const el = document.getElementById(id);
             if (!el) return;
-            if (candidates.length > 0) {
+            if (candidates.length > 0 && isUserCurrentlyLoggedIn()) {
                 el.textContent = String(candidates.length);
                 el.className = `${urgentCnt > 0 ? 'bg-rose-500 pm-badge-pulse' : 'bg-amber-400 text-slate-950'} text-[10px] font-extrabold px-1.5 rounded-full shadow`;
                 el.classList.remove('hidden');
@@ -721,7 +785,7 @@
 
         const stripWrap = document.getElementById('pmTechQueueBannerWrap');
         if (!stripWrap) return;
-        if (candidates.length === 0 || rawGet('elec_app_logged_in') !== 'true') {
+        if (candidates.length === 0 || !isUserCurrentlyLoggedIn()) {
             stripWrap.classList.add('hidden');
             stripWrap.innerHTML = '';
             return;
@@ -730,19 +794,20 @@
         stripWrap.classList.remove('hidden');
         const rowsHtml = isTechStripCollapsed ? '' : `<div class="p-2.5 space-y-1.5 bg-white max-h-48 overflow-y-auto">${candidates.slice(0, 6).map(item => {
             const cat = getCategoryMeta(item.category);
+            const alCfg = getPlanEffectiveAlertConfig(item);
             const safeId = String(item.id).replace(/'/g, "\\'");
             const hasCoord = !isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon));
             const badge = item.daysLeft < 0
                 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">เลย ${Math.abs(item.daysLeft)} วัน</span>`
                 : (item.daysLeft === 0 ? `<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">📌 วันนี้</span>` : `<span class="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-1.5 py-0.5 rounded">อีก ${item.daysLeft} วัน</span>`);
-            return `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs"><div class="min-w-0 flex-1"><div class="flex items-center gap-1.5 flex-wrap">${badge}<span class="font-bold text-slate-800 truncate">${cat.icon} ${escapeHtmlStr(item.title)}</span></div>${item.equipCode ? `<div class="text-[10px] text-teal-700 font-semibold mt-0.5">⚡ ${escapeHtmlStr(item.equipCode)}</div>` : ''}</div><div class="flex items-center gap-1 shrink-0">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}${(!item.isScadaPinDue && canCompletePmTask()) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">✅ เสร็จ</button>` : ''}</div></div>`;
+            return `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs"><div class="min-w-0 flex-1"><div class="flex items-center gap-1.5 flex-wrap">${badge}<span class="font-bold text-slate-800 truncate">${cat.icon} ${escapeHtmlStr(item.title)}</span><span class="text-[10px] text-indigo-700 font-semibold">${escapeHtmlStr(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[10px] text-teal-700 font-semibold mt-0.5">⚡ ${escapeHtmlStr(item.equipCode)}</div>` : ''}</div><div class="flex items-center gap-1 shrink-0">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}${(!item.isScadaPinDue && canCompletePmTask()) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">✅ เสร็จ</button>` : ''}</div></div>`;
         }).join('')}</div>`;
 
         stripWrap.innerHTML = `<div class="rounded-2xl border-2 border-indigo-400/80 overflow-hidden shadow-sm bg-white"><div class="bg-gradient-to-r from-indigo-900 via-blue-900 to-teal-800 px-3 py-2 text-white flex items-center justify-between gap-2"><div onclick="openPmCalendarModal()" class="cursor-pointer flex items-center gap-1.5 min-w-0 flex-1"><span>📅</span><span class="text-xs font-extrabold truncate">หมุดแผนบำรุงรักษา (PM): แจ้งเตือน ${candidates.length} รายการ</span></div><div class="flex items-center gap-1 shrink-0"><button type="button" onclick="openPmCalendarModal()" class="bg-white/20 hover:bg-white/30 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">ปฏิทิน/แมพ</button><button type="button" onclick="togglePmTechStripCollapse()" class="bg-white/15 hover:bg-white/25 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">${isTechStripCollapsed ? '🔽 ขยาย' : '🔼 ย่อ'}</button></div></div>${rowsHtml}</div>`;
     }
 
     // ========================================================================
-    // 5. เอนจินวาด "หมุดแผนงาน" บนแผนที่ (SCADA Map / แผนที่งานซ่อม / แผนที่ปฏิทิน)
+    // 5. เอนจินวาด "หมุดแผนงาน" บนแผนที่ (SCADA Map / แผนที่ซ่อม / แผนที่ปฏิทิน)
     // ========================================================================
     function buildPmPlanMarkerIcon(item, isMovingThis = false) {
         const vis = getPlanPinVisualTheme(item);
@@ -756,30 +821,27 @@
         return L.divIcon({
             className: isMovingThis ? 'pm-plan-pin-moving' : '',
             html: `<div class="pm-plan-pin-wrap" style="${doneStyle}">${pulseHtml}<div class="pm-plan-pin-date">${escapeHtmlStr(dateTag)}</div><div class="pm-plan-pin-head" style="background:${vis.grad};"><span>${vis.icon}</span></div></div>`,
-            iconSize: [34, 40],
-            iconAnchor: [17, 34],
-            popupAnchor: [0, -32]
+            iconSize: [34, 40], iconAnchor: [17, 34], popupAnchor: [0, -32]
         });
     }
 
     function buildPmPlanPopupHtml(item) {
         const vis = getPlanPinVisualTheme(item);
+        const alCfg = getPlanEffectiveAlertConfig(item);
         const daysLeft = calcDaysUntil(item.date, getTodayIso());
         const isDone = item.status === 'done';
         const safeId = String(item.id).replace(/'/g, "\\'");
         const statusTag = isDone
             ? '<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">✅ เสร็จสิ้นแล้ว</span>'
-            : (daysLeft < 0
-                ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">🚨 เลยกำหนด ${Math.abs(daysLeft)} วัน</span>`
-                : (daysLeft === 0
-                    ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 กำหนดวันนี้</span>'
+            : (daysLeft < 0 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">🚨 เลยกำหนด ${Math.abs(daysLeft)} วัน</span>`
+                : (daysLeft === 0 ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 กำหนดวันนี้</span>'
                     : `<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-full">🗓️ อีก ${daysLeft} วัน</span>`));
 
         const allowEdit = !item.isScadaPinDue && canManagePmSchedule();
         const allowDone = !item.isScadaPinDue && canCompletePmTask();
 
         return `
-            <div style="font-family:'Prompt',sans-serif;min-width:240px;" class="space-y-1.5 text-xs">
+            <div style="font-family:'Prompt',sans-serif;min-width:245px;" class="space-y-1.5 text-xs">
                 <div class="flex items-center justify-between gap-1">
                     <span class="px-2 py-0.5 rounded text-white text-[10px] font-extrabold" style="background:${vis.hex}">${vis.icon} หมุดแผนงาน PM</span>
                     ${statusTag}
@@ -787,15 +849,15 @@
                 <div class="font-extrabold text-slate-900 text-sm break-words pt-0.5">${escapeHtmlStr(item.title)}</div>
                 <div class="text-[11px] text-slate-600 space-y-0.5">
                     <div>📅 <b>วันที่:</b> ${formatThaiDateFull(item.date)} (${escapeHtmlStr(item.timeSlot || '-')})</div>
+                    <div>⏰ <b>เวลาเตือน:</b> <span class="text-indigo-700 font-bold">${escapeHtmlStr(alCfg.badgeLabel)}</span></div>
                     ${item.equipCode ? `<div>⚡ <b>อุปกรณ์:</b> ${escapeHtmlStr(item.equipCode)} ${item.feeder ? `(วงจร ${escapeHtmlStr(item.feeder)})` : ''}</div>` : ''}
                     ${item.note ? `<div>📝 <b>รายละเอียด:</b> ${escapeHtmlStr(item.note)}</div>` : ''}
-                    <div class="text-[10px] text-slate-400">📍 ${Number(item.lat).toFixed(6)}, ${Number(item.lon).toFixed(6)}</div>
                 </div>
                 <div class="pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1">
                     <button type="button" onclick="navigatePmPlanGps('${safeId}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">🗺️ นำทาง Maps</button>
                     <button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" style="background:#00B900;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">💬 แชร์ LINE</button>
                     ${allowDone ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="col-span-2" style="background:${isDone ? '#64748b' : '#059669'};color:#fff;padding:5px 8px;border-radius:8px;font-weight:800;font-size:11px;">${isDone ? '↩️ คืนสถานะรอดำเนินการ' : '✅ บันทึกดำเนินงานเสร็จสิ้น'}</button>` : ''}
-                    ${allowEdit ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">✏️ แก้ไขแผน</button><button type="button" onclick="startMovePmPlanPinOnMap('${safeId}')" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">📍 ย้ายจุดหมุด</button>` : ''}
+                    ${allowEdit ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">✏️ แก้ไข/ตั้งเวลา</button><button type="button" onclick="startMovePmPlanPinOnMap('${safeId}')" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">📍 ย้ายจุดหมุด</button>` : ''}
                 </div>
             </div>`;
     }
@@ -804,8 +866,8 @@
         if (!mapInstance || !layerGroup || typeof L === 'undefined') return;
         layerGroup.clearLayers();
         Object.keys(storeObj).forEach(k => delete storeObj[k]);
-
         if (forExternalMap && !showPmPinsOnMaps) return;
+
         const items = forExternalMap
             ? getPlottablePmMapPins(true)
             : getAllVisibleCalendarItems().filter(i => !isNaN(parseFloat(i.lat)) && !isNaN(parseFloat(i.lon)));
@@ -815,14 +877,11 @@
             const baseLat = parseFloat(item.lat), baseLon = parseFloat(item.lon);
             if (isNaN(baseLat) || isNaN(baseLon)) return;
 
-            // เยื้องพิกัดเล็กน้อยอัตโนมัติหากสร้างทับบนหมุดสวิตช์ SCADA เพื่อให้คลิกได้ทั้งคู่ไม่บังกัน
             const cKey = `${baseLat.toFixed(4)}_${baseLon.toFixed(4)}`;
             const idx = coordCount[cKey] || (item.linkedPinId && forExternalMap ? 1 : 0);
             coordCount[cKey] = idx + 1;
-            const ang = (idx * 55) * (Math.PI / 180);
-            const rad = idx > 0 ? 0.00011 * Math.ceil(idx / 5) : 0;
-            const dispLat = baseLat + Math.sin(ang) * rad;
-            const dispLon = baseLon + Math.cos(ang) * rad;
+            const ang = (idx * 55) * (Math.PI / 180), rad = idx > 0 ? 0.00011 * Math.ceil(idx / 5) : 0;
+            const dispLat = baseLat + Math.sin(ang) * rad, dispLon = baseLon + Math.cos(ang) * rad;
 
             const isMoving = (pmPinMoveTargetId === item.id);
             const marker = L.marker([dispLat, dispLon], {
@@ -833,19 +892,15 @@
 
             const vis = getPlanPinVisualTheme(item);
             marker.bindTooltip(`${vis.icon} ${escapeHtmlStr(item.title)} (${formatThaiDayMonthShort(item.date)})`, {
-                direction: 'top',
-                offset: [0, -32],
-                className: 'pm-plan-tooltip'
+                direction: 'top', offset: [0, -32], className: 'pm-plan-tooltip'
             });
             marker.bindPopup(buildPmPlanPopupHtml(item));
-
             if (isMoving) {
                 marker.on('dragend', (ev) => {
                     const ll = ev.target.getLatLng();
                     commitMovedPmPlanPinLocation(item.id, ll.lat, ll.lng);
                 });
             }
-
             marker.addTo(layerGroup);
             storeObj[item.id] = marker;
         });
@@ -863,16 +918,13 @@
         showPmPinsOnMaps = !showPmPinsOnMaps;
         localStorage.setItem(PM_SHOW_MAP_PINS_KEY, String(showPmPinsOnMaps));
         renderAllExternalPmMapLayers();
-        showToast(showPmPinsOnMaps ? '📅 แสดงหมุดแผนงานบำรุงรักษาบนแผนที่แล้ว' : '🚫 ซ่อนหมุดแผนงานบำรุงรักษาชั่วคราว');
+        showToast(showPmPinsOnMaps ? '📅 แสดงหมุดแผนงานบนแผนที่แล้ว' : '🚫 ซ่อนหมุดแผนงานชั่วคราว');
     }
 
     function cyclePmMapFilterMode() {
         pmMapFilterMode = pmMapFilterMode === 'pending' ? 'alert' : 'pending';
         localStorage.setItem(PM_MAP_FILTER_MODE_KEY, pmMapFilterMode);
         renderAllExternalPmMapLayers();
-        const btn = document.getElementById('pmCalMapFilterBtn');
-        if (btn) btn.textContent = pmMapFilterMode === 'alert' ? '🔔 กรอง: เฉพาะใกล้ถึง/เลยกำหนด' : '📋 กรอง: แผนรอดำเนินการทั้งหมด';
-        showToast(pmMapFilterMode === 'alert' ? '🔔 แสดงเฉพาะหมุดแผนงานที่ถึงระยะเตือนล่วงหน้า' : '📋 แสดงหมุดแผนงานที่รอดำเนินการทั้งหมด');
     }
 
     function updatePinDropBannerOnMaps() {
@@ -888,15 +940,13 @@
                 ? 'pointer-events-auto bg-amber-400 text-slate-950 border border-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg animate-pulse'
                 : 'pm-edit-only pointer-events-auto bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg';
         }
-
         if (!pmPinDropModeActive && !pmPinMoveTargetId) return;
-        const msg = pmPinMoveTargetId
-            ? '📍 โหมดย้ายหมุดแผนงาน: ลากหมุดที่กระพริบ หรือแตะจุดใหม่บนแผนที่เพื่อวาง'
-            : '📍 โหมดปักหมุดแผนงาน: แตะจุดที่ต้องการบนแผนที่เพื่อสร้างแผนงานใหม่';
 
+        const msg = pmPinMoveTargetId
+            ? '📍 โหมดย้ายหมุดแผนงาน: ลากหมุด หรือแตะจุดใหม่บนแผนที่เพื่อวาง'
+            : '📍 โหมดปักหมุดแผนงาน: แตะจุดที่ต้องการบนแผนที่เพื่อสร้างแผนงานใหม่';
         [document.getElementById('labeledInteractiveMap')?.parentElement, document.getElementById('pmCalendarEmbeddedMap')?.parentElement]
-            .filter(Boolean)
-            .forEach(wrap => {
+            .filter(Boolean).forEach(wrap => {
                 const b = document.createElement('div');
                 b.className = 'pm-pin-drop-banner absolute top-3 left-1/2 -translate-x-1/2 z-[500] bg-indigo-950/95 text-amber-300 border border-amber-400 px-3 py-1.5 rounded-full text-[11px] font-extrabold shadow-xl flex items-center gap-2 whitespace-nowrap';
                 b.innerHTML = `<span>${msg}</span><button type="button" onclick="cancelPmMapInteractiveModes()" class="bg-rose-600 text-white px-2 py-0.5 rounded-full text-[10px]">ยกเลิก</button>`;
@@ -905,23 +955,18 @@
     }
 
     function cancelPmMapInteractiveModes() {
-        pmPinDropModeActive = false;
-        pmPinMoveTargetId = null;
-        updatePinDropBannerOnMaps();
-        renderAllExternalPmMapLayers();
+        pmPinDropModeActive = false; pmPinMoveTargetId = null;
+        updatePinDropBannerOnMaps(); renderAllExternalPmMapLayers();
     }
 
     function togglePmPinDropMode(forceState, targetMapType = 'scada') {
-        if (!canManagePmSchedule()) {
-            showToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่ปักหมุดแผนงานได้');
-            return;
-        }
+        if (!canManagePmSchedule()) { showToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่ปักหมุดแผนงานได้'); return; }
         pmPinMoveTargetId = null;
         pmPinDropModeActive = typeof forceState === 'boolean' ? forceState : !pmPinDropModeActive;
         if (pmPinDropModeActive && targetMapType === 'scada') {
-            if (typeof window.toggleScadaDrawMode === 'function') window.toggleScadaDrawMode(false);
-            if (typeof window.toggleScadaWireMoveMode === 'function') window.toggleScadaWireMoveMode(false);
-            if (typeof window.toggleScadaPinMoveMode === 'function') window.toggleScadaPinMoveMode(false);
+            window.toggleScadaDrawMode?.(false);
+            window.toggleScadaWireMoveMode?.(false);
+            window.toggleScadaPinMoveMode?.(false);
         }
         updatePinDropBannerOnMaps();
         if (pmPinDropModeActive) showToast('👆 แตะจุดที่ต้องการบนแผนที่เพื่อปักหมุดแผนงานได้เลย');
@@ -929,13 +974,9 @@
 
     function startMovePmPlanPinOnMap(planId) {
         if (!canManagePmSchedule()) return;
-        pmPinDropModeActive = false;
-        pmPinMoveTargetId = planId;
-        scadaMapRef?.closePopup();
-        repairMapRef?.closePopup();
-        calendarMapInstance?.closePopup();
-        updatePinDropBannerOnMaps();
-        renderAllExternalPmMapLayers();
+        pmPinDropModeActive = false; pmPinMoveTargetId = planId;
+        scadaMapRef?.closePopup(); repairMapRef?.closePopup(); calendarMapInstance?.closePopup();
+        updatePinDropBannerOnMaps(); renderAllExternalPmMapLayers();
         showToast('📍 ลากหมุดแผนงาน หรือแตะตำแหน่งใหม่บนแผนที่ได้เลย');
     }
 
@@ -943,13 +984,11 @@
         loadPmPlansFromStorage();
         const idx = pmPlans.findIndex(p => p.id === planId && !p.pmDeleted);
         if (idx === -1) return cancelPmMapInteractiveModes();
-
         pmPlans[idx].lat = Number(Number(newLat).toFixed(6));
         pmPlans[idx].lon = Number(Number(newLon).toFixed(6));
         pmPlans[idx].gpsLink = `https://www.google.com/maps?q=${pmPlans[idx].lat.toFixed(6)},${pmPlans[idx].lon.toFixed(6)}`;
         pmPlans[idx].updatedAt = new Date().toISOString();
         pmPinMoveTargetId = null;
-
         updatePinDropBannerOnMaps();
         await savePmPlansAndSync(true);
         showToast(`📍 ย้ายตำแหน่งหมุด "${pmPlans[idx].title}" เรียบร้อยแล้ว`);
@@ -958,45 +997,25 @@
     async function focusPmPlanPinOnMap(itemId) {
         const item = getAllVisibleCalendarItems().find(x => x.id === itemId);
         if (!item || isNaN(parseFloat(item.lat)) || isNaN(parseFloat(item.lon))) {
-            showToast('⚠️ แผนงานนี้ยังไม่ได้ระบุพิกัดหมุดบนแผนที่');
-            return;
+            showToast('⚠️ แผนงานนี้ยังไม่ได้ระบุพิกัดหมุดบนแผนที่'); return;
         }
         const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
-
-        // หากอยู่ในหน้าช่าง (page2.html) ให้สลับไปซูมดูบนแผนที่ผัง SCADA ทันที
         if (document.getElementById('techMainApp') && typeof window.switchTechMainTab === 'function') {
             closePmCalendarModal();
             document.getElementById('pmAlertPopupModal')?.classList.add('hidden');
-            showPmPinsOnMaps = true;
-            localStorage.setItem(PM_SHOW_MAP_PINS_KEY, 'true');
+            showPmPinsOnMaps = true; localStorage.setItem(PM_SHOW_MAP_PINS_KEY, 'true');
             window.switchTechMainTab('map');
             setTimeout(() => {
                 renderAllExternalPmMapLayers();
-                if (scadaMapRef) {
-                    scadaMapRef.invalidateSize();
-                    scadaMapRef.setView([lat, lon], 17);
-                    scadaPmMarkersById[item.id]?.openPopup();
-                }
+                if (scadaMapRef) { scadaMapRef.invalidateSize(); scadaMapRef.setView([lat, lon], 17); scadaPmMarkersById[item.id]?.openPopup(); }
             }, 220);
             return;
         }
-
-        // หากอยู่ในหน้าหลัก (index.html) ให้เปิดแท็บแผนที่ภายในหน้าต่างปฏิทินแล้วซูมไปยังหมุดทันที
         openPmCalendarModal(item.date);
         await switchCalendarLeftViewMode('map');
         setTimeout(() => {
-            if (calendarMapInstance) {
-                calendarMapInstance.invalidateSize();
-                calendarMapInstance.setView([lat, lon], 16);
-                calendarPmMarkersById[item.id]?.openPopup();
-            }
+            if (calendarMapInstance) { calendarMapInstance.invalidateSize(); calendarMapInstance.setView([lat, lon], 16); calendarPmMarkersById[item.id]?.openPopup(); }
         }, 180);
-    }
-
-    function createPmPlanFromScadaPinPopup(scadaPinId) {
-        if (!canManagePmSchedule()) return;
-        scadaMapRef?.closePopup();
-        openPmPlanFormModal(null, selectedDateIso || getTodayIso(), null, null, scadaPinId);
     }
 
     function bindSingleLeafletMapEvents(map) {
@@ -1006,64 +1025,53 @@
         map.__pmHookBound = true;
 
         if (containerId === 'labeledInteractiveMap') {
-            scadaMapRef = map;
-            scadaPmLayer = L.layerGroup().addTo(map);
+            scadaMapRef = map; scadaPmLayer = L.layerGroup().addTo(map);
             map.on('popupopen', (e) => {
                 if (!canManagePmSchedule()) return;
-                const el = e.popup?.getElement?.();
-                const html = e.popup?.getContent?.();
+                const el = e.popup?.getElement?.(), html = e.popup?.getContent?.();
                 const m = typeof html === 'string' ? html.match(/openEquipPinModal\('([^']+)'\)/) : null;
                 if (m && el && !el.querySelector('.pm-create-from-scada-btn')) {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'pm-create-from-scada-btn pm-edit-only w-full mt-1.5 py-1.5 px-2 rounded-lg font-extrabold text-[10px] text-white bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm';
                     btn.innerHTML = '📅 สร้างหมุดแผนงาน PM ที่อุปกรณ์นี้';
-                    btn.onclick = () => createPmPlanFromScadaPinPopup(m[1]);
+                    btn.onclick = () => { scadaMapRef?.closePopup(); openPmPlanFormModal(null, selectedDateIso || getTodayIso(), null, null, m[1]); };
                     (el.querySelector('.scada-popup-panel') || el.querySelector('.leaflet-popup-content > div'))?.appendChild(btn);
                 }
             });
-        } else if (containerId === 'repairJobsLeafletMap') {
-            repairMapRef = map;
-            repairPmLayer = L.layerGroup().addTo(map);
+        } else {
+            repairMapRef = map; repairPmLayer = L.layerGroup().addTo(map);
         }
 
         map.on('click', (e) => {
             if (!e.latlng) return;
-            if (pmPinMoveTargetId) {
-                commitMovedPmPlanPinLocation(pmPinMoveTargetId, e.latlng.lat, e.latlng.lng);
-            } else if (pmPinDropModeActive && containerId === 'labeledInteractiveMap') {
-                const { lat, lng } = e.latlng;
-                cancelPmMapInteractiveModes();
+            if (pmPinMoveTargetId) commitMovedPmPlanPinLocation(pmPinMoveTargetId, e.latlng.lat, e.latlng.lng);
+            else if (pmPinDropModeActive && containerId === 'labeledInteractiveMap') {
+                const { lat, lng } = e.latlng; cancelPmMapInteractiveModes();
                 openPmPlanFormModal(null, selectedDateIso || getTodayIso(), lat, lng);
             }
         });
-
         setTimeout(renderAllExternalPmMapLayers, 120);
     }
 
     function bindLeafletMapHooks() {
         if (typeof L === 'undefined' || !L.Map || L.Map.__pmInitHookAdded) return;
         L.Map.__pmInitHookAdded = true;
-        L.Map.addInitHook(function () {
-            setTimeout(() => bindSingleLeafletMapEvents(this), 50);
-        });
+        L.Map.addInitHook(function () { setTimeout(() => bindSingleLeafletMapEvents(this), 50); });
     }
 
     // ========================================================================
-    // 6. สร้าง DOM หน้าต่างปฏิทิน (พร้อมแท็บแผนที่หมุดแผนงาน) & ฟอร์มมินิแมพ
+    // 6. สร้าง DOM หน้าต่างปฏิทิน (65% บนคอม) & ฟอร์มตั้งเวลาเตือนแยกแต่ละงาน
     // ========================================================================
     function injectPmModalsDOM() {
         if (document.getElementById('pmCalendarModal')) return;
-
         const catOptions = Object.values(PM_CATEGORIES).map(c => `<option value="${c.key}">${c.icon} ${c.name}</option>`).join('');
-        const pinColorBtns = Object.values(PM_PIN_COLORS).map(c => `
-            <button type="button" id="pmFormColorBtn-${c.key}" onclick="selectPmFormPinColor('${c.key}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold transition">${c.label}</button>
-        `).join('');
+        const pinColorBtns = Object.values(PM_PIN_COLORS).map(c => `<button type="button" id="pmFormColorBtn-${c.key}" onclick="selectPmFormPinColor('${c.key}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold transition">${c.label}</button>`).join('');
+        const presetTimesBtns = ['06:30', '08:00', '08:30', '12:00', '13:00', '16:30'].map(t => `<button type="button" onclick="addPmCustomTimeChip('${t}')" class="px-2 py-0.5 rounded-md bg-white hover:bg-indigo-100 border border-indigo-200 text-[10px] font-bold text-indigo-700">+${t}</button>`).join('');
 
         document.body.insertAdjacentHTML('beforeend', `
-            <!-- 📅 หน้าต่างหลัก: ปฏิทิน & แผนที่หมุดแผนงานบำรุงรักษา -->
             <div id="pmCalendarModal" class="fixed inset-0 bg-slate-950/70 hidden z-[1320] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm">
-                <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200">
+                <div class="pm-calendar-dialog bg-white rounded-2xl shadow-2xl w-full max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200" style="--pm-desktop-w: 65vw;">
                     <div class="px-4 py-3 bg-gradient-to-r from-indigo-900 via-blue-800 to-teal-700 text-white flex flex-wrap justify-between items-center gap-2 shrink-0">
                         <div class="flex items-center gap-2">
                             <span class="text-lg">📅</span>
@@ -1072,10 +1080,15 @@
                                     <span>ปฏิทิน &amp; หมุดแผนงานบำรุงรักษา (PM)</span>
                                     <span id="pmHeaderGroupBadge" class="bg-white/20 text-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-md">-</span>
                                 </h3>
-                                <p class="text-[10px] text-blue-100">แจ้งเตือนอัตโนมัติ 00.00 น. / 07.00 น. • ปักหมุดแผนงานและนำทาง GPS</p>
+                                <p class="text-[10px] text-blue-100">ตั้งเวลาเตือนรายแผนงานอิสระ + รอบ 00.00 / 07.00 น. (ทำงานแม้อยู่หน้าล็อกอิน)</p>
                             </div>
                         </div>
                         <div class="flex flex-wrap items-center gap-1.5">
+                            <div class="hidden lg:inline-flex items-center bg-slate-900/45 border border-white/20 rounded-xl p-0.5 mr-1" title="ขนาดหน้าต่างปฏิทินบนคอมพิวเตอร์">
+                                <button type="button" id="pmDesktopWBtn-65vw" onclick="setPmDesktopModalWidth('65vw')" class="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-extrabold text-[10px]">65%</button>
+                                <button type="button" id="pmDesktopWBtn-80vw" onclick="setPmDesktopModalWidth('80vw')" class="px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]">80%</button>
+                                <button type="button" id="pmDesktopWBtn-95vw" onclick="setPmDesktopModalWidth('95vw')" class="px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]">95%</button>
+                            </div>
                             <button type="button" id="pmNotifPermBtn" onclick="requestPmBrowserNotificationPermission()" class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold">📲 แจ้งเตือนเครื่อง</button>
                             <button type="button" id="pmSoundToggleBtn" onclick="togglePmSoundSetting()" class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold">🔔 เสียง: เปิด</button>
                             <button type="button" onclick="exportPmPlansToExcel()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow">📊 Excel</button>
@@ -1084,9 +1097,8 @@
                         </div>
                     </div>
 
-                    <div class="p-3 sm:p-4 overflow-y-auto flex-1 bg-slate-50 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-                        <!-- ฝั่งซ้าย: สลับดู ตารางปฏิทินรายเดือน <-> แผนที่หมุดแผนงาน -->
-                        <div class="lg:col-span-7 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
+                    <div class="pm-desktop-split p-3 sm:p-4 overflow-y-auto flex-1 bg-slate-50 grid grid-cols-1 gap-4 items-start">
+                        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
                             <div class="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-100">
                                 <div class="inline-flex bg-slate-100 p-1 rounded-xl text-xs font-extrabold">
                                     <button type="button" id="pmViewTab-grid" onclick="switchCalendarLeftViewMode('grid')" class="px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm">🗓️ ตารางปฏิทิน</button>
@@ -1097,10 +1109,7 @@
                                     <span>รวมหมุดครบกำหนด SCADA</span>
                                 </label>
                             </div>
-
                             <div id="pmMonthSummaryBar" class="grid grid-cols-4 gap-1.5 text-center text-[10px]"></div>
-
-                            <!-- โหมด 1: ตารางปฏิทิน -->
                             <div id="pmCalendarGridPanel" class="space-y-2">
                                 <div class="flex items-center justify-between gap-2">
                                     <div class="flex items-center gap-1">
@@ -1114,13 +1123,11 @@
                                 <div class="grid grid-cols-7 gap-1 text-center text-[11px] font-extrabold text-slate-500">
                                     <div class="text-rose-500">อา.</div><div>จ.</div><div>อ.</div><div>พ.</div><div>พฤ.</div><div>ศ.</div><div class="text-indigo-600">ส.</div>
                                 </div>
-                                <div id="pmCalendarDaysGrid" class="grid grid-cols-7 gap-1"></div>
+                                <div id="pmCalendarDaysGrid" class="grid grid-cols-7 gap-1.5"></div>
                             </div>
-
-                            <!-- โหมด 2: แผนที่รวมหมุดแผนงาน (เปิดปัก/ดูหมุดได้ทั้งใน index.html และ page2.html) -->
                             <div id="pmCalendarMapPanel" class="hidden space-y-2">
                                 <div class="relative isolate rounded-2xl overflow-hidden border-2 border-indigo-200 bg-slate-100">
-                                    <div id="pmCalendarEmbeddedMap" class="w-full h-[320px] sm:h-[390px] z-0"></div>
+                                    <div id="pmCalendarEmbeddedMap" class="w-full h-[340px] lg:h-[480px] z-0"></div>
                                     <div class="absolute bottom-2.5 left-2.5 right-2.5 z-[420] flex flex-wrap items-center justify-between gap-1.5 pointer-events-none">
                                         <button type="button" onclick="fitCalendarEmbeddedMapPins()" class="pointer-events-auto bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-lg">🎯 ซูมดูหมุดทั้งหมด</button>
                                         <button type="button" id="btnCalMapDropPin" onclick="togglePmPinDropMode(undefined, 'calendar')" class="pm-edit-only pointer-events-auto bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg">📍 จิ้มปักหมุดแผนใหม่</button>
@@ -1129,24 +1136,23 @@
                             </div>
                         </div>
 
-                        <!-- ฝั่งขวา: รายการแผนงาน -->
-                        <div class="lg:col-span-5 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-2.5">
+                        <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-2.5">
                             <div class="flex items-center justify-between gap-2">
                                 <div class="grid grid-cols-3 gap-1 flex-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
                                     <button type="button" id="pmFilterBtn-day" onclick="setPmListStatusFilter('day')" class="py-1 rounded-lg">📌 วันที่เลือก</button>
                                     <button type="button" id="pmFilterBtn-alert" onclick="setPmListStatusFilter('alert')" class="py-1 rounded-lg">🔔 แจ้งเตือน</button>
                                     <button type="button" id="pmFilterBtn-all" onclick="setPmListStatusFilter('all')" class="py-1 rounded-lg">📋 ทั้งเดือน</button>
                                 </div>
-                                <button type="button" id="pmAddPlanPrimaryBtn" onclick="openPmPlanFormModal(null, selectedDateIso)" class="pm-edit-only shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-sm">➕ ปักแผนใหม่</button>
+                                <button type="button" id="pmAddPlanPrimaryBtn" onclick="togglePmQuickInlineBox()" class="pm-edit-only shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-sm transition">➕ ปักแผนใหม่</button>
                             </div>
                             <div id="pmSelectedListHeader" class="text-xs font-bold text-slate-700 px-1 flex items-center justify-between"></div>
-                            <div id="pmSelectedDayTasksContainer" class="space-y-2 max-h-[46vh] lg:max-h-[54vh] overflow-y-auto pr-0.5"></div>
+                            <div id="pmSelectedDayTasksContainer" class="space-y-2 max-h-[48vh] lg:max-h-[64vh] overflow-y-auto pr-0.5"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 📝 หน้าต่างเพิ่ม / แก้ไขหมุดแผนงานบำรุงรักษา (พร้อมมินิแมพจิ้มปักหมุด) -->
+            <!-- 📝 ฟอร์มเต็ม: ตั้งค่าหมุดแผนงาน + เงื่อนไขตั้งเวลาเตือนแยกแต่ละงาน -->
             <div id="pmPlanFormModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1360] flex items-center justify-center p-3 backdrop-blur-sm">
                 <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92dvh] overflow-hidden flex flex-col border border-slate-200">
                     <div class="px-4 py-3 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex justify-between items-center">
@@ -1154,31 +1160,41 @@
                         <button type="button" onclick="closePmPlanFormModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
                     </div>
                     <div class="p-4 space-y-3 text-xs overflow-y-auto flex-1">
-                        <div>
-                            <label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อหมุดแผนงาน / เรื่องที่ปฏิบัติงาน <span class="text-rose-500">*</span></label>
-                            <input type="text" id="pmTitleInput" placeholder="เช่น ตัดกิ่งไม้หน้าโรงงาน..., ตรวจสวิตช์ BNF06..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800 bg-white">
-                        </div>
+                        <div><label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อหมุดแผนงาน / เรื่องที่ปฏิบัติงาน <span class="text-rose-500">*</span></label><input type="text" id="pmTitleInput" placeholder="เช่น ตัดกิ่งไม้หน้าโรงงาน..., HOTLINE เข้าทำงาน..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800 bg-white"></div>
                         <div class="grid grid-cols-2 gap-2">
                             <div><label class="block font-bold text-slate-700 mb-1">📂 ประเภทหมุดแผนงาน</label><select id="pmCategorySelect" class="w-full px-2.5 py-2 font-bold text-slate-700 bg-white">${catOptions}</select></div>
                             <div><label class="block font-bold text-slate-700 mb-1">📅 วันที่กำหนดทำ <span class="text-rose-500">*</span></label><input type="date" id="pmDateInput" class="w-full px-2.5 py-2 font-bold text-slate-800 bg-white"></div>
                         </div>
-                        <div>
-                            <label class="block font-bold text-slate-700 mb-1">🎨 สีป้ายหมุดแผนงานบนแผนที่</label>
-                            <input type="hidden" id="pmPinColorInput" value="auto">
-                            <div class="flex flex-wrap gap-1">${pinColorBtns}</div>
-                        </div>
+                        <div><label class="block font-bold text-slate-700 mb-1">🎨 สีป้ายหมุดแผนงานบนแผนที่</label><input type="hidden" id="pmPinColorInput" value="auto"><div class="flex flex-wrap gap-1">${pinColorBtns}</div></div>
                         <div class="grid grid-cols-3 gap-2">
-                            <div><label class="block font-bold text-slate-700 mb-1">⏰ เวลา</label><input type="text" id="pmTimeSlotInput" value="09.00-12.00" class="w-full px-2 py-2 text-center font-semibold bg-white"></div>
-                            <div><label class="block font-bold text-amber-800 mb-1">🔔 เตือนล่วงหน้า</label><select id="pmNotifyBeforeSelect" class="w-full px-2 py-2 font-bold text-amber-900 bg-amber-50 border-amber-300"><option value="0">เฉพาะวันจริง</option><option value="1">1 วัน</option><option value="2">2 วัน</option><option value="3" selected>3 วัน</option><option value="5">5 วัน</option><option value="7">7 วัน</option><option value="14">14 วัน</option><option value="30">30 วัน</option></select></div>
+                            <div><label class="block font-bold text-slate-700 mb-1">⏰ ช่วงเวลาทำ</label><input type="text" id="pmTimeSlotInput" value="09.00-12.00" class="w-full px-2 py-2 text-center font-semibold bg-white"></div>
+                            <div><label class="block font-bold text-amber-800 mb-1">📅 เตือนล่วงหน้า</label><select id="pmNotifyBeforeSelect" class="w-full px-2 py-2 font-bold text-amber-900 bg-amber-50 border-amber-300"><option value="0">เฉพาะวันจริง</option><option value="1">1 วัน</option><option value="2">2 วัน</option><option value="3" selected>3 วัน</option><option value="5">5 วัน</option><option value="7">7 วัน</option><option value="14">14 วัน</option><option value="30">30 วัน</option></select></div>
                             <div><label class="block font-bold text-indigo-800 mb-1">🔁 รอบทำซ้ำ</label><select id="pmRepeatMonthsSelect" class="w-full px-2 py-2 font-bold text-indigo-900 bg-indigo-50 border-indigo-200"><option value="0" selected>ครั้งเดียว</option><option value="1">ทุก 1 เดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุก 1 ปี</option></select></div>
                         </div>
+
+                        <!-- ⏰ เงื่อนไขตั้งเวลาเตือนแยกเฉพาะงานนี้ -->
+                        <div class="p-3 bg-indigo-50/85 border border-indigo-200 rounded-xl space-y-2">
+                            <label class="block font-extrabold text-indigo-950">⏰ เงื่อนไขเวลาแจ้งเตือนของงานนี้</label>
+                            <select id="pmAlertModeSelect" onchange="onPmAlertModeChange(this.value)" class="w-full px-2.5 py-2 bg-white font-bold text-indigo-900 border-indigo-300">
+                                <option value="standard">🔔 มาตรฐาน (เตือนรอบ 00:00 น. และ 07:00 น.)</option>
+                                <option value="both">🔔+⏰ เตือนรอบมาตรฐาน + เวลาที่ตั้งเองด้านล่าง</option>
+                                <option value="custom_only">⏰ เตือนเฉพาะเวลาที่ตั้งเองเท่านั้น</option>
+                                <option value="off">🔕 ปิดเสียง/ปิดป๊อปอัปแจ้งเตือนสำหรับงานนี้</option>
+                            </select>
+                            <div id="pmCustomTimesSection" class="hidden space-y-2 pt-1">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="time" id="pmCustomTimePickerInput" value="08:30" class="flex-1 px-2.5 py-1.5 bg-white font-mono font-bold text-slate-800 border-indigo-300">
+                                    <button type="button" onclick="addPmCustomTimeChip()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-sm">➕ เพิ่มเวลาเตือน</button>
+                                </div>
+                                <div class="flex flex-wrap gap-1 items-center"><span class="text-[10px] text-slate-500 font-semibold">ด่วน:</span>${presetTimesBtns}</div>
+                                <div id="pmCustomTimeChipsWrap" class="flex flex-wrap gap-1.5 pt-0.5"></div>
+                            </div>
+                        </div>
+
                         <div class="p-2.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-2">
                             <label class="block font-bold text-teal-900">⚡ ผูกกับหมุดอุปกรณ์ในผัง SCADA (ดึงพิกัดอัตโนมัติ)</label>
                             <select id="pmScadaPinPicker" onchange="onPmScadaEquipPick(this.value)" class="w-full px-2.5 py-1.5 bg-white text-xs font-semibold text-slate-700"><option value="">-- เลือกอุปกรณ์จากผัง SCADA --</option></select>
-                            <div class="grid grid-cols-2 gap-2">
-                                <input type="text" id="pmEquipCodeInput" placeholder="รหัสอุปกรณ์ เช่น BNF06VS-01" class="px-2.5 py-1.5 bg-white font-semibold">
-                                <input type="text" id="pmFeederInput" placeholder="วงจร เช่น BNF06" class="px-2.5 py-1.5 bg-white font-semibold uppercase">
-                            </div>
+                            <div class="grid grid-cols-2 gap-2"><input type="text" id="pmEquipCodeInput" placeholder="รหัสอุปกรณ์ เช่น BNF06VS-01" class="px-2.5 py-1.5 bg-white font-semibold"><input type="text" id="pmFeederInput" placeholder="วงจร เช่น BNF06" class="px-2.5 py-1.5 bg-white font-semibold uppercase"></div>
                         </div>
                         <div class="space-y-1.5">
                             <div class="flex flex-wrap items-center justify-between gap-1">
@@ -1206,7 +1222,7 @@
                 </div>
             </div>
 
-            <!-- 🔔 ป๊อปอัปแจ้งเตือนรอบ 00.00 น. และ 07.00 น. -->
+            <!-- 🔔 ป๊อปอัปแจ้งเตือนตามเวลาที่ตั้งไว้ -->
             <div id="pmAlertPopupModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1420] flex items-center justify-center p-3 backdrop-blur-sm">
                 <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-amber-400 flex flex-col max-h-[88dvh]">
                     <div class="px-4 py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-rose-600 text-white flex justify-between items-center">
@@ -1217,7 +1233,7 @@
                     <div class="p-3 bg-white border-t flex flex-wrap items-center justify-between gap-2">
                         <button type="button" onclick="shareDailyOrAlertSummaryToLine()" class="px-3 py-2 bg-[#00B900] hover:bg-[#009900] text-white rounded-xl text-xs font-extrabold">💬 ส่งเข้า LINE</button>
                         <div class="flex gap-1.5">
-                            <button type="button" onclick="document.getElementById('pmAlertPopupModal').classList.add('hidden'); openPmCalendarModal();" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold">📅 ดูปฏิทิน/แมพ</button>
+                            <button type="button" id="pmAlertModalCalOrLoginBtn" onclick="document.getElementById('pmAlertPopupModal').classList.add('hidden'); openPmCalendarModal();" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold">📅 ดูปฏิทิน/แมพ</button>
                             <button type="button" onclick="acknowledgeCurrentPmAlertRound()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold shadow">✅ รับทราบรอบนี้</button>
                         </div>
                     </div>
@@ -1225,12 +1241,30 @@
             </div>
         `);
     }
-    // ===== จบพาทที่ 2 / 3 ของไฟล์ pm-calendar.js (นำพาทที่ 3 / 3 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-        // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ pm-calendar.js (วางต่อจากพาทที่ 2) =====
+    // ===== จบพาทที่ 2 / 4 ของไฟล์ pm-calendar.js (นำพาทที่ 3 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+    // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ pm-calendar.js (วางทับพาทที่ 3 / 4 เดิม) =====
 
     // ========================================================================
-    // 7. ช่องพิมพ์ใส่แผนงานลงปฏิทินโดยตรง (Quick Inline Input + พิมพ์ด้วยเสียง 🎙️)
+    // 7. ช่องพิมพ์แผนงานด่วน (พร้อมไอคอนและคำกำกับทุกช่อง + ปุ่มเพิ่มรายละเอียด)
     // ========================================================================
+    function syncQuickAlertTimeLabel() {
+        const inp = document.getElementById('pmQuickAlertTimeInput');
+        const ph = document.getElementById('pmQuickAlertTimePlaceholder');
+        const clr = document.getElementById('pmQuickAlertTimeClearBtn');
+        const hasVal = Boolean(inp && inp.value && inp.value.trim());
+        if (ph) ph.classList.toggle('hidden', hasVal);
+        if (clr) {
+            clr.classList.toggle('hidden', !hasVal);
+            clr.classList.toggle('flex', hasVal);
+        }
+    }
+
+    function clearQuickAlertTimeInput() {
+        const inp = document.getElementById('pmQuickAlertTimeInput');
+        if (inp) inp.value = '';
+        syncQuickAlertTimeLabel();
+    }
+
     function injectQuickAddBoxIntoCalendar() {
         const listHdr = document.getElementById('pmSelectedListHeader');
         if (!listHdr || !listHdr.parentElement || document.getElementById('pmQuickInlineBox')) return;
@@ -1241,81 +1275,146 @@
 
         const box = document.createElement('div');
         box.id = 'pmQuickInlineBox';
-        box.className = 'pm-edit-only p-3 rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50/80 to-teal-50 border-2 border-indigo-300 shadow-sm space-y-2 transition-all';
+        box.className = 'hidden pm-edit-only p-3 rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50/85 to-teal-50 border-2 border-indigo-300 shadow-sm space-y-2.5 transition-all';
         box.innerHTML = `
-            <div class="flex items-center justify-between gap-1.5">
+            <div class="flex flex-wrap items-center justify-between gap-1.5">
                 <span class="text-[11px] font-extrabold text-indigo-950 flex items-center gap-1">
-                    <span>✍️ พิมพ์เพิ่มแผนงานลงวันที่:</span>
+                    <span>✍️ แผนวันที่:</span>
                     <span id="pmQuickTargetDateBadge" class="bg-indigo-600 text-white px-2 py-0.5 rounded-md text-[10px] font-extrabold">-</span>
                 </span>
-                <button type="button" onclick="expandQuickInputToFullModal()" class="text-[10px] font-bold text-indigo-700 hover:underline shrink-0">🗺️ จิ้มแมพละเอียด</button>
+                <button type="button" onclick="expandQuickInputToFullModal()"
+                    class="bg-white hover:bg-indigo-600 text-indigo-700 hover:text-white border-2 border-indigo-400 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow-sm transition flex items-center gap-1 shrink-0">
+                    📝 เพิ่มรายละเอียด
+                </button>
             </div>
 
-            <div class="relative flex items-center gap-1">
+            <div class="relative flex items-center gap-1.5">
                 <div class="relative flex-1">
                     <input type="text" id="pmQuickTitleInput"
                         onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitQuickInlinePmPlan(); }"
-                        placeholder="พิมพ์แผนงานที่นี่ แล้วกด Enter ได้เลย..."
-                        class="w-full px-3 py-2 pr-8 text-xs font-semibold text-slate-800 bg-white border border-indigo-300 rounded-xl focus:outline-none">
+                        placeholder="🏷️ พิมพ์ชื่อแผนงาน..."
+                        class="w-full px-3 py-2 pr-9 text-xs font-semibold text-slate-800 bg-white border border-indigo-300 rounded-xl focus:outline-none">
                     <button type="button" onclick="startPmQuickVoiceInput()" title="พูดเพื่อพิมพ์แผนงาน"
                         class="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 p-1 text-sm leading-none">🎙️</button>
                 </div>
                 <button type="button" id="pmQuickSubmitBtn" onclick="submitQuickInlinePmPlan()"
                     class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-3 py-2 rounded-xl text-xs shadow-sm transition">
-                    ➕ บันทึก
+                    💾 บันทึก
                 </button>
             </div>
 
-            <div class="grid grid-cols-12 gap-1.5 items-center">
-                <select id="pmQuickCategorySelect" class="col-span-5 px-2 py-1.5 text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg">
-                    ${catOptions}
-                </select>
-                <input type="text" id="pmQuickTimeInput" value="09.00-12.00" placeholder="เวลา"
-                    class="col-span-3 px-2 py-1.5 text-[11px] font-semibold text-center text-slate-700 bg-white border border-slate-300 rounded-lg">
+            <div class="grid grid-cols-12 gap-2 items-end">
+                <div class="col-span-7">
+                    <label for="pmQuickCategorySelect" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">📂 ประเภทงาน</label>
+                    <select id="pmQuickCategorySelect" class="w-full px-2 py-1.5 text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg">
+                        ${catOptions}
+                    </select>
+                </div>
+                <div class="col-span-5">
+                    <label for="pmQuickTimeInput" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">🕒 ช่วงเวลาทำงาน</label>
+                    <input type="text" id="pmQuickTimeInput" value="09.00-12.00" placeholder="09.00-12.00"
+                        class="w-full px-2 py-1.5 text-[11px] font-semibold text-center text-slate-700 bg-white border border-slate-300 rounded-lg">
+                </div>
+            </div>
+
+            <div class="bg-amber-50/95 border border-amber-300 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2">
+                <label for="pmQuickAlertTimeInput" class="text-[11px] font-extrabold text-amber-900 flex items-center gap-1 shrink-0 cursor-pointer">
+                    <span>🔔 เวลาเตือนพิเศษ:</span>
+                </label>
+                <div class="flex items-center gap-1 flex-1 justify-end min-w-0">
+                    <div class="relative flex-1 max-w-[155px]">
+                        <input type="time" id="pmQuickAlertTimeInput"
+                            onclick="if(this.showPicker){try{this.showPicker();}catch(e){}}"
+                            onchange="syncQuickAlertTimeLabel()"
+                            oninput="syncQuickAlertTimeLabel()"
+                            title="ตั้งเวลาเตือนพิเศษเฉพาะงานนี้ (เว้นว่าง = เตือนรอบ 00:00 และ 07:00 น.)"
+                            class="w-full px-2.5 py-1 text-[11px] font-mono font-extrabold text-indigo-900 bg-white border border-amber-400 rounded-lg focus:outline-none cursor-pointer">
+                        <span id="pmQuickAlertTimePlaceholder"
+                            class="pointer-events-none absolute inset-y-[2px] left-2 right-6 flex items-center gap-1 bg-white text-[10.5px] font-bold text-amber-700 truncate">
+                            ⏰ แตะตั้งเวลา
+                        </span>
+                    </div>
+                    <button type="button" id="pmQuickAlertTimeClearBtn" onclick="clearQuickAlertTimeInput()"
+                        title="ล้างเวลาเตือนพิเศษ"
+                        class="hidden shrink-0 w-6 h-6 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-600 border border-rose-200 font-extrabold text-xs items-center justify-center">
+                        &times;
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <label for="pmQuickCoordInput" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">📍 พิกัดหมุดแผนงาน (ถ้ามี)</label>
                 <input type="text" id="pmQuickCoordInput"
                     onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitQuickInlinePmPlan(); }"
-                    placeholder="📍 พิกัด/ลิงก์ (ถ้ามี)"
-                    class="col-span-4 px-2 py-1.5 text-[10.5px] font-mono text-slate-700 bg-white border border-slate-300 rounded-lg">
+                    placeholder="วางพิกัด Lat, Lon หรือลิงก์ Google Maps"
+                    class="w-full px-2.5 py-1.5 text-[10.5px] font-mono text-slate-700 bg-white border border-slate-300 rounded-lg">
             </div>
         `;
         listHdr.parentElement.insertBefore(box, listHdr);
+        syncQuickAlertTimeLabel();
         updateQuickInlineBoxUI();
     }
 
     function updateQuickInlineBoxUI() {
         const box = document.getElementById('pmQuickInlineBox');
-        if (!box) return;
+        const primaryBtn = document.getElementById('pmAddPlanPrimaryBtn');
         const allow = canManagePmSchedule();
-        box.classList.toggle('hidden', !allow);
+
+        if (primaryBtn) {
+            primaryBtn.classList.toggle('hidden', !allow);
+            if (isQuickInlineBoxVisible) {
+                primaryBtn.textContent = '✕ ปิดช่องพิมพ์';
+                primaryBtn.className = 'pm-edit-only shrink-0 bg-slate-600 hover:bg-slate-700 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-sm transition';
+            } else {
+                primaryBtn.textContent = '➕ ปักแผนใหม่';
+                primaryBtn.className = 'pm-edit-only shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-sm transition';
+            }
+        }
+
+        if (!box) return;
+        const shouldShow = allow && isQuickInlineBoxVisible;
+        box.classList.toggle('hidden', !shouldShow);
+
         const dateBadge = document.getElementById('pmQuickTargetDateBadge');
         if (dateBadge) {
             dateBadge.textContent = formatThaiDateShort(selectedDateIso || getTodayIso());
         }
     }
 
+    function togglePmQuickInlineBox(forceState) {
+        if (!canManagePmSchedule()) {
+            showToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่เพิ่มแผนงานได้');
+            return;
+        }
+        injectQuickAddBoxIntoCalendar();
+        isQuickInlineBoxVisible = typeof forceState === 'boolean' ? forceState : !isQuickInlineBoxVisible;
+        if (isQuickInlineBoxVisible && currentFilterStatus !== 'day') {
+            currentFilterStatus = 'day';
+            renderPmSelectedDayList();
+        }
+        syncQuickAlertTimeLabel();
+        updateQuickInlineBoxUI();
+
+        if (isQuickInlineBoxVisible) {
+            const inp = document.getElementById('pmQuickTitleInput');
+            setTimeout(() => inp?.focus(), 60);
+        }
+    }
+
     function focusQuickInlineInputForDate(isoStr) {
         if (isoStr) selectedDateIso = isoStr;
         currentFilterStatus = 'day';
+        isQuickInlineBoxVisible = true;
         renderPmCalendarGrid();
         renderPmSelectedDayList();
+        syncQuickAlertTimeLabel();
         updateQuickInlineBoxUI();
-
-        const box = document.getElementById('pmQuickInlineBox');
-        const inp = document.getElementById('pmQuickTitleInput');
-        if (box && inp && canManagePmSchedule()) {
-            box.classList.add('ring-4', 'ring-amber-300');
-            setTimeout(() => box.classList.remove('ring-4', 'ring-amber-300'), 750);
-            inp.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            setTimeout(() => inp.focus(), 60);
-        }
+        setTimeout(() => document.getElementById('pmQuickTitleInput')?.focus(), 60);
     }
 
     function startPmQuickVoiceInput() {
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR) {
-            showToast('⚠️ เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียง');
-            return;
-        }
+        if (!SR) { showToast('⚠️ เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียง'); return; }
         const inp = document.getElementById('pmQuickTitleInput');
         if (!inp) return;
 
@@ -1338,27 +1437,30 @@
         const typedTitle = (document.getElementById('pmQuickTitleInput')?.value || '').trim();
         const typedCat = document.getElementById('pmQuickCategorySelect')?.value || 'tree';
         const typedTime = (document.getElementById('pmQuickTimeInput')?.value || '').trim();
+        const typedAlertTime = normalizeTimeHHMM(document.getElementById('pmQuickAlertTimeInput')?.value || '');
         const typedCoord = (document.getElementById('pmQuickCoordInput')?.value || '').trim();
 
         openPmPlanFormModal(null, selectedDateIso || getTodayIso());
         if (typedTitle) document.getElementById('pmTitleInput').value = typedTitle;
         if (typedCat) document.getElementById('pmCategorySelect').value = typedCat;
         if (typedTime) document.getElementById('pmTimeSlotInput').value = typedTime;
+        if (typedAlertTime && typeof window.onPmAlertModeChange === 'function' && typeof window.addPmCustomTimeChip === 'function') {
+            document.getElementById('pmAlertModeSelect').value = 'both';
+            window.onPmAlertModeChange('both');
+            window.addPmCustomTimeChip(typedAlertTime);
+        }
         if (typedCoord) {
             document.getElementById('pmCoordInput').value = typedCoord;
-            onPmCoordTextManualInput(typedCoord);
+            if (typeof window.onPmCoordTextManualInput === 'function') window.onPmCoordTextManualInput(typedCoord);
         }
-        togglePmFormMiniMap(true);
     }
 
     async function submitQuickInlinePmPlan() {
-        if (!canManagePmSchedule()) {
-            showToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่เพิ่มแผนงานได้');
-            return;
-        }
+        if (!canManagePmSchedule()) return;
         const titleEl = document.getElementById('pmQuickTitleInput');
         const catEl = document.getElementById('pmQuickCategorySelect');
         const timeEl = document.getElementById('pmQuickTimeInput');
+        const alertTimeEl = document.getElementById('pmQuickAlertTimeInput');
         const coordEl = document.getElementById('pmQuickCoordInput');
         const submitBtn = document.getElementById('pmQuickSubmitBtn');
 
@@ -1374,7 +1476,7 @@
         if (rawCoord) {
             if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳...'; }
             parsedCoord = await parsePmCoordOrShortLink(rawCoord);
-            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '➕ บันทึก'; }
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '💾 บันทึก'; }
             if (!parsedCoord) {
                 showToast('❌ พิกัดหรือลิงก์ไม่ถูกต้อง (เว้นว่างได้หากไม่ระบุพิกัด)');
                 return;
@@ -1382,19 +1484,19 @@
         }
 
         const targetDate = selectedDateIso || getTodayIso();
-        const category = catEl?.value || 'tree';
-        const timeSlot = (timeEl?.value || '').trim() || '09.00-12.00';
+        const customT = normalizeTimeHHMM(alertTimeEl?.value || '');
         const curUser = (rawGet('elec_app_current_user') || 'admin').trim();
         const nowIso = new Date().toISOString();
 
-        loadPmPlansFromStorage();
-        pmPlans.push({
+        const newPlan = {
             id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
             title: rawTitle,
-            category,
+            category: catEl?.value || 'tree',
             pinColor: 'auto',
+            alertMode: customT ? 'both' : 'standard',
+            customAlertTimes: customT ? [customT] : [],
             date: targetDate,
-            timeSlot,
+            timeSlot: (timeEl?.value || '').trim() || '09.00-12.00',
             notifyDaysBefore: 3,
             repeatMonths: 0,
             equipCode: '',
@@ -1408,14 +1510,20 @@
             createdBy: curUser,
             updatedBy: curUser,
             updatedAt: nowIso
-        });
+        };
+
+        loadPmPlansFromStorage();
+        pmPlans.push(newPlan);
+        preAckPastSlotsForPlanToday(newPlan);
 
         if (titleEl) titleEl.value = '';
         if (coordEl) coordEl.value = '';
+        if (alertTimeEl) alertTimeEl.value = '';
+        syncQuickAlertTimeLabel();
         currentFilterStatus = 'day';
 
         await savePmPlansAndSync(true);
-        showToast(`✅ เพิ่มแผนงานลงวันที่ ${formatThaiDateShort(targetDate)} เรียบร้อยแล้ว`);
+        showToast(`✅ บันทึกแผนงานวันที่ ${formatThaiDateShort(targetDate)} เรียบร้อยแล้ว`);
         titleEl?.focus();
     }
 
@@ -1437,7 +1545,7 @@
     }
 
     // ========================================================================
-    // 8. ตารางปฏิทินรายเดือน, แผนที่หมุดแผนงานในปฏิทิน & รายการงานรายวัน
+    // 8. ตารางปฏิทินรายเดือน (65% จอคอม), แผนที่หมุดแผนงาน & รายการงานรายวัน
     // ========================================================================
     async function initCalendarEmbeddedMap() {
         const mapEl = document.getElementById('pmCalendarEmbeddedMap');
@@ -1481,10 +1589,7 @@
         const pts = getAllVisibleCalendarItems()
             .filter(i => !isNaN(parseFloat(i.lat)) && !isNaN(parseFloat(i.lon)))
             .map(i => [parseFloat(i.lat), parseFloat(i.lon)]);
-        if (pts.length === 0) {
-            showToast('⚠️ ยังไม่มีหมุดแผนงานที่ระบุพิกัดในกลุ่มนี้');
-            return;
-        }
+        if (pts.length === 0) { showToast('⚠️ ยังไม่มีหมุดแผนงานที่ระบุพิกัดในกลุ่มนี้'); return; }
         calendarMapInstance.invalidateSize();
         calendarMapInstance.fitBounds(pts, { padding: [35, 35], maxZoom: 16 });
     }
@@ -1512,6 +1617,9 @@
     function openPmCalendarModal(presetDateIso = null) {
         injectPmModalsDOM();
         injectQuickAddBoxIntoCalendar();
+        isQuickInlineBoxVisible = false;
+        setPmDesktopModalWidth(desktopModalWidthMode || '65vw');
+
         if (presetDateIso && /^\d{4}-\d{2}-\d{2}$/.test(presetDateIso)) {
             selectedDateIso = presetDateIso;
             const [y, m] = presetDateIso.split('-').map(Number);
@@ -1527,6 +1635,7 @@
     }
 
     function closePmCalendarModal() {
+        isQuickInlineBoxVisible = false;
         cancelPmMapInteractiveModes();
         document.getElementById('pmCalendarModal')?.classList.add('hidden');
     }
@@ -1575,7 +1684,6 @@
         const summaryEl = document.getElementById('pmMonthSummaryBar');
         const grpBadge = document.getElementById('pmHeaderGroupBadge');
         const scadaChk = document.getElementById('pmShowScadaDueChk');
-        const addBtn = document.getElementById('pmAddPlanPrimaryBtn');
         const mapCntEl = document.getElementById('pmCalMapPinCount');
         if (!gridEl) return;
 
@@ -1585,7 +1693,6 @@
         if (grpBadge) grpBadge.textContent = `🏢 ${getActivePmGroup()}`;
         if (scadaChk) scadaChk.checked = showScadaDuePins;
         if (mapCntEl) mapCntEl.textContent = String(pinnedItemsCnt);
-        if (addBtn) addBtn.classList.toggle('hidden', !canManagePmSchedule());
         if (titleEl) titleEl.textContent = `${THAI_MONTHS[viewMonth]} ${viewYear + 543}`;
         updateQuickInlineBoxUI();
 
@@ -1612,7 +1719,6 @@
 
         const firstDow = new Date(viewYear, viewMonth, 1).getDay();
         const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-        const allowAdd = canManagePmSchedule();
         const cells = [];
 
         for (let b = 0; b < firstDow; b++) {
@@ -1626,27 +1732,21 @@
             const isSel = (iso === selectedDateIso);
             const hasOverdue = dayTasks.some(t => t.status !== 'done' && calcDaysUntil(t.date, todayIso) < 0);
 
-            const barsHtml = dayTasks.slice(0, 2).map(t => {
+            const barsHtml = dayTasks.slice(0, 3).map(t => {
                 const vis = getPlanPinVisualTheme(t);
                 const doneStyle = t.status === 'done' ? 'opacity:0.45;text-decoration:line-through;' : '';
                 const pinDot = (!isNaN(parseFloat(t.lat)) && !isNaN(parseFloat(t.lon))) ? '📍' : '';
-                return `<div class="truncate text-[9px] text-white font-bold px-1 rounded leading-tight" style="background:${vis.hex};${doneStyle}">${pinDot}${vis.icon} ${escapeHtmlStr(t.title)}</div>`;
+                return `<div class="truncate text-[9.5px] text-white font-bold px-1 rounded leading-tight" style="background:${vis.hex};${doneStyle}">${pinDot}${vis.icon} ${escapeHtmlStr(t.title)}</div>`;
             }).join('');
-            const moreHtml = dayTasks.length > 2
-                ? `<div class="text-[9px] font-extrabold text-indigo-700 leading-none">+อีก ${dayTasks.length - 2} งาน</div>`
-                : '';
-            const quickPlusBtn = allowAdd
-                ? `<span onclick="event.stopPropagation(); focusQuickInlineInputForDate('${iso}')" title="คลิกเพื่อพิมพ์เพิ่มแผนงานในวันนี้" class="pm-edit-only opacity-0 group-hover:opacity-100 ${isSel ? '!opacity-100' : ''} w-4 h-4 rounded-full bg-indigo-100 hover:bg-indigo-600 text-indigo-700 hover:text-white flex items-center justify-center text-[11px] font-extrabold leading-none transition">+</span>`
+            const moreHtml = dayTasks.length > 3
+                ? `<div class="text-[9px] font-extrabold text-indigo-700 leading-none">+อีก ${dayTasks.length - 3} งาน</div>`
                 : '';
 
             cells.push(`
-                <div onclick="selectPmCalendarDate('${iso}')" ondblclick="focusQuickInlineInputForDate('${iso}')" class="group cursor-pointer pm-day-cell rounded-xl border p-1 flex flex-col items-stretch text-left bg-white ${isSel ? 'pm-day-selected' : 'border-slate-200'} ${isToday ? 'ring-2 ring-amber-400' : ''}">
+                <div onclick="selectPmCalendarDate('${iso}')" class="cursor-pointer pm-day-cell rounded-xl border p-1 flex flex-col items-stretch text-left bg-white ${isSel ? 'pm-day-selected' : 'border-slate-200'} ${isToday ? 'ring-2 ring-amber-400' : ''}">
                     <div class="flex items-center justify-between w-full mb-0.5">
                         <span class="text-[11px] font-extrabold ${isToday ? 'bg-amber-400 text-slate-950 px-1.5 rounded-full' : 'text-slate-700'}">${day}</span>
-                        <div class="flex items-center gap-0.5">
-                            ${hasOverdue ? '<span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>' : ''}
-                            ${quickPlusBtn}
-                        </div>
+                        ${hasOverdue ? '<span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>' : (dayTasks.length > 0 ? `<span class="text-[9px] font-bold text-slate-400">${dayTasks.length}</span>` : '')}
                     </div>
                     <div class="space-y-0.5 overflow-hidden flex-1">${barsHtml}${moreHtml}</div>
                 </div>`);
@@ -1680,7 +1780,7 @@
         }
 
         if (items.length === 0) {
-            listEl.innerHTML = `<div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-400">ยังไม่มีแผนงานในวันนี้ พิมพ์ใส่ช่องด้านบนแล้วกด Enter ได้เลยครับ</div>`;
+            listEl.innerHTML = `<div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-400">ยังไม่มีแผนงานในวันนี้ กดปุ่ม <b>➕ ปักแผนใหม่</b> ด้านบนเพื่อเพิ่มแผนงานได้เลยครับ</div>`;
             return;
         }
 
@@ -1689,6 +1789,7 @@
 
         listEl.innerHTML = items.map(item => {
             const cat = getCategoryMeta(item.category);
+            const alCfg = getPlanEffectiveAlertConfig(item);
             const isDone = item.status === 'done';
             const daysLeft = calcDaysUntil(item.date, todayIso);
             const safeId = String(item.id).replace(/'/g, "\\'");
@@ -1706,7 +1807,7 @@
                         <div class="space-y-0.5 min-w-0 flex-1">
                             <div class="flex items-center gap-1 flex-wrap">
                                 <span class="border text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.pillCls}">${cat.icon} ${cat.name}</span>
-                                ${hasCoord ? '<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📍 มีหมุดแผนที่</span>' : ''}
+                                ${hasCoord ? '<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📍 มีหมุด</span>' : ''}
                             </div>
                             <div ${(!item.isScadaPinDue && allowEdit) ? `onclick="quickEditPmPlanTitle('${safeId}')" title="คลิกเพื่อแก้ข้อความด่วน"` : ''} class="font-extrabold text-slate-800 text-xs sm:text-sm break-words ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:text-indigo-700' : ''} ${isDone ? 'line-through' : ''}">${escapeHtmlStr(item.title)}</div>
                         </div>
@@ -1715,14 +1816,18 @@
                             ${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="quickDeletePmPlanCard('${safeId}')" class="text-slate-300 hover:text-rose-600 font-bold text-sm px-1" title="ลบแผนงาน">&times;</button>` : ''}
                         </div>
                     </div>
-                    <div class="text-[11px] text-slate-600">📅 ${formatThaiDateShort(item.date)} (${escapeHtmlStr(item.timeSlot || '-')}) • 🔔 เตือนล่วงหน้า ${Number(item.notifyDaysBefore ?? 3)} วัน</div>
+                    <div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600">
+                        <span>📅 ${formatThaiDateShort(item.date)} (${escapeHtmlStr(item.timeSlot || '-')})</span>
+                        <span>• เตือนล่วงหน้า ${Number(item.notifyDaysBefore ?? 3)} วัน</span>
+                        <span ${(!item.isScadaPinDue && allowEdit) ? `onclick="openPmPlanFormModal('${safeId}')" title="คลิกเพื่อตั้งเวลาเตือนของงานนี้"` : ''} class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.2 rounded font-bold text-[10px] ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:bg-indigo-100' : ''}">${escapeHtmlStr(alCfg.badgeLabel)}</span>
+                    </div>
                     ${item.equipCode ? `<div class="text-[11px] font-bold text-teal-800">⚡ อุปกรณ์: ${escapeHtmlStr(item.equipCode)} ${item.feeder ? `(${escapeHtmlStr(item.feeder)})` : ''}</div>` : ''}
                     ${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${escapeHtmlStr(item.note)}</div>` : ''}
                     <div class="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5">
                         <div class="flex flex-wrap gap-1">
                             ${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}
                             <button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">💬 LINE</button>
-                            ${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg text-[10px] font-bold">✏️ แก้ไข/ปักหมุด</button>` : ''}
+                            ${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg text-[10px] font-bold">✏️ แก้ไข/เวลาเตือน</button>` : ''}
                         </div>
                         ${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="${isDone ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">${isDone ? '↩️ เปิดใหม่' : '✅ เสร็จสิ้น'}</button>` : ''}
                     </div>
@@ -1737,9 +1842,16 @@
         const bodyEl = document.getElementById('pmAlertPopupBody');
         if (!modal || !bodyEl) return;
 
+        const isLogged = isUserCurrentlyLoggedIn();
         if (titleEl) titleEl.textContent = roundTitle;
-        bodyEl.innerHTML = candidates.map(c => {
+
+        const loggedOutHeader = !isLogged
+            ? `<div class="p-2.5 rounded-xl bg-slate-900 text-amber-300 border border-amber-400/60 text-[11px] font-bold">🔒 แจ้งเตือนอัตโนมัติขณะออกจากระบบ (🏢 ${escapeHtmlStr(getActivePmGroup())})</div>`
+            : '';
+
+        bodyEl.innerHTML = loggedOutHeader + candidates.map(c => {
             const cat = getCategoryMeta(c.category);
+            const alCfg = getPlanEffectiveAlertConfig(c);
             const safeId = String(c.id).replace(/'/g, "\\'");
             const hasCoord = !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lon));
             const badge = c.daysLeft < 0
@@ -1747,17 +1859,33 @@
                 : (c.daysLeft === 0 ? `<span class="bg-amber-500 text-slate-950 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 วันนี้ (${escapeHtmlStr(c.timeSlot || '-')})</span>` : `<span class="bg-sky-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">อีก ${c.daysLeft} วัน (${formatThaiDateShort(c.date)})</span>`);
             return `
                 <div class="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-1">
-                    <div class="flex items-center justify-between gap-2">${badge}<span class="text-[10px] font-bold text-slate-500">${cat.icon} ${cat.name}</span></div>
-                    <div class="font-extrabold text-slate-800 text-xs sm:text-sm">${escapeHtmlStr(c.title)}</div>
-                    ${hasCoord ? `<div class="pt-1 flex gap-1.5"><button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุดบนแมพ</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง Maps</button></div>` : ''}
+                    <div class="flex items-center justify-between gap-2">${badge}<span class="text-[10px] font-bold text-indigo-700">${escapeHtmlStr(alCfg.badgeLabel)}</span></div>
+                    <div class="font-extrabold text-slate-800 text-xs sm:text-sm">${cat.icon} ${escapeHtmlStr(c.title)}</div>
+                    ${hasCoord ? `<div class="pt-1 flex gap-1.5">${isLogged ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุดบนแมพ</button>` : ''}<button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง Maps</button></div>` : ''}
                 </div>`;
         }).join('');
+
+        const calOrLoginBtn = document.getElementById('pmAlertModalCalOrLoginBtn');
+        if (calOrLoginBtn) {
+            if (isLogged) {
+                calOrLoginBtn.textContent = '📅 ดูปฏิทิน/แมพ';
+                calOrLoginBtn.onclick = () => { modal.classList.add('hidden'); openPmCalendarModal(); };
+            } else {
+                calOrLoginBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ';
+                calOrLoginBtn.onclick = () => {
+                    modal.classList.add('hidden');
+                    (document.getElementById('loginUsername') || document.getElementById('techUsername'))?.focus();
+                };
+            }
+        }
         modal.classList.remove('hidden');
     }
 
     function refreshPmAllViews() {
-        updatePmHeaderBadgesAndStrip();
-        renderAllExternalPmMapLayers();
+        if (isUserCurrentlyLoggedIn()) {
+            updatePmHeaderBadgesAndStrip();
+            renderAllExternalPmMapLayers();
+        }
         const calModal = document.getElementById('pmCalendarModal');
         if (calModal && !calModal.classList.contains('hidden')) {
             injectQuickAddBoxIntoCalendar();
@@ -1765,11 +1893,14 @@
             renderPmSelectedDayList();
         }
     }
-    // ===== จบพาทที่ 3 / 4 ของไฟล์ pm-calendar.js (นำพาทที่ 4 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+
+    window.syncQuickAlertTimeLabel = syncQuickAlertTimeLabel;
+    window.clearQuickAlertTimeInput = clearQuickAlertTimeInput;
+    // ===== จบพาทที่ 3 / 4 ของไฟล์ pm-calendar.js (ต่อเข้ากับพาทที่ 4 / 4 เดิมได้เลยครับ) =====
         // ===== เริ่มพาทที่ 4 / 4 ของไฟล์ pm-calendar.js (วางต่อจากพาทที่ 3 / 4 จนจบไฟล์) =====
 
     // ========================================================================
-    // 9. ฟอร์มหมุดแผนงาน, เลือกสีหมุด, มินิแมพจิ้มพิกัด & บันทึก/ลบ/ทำซ้ำอัตโนมัติ
+    // 9. ตั้งเวลาเตือนรายแผนงาน, เลือกสีหมุด, มินิแมพจิ้มพิกัด & บันทึก/ลบ/ทำซ้ำ
     // ========================================================================
     function copyPmTextSafe(text, successMsg) {
         if (typeof window.copyTextToClipboard === 'function') return window.copyTextToClipboard(text, successMsg);
@@ -1828,6 +1959,56 @@
         };
     }
 
+    function renderPmCustomTimeChips() {
+        const wrap = document.getElementById('pmCustomTimeChipsWrap');
+        if (!wrap) return;
+        tempFormCustomTimes = normalizeCustomTimesArray(tempFormCustomTimes);
+        if (tempFormCustomTimes.length === 0) {
+            wrap.innerHTML = '<span class="text-[10.5px] text-slate-400 italic">ยังไม่ได้เพิ่มเวลาเตือนพิเศษ (เลือกเวลาด้านบนแล้วกด ➕ เพิ่มเวลาเตือน)</span>';
+            return;
+        }
+        wrap.innerHTML = tempFormCustomTimes.map(t => `
+            <span class="inline-flex items-center gap-1 bg-indigo-600 text-white px-2.5 py-1 rounded-full text-[11px] font-mono font-extrabold shadow-sm">
+                ⏰ ${escapeHtmlStr(t)} น.
+                <button type="button" onclick="removePmCustomTimeChip('${escapeHtmlStr(t)}')" class="ml-0.5 text-indigo-200 hover:text-white font-bold leading-none">&times;</button>
+            </span>
+        `).join('');
+    }
+
+    function onPmAlertModeChange(modeVal) {
+        const sec = document.getElementById('pmCustomTimesSection');
+        const showCustom = (modeVal === 'both' || modeVal === 'custom_only');
+        if (sec) sec.classList.toggle('hidden', !showCustom);
+        if (showCustom) renderPmCustomTimeChips();
+    }
+
+    function addPmCustomTimeChip(presetTime = '') {
+        const picker = document.getElementById('pmCustomTimePickerInput');
+        const rawT = presetTime || (picker?.value || '');
+        const clean = normalizeTimeHHMM(rawT);
+        if (!clean) {
+            showToast('⚠️ กรุณาเลือกเวลาแจ้งเตือนในรูปแบบ HH:MM');
+            return;
+        }
+        const modeSel = document.getElementById('pmAlertModeSelect');
+        if (modeSel && (modeSel.value === 'standard' || modeSel.value === 'off')) {
+            modeSel.value = 'both';
+            onPmAlertModeChange('both');
+        }
+        if (!tempFormCustomTimes.includes(clean)) {
+            tempFormCustomTimes.push(clean);
+            tempFormCustomTimes = normalizeCustomTimesArray(tempFormCustomTimes);
+            renderPmCustomTimeChips();
+        } else {
+            showToast(`⏰ เวลา ${clean} น. อยู่ในรายการเตือนแล้ว`);
+        }
+    }
+
+    function removePmCustomTimeChip(timeStr) {
+        tempFormCustomTimes = tempFormCustomTimes.filter(t => t !== timeStr);
+        renderPmCustomTimeChips();
+    }
+
     function selectPmFormPinColor(colorKey) {
         const validKey = PM_PIN_COLORS[colorKey] ? colorKey : 'auto';
         const inp = document.getElementById('pmPinColorInput');
@@ -1848,13 +2029,11 @@
         try {
             const pins = JSON.parse(rawGet('elec_labeled_places_list') || '[]');
             const delMap = JSON.parse(rawGet('elec_deleted_labeled_places_map') || '{}');
-            const role = rawGet('elec_app_current_role') || 'user';
-            const myGrp = (typeof getCurrentUserGroup === 'function' ? getCurrentUserGroup() : '') ||
-                          rawGet('elec_app_current_group') || '';
+            const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
 
             const visiblePins = pins.filter(p => {
                 if (!p || !p.id || delMap[p.id]) return false;
-                if (role === 'admin' && !myGrp) return true;
+                if (role === 'admin' && !explicitGroup) return true;
                 return (p.ownerGroup || 'กฟส.บึง').trim() === getActivePmGroup();
             }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
 
@@ -1905,8 +2084,7 @@
             L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' }).addTo(formMiniMap);
             formMiniMap.on('click', (e) => {
                 if (!e.latlng) return;
-                const lat = Number(e.latlng.lat.toFixed(6));
-                const lon = Number(e.latlng.lng.toFixed(6));
+                const lat = Number(e.latlng.lat.toFixed(6)), lon = Number(e.latlng.lng.toFixed(6));
                 const cdEl = document.getElementById('pmCoordInput');
                 if (cdEl) cdEl.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
                 syncFormMiniMapMarker(lat, lon, false);
@@ -1915,8 +2093,7 @@
 
         setTimeout(async () => {
             formMiniMap.invalidateSize();
-            const rawCoord = document.getElementById('pmCoordInput')?.value || '';
-            const parsed = await parsePmCoordOrShortLink(rawCoord);
+            const parsed = await parsePmCoordOrShortLink(document.getElementById('pmCoordInput')?.value || '');
             if (parsed) syncFormMiniMapMarker(parsed.lat, parsed.lon, true);
         }, 90);
     }
@@ -1956,29 +2133,22 @@
 
     function fillPmCurrentMobileGps() {
         const coordEl = document.getElementById('pmCoordInput');
-        if (!navigator.geolocation) {
-            showToast('⚠️ เบราว์เซอร์ไม่รองรับ GPS');
-            return;
-        }
+        if (!navigator.geolocation) { showToast('⚠️ เบราว์เซอร์ไม่รองรับ GPS'); return; }
         showToast('⏳ กำลังดึงพิกัดมือถือปัจจุบัน...');
         navigator.geolocation.getCurrentPosition(
             (pos) => {
-                const lat = Number(pos.coords.latitude.toFixed(6));
-                const lon = Number(pos.coords.longitude.toFixed(6));
+                const lat = Number(pos.coords.latitude.toFixed(6)), lon = Number(pos.coords.longitude.toFixed(6));
                 if (coordEl) coordEl.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
                 if (isFormMiniMapOpen) syncFormMiniMapMarker(lat, lon, true);
                 showToast(`📍 ดึงพิกัดสำเร็จ (${lat.toFixed(6)}, ${lon.toFixed(6)})`);
             },
             () => {
                 if (window.lastKnownTechCoords && coordEl) {
-                    const lat = Number(window.lastKnownTechCoords.lat.toFixed(6));
-                    const lon = Number(window.lastKnownTechCoords.lon.toFixed(6));
+                    const lat = Number(window.lastKnownTechCoords.lat.toFixed(6)), lon = Number(window.lastKnownTechCoords.lon.toFixed(6));
                     coordEl.value = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
                     if (isFormMiniMapOpen) syncFormMiniMapMarker(lat, lon, true);
                     showToast('📍 ใช้พิกัดล่าสุดของเครื่อง');
-                } else {
-                    showToast('❌ ไม่สามารถดึงพิกัดได้ กรุณาเปิด Location ในเครื่อง');
-                }
+                } else showToast('❌ ไม่สามารถดึงพิกัดได้ กรุณาเปิด Location ในเครื่อง');
             },
             { enableHighAccuracy: true, timeout: 8000 }
         );
@@ -1987,7 +2157,6 @@
     async function parsePmCoordOrShortLink(rawStr) {
         const txt = String(rawStr || '').trim();
         if (!txt) return null;
-
         let pair = typeof deepParseCoords === 'function' ? deepParseCoords(txt, false) : null;
         if (!pair && /(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(txt) && typeof resolveGoogleShortLinkUniversal === 'function') {
             pair = await resolveGoogleShortLinkUniversal(txt);
@@ -1997,7 +2166,6 @@
             if (nums && nums.length >= 2) pair = { lat: nums[0], lon: nums[1] };
         }
         if (!pair) return null;
-
         let lat = parseFloat(pair.lat), lon = parseFloat(pair.lon);
         if (isNaN(lat) || isNaN(lon)) return null;
         if (lat > 90 && lon < 90) { const tmp = lat; lat = lon; lon = tmp; }
@@ -2006,7 +2174,7 @@
 
     function openPmPlanFormModal(planId = null, presetDate = null, presetLat = null, presetLon = null, presetScadaPinId = null) {
         if (!canManagePmSchedule()) {
-            showToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่เพิ่ม/แก้ไขแผนงานได้');
+            showToast('🔒 กรุณาเข้าสู่ระบบด้วยสิทธิ์แอดมินหรือผู้ใช้งานทั่วไปเพื่อแก้ไขแผนงาน');
             return;
         }
         injectPmModalsDOM();
@@ -2016,12 +2184,13 @@
         const modal = document.getElementById('pmPlanFormModal');
         const titleHdr = document.getElementById('pmPlanFormTitle');
         const delBtn = document.getElementById('pmDeleteBtnInModal');
+        const modeSel = document.getElementById('pmAlertModeSelect');
         if (!modal) return;
 
         if (editingPlanId) {
             const target = pmPlans.find(p => p.id === editingPlanId && !p.pmDeleted);
             if (!target) return;
-            if (titleHdr) titleHdr.textContent = '✏️ แก้ไขข้อมูล / หมุดแผนงานบำรุงรักษา';
+            if (titleHdr) titleHdr.textContent = '✏️ แก้ไขข้อมูล / ตั้งเวลาเตือนแผนงาน';
             populatePmScadaPinPicker(target.linkedPinId || '');
             selectPmFormPinColor(target.pinColor || 'auto');
             document.getElementById('pmTitleInput').value = target.title || '';
@@ -2030,6 +2199,12 @@
             document.getElementById('pmTimeSlotInput').value = target.timeSlot || '09.00-12.00';
             document.getElementById('pmNotifyBeforeSelect').value = String(target.notifyDaysBefore ?? 3);
             document.getElementById('pmRepeatMonthsSelect').value = String(target.repeatMonths ?? 0);
+
+            tempFormCustomTimes = normalizeCustomTimesArray(target.customAlertTimes || []);
+            const effMode = target.alertMode || (tempFormCustomTimes.length > 0 ? 'both' : 'standard');
+            if (modeSel) modeSel.value = effMode;
+            onPmAlertModeChange(effMode);
+
             document.getElementById('pmEquipCodeInput').value = target.equipCode || '';
             document.getElementById('pmFeederInput').value = target.feeder || '';
             const hasC = !isNaN(parseFloat(target.lat)) && !isNaN(parseFloat(target.lon));
@@ -2047,11 +2222,14 @@
             document.getElementById('pmTimeSlotInput').value = '09.00-12.00';
             document.getElementById('pmNotifyBeforeSelect').value = '3';
             document.getElementById('pmRepeatMonthsSelect').value = '0';
+
+            tempFormCustomTimes = [];
+            if (modeSel) modeSel.value = 'standard';
+            onPmAlertModeChange('standard');
+
             document.getElementById('pmEquipCodeInput').value = '';
             document.getElementById('pmFeederInput').value = '';
-            document.getElementById('pmCoordInput').value = (presetLat != null && presetLon != null)
-                ? `${Number(presetLat).toFixed(6)}, ${Number(presetLon).toFixed(6)}`
-                : '';
+            document.getElementById('pmCoordInput').value = (presetLat != null && presetLon != null) ? `${Number(presetLat).toFixed(6)}, ${Number(presetLon).toFixed(6)}` : '';
             document.getElementById('pmNoteInput').value = '';
             delBtn?.classList.add('hidden');
 
@@ -2070,7 +2248,6 @@
 
     async function savePmPlanFromModal() {
         if (!canManagePmSchedule()) return;
-
         const title = (document.getElementById('pmTitleInput')?.value || '').trim();
         const category = document.getElementById('pmCategorySelect')?.value || 'scada';
         const pinColor = document.getElementById('pmPinColorInput')?.value || 'auto';
@@ -2078,6 +2255,7 @@
         const timeSlot = (document.getElementById('pmTimeSlotInput')?.value || '').trim() || '09.00-12.00';
         const notifyDaysBefore = parseInt(document.getElementById('pmNotifyBeforeSelect')?.value || '3', 10);
         const repeatMonths = parseInt(document.getElementById('pmRepeatMonthsSelect')?.value || '0', 10);
+        const alertMode = document.getElementById('pmAlertModeSelect')?.value || 'standard';
         const linkedPinId = (document.getElementById('pmScadaPinPicker')?.value || '').trim();
         const equipCode = (document.getElementById('pmEquipCodeInput')?.value || '').trim();
         const feeder = (document.getElementById('pmFeederInput')?.value || '').trim().toUpperCase();
@@ -2087,6 +2265,16 @@
 
         if (!title) { showToast('⚠️ กรุณาระบุชื่อหมุดแผนงาน / หัวข้องาน'); return; }
         if (!dateVal) { showToast('⚠️ กรุณาเลือกวันที่กำหนดทำ'); return; }
+
+        let customAlertTimes = normalizeCustomTimesArray(tempFormCustomTimes);
+        if ((alertMode === 'custom_only' || alertMode === 'both') && customAlertTimes.length === 0) {
+            const fallbackPicker = normalizeTimeHHMM(document.getElementById('pmCustomTimePickerInput')?.value || '');
+            if (fallbackPicker) customAlertTimes = [fallbackPicker];
+        }
+        if (alertMode === 'custom_only' && customAlertTimes.length === 0) {
+            showToast('⚠️ กรุณากด ➕ เพิ่มเวลาเตือนอย่างน้อย 1 เวลา');
+            return;
+        }
 
         let parsedCoord = null;
         if (rawCoord) {
@@ -2101,36 +2289,41 @@
         const curUser = (rawGet('elec_app_current_user') || 'admin').trim();
         const myGroup = getActivePmGroup();
         const gpsLink = parsedCoord ? `https://www.google.com/maps?q=${parsedCoord.lat.toFixed(6)},${parsedCoord.lon.toFixed(6)}` : '';
+        let savedRecord = null;
 
         if (editingPlanId) {
             const idx = pmPlans.findIndex(p => p.id === editingPlanId);
             if (idx !== -1) {
                 pmPlans[idx] = {
-                    ...pmPlans[idx],
-                    title, category, pinColor, date: dateVal, timeSlot,
+                    ...pmPlans[idx], title, category, pinColor, date: dateVal, timeSlot,
                     notifyDaysBefore: isNaN(notifyDaysBefore) ? 3 : notifyDaysBefore,
                     repeatMonths: isNaN(repeatMonths) ? 0 : repeatMonths,
-                    linkedPinId: linkedPinId || undefined,
-                    equipCode, feeder, note,
-                    lat: parsedCoord ? parsedCoord.lat : null,
-                    lon: parsedCoord ? parsedCoord.lon : null,
+                    alertMode, customAlertTimes,
+                    linkedPinId: linkedPinId || undefined, equipCode, feeder, note,
+                    lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null,
                     gpsLink, updatedBy: curUser, updatedAt: nowIso
                 };
+                savedRecord = pmPlans[idx];
             }
         } else {
-            pmPlans.push({
+            savedRecord = {
                 id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
                 title, category, pinColor, date: dateVal, timeSlot,
                 notifyDaysBefore: isNaN(notifyDaysBefore) ? 3 : notifyDaysBefore,
                 repeatMonths: isNaN(repeatMonths) ? 0 : repeatMonths,
-                linkedPinId: linkedPinId || undefined,
-                equipCode, feeder, note,
-                lat: parsedCoord ? parsedCoord.lat : null,
-                lon: parsedCoord ? parsedCoord.lon : null,
+                alertMode, customAlertTimes,
+                linkedPinId: linkedPinId || undefined, equipCode, feeder, note,
+                lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null,
                 gpsLink, status: 'pending', ownerGroup: myGroup,
                 createdBy: curUser, updatedBy: curUser, updatedAt: nowIso
-            });
+            };
+            pmPlans.push(savedRecord);
         }
+
+        if (savedRecord) preAckPastSlotsForPlanToday(savedRecord);
+
+        const qTitle = document.getElementById('pmQuickTitleInput');
+        if (qTitle) qTitle.value = '';
 
         selectedDateIso = dateVal;
         const [y, m] = dateVal.split('-').map(Number);
@@ -2139,7 +2332,7 @@
 
         closePmPlanFormModal();
         await savePmPlansAndSync(true);
-        showToast(parsedCoord ? '📍 บันทึกหมุดแผนงานบนแผนที่และปฏิทินแล้ว!' : '✅ บันทึกแผนงานลงปฏิทินเรียบร้อยแล้ว');
+        showToast(parsedCoord ? '📍 บันทึกหมุดแผนงานและเวลาเตือนเรียบร้อย!' : '✅ บันทึกแผนงานและเวลาเตือนเรียบร้อย!');
     }
 
     function deletePmPlanById(planId, closeFormAfter = false) {
@@ -2151,12 +2344,7 @@
         showCustomConfirm(`ต้องการลบแผนงาน "${target.title}" ออกจากปฏิทินและแผนที่ใช่หรือไม่?`, async function () {
             const idx = pmPlans.findIndex(p => p.id === planId);
             if (idx !== -1) {
-                pmPlans[idx] = {
-                    id: pmPlans[idx].id,
-                    ownerGroup: pmPlans[idx].ownerGroup || getActivePmGroup(),
-                    pmDeleted: true,
-                    updatedAt: new Date().toISOString()
-                };
+                pmPlans[idx] = { id: pmPlans[idx].id, ownerGroup: pmPlans[idx].ownerGroup || getActivePmGroup(), pmDeleted: true, updatedAt: new Date().toISOString() };
             }
             if (closeFormAfter) closePmPlanFormModal();
             await savePmPlansAndSync(true);
@@ -2173,8 +2361,7 @@
         const idx = pmPlans.findIndex(p => p.id === planId && !p.pmDeleted);
         if (idx === -1) return;
 
-        const plan = pmPlans[idx];
-        const nextStatus = plan.status === 'done' ? 'pending' : 'done';
+        const plan = pmPlans[idx], nextStatus = plan.status === 'done' ? 'pending' : 'done';
         const nowIso = new Date().toISOString();
         const curUser = formatTechDisplayName(rawGet('elec_app_current_user') || 'ผู้ปฏิบัติงาน');
 
@@ -2188,21 +2375,14 @@
             spawnedNextDate = addMonthsToIsoDate(plan.date, Number(plan.repeatMonths));
             plan.spawnedNextCycle = true;
             pmPlans.push({
-                ...plan,
-                id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-                date: spawnedNextDate,
-                status: 'pending',
-                completedAt: undefined,
-                completedBy: undefined,
-                spawnedNextCycle: undefined,
+                ...plan, id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                date: spawnedNextDate, status: 'pending',
+                completedAt: undefined, completedBy: undefined, spawnedNextCycle: undefined,
                 updatedAt: new Date(Date.now() + 10).toISOString()
             });
         }
 
-        scadaMapRef?.closePopup();
-        repairMapRef?.closePopup();
-        calendarMapInstance?.closePopup();
-
+        scadaMapRef?.closePopup(); repairMapRef?.closePopup(); calendarMapInstance?.closePopup();
         await savePmPlansAndSync(true);
         showToast(spawnedNextDate
             ? `✅ เสร็จสิ้น! และปักหมุดรอบถัดไป (${formatThaiDateShort(spawnedNextDate)}) อัตโนมัติแล้ว`
@@ -2210,24 +2390,21 @@
     }
 
     // ========================================================================
-    // 10. นำทาง GPS, แชร์ LINE, ส่งออก Excel, ตั้งเวลาเตือน 00:00/07:00 & เริ่มต้นระบบ
+    // 10. นำทาง GPS, แชร์ LINE, Excel & ตัวจับเวลาเตือนรายนาที (ทำงานแม้อยู่หน้าล็อกอิน)
     // ========================================================================
     function navigatePmPlanGps(itemId) {
         const item = getAllVisibleCalendarItems().find(x => x.id === itemId);
         if (!item) return;
 
-        if (item.linkedPinId && typeof window.startLabeledPlaceNavigation === 'function') {
+        if (isUserCurrentlyLoggedIn() && item.linkedPinId && typeof window.startLabeledPlaceNavigation === 'function') {
             closePmCalendarModal();
             document.getElementById('pmAlertPopupModal')?.classList.add('hidden');
             window.startLabeledPlaceNavigation(item.linkedPinId, true);
             return;
         }
         const lat = parseFloat(item.lat), lon = parseFloat(item.lon);
-        if (isNaN(lat) || isNaN(lon)) {
-            showToast('⚠️ หมุดแผนงานนี้ยังไม่ได้ระบุพิกัด GPS');
-            return;
-        }
-        if (typeof window.recordEquipmentNavStart === 'function' && !isViewerRole()) {
+        if (isNaN(lat) || isNaN(lon)) { showToast('⚠️ หมุดแผนงานนี้ยังไม่ได้ระบุพิกัด GPS'); return; }
+        if (isUserCurrentlyLoggedIn() && typeof window.recordEquipmentNavStart === 'function' && !isViewerRole()) {
             window.recordEquipmentNavStart(
                 { id: item.id, name: `PM: ${item.title}`, note: item.note || '', ownerGroup: item.ownerGroup || getActivePmGroup(), lat, lon },
                 { distanceKm: '2.0', durationMin: 5, isArrived: false }
@@ -2240,11 +2417,13 @@
         const item = getAllVisibleCalendarItems().find(x => x.id === itemId);
         if (!item) return;
         const cat = getCategoryMeta(item.category);
+        const alCfg = getPlanEffectiveAlertConfig(item);
         const lines = [
             `📅 หมุดแผนงานบำรุงรักษา (${item.ownerGroup || getActivePmGroup()})`,
             `${cat.icon} ประเภท : ${cat.name}`,
             `🏷️ เรื่อง : ${item.title}`,
-            `🗓️ กำหนดการ : ${formatThaiDateFull(item.date)} (${item.timeSlot || '-'})`
+            `🗓️ กำหนดการ : ${formatThaiDateFull(item.date)} (${item.timeSlot || '-'})`,
+            `⏰ แจ้งเตือน : ${alCfg.badgeLabel}`
         ];
         if (item.equipCode) lines.push(`⚡ อุปกรณ์ : ${item.equipCode}${item.feeder ? ` (วงจร ${item.feeder})` : ''}`);
         if (item.note) lines.push(`📝 รายละเอียด : ${item.note}`);
@@ -2281,12 +2460,13 @@
         const items = getAllVisibleCalendarItems();
         if (items.length === 0) { showToast('⚠️ ยังไม่มีข้อมูลแผนงานสำหรับส่งออก'); return; }
         const myGrp = getActivePmGroup();
-        const headers = ['ลำดับ', 'กลุ่มสังกัด', 'วันที่กำหนด', 'เวลา', 'ประเภทงาน', 'หัวข้อแผนงาน', 'รหัสอุปกรณ์', 'วงจร', 'รายละเอียด', 'เตือนล่วงหน้า(วัน)', 'สถานะ', 'ผู้ทำเสร็จ', 'ลิงก์พิกัดหมุด'];
+        const headers = ['ลำดับ', 'กลุ่มสังกัด', 'วันที่กำหนด', 'เวลาปฏิบัติงาน', 'ประเภทงาน', 'หัวข้อแผนงาน', 'เงื่อนไขเวลาเตือน', 'เตือนล่วงหน้า(วัน)', 'รหัสอุปกรณ์', 'วงจร', 'รายละเอียด', 'สถานะ', 'ผู้ทำเสร็จ', 'ลิงก์พิกัดหมุด'];
         const rows = items.map((it, i) => [
             String(i + 1), it.ownerGroup || myGrp, formatThaiDateShort(it.date), it.timeSlot || '-',
-            getCategoryMeta(it.category).name, it.title || '-', it.equipCode || '-', it.feeder || '-',
-            it.note || '-', String(it.notifyDaysBefore ?? 3), it.status === 'done' ? 'เสร็จสิ้นแล้ว' : 'รอดำเนินการ',
-            it.completedBy || '-', (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '-'
+            getCategoryMeta(it.category).name, it.title || '-', getPlanEffectiveAlertConfig(it).badgeLabel,
+            String(it.notifyDaysBefore ?? 3), it.equipCode || '-', it.feeder || '-', it.note || '-',
+            it.status === 'done' ? 'เสร็จสิ้นแล้ว' : 'รอดำเนินการ', it.completedBy || '-',
+            (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '-'
         ]);
         const fn = `PM_Schedule_${myGrp.replace(/\s+/g, '_')}_${getTodayIso()}.xlsx`;
         if ((await loadPmXlsxSafe()) && typeof XLSX !== 'undefined') {
@@ -2320,24 +2500,46 @@
         if (!('Notification' in window)) { showToast('⚠️ เบราว์เซอร์นี้ไม่รองรับ System Notification'); return; }
         const perm = await Notification.requestPermission();
         updatePmSoundAndNotifButtonsUI();
-        if (perm === 'granted') { showToast('✅ เปิดแจ้งเตือนบนเครื่องเรียบร้อย!'); checkAndTriggerScheduledPmAlerts(true); }
+        if (perm === 'granted') {
+            showToast('✅ เปิดแจ้งเตือนมุมจอเรียบร้อย (ทำงานได้แม้อยู่หน้าล็อกอิน)!');
+            checkAndTriggerScheduledPmAlerts(true);
+        }
     }
 
-    function checkExactScheduleClockTick() {
-        if (rawGet('elec_app_logged_in') !== 'true' || (Core && Core.isEmbeddedIframe)) return;
+    // ตรวจสอบเวลาแจ้งเตือนรายนาที (รองรับทั้งเวลาที่ตั้งเองรายแผนงาน และรอบ 00:00 / 07:00 น.)
+    async function checkExactScheduleClockTick() {
+        rememberActiveAuthForLoggedOutAlerts();
+        if ((Core && Core.isEmbeddedIframe) || !hasRememberedPmSession()) return;
+
         const now = new Date();
-        const hr = now.getHours(), min = now.getMinutes();
+        const hr = now.getHours(), min = now.getMinutes(), curMin = hr * 60 + min;
         const minKey = `${toLocalIsoDate(now)}_${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
         if (minKey === lastCheckedAlertMinuteKey) return;
         lastCheckedAlertMinuteKey = minKey;
 
-        if ((hr === 0 && min === 0) || (hr === 7 && min === 0)) {
-            refreshPmAllViews();
-            checkAndTriggerScheduledPmAlerts(false);
-        } else if (min === 0) {
-            refreshPmAllViews();
+        if (!isUserCurrentlyLoggedIn()) {
+            const hasAlertNextMin = getAlertCandidatesForToday().some(it =>
+                getPlanEffectiveAlertConfig(it).allTimes.some(t => timeHHMMToMinutes(t) === (curMin + 1) % 1440)
+            );
+            if (hasAlertNextMin || min % 5 === 0) {
+                await pullPmPlansWhileLoggedOut();
+            }
+        } else {
+            syncPmPlansFromLocationsMap();
+            if (min % 5 === 0) refreshPmAllViews();
         }
+
+        checkAndTriggerScheduledPmAlerts(false);
     }
+
+    const _safeOpenPmCalendarModal = function (presetDateIso = null) {
+        if (!isUserCurrentlyLoggedIn()) {
+            showToast('🔐 กรุณาเข้าสู่ระบบก่อนเปิดจัดการปฏิทินแผนงาน');
+            (document.getElementById('loginUsername') || document.getElementById('techUsername'))?.focus();
+            return;
+        }
+        return openPmCalendarModal(presetDateIso);
+    };
 
     bindLeafletMapHooks();
 
@@ -2349,11 +2551,14 @@
     }
 
     Object.assign(window, {
-        openPmCalendarModal, closePmCalendarModal, changePmCalendarMonth, jumpPmCalendarToday,
+        openPmCalendarModal: _safeOpenPmCalendarModal,
+        closePmCalendarModal, setPmDesktopModalWidth, changePmCalendarMonth, jumpPmCalendarToday,
         selectPmCalendarDate, setPmListStatusFilter, toggleShowScadaDueOnCalendar, togglePmTechStripCollapse,
         switchCalendarLeftViewMode, fitCalendarEmbeddedMapPins, toggleShowPmPinsOnMaps, cyclePmMapFilterMode,
         togglePmPinDropMode, startMovePmPlanPinOnMap, cancelPmMapInteractiveModes, focusPmPlanPinOnMap,
-        focusQuickInlineInputForDate, startPmQuickVoiceInput, expandQuickInputToFullModal, submitQuickInlinePmPlan, quickEditPmPlanTitle,
+        togglePmQuickInlineBox, focusQuickInlineInputForDate, startPmQuickVoiceInput, expandQuickInputToFullModal,
+        submitQuickInlinePmPlan, quickEditPmPlanTitle,
+        onPmAlertModeChange, addPmCustomTimeChip, removePmCustomTimeChip,
         selectPmFormPinColor, togglePmFormMiniMap, onPmCoordTextManualInput, onPmScadaEquipPick, fillPmCurrentMobileGps,
         openPmPlanFormModal, closePmPlanFormModal, savePmPlanFromModal, deletePmPlanFromModal, quickDeletePmPlanCard,
         togglePmPlanCompleteStatus, navigatePmPlanGps, shareSinglePmPlanToLine, shareDailyOrAlertSummaryToLine,
@@ -2361,6 +2566,7 @@
     });
 
     function bootstrapPmCalendarModule() {
+        rememberActiveAuthForLoggedOutAlerts();
         bindLeafletMapHooks();
         injectPmCalendarStyles();
         injectPmModalsDOM();
@@ -2368,7 +2574,7 @@
         loadPmPlansFromStorage();
         syncPmPlansFromLocationsMap();
         updatePmSoundAndNotifButtonsUI();
-        refreshPmAllViews();
+        if (isUserCurrentlyLoggedIn()) refreshPmAllViews();
 
         if (typeof window.switchTechMainTab === 'function' && !window.switchTechMainTab.__pmWrapped) {
             const origSwitch = window.switchTechMainTab;
@@ -2381,19 +2587,27 @@
             window.switchTechMainTab = wrapped;
         }
 
-        setTimeout(() => {
-            syncPmPlansFromLocationsMap();
-            refreshPmAllViews();
+        setTimeout(async () => {
+            rememberActiveAuthForLoggedOutAlerts();
+            if (!isUserCurrentlyLoggedIn()) await pullPmPlansWhileLoggedOut();
+            else syncPmPlansFromLocationsMap();
+            if (isUserCurrentlyLoggedIn()) refreshPmAllViews();
             checkAndTriggerScheduledPmAlerts(false);
         }, 1400);
 
         setInterval(checkExactScheduleClockTick, 15000);
         setInterval(() => {
-            if (!document.hidden && rawGet('elec_app_logged_in') === 'true') {
+            rememberActiveAuthForLoggedOutAlerts();
+            if (!document.hidden && isUserCurrentlyLoggedIn()) {
                 syncPmPlansFromLocationsMap();
                 updatePmHeaderBadgesAndStrip();
             }
         }, 10000);
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) { lastCheckedAlertMinuteKey = ''; checkExactScheduleClockTick(); }
+        });
+        window.addEventListener('focus', () => { lastCheckedAlertMinuteKey = ''; checkExactScheduleClockTick(); });
     }
 
     if (document.readyState === 'loading') {
