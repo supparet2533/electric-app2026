@@ -2,7 +2,7 @@
 // ⚡ PEA SMART GRID — SERVICE WORKER v95 (sw.js)
 // แก้แคชค้างบน GitHub Pages (บังคับ no-cache ไฟล์ระบบ + กัน cache.addAll พังจากไฟล์ 404)
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v97';
+const CACHE_NAME = 'pea-smart-tools-v98';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 
 const APP_SHELL_ASSETS = [
@@ -16,6 +16,7 @@ const APP_SHELL_ASSETS = [
     './pm-calendar.js',
     './manifest.json',
     './manifest-main.json',
+    './pm-push.js'
     'https://cdn.tailwindcss.com',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
@@ -127,6 +128,49 @@ self.addEventListener('fetch', (event) => {
                 }
                 return res;
             });
+        })
+    );
+});
+
+// ============================================================================
+// 🔔 รับสัญญาณ Web Push จาก Firebase แม้ปัดปิดแอปไปแล้ว (แสดงเฉพาะยอดสรุป)
+// ============================================================================
+self.addEventListener('push', (event) => {
+    let payload = {};
+    try {
+        const raw = event.data ? event.data.json() : {};
+        payload = raw.data || raw.notification || raw;
+    } catch (e) {
+        payload = { body: event.data ? event.data.text() : '' };
+    }
+
+    const title = payload.title || '🔔 แจ้งเตือนแผนงานบำรุงรักษา (PM)';
+    const options = {
+        body: payload.body || 'มีแผนงานบำรุงรักษาถึงกำหนด แตะเพื่อเปิดดูรายละเอียด',
+        tag: payload.tag || 'pea-pm-summary-push',
+        renotify: true,
+        requireInteraction: true,
+        vibrate: [220, 100, 220],
+        data: { url: payload.url || './index.html?openPm=1' }
+    };
+
+    event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const targetRelUrl = event.notification.data?.url || './index.html?openPm=1';
+    const targetFullUrl = new URL(targetRelUrl, self.location.origin + self.location.pathname.replace(/[^/]*$/, '')).href;
+
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            for (const client of clientList) {
+                if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+                    client.postMessage({ type: 'OPEN_PM_FROM_PUSH' });
+                    return client.focus();
+                }
+            }
+            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null;
         })
     );
 });
