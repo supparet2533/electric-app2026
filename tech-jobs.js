@@ -1,7 +1,7 @@
 // ============================================================================
-// 🛠️⚡ PEA SMART GRID — TECH WORKFORCE & REPAIR JOBS ENGINE v6.0 (tech-jobs.js)
+// 🛠️⚡ PEA SMART GRID — TECH WORKFORCE & REPAIR JOBS ENGINE v6.1 (tech-jobs.js)
 // ระบบจัดการใบงานซ่อม นำทางเรียลไทม์ สั่งปิดงานด้วยเสียง และแผนที่จุดงานซ่อม (สำหรับ page2.html)
-// พาทที่ 1 / 3 : State, Auth & Role UI, Sound Alerts, GPS Tracker & Live Navigation
+// พาทที่ 1 / 4 : State, Group Standardizer, Auth & Role UI, Sound Alerts & GPS Tracker
 // ============================================================================
 (function () {
     'use strict';
@@ -52,8 +52,17 @@
     let lastNavCloudPushTime = 0;
     let screenWakeLock = null;
     const recentlyCancelledNavKeys = new Map();
+    const shortLinkAttemptMap = new Map();
 
-    // ซิงค์ตัวแปรพิกัดให้ scada-engine.js เรียกใช้ร่วมกันได้แบบเรียลไทม์
+    function normTechGrp(raw) {
+        if (typeof window.normalizePeaGroupName === 'function') {
+            return window.normalizePeaGroupName(raw);
+        }
+        return String(raw || '').trim().replace(/\s+/g, ' ')
+            .replace(/^(กฟ[สฟจตอ])\.?\s+/, '$1.')
+            .replace(/^(กฟ[สฟจตอ])(?![.\s])/, '$1.');
+    }
+
     Object.defineProperty(window, 'lastKnownTechCoords', {
         get: () => lastKnownTechCoords,
         set: (val) => { lastKnownTechCoords = val; },
@@ -91,9 +100,15 @@
     function updateRoleNavigationUI() {
         const currentUser = localStorage.getItem('elec_app_current_user') || '';
         const currentRole = localStorage.getItem('elec_app_current_role') || 'user';
-        const myGroup = getCurrentUserGroup();
+        const myGroup = normTechGrp(getCurrentUserGroup());
         const isViewer = isViewerRole();
         const canEditScada = canCurrentUserEditScada();
+
+        if (localStorage.getItem('elec_app_logged_in') === 'true' && currentRole !== 'admin' && myGroup) {
+            if (localStorage.getItem('elec_app_current_group') !== myGroup) {
+                localStorage.setItem('elec_app_current_group', myGroup);
+            }
+        }
 
         document.body.classList.toggle('role-viewer-readonly', isViewer);
         document.body.classList.toggle('role-scada-readonly', !canEditScada);
@@ -185,10 +200,7 @@
             modal.innerHTML = `
                 <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
                     <div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center">
-                        <h3 class="font-bold text-sm flex items-center gap-2">
-                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping"></span>
-                            <span>สถานะผู้ใช้งานออนไลน์ (เฉพาะ Admin)</span>
-                        </h3>
+                        <h3 class="font-bold text-sm flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-300 animate-ping"></span><span>สถานะผู้ใช้งานออนไลน์ (เฉพาะ Admin)</span></h3>
                         <button type="button" onclick="document.getElementById('techOnlineModal').classList.add('hidden')" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button>
                     </div>
                     <div class="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex justify-between items-center text-[11px] text-emerald-800 font-semibold">
@@ -196,9 +208,7 @@
                         <button type="button" onclick="syncJobsFromCloud(false)" class="text-teal-700 hover:underline font-bold">🔄 ซิงค์สถานะ</button>
                     </div>
                     <div id="techOnlineListContainer" class="p-3.5 overflow-y-auto space-y-2 flex-1 bg-slate-50"></div>
-                    <div class="p-3 bg-white border-t flex justify-end">
-                        <button type="button" onclick="document.getElementById('techOnlineModal').classList.add('hidden')" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">ปิดหน้าต่าง</button>
-                    </div>
+                    <div class="p-3 bg-white border-t flex justify-end"><button type="button" onclick="document.getElementById('techOnlineModal').classList.add('hidden')" class="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">ปิดหน้าต่าง</button></div>
                 </div>`;
             document.body.appendChild(modal);
         }
@@ -220,14 +230,8 @@
             const statusBadge = item.isOnline
                 ? `<span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>ออนไลน์</span>`
                 : `<span class="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-semibold px-2 py-0.5 rounded-full">⚪ ออฟไลน์</span>`;
-
-            let timeLabel = 'ยังไม่เคยออนไลน์';
-            if (item.isOnline) timeLabel = 'ออนไลน์ขณะนี้';
-            else if (item.lastSeenMs) {
-                const mins = Math.max(1, Math.floor(item.diffMs / 60000));
-                const hrs = Math.floor(mins / 60);
-                timeLabel = mins < 60 ? `ออฟไลน์เมื่อ ${mins} นาทีที่แล้ว` : (hrs < 24 ? `ออฟไลน์เมื่อ ${hrs} ชม. ที่แล้ว` : `ออนไลน์ล่าสุด ${new Date(item.lastSeenMs).toLocaleDateString('th-TH')}`);
-            }
+            const mins = item.lastSeenMs ? Math.max(1, Math.floor(item.diffMs / 60000)) : 0;
+            const timeLabel = item.isOnline ? 'ออนไลน์ขณะนี้' : (!item.lastSeenMs ? 'ยังไม่เคยออนไลน์' : (mins < 60 ? `ออฟไลน์เมื่อ ${mins} นาทีที่แล้ว` : (mins < 1440 ? `ออฟไลน์เมื่อ ${Math.floor(mins / 60)} ชม. ที่แล้ว` : `ออนไลน์ล่าสุด ${new Date(item.lastSeenMs).toLocaleDateString('th-TH')}`)));
 
             return `
                 <div class="p-3 rounded-xl border bg-white shadow-sm flex items-center justify-between gap-2 ${item.isOnline ? 'border-emerald-300 border-l-4 border-l-emerald-500' : 'border-slate-200 opacity-75'}">
@@ -264,6 +268,7 @@
                 document.getElementById('techUsername').value = '';
                 document.getElementById('techPassword').value = '';
                 lastRenderedCardsSignature = '';
+                hasInitializedPendingBaseline = false;
                 checkTechAuth();
                 await syncJobsFromCloud(false);
                 initTechGpsTracker();
@@ -353,15 +358,20 @@
         } catch (e) {}
     }
 
-    function checkNewIncomingPendingJobs() {
+        function checkNewIncomingPendingJobs() {
+        const delReg = getDeletedJobsRegistry();
+        const closedReg = readClosedReg();
         const outages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
         const faults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
         const currentKeys = new Set();
         let foundNew = false, foundCritical = false;
 
         outages.forEach(item => {
-            if (!canCurrentUserSeeJob(item) || (item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น'))) return;
-            const k = 'O_' + item.dateTimeSaved;
+            const jk = item?.dateTimeSaved;
+            if (!jk || delReg[jk] || !canCurrentUserSeeJob(item)) return;
+            const rep = item.techReport || closedReg[jk];
+            if (rep && String(rep.status || '').includes('เสร็จสิ้น') && !isAutoGeneratedFakeClosure(rep)) return;
+            const k = 'O_' + jk;
             currentKeys.add(k);
             if (hasInitializedPendingBaseline && !knownPendingJobKeys.has(k)) {
                 foundNew = true;
@@ -369,11 +379,15 @@
             }
         });
         faults.forEach(item => {
-            if (!canCurrentUserSeeJob(item) || (item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น'))) return;
-            const k = 'F_' + item.timestamp;
+            const jk = item?.timestamp;
+            if (!jk || delReg[jk] || !canCurrentUserSeeJob(item)) return;
+            const rep = item.techReport || closedReg[jk];
+            if (rep && String(rep.status || '').includes('เสร็จสิ้น') && !isAutoGeneratedFakeClosure(rep)) return;
+            const k = 'F_' + jk;
             currentKeys.add(k);
             if (hasInitializedPendingBaseline && !knownPendingJobKeys.has(k)) {
-                foundNew = true; foundCritical = true;
+                foundNew = true;
+                foundCritical = true;
             }
         });
 
@@ -386,7 +400,7 @@
     }
 
     // ========================================================================
-    // 3. ระบบติดตามพิกัด GPS, แนะนำช่างใกล้สุด & นำทางไปจุดเกิดเหตุเรียลไทม์
+    // 3. ระบบติดตามพิกัด GPS, แนะนำช่างใกล้สุด & คำนวณเส้นทางด่วน
     // ========================================================================
     function updateGpsToggleButtonUI() {
         const btn = document.getElementById('gpsToggleBtn');
@@ -414,7 +428,7 @@
             if (techGpsIntervalId) { clearInterval(techGpsIntervalId); techGpsIntervalId = null; }
             lastKnownTechCoords = null;
             clearMyGpsFromLocationsMap();
-            updateMyTechMarkerOnRepairMap();
+            if (typeof updateMyTechMarkerOnRepairMap === 'function') updateMyTechMarkerOnRepairMap();
             if (typeof window.__onTechGpsUpdated === 'function') window.__onTechGpsUpdated();
             renderJobCards();
             showToast('🚫 ปิดการแชร์พิกัด GPS และล้างตำแหน่งค้างเรียบร้อยแล้ว');
@@ -439,7 +453,7 @@
         if (role !== 'admin') {
             Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, true);
         }
-        updateMyTechMarkerOnRepairMap();
+        if (typeof updateMyTechMarkerOnRepairMap === 'function') updateMyTechMarkerOnRepairMap();
         if (typeof window.__onTechGpsUpdated === 'function') window.__onTechGpsUpdated();
     }
 
@@ -515,7 +529,7 @@
         const destCoord = extractCoordsFromJob(item);
         if (!destCoord) return null;
 
-        const jobGroup = getJobGroupName(item);
+        const jobGroup = normTechGrp(getJobGroupName(item));
         const locMap = getTechLocationsMap();
         const accounts = getParsedUserAccounts();
         const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
@@ -524,7 +538,7 @@
 
         if (isGpsTrackingEnabled && lastKnownTechCoords && curUser && curRole !== 'admin' && curRole !== 'viewer' && !Core.isEmbeddedIframe) {
             locMap[curUser] = {
-                username: curUser, role: curRole, group: getCurrentUserGroup(),
+                username: curUser, role: curRole, group: normTechGrp(getCurrentUserGroup()),
                 lat: lastKnownTechCoords.lat, lon: lastKnownTechCoords.lon,
                 gpsDisabled: false, isOnline: true, lastSeenAt: new Date().toISOString()
             };
@@ -541,7 +555,7 @@
             const effRole = accMatch ? accMatch.role : (loc.role || 'tech');
             if (effRole === 'viewer' || effRole === 'admin') return;
 
-            const effGroup = getUserGroupName(loc.username) || loc.group || '';
+            const effGroup = normTechGrp(getUserGroupName(loc.username) || loc.group || '');
             if (jobGroup && effGroup && jobGroup !== effGroup) return;
 
             const roadKm = Math.max(0.2, calcHaversineKm(loc.lat, loc.lon, destCoord.lat, destCoord.lon) * 1.35);
@@ -604,12 +618,24 @@
         }
         activeNavJobKey = null;
     }
-    // ===== จบพาทที่ 1 / 3 ของไฟล์ tech-jobs.js (นำพาทที่ 2 / 3 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-    // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 1 / 3) =====
+    // ===== จบพาทที่ 1 / 4 ของไฟล์ tech-jobs.js (นำพาทที่ 2 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+    // ===== เริ่มพาทที่ 2 / 4 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 1 / 4) =====
 
     // ========================================================================
     // 4. ระบบนำทางใบงานซ่อมเรียลไทม์ (Start / Watch / Cancel Navigation)
     // ========================================================================
+    function readClosedReg() {
+        if (typeof getClosedReportsRegistry === 'function') return getClosedReportsRegistry();
+        if (typeof getClosedJobsRegistry === 'function') return getClosedJobsRegistry();
+        try { return JSON.parse(localStorage.getItem('elec_closed_jobs_registry') || '{}'); } catch (e) { return {}; }
+    }
+
+    function writeClosedReg(mapObj) {
+        if (typeof saveClosedReportsRegistry === 'function') return saveClosedReportsRegistry(mapObj);
+        if (typeof syncClosedRegistryObject === 'function') return syncClosedRegistryObject(mapObj);
+        localStorage.setItem('elec_closed_jobs_registry', JSON.stringify(mapObj || {}));
+    }
+
     function startRealtimeGpsWatch(key, jobType, destCoord) {
         stopRealtimeGpsWatch();
         if (!isGpsTrackingEnabled || !navigator.geolocation || !destCoord) return;
@@ -654,9 +680,7 @@
                     isArrived: routeInfo.isArrived,
                     techLat: lastKnownTechCoords.lat,
                     techLon: lastKnownTechCoords.lon,
-                    statusText: routeInfo.isArrived
-                        ? '📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)'
-                        : `อีกประมาณ ${routeInfo.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
+                    statusText: routeInfo.isArrived ? '📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)' : `อีกประมาณ ${routeInfo.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
                     updatedAt: new Date().toISOString(),
                     needsMainSync: true
                 };
@@ -678,12 +702,8 @@
 
     async function handleStartNavigation(key, jobType, gpsLink) {
         if (isViewerRole()) {
-            if (gpsLink) {
-                window.open(gpsLink, '_blank');
-                showToast('🗺️ เปิดแผนที่ Google Maps (โหมดผู้สำรวจ)');
-            } else {
-                showToast(VIEWER_LOCK_MSG);
-            }
+            if (gpsLink) { window.open(gpsLink, '_blank'); showToast('🗺️ เปิดแผนที่ Google Maps (โหมดผู้สำรวจ)'); }
+            else showToast(VIEWER_LOCK_MSG);
             return;
         }
 
@@ -706,51 +726,34 @@
         }
 
         const item = list[idx];
-        const prevCancelMs = Math.max(
-            prevCancelIso ? new Date(prevCancelIso).getTime() : 0,
-            item.navCancelledAt ? new Date(item.navCancelledAt).getTime() : 0
-        );
-        cachedCloudJobs.forEach(cj => {
-            if ((cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved) === key) delete cj.navCancelledAt;
-        });
+        const prevCancelMs = Math.max(prevCancelIso ? new Date(prevCancelIso).getTime() : 0, item.navCancelledAt ? new Date(item.navCancelledAt).getTime() : 0);
+        cachedCloudJobs.forEach(cj => { if ((cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved) === key) delete cj.navCancelledAt; });
 
         const loggedInUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
-        const myGroup = getCurrentUserGroup();
+        const myGroup = normTechGrp(getCurrentUserGroup());
         const now = new Date();
         const safeStartMs = Math.max(now.getTime(), prevCancelMs + 2000);
         const departTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
         const destCoord = extractCoordsFromJob(item);
         const startCoord = lastKnownTechCoords || { lat: 13.1361, lon: 101.0322 };
-
-        const route = destCoord
-            ? calculateInstantRouteFallback(startCoord, destCoord)
-            : { distanceKm: '5.0', durationMin: 15, isArrived: false };
+        const route = destCoord ? calculateInstantRouteFallback(startCoord, destCoord) : { distanceKm: '5.0', durationMin: 15, isArrived: false };
 
         const etaMs = safeStartMs + (route.durationMin * 60000);
         const etaDate = new Date(etaMs);
         const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
 
         item.techNav = {
-            durationMin: route.durationMin,
-            initialDurationMin: route.durationMin,
-            distanceKm: route.distanceKm,
-            initialDistanceKm: route.distanceKm,
-            departTime: departTimeStr,
-            departTimestamp: safeStartMs,
-            etaTime: etaTimeStr,
-            etaTimestamp: etaMs,
-            isArrived: route.isArrived,
-            techName: loggedInUser,
-            statusText: route.isArrived
-                ? '📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)'
-                : `อีกประมาณ ${route.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
-            updatedAt: new Date(safeStartMs).toISOString(),
-            needsMainSync: true
+            durationMin: route.durationMin, initialDurationMin: route.durationMin,
+            distanceKm: route.distanceKm, initialDistanceKm: route.distanceKm,
+            departTime: departTimeStr, departTimestamp: safeStartMs,
+            etaTime: etaTimeStr, etaTimestamp: etaMs,
+            isArrived: route.isArrived, techName: loggedInUser,
+            statusText: route.isArrived ? '📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)' : `อีกประมาณ ${route.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
+            updatedAt: new Date(safeStartMs).toISOString(), needsMainSync: true
         };
         delete item.navCancelledAt;
-        if (myGroup) item.ownerGroup = myGroup;
+        item.ownerGroup = normTechGrp(getJobGroupName(item) || myGroup || 'กฟส.บึง') || 'กฟส.บึง';
 
-        // บันทึกสถานะลงเครื่องทันทีก่อนสลับไปเปิดแอป Google Maps ป้องกันเบราว์เซอร์มือถือตัดการทำงาน
         localStorage.setItem(storageKey, JSON.stringify(list));
         switchStatusTab('traveling');
         showToast(gpsLink ? '🚗 บันทึกสถานะเดินทางและกำลังเปิด Google Maps...' : '🚗 บันทึกสถานะกำลังเดินทางไปหน้างานแล้ว!');
@@ -797,15 +800,8 @@
         const friendlyTech = escapeHtmlStr(formatTechDisplayName(nav.techName || '-'));
 
         if (nav.isArrived) {
-            return `
-                <div class="flex justify-between items-center">
-                    <div class="font-bold text-emerald-700">📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบหน้างาน)</div>
-                    ${liveBadge}
-                </div>
-                <div class="w-full bg-emerald-200 h-2 rounded-full overflow-hidden my-1"><div class="bg-emerald-600 h-full w-full"></div></div>
-                <div class="text-[10px] text-emerald-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${escapeHtmlStr(nav.departTime || '-')})</div>`;
+            return `<div class="flex justify-between items-center"><div class="font-bold text-emerald-700">📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบหน้างาน)</div>${liveBadge}</div><div class="w-full bg-emerald-200 h-2 rounded-full overflow-hidden my-1"><div class="bg-emerald-600 h-full w-full"></div></div><div class="text-[10px] text-emerald-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${escapeHtmlStr(nav.departTime || '-')})</div>`;
         }
-
         if (nav.etaTimestamp && nav.departTimestamp) {
             const remainSec = Math.max(0, Math.floor((nav.etaTimestamp - nowMs) / 1000));
             const totalDurSec = Math.max(60, Math.floor((nav.etaTimestamp - nav.departTimestamp) / 1000));
@@ -816,34 +812,11 @@
             const estRemainDist = isGpsFresh ? curDist.toFixed(1) : Math.max(0.1, initDist * (1 - elapsedRatio * 0.95)).toFixed(1);
 
             if (remainSec <= 0) {
-                return `
-                    <div class="flex justify-between items-center">
-                        <div class="font-bold text-emerald-700">📍 คาดว่าถึงจุดเกิดเหตุแล้ว (ครบกำหนดเวลา ${escapeHtmlStr(nav.etaTime || '')})</div>
-                        ${liveBadge}
-                    </div>
-                    <div class="w-full bg-emerald-200 h-2 rounded-full overflow-hidden my-1"><div class="bg-emerald-600 h-full w-full"></div></div>
-                    <div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${escapeHtmlStr(nav.departTime || '-')})</div>`;
+                return `<div class="flex justify-between items-center"><div class="font-bold text-emerald-700">📍 คาดว่าถึงจุดเกิดเหตุแล้ว (ครบกำหนดเวลา ${escapeHtmlStr(nav.etaTime || '')})</div>${liveBadge}</div><div class="w-full bg-emerald-200 h-2 rounded-full overflow-hidden my-1"><div class="bg-emerald-600 h-full w-full"></div></div><div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${escapeHtmlStr(nav.departTime || '-')})</div>`;
             }
-
-            const mins = Math.floor(remainSec / 60);
-            const secs = String(remainSec % 60).padStart(2, '0');
-            return `
-                <div class="flex justify-between items-center gap-1">
-                    <div class="font-bold text-blue-700">🚗 กำลังเดินทาง: อีก ${mins} นาที ${secs} วินาที (ถึง ~${escapeHtmlStr(nav.etaTime || '-')})</div>
-                    ${liveBadge}
-                </div>
-                <div class="relative w-full bg-blue-200/80 h-2 rounded-full overflow-hidden my-1.5">
-                    <div class="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-700" style="width:${progressPct}%"></div>
-                </div>
-                <div class="flex justify-between items-center text-[10px] text-blue-800">
-                    <span>📏 ระยะทางเหลือ: ~${estRemainDist} กม. (${progressPct}%)</span>
-                    <span>👷 ${friendlyTech} (ออก ${escapeHtmlStr(nav.departTime || '-')})</span>
-                </div>`;
+            return `<div class="flex justify-between items-center gap-1"><div class="font-bold text-blue-700">🚗 กำลังเดินทาง: อีก ${Math.floor(remainSec / 60)} นาที ${String(remainSec % 60).padStart(2, '0')} วินาที (ถึง ~${escapeHtmlStr(nav.etaTime || '-')})</div>${liveBadge}</div><div class="relative w-full bg-blue-200/80 h-2 rounded-full overflow-hidden my-1.5"><div class="bg-gradient-to-r from-blue-500 to-indigo-600 h-full transition-all duration-700" style="width:${progressPct}%"></div></div><div class="flex justify-between items-center text-[10px] text-blue-800"><span>📏 ระยะทางเหลือ: ~${estRemainDist} กม. (${progressPct}%)</span><span>👷 ${friendlyTech} (ออก ${escapeHtmlStr(nav.departTime || '-')})</span></div>`;
         }
-
-        return `
-            <div class="font-bold text-blue-700">🚗 ${escapeHtmlStr(nav.statusText || 'กำลังเดินทาง')}</div>
-            <div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${escapeHtmlStr(nav.departTime || '-')})</div>`;
+        return `<div class="font-bold text-blue-700">🚗 ${escapeHtmlStr(nav.statusText || 'กำลังเดินทาง')}</div><div class="text-[10px] text-blue-800">👷 ช่าง: ${friendlyTech} (ออกเดินทาง ${escapeHtmlStr(nav.departTime || '-')})</div>`;
     }
 
     function updateLiveNavDomElements() {
@@ -859,18 +832,43 @@
     }
 
     // ========================================================================
-    // 5. ระบบซิงค์ใบงานกับ Google Sheets (Pull / Merge / Trailing Queue Push)
+    // 5. ระบบซิงค์ใบงานกับ Google Sheets (ตัดใบงานค้างเครื่องให้ยอดตรงหน้า 1 ทุกเครื่อง 100%)
     // ========================================================================
+    function getShiftCycleTodayIso() {
+        const cyc = new Date();
+        if (cyc.getHours() * 60 + cyc.getMinutes() < 30) cyc.setDate(cyc.getDate() - 1);
+        return `${cyc.getFullYear()}-${String(cyc.getMonth() + 1).padStart(2, '0')}-${String(cyc.getDate()).padStart(2, '0')}`;
+    }
+
+    function getJobCreatedTimeMs(item) {
+        if (!item) return 0;
+        if (item.createdAtMs) return Number(item.createdAtMs) || 0;
+        if (item.timestamp) { const t = new Date(item.timestamp).getTime(); if (!isNaN(t)) return t; }
+        if (item.dateTimeSaved) {
+            const parts = String(item.dateTimeSaved).trim().split(/\s+/);
+            const dp = (parts[0] || '').split('/');
+            if (dp.length === 3) {
+                let yr = parseInt(dp[2], 10) || 2569; if (yr > 2400) yr -= 543;
+                const tp = (parts[1] || '00:00:00').split(/[:\.]/);
+                return new Date(yr, (parseInt(dp[1], 10) || 1) - 1, parseInt(dp[0], 10) || 1, parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2], 10) || 0).getTime() || 0;
+            }
+        }
+        return 0;
+    }
+
     function rescueFalselyClosedRecentJobs() {
+        const cyc = new Date();
+        if (cyc.getHours() * 60 + cyc.getMinutes() < 30) cyc.setDate(cyc.getDate() - 1);
+        const cycleThai = `${String(cyc.getDate()).padStart(2, '0')}/${String(cyc.getMonth() + 1).padStart(2, '0')}/${cyc.getFullYear() + 543}`;
         const now = new Date();
-        const todayThai = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543}`;
-        const closedMap = getClosedReportsRegistry();
+        const calThai = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543}`;
+        const closedMap = readClosedReg();
         let mapChanged = false, outagesChanged = false;
 
         const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
         localOutages.forEach(item => {
             const dStr = (item.reportDate && item.reportDate !== '-') ? item.reportDate : (item.dateTimeSaved ? item.dateTimeSaved.split(' ')[0] : '');
-            if (dStr === todayThai && isAutoGeneratedFakeClosure(item.techReport)) {
+            if ((dStr === cycleThai || dStr === calThai) && isAutoGeneratedFakeClosure(item.techReport)) {
                 delete item.techReport;
                 outagesChanged = true;
                 if (closedMap[item.dateTimeSaved] && isAutoGeneratedFakeClosure(closedMap[item.dateTimeSaved])) {
@@ -880,13 +878,13 @@
             }
         });
         Object.keys(closedMap).forEach(k => {
-            if (k.startsWith(todayThai) && isAutoGeneratedFakeClosure(closedMap[k])) {
+            if ((k.startsWith(cycleThai) || k.startsWith(calThai)) && isAutoGeneratedFakeClosure(closedMap[k])) {
                 delete closedMap[k];
                 mapChanged = true;
             }
         });
         if (outagesChanged) localStorage.setItem('elecReportsComplete_all', JSON.stringify(localOutages));
-        if (mapChanged) saveClosedReportsRegistry(closedMap);
+        if (mapChanged) writeClosedReg(closedMap);
     }
 
     function normalizeJobGpsAndReportText(storageKey, isFault) {
@@ -895,6 +893,8 @@
             let changed = false;
             list.forEach(item => {
                 if (!item) return;
+                const cleanGrp = normTechGrp(getJobGroupName(item) || 'กฟส.บึง') || 'กฟส.บึง';
+                if (item.ownerGroup !== cleanGrp) { item.ownerGroup = cleanGrp; changed = true; }
                 if (item.gps && item.gps !== '-' && !String(item.gps).startsWith('http')) {
                     const m = String(item.gps).trim().match(/^(-?\d{1,2}\.\d{4,})\s*,\s*(-?\d{2,3}\.\d{4,})$/);
                     if (m) { item.gps = `https://www.google.com/maps?q=${m[1]},${m[2]}`; changed = true; }
@@ -907,9 +907,7 @@
                         changed = true;
                     }
                     const urg = getJobUrgencyInfo(item, isFault ? 'fault' : 'outage');
-                    const hdr = !isFault
-                        ? `${urg.dot} งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'} (${item.issueType || '-'})`
-                        : `${urg.dot} วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
+                    const hdr = !isFault ? `${urg.dot} งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'} (${item.issueType || '-'})` : `${urg.dot} วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
                     const gpsLine = tr.fieldGps ? `\n📍 พิกัดหน้างาน : ${tr.fieldGps}` : '';
                     const techText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdr}\n🚦 สถานะ : ${tr.status}\n🔍 สาเหตุจริง : ${tr.realCause || '-'}\n🛠️ การแก้ไข : ${tr.actionTaken || '-'}\n⏰ เวลาเสร็จ : ${tr.finishTime || '-'}\n👷 ผู้ตรวจสอบ : ${tr.inspector || '-'}${gpsLine}`;
                     const baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
@@ -924,56 +922,54 @@
         } catch (e) {}
     }
 
-    function mergeCloudJobsToLocal(cloudJobs) {
+    function mergeCloudJobsToLocal(cloudJobs, pruneStale = true) {
         Core.cleanReopenedAndCancelledJobsInStorage();
         rescueFalselyClosedRecentJobs();
 
-        const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
-        const localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]');
-        const closedMap = getClosedReportsRegistry();
+        const delReg = getDeletedJobsRegistry();
+        const closedMap = readClosedReg();
         const now = Date.now();
+        const isAdmin = isCurrentUserAdmin();
 
         const mergeItem = (existing, cJob) => {
-            if (cJob.techReport && isAutoGeneratedFakeClosure(cJob.techReport)) delete cJob.techReport;
-            if (!existing) return cJob;
+            const normCloud = { ...cJob, ownerGroup: normTechGrp(getJobGroupName(cJob) || 'กฟส.บึง') || 'กฟส.บึง' };
+            if (normCloud.techReport && isAutoGeneratedFakeClosure(normCloud.techReport)) delete normCloud.techReport;
+            if (!existing) return normCloud;
             if (existing.techReport && isAutoGeneratedFakeClosure(existing.techReport)) delete existing.techReport;
 
-            const jobKey = cJob.jobType === 'fault' ? cJob.timestamp : cJob.dateTimeSaved;
+            const jobKey = normCloud.jobType === 'fault' ? normCloud.timestamp : normCloud.dateTimeSaved;
             const exRepT = existing.techReport?.updatedAt || '';
-            const cRepT = cJob.techReport?.updatedAt || '';
-            let bestReport = cRepT >= exRepT ? (cJob.techReport || existing.techReport) : existing.techReport;
+            const cRepT = normCloud.techReport?.updatedAt || '';
+            let bestReport = cRepT >= exRepT ? (normCloud.techReport || existing.techReport) : existing.techReport;
             if (!bestReport && jobKey && closedMap[jobKey] && !isAutoGeneratedFakeClosure(closedMap[jobKey])) {
                 bestReport = closedMap[jobKey];
             }
 
-            const latestReopen = (cJob.reopenedAt || '') >= (existing.reopenedAt || '') ? (cJob.reopenedAt || '') : (existing.reopenedAt || '');
+            const latestReopen = (normCloud.reopenedAt || '') >= (existing.reopenedAt || '') ? (normCloud.reopenedAt || '') : (existing.reopenedAt || '');
             if (latestReopen && (!bestReport?.updatedAt || latestReopen > bestReport.updatedAt)) {
                 bestReport = undefined;
                 if (jobKey) delete closedMap[jobKey];
             }
 
             const recentCancel = jobKey ? recentlyCancelledNavKeys.get(jobKey) : null;
-            let latestCancel = (cJob.navCancelledAt || '') >= (existing.navCancelledAt || '') ? (cJob.navCancelledAt || '') : (existing.navCancelledAt || '');
-            if (recentCancel && (now - recentCancel.ts < 8000) && recentCancel.iso > latestCancel) {
-                latestCancel = recentCancel.iso;
-            }
+            let latestCancel = (normCloud.navCancelledAt || '') >= (existing.navCancelledAt || '') ? (normCloud.navCancelledAt || '') : (existing.navCancelledAt || '');
+            if (recentCancel && (now - recentCancel.ts < 8000) && recentCancel.iso > latestCancel) latestCancel = recentCancel.iso;
 
             const exNavT = existing.techNav?.updatedAt || '';
-            const cNavT = cJob.techNav?.updatedAt || '';
-            let bestNav = cNavT >= exNavT ? (cJob.techNav || existing.techNav) : existing.techNav;
+            const cNavT = normCloud.techNav?.updatedAt || '';
+            let bestNav = cNavT >= exNavT ? (normCloud.techNav || existing.techNav) : existing.techNav;
 
             const isNowDone = bestReport && String(bestReport.status || '').includes('เสร็จสิ้น');
-            if (isNowDone || (latestCancel && (!bestNav?.updatedAt || latestCancel >= bestNav.updatedAt))) {
-                bestNav = undefined;
-            }
+            if (isNowDone || (latestCancel && (!bestNav?.updatedAt || latestCancel >= bestNav.updatedAt))) bestNav = undefined;
             if (isNowDone && jobKey) {
                 closedMap[jobKey] = bestReport;
                 if (activeNavJobKey === jobKey) stopRealtimeGpsWatch();
             }
 
-            const baseCore = (existing.editedAt || '') > (cJob.editedAt || '') ? { ...cJob, ...existing } : { ...existing, ...cJob };
+            const baseCore = (existing.editedAt || '') > (normCloud.editedAt || '') ? { ...normCloud, ...existing } : { ...existing, ...normCloud };
             const merged = {
                 ...baseCore,
+                ownerGroup: normTechGrp(getJobGroupName(baseCore) || 'กฟส.บึง') || 'กฟส.บึง',
                 techReport: bestReport,
                 reopenedAt: latestReopen || undefined,
                 navCancelledAt: latestCancel || undefined
@@ -984,23 +980,51 @@
             return merged;
         };
 
-        const outageMap = new Map(localOutages.map(i => [i.dateTimeSaved, i]));
-        cloudJobs.filter(j => j.jobType !== 'fault' && j.dateTimeSaved).forEach(cj => {
-            outageMap.set(cj.dateTimeSaved, mergeItem(outageMap.get(cj.dateTimeSaved), cj));
+        const outageMap = new Map();
+        JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]').forEach(i => {
+            if (i?.dateTimeSaved && !delReg[i.dateTimeSaved]) outageMap.set(i.dateTimeSaved, i);
+        });
+        const faultMap = new Map();
+        JSON.parse(localStorage.getItem('fault_reports_all') || '[]').forEach(i => {
+            if (i?.timestamp && !delReg[i.timestamp]) faultMap.set(i.timestamp, i);
         });
 
-        const faultMap = new Map(localFaults.map(i => [i.timestamp, i]));
-        cloudJobs.filter(j => j.jobType === 'fault' && j.timestamp).forEach(cj => {
-            faultMap.set(cj.timestamp, mergeItem(faultMap.get(cj.timestamp), cj));
+        const cloudOutKeys = new Set(), cloudFltKeys = new Set();
+        (cloudJobs || []).forEach(cj => {
+            if (!cj || cj.jobType === 'tech_loc' || !canCurrentUserSeeJob(cj)) return;
+            if (cj.jobType === 'fault' && cj.timestamp && !delReg[cj.timestamp]) {
+                cloudFltKeys.add(cj.timestamp);
+                faultMap.set(cj.timestamp, mergeItem(faultMap.get(cj.timestamp), cj));
+            } else if (cj.jobType !== 'fault' && cj.dateTimeSaved && !delReg[cj.dateTimeSaved]) {
+                cloudOutKeys.add(cj.dateTimeSaved);
+                outageMap.set(cj.dateTimeSaved, mergeItem(outageMap.get(cj.dateTimeSaved), cj));
+            }
         });
 
-        saveClosedReportsRegistry(closedMap);
-        localStorage.setItem('elecReportsComplete_all', JSON.stringify(
-            Array.from(outageMap.values()).sort((a, b) => getJobSortTimeMs(b, 'outage') - getJobSortTimeMs(a, 'outage'))
-        ));
-        localStorage.setItem('fault_reports_all', JSON.stringify(
-            Array.from(faultMap.values()).sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
-        ));
+        let outages = Array.from(outageMap.values());
+        let faults = Array.from(faultMap.values());
+
+        if (pruneStale) {
+            const hasPendingPush = localStorage.getItem('elec_tech_has_pending_push') === 'true';
+            outages = outages.filter(o => {
+                if (!isAdmin && !canCurrentUserSeeJob(o)) return false;
+                if (cloudOutKeys.has(o.dateTimeSaved)) return true;
+                return Boolean(o.pendingInitialUpload || (hasPendingPush && (o.techReport?.needsMainSync || o.techNav?.needsMainSync)) || (now - (o.createdAtMs || 0) < 60000));
+            });
+            faults = faults.filter(f => {
+                if (!isAdmin && !canCurrentUserSeeJob(f)) return false;
+                if (cloudFltKeys.has(f.timestamp)) return true;
+                return Boolean(f.pendingInitialUpload || (hasPendingPush && (f.techReport?.needsMainSync || f.techNav?.needsMainSync)) || (now - (f.createdAtMs || 0) < 60000));
+            });
+        }
+
+        // เรียงตามเวลาสร้างใบงานเพื่อให้ลำดับใน localStorage ตรงกับหน้าหลัก ไม่กระโดดสลับเมื่อปิดงานเก่า
+        outages.sort((a, b) => getJobCreatedTimeMs(b) - getJobCreatedTimeMs(a));
+        faults.sort((a, b) => getJobCreatedTimeMs(b) - getJobCreatedTimeMs(a));
+
+        writeClosedReg(closedMap);
+        localStorage.setItem('elecReportsComplete_all', JSON.stringify(outages.slice(0, 300)));
+        localStorage.setItem('fault_reports_all', JSON.stringify(faults.slice(0, 300)));
 
         Core.cleanReopenedAndCancelledJobsInStorage();
         normalizeJobGpsAndReportText('elecReportsComplete_all', false);
@@ -1008,33 +1032,27 @@
     }
 
     function applyCloudLocRegistry(locReg) {
-        if (!locReg) return {};
-        const delMap = locReg.deletedJobsMap || {};
+        if (!locReg) return getDeletedJobsRegistry();
+        const delMap = { ...getDeletedJobsRegistry(), ...(locReg.deletedJobsMap || {}) };
         if (locReg.techLocations) mergeTechLocationsMap(locReg.techLocations);
         if (locReg.closedReports || locReg.closedJobsMap) {
-            const localClosed = getClosedReportsRegistry();
-            Object.assign(localClosed, locReg.closedReports || {}, locReg.closedJobsMap || {});
-            saveClosedReportsRegistry(localClosed);
+            writeClosedReg({ ...readClosedReg(), ...(locReg.closedReports || {}), ...(locReg.closedJobsMap || {}) });
         }
         if (Object.keys(delMap).length > 0) {
-            localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(delMap));
-            localStorage.setItem('elecReportsComplete_all', JSON.stringify(
-                JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]').filter(o => !delMap[o.dateTimeSaved])
-            ));
-            localStorage.setItem('fault_reports_all', JSON.stringify(
-                JSON.parse(localStorage.getItem('fault_reports_all') || '[]').filter(f => !delMap[f.timestamp])
-            ));
+            if (typeof syncDeletedRegistryObject === 'function') syncDeletedRegistryObject(delMap);
+            else localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(delMap));
+            localStorage.setItem('elecReportsComplete_all', JSON.stringify(JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]').filter(o => o && !delMap[o.dateTimeSaved])));
+            localStorage.setItem('fault_reports_all', JSON.stringify(JSON.parse(localStorage.getItem('fault_reports_all') || '[]').filter(f => f && !delMap[f.timestamp])));
         }
-        if (typeof window.__mergeCloudEquipRegistry === 'function') {
-            window.__mergeCloudEquipRegistry(locReg);
-        }
+        if (typeof window.__mergeCloudEquipRegistry === 'function') window.__mergeCloudEquipRegistry(locReg);
         return delMap;
     }
 
     async function syncJobsFromCloud(silent = false) {
         syncTickCounter++;
         const isLoggingInNow = document.getElementById('techLoginBtn')?.disabled === true;
-        const forceFreshRead = (!silent || isLoggingInNow || syncTickCounter === 1 || syncTickCounter % 3 === 0);
+        const intervalMod = Core.isEmbeddedIframe ? 6 : 3;
+        const forceFreshRead = (!silent || isLoggingInNow || syncTickCounter === 1 || syncTickCounter % intervalMod === 0);
 
         if (!forceFreshRead) {
             renderJobCards();
@@ -1043,7 +1061,7 @@
         }
         if (isSyncingNow && silent) return;
         isSyncingNow = true;
-        Core.forceCloudRead();
+        if (!silent || !Core.isEmbeddedIframe) Core.forceCloudRead();
 
         const statusEl = document.getElementById('cloudStatusText');
         if (!silent && statusEl) statusEl.textContent = '⏳ กำลังดึงใบงานล่าสุด...';
@@ -1059,10 +1077,13 @@
                         const curUser = localStorage.getItem('elec_app_current_user') || '';
                         const matched = parsedUsers.find(u => isUsernameMatchingAccount(curUser, u.username));
                         if (matched) {
+                            const prevGrp = normTechGrp(localStorage.getItem('elec_app_current_group') || '');
                             const fullName = normalizeUsernameFormat(matched.username);
+                            const realRole = matched.role || 'user';
+                            const resolvedGrp = normTechGrp(getUserGroupName(fullName)) || (realRole !== 'admin' ? (prevGrp || normTechGrp(getCurrentUserGroup()) || 'กฟส.บึง') : '');
                             localStorage.setItem('elec_app_current_user', fullName);
-                            localStorage.setItem('elec_app_current_group', getUserGroupName(fullName));
-                            localStorage.setItem('elec_app_current_role', matched.role || 'user');
+                            localStorage.setItem('elec_app_current_group', resolvedGrp);
+                            localStorage.setItem('elec_app_current_role', realRole);
                             updateRoleNavigationUI();
                         }
                     }
@@ -1070,12 +1091,13 @@
                 if (Array.isArray(data.jobs)) {
                     const locReg = data.jobs.find(j => j.jobType === 'tech_loc');
                     const delMap = applyCloudLocRegistry(locReg);
-                    const realJobs = data.jobs.filter(j => j.jobType !== 'tech_loc' && !delMap[j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved]);
+                    const realJobs = data.jobs.filter(j => j && j.jobType !== 'tech_loc' && !delMap[j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved]);
                     cachedCloudJobs = realJobs;
-                    mergeCloudJobsToLocal(realJobs);
+                    mergeCloudJobsToLocal(realJobs, Boolean(locReg || realJobs.length > 0));
                     checkNewIncomingPendingJobs();
                     if (statusEl) {
-                        statusEl.textContent = `🟢 ซิงค์ล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น. • ออนไลน์ ${realJobs.length} งาน)`;
+                        const myVisibleCount = realJobs.filter(j => canCurrentUserSeeJob(j)).length;
+                        statusEl.textContent = `🟢 ซิงค์ล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น. • ในกลุ่ม ${myVisibleCount} งาน)`;
                     }
                 }
                 Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled);
@@ -1115,30 +1137,34 @@
         if (!silent && statusEl) statusEl.textContent = '⏳ กำลังอัปเดตข้อมูลใบงานขึ้นระบบ...';
 
         try {
+            let prevLocReg = null;
             try {
+                Core.forceCloudRead();
                 const preRes = await fetch(getActiveCloudApiUrl() + '?t=' + Date.now(), { cache: 'no-store' });
                 const preData = await preRes.json();
                 if (preData?.status === 'ok' && Array.isArray(preData.jobs)) {
-                    const delMap = applyCloudLocRegistry(preData.jobs.find(j => j.jobType === 'tech_loc'));
-                    const latestReal = preData.jobs.filter(j => j.jobType !== 'tech_loc' && !delMap[j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved]);
+                    prevLocReg = preData.jobs.find(j => j.jobType === 'tech_loc') || null;
+                    const delMap = applyCloudLocRegistry(prevLocReg);
+                    const latestReal = preData.jobs.filter(j => j && j.jobType !== 'tech_loc' && !delMap[j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved]);
                     cachedCloudJobs = latestReal;
-                    mergeCloudJobsToLocal(latestReal);
+                    mergeCloudJobsToLocal(latestReal, Boolean(prevLocReg || latestReal.length > 0));
                 }
             } catch (e) {}
 
             const delMap = getDeletedJobsRegistry();
+            const myGrp = normTechGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
             const localOutages = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
-                .filter(i => !delMap[i.dateTimeSaved])
-                .map(i => { const c = { ...i, jobType: 'outage' }; if (c.recommendedTech && !c.recommendedTech.hasGps) delete c.recommendedTech; return c; });
+                .filter(i => i?.dateTimeSaved && !delMap[i.dateTimeSaved] && canCurrentUserSeeJob(i))
+                .map(i => { const c = { ...i, jobType: 'outage', ownerGroup: normTechGrp(getJobGroupName(i) || myGrp) }; if (c.recommendedTech && !c.recommendedTech.hasGps) delete c.recommendedTech; return c; });
             const localFaults = JSON.parse(localStorage.getItem('fault_reports_all') || '[]')
-                .filter(i => !delMap[i.timestamp])
-                .map(i => { const c = { ...i, jobType: 'fault' }; if (c.recommendedTech && !c.recommendedTech.hasGps) delete c.recommendedTech; return c; });
+                .filter(i => i?.timestamp && !delMap[i.timestamp] && canCurrentUserSeeJob(i))
+                .map(i => { const c = { ...i, jobType: 'fault', ownerGroup: normTechGrp(getJobGroupName(i) || myGrp) }; if (c.recommendedTech && !c.recommendedTech.hasGps) delete c.recommendedTech; return c; });
 
             const combinedMap = new Map();
             cachedCloudJobs.forEach(cj => {
-                if (cj.jobType === 'tech_loc') return;
+                if (!cj || cj.jobType === 'tech_loc') return;
                 const rk = cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved;
-                if (rk && !delMap[rk]) combinedMap.set((cj.jobType === 'fault' ? 'F_' : 'O_') + rk, cj);
+                if (rk && !delMap[rk]) combinedMap.set((cj.jobType === 'fault' ? 'F_' : 'O_') + rk, { ...cj, ownerGroup: normTechGrp(getJobGroupName(cj)) });
             });
             [...localOutages.slice(0, 300), ...localFaults.slice(0, 300)].forEach(lj => {
                 const rk = lj.jobType === 'fault' ? lj.timestamp : lj.dateTimeSaved;
@@ -1146,10 +1172,11 @@
             });
 
             const locRegistryItem = {
+                ...(prevLocReg || {}),
                 jobType: 'tech_loc',
                 dateTimeSaved: 'TECH_LOC_REGISTRY',
                 techLocations: getTechLocationsMap(),
-                closedJobsMap: getClosedReportsRegistry(),
+                closedJobsMap: readClosedReg(),
                 deletedJobsMap: delMap,
                 updatedAt: new Date().toISOString()
             };
@@ -1186,19 +1213,17 @@
         const btnAll = document.getElementById('dateBtnAll');
         if (!btnToday || !btnAll) return;
 
-        const now = new Date();
-        const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const cycleIso = getShiftCycleTodayIso();
         const activeCls = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-teal-600 bg-teal-600 text-white shadow-sm transition whitespace-nowrap';
         const idleCls = 'px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition whitespace-nowrap';
 
         btnAll.className = !dateVal ? activeCls : idleCls;
-        btnToday.className = (dateVal === todayIso) ? activeCls : idleCls;
+        btnToday.className = (dateVal === cycleIso) ? activeCls : idleCls;
     }
 
     function setTechDateFilterToday() {
-        const now = new Date();
         const dateEl = document.getElementById('filterJobDate');
-        if (dateEl) dateEl.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        if (dateEl) dateEl.value = getShiftCycleTodayIso();
         updateDateFilterButtonsUI();
         renderJobCards();
     }
@@ -1256,14 +1281,13 @@
             badge.className = `text-xs font-bold border px-3 py-1 rounded-full ${mapMeta[1]}`;
         }
 
-        const mapSec = document.getElementById('repairJobsMapSection');
-        if (mapSec) mapSec.classList.toggle('hidden', tabValue === 'done');
+        document.getElementById('repairJobsMapSection')?.classList.toggle('hidden', tabValue === 'done');
         renderJobCards();
 
         if (tabValue !== 'done') {
             setTimeout(() => {
                 window.dispatchEvent(new Event('resize'));
-                renderRepairJobsMapMarkers(true);
+                if (typeof renderRepairJobsMapMarkers === 'function') renderRepairJobsMapMarkers(true);
             }, 80);
         }
     }
@@ -1287,9 +1311,7 @@
         if (item?.dateTimeSaved) return String(item.dateTimeSaved).split(' ')[0].trim();
         if (item?.timestamp) {
             const d = new Date(item.timestamp);
-            if (!isNaN(d.getTime())) {
-                return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear() + 543}`;
-            }
+            if (!isNaN(d.getTime())) return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear() + 543}`;
         }
         return 'ไม่ระบุวันที่';
     }
@@ -1333,21 +1355,7 @@
             const t = new Date(item.techReport.updatedAt).getTime();
             if (t > 10000000) return t;
         }
-        if (item?.timestamp) {
-            const t = new Date(item.timestamp).getTime();
-            if (!isNaN(t)) return t;
-        }
-        if (item?.dateTimeSaved) {
-            const parts = String(item.dateTimeSaved).trim().split(/\s+/);
-            const dp = (parts[0] || '').split('/');
-            if (dp.length === 3) {
-                let yr = parseInt(dp[2], 10) || 2569;
-                if (yr > 2400) yr -= 543;
-                const tp = (parts[1] || '00:00:00').split(/[:\.]/);
-                return new Date(yr, (parseInt(dp[1], 10) || 1) - 1, parseInt(dp[0], 10) || 1, parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2], 10) || 0).getTime();
-            }
-        }
-        return 0;
+        return getJobCreatedTimeMs(item);
     }
 
     function getJobUrgencyInfo(item, jobType) {
@@ -1383,25 +1391,12 @@
     function buildRecommendedTechBadgeHtml(item) {
         const rec = findNearestTechForJob(item);
         if (rec?.hasGps && rec.distanceKm) {
-            return `
-                <div class="p-2 bg-purple-50/90 border border-purple-200 rounded-xl text-[11px] text-purple-950 flex flex-wrap items-center justify-between gap-1">
-                    <div class="font-bold text-purple-800 flex items-center gap-1">
-                        <span>🎯 แนะนำช่างใกล้สุด: ${escapeHtmlStr(formatTechDisplayName(rec.techName))}</span>
-                        ${rec.isMe ? `<span class="bg-amber-400 text-slate-950 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">⭐ คุณอยู่ใกล้สุด</span>` : ''}
-                    </div>
-                    <span class="text-[10px] font-semibold text-purple-700 bg-white px-2 py-0.5 rounded-md border border-purple-200">
-                        📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)
-                    </span>
-                </div>`;
+            return `<div class="p-2 bg-purple-50/90 border border-purple-200 rounded-xl text-[11px] text-purple-950 flex flex-wrap items-center justify-between gap-1"><div class="font-bold text-purple-800 flex items-center gap-1"><span>🎯 แนะนำช่างใกล้สุด: ${escapeHtmlStr(formatTechDisplayName(rec.techName))}</span>${rec.isMe ? `<span class="bg-amber-400 text-slate-950 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">⭐ คุณอยู่ใกล้สุด</span>` : ''}</div><span class="text-[10px] font-semibold text-purple-700 bg-white px-2 py-0.5 rounded-md border border-purple-200">📍 ห่าง ~${rec.distanceKm} กม. (~${rec.durationMin} นาที)</span></div>`;
         }
-        return `
-            <div class="p-2 bg-slate-100 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex items-center justify-between gap-1">
-                <span class="font-semibold text-slate-500">⏳ รอช่างออนไลน์ / เปิดพิกัด GPS</span>
-                <span class="text-[10px] text-slate-400">(รอแก้ไข)</span>
-            </div>`;
+        return `<div class="p-2 bg-slate-100 border border-slate-200 rounded-xl text-[11px] text-slate-600 flex items-center justify-between gap-1"><span class="font-semibold text-slate-500">⏳ รอช่างออนไลน์ / เปิดพิกัด GPS</span><span class="text-[10px] text-slate-400">(รอแก้ไข)</span></div>`;
     }
-    // ===== จบพาทที่ 2 / 3 ของไฟล์ tech-jobs.js (นำพาทที่ 3 / 3 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
-    // ===== เริ่มพาทที่ 3 / 3 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 2 / 3 จนจบไฟล์) =====
+    // ===== จบพาทที่ 2 / 4 ของไฟล์ tech-jobs.js (นำพาทที่ 3 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+        // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 2 / 4) =====
 
     // ========================================================================
     // 7. ระบบซิงค์สถานะเดินทางไปหมุดอุปกรณ์ไฟฟ้า & แถบลอยแจ้งเตือน (#pea-equip-nav-banner)
@@ -1470,8 +1465,13 @@
 
     function getActiveEquipmentNavItems() {
         const curRole = localStorage.getItem('elec_app_current_role') || 'user';
-        const myGroup = getCurrentUserGroup();
-        return Object.values(getEquipNavMap()).filter(it => it?.isTraveling && (curRole === 'admin' || !myGroup || !it.ownerGroup || myGroup === it.ownerGroup));
+        const myGroup = normTechGrp(getCurrentUserGroup());
+        return Object.values(getEquipNavMap()).filter(it => {
+            if (!it?.isTraveling) return false;
+            const tMs = getNavEffectiveTimeMs(it);
+            if (tMs > 0 && (Date.now() - tMs > 21600000)) return false;
+            return curRole === 'admin' || !myGroup || !it.ownerGroup || myGroup === normTechGrp(it.ownerGroup);
+        });
     }
 
     function syncEquipNavToTechLocations() {
@@ -1483,8 +1483,9 @@
         Object.entries(equipMap).forEach(([key, nav]) => {
             const techName = String(nav?.techName || '').trim();
             if (!techName) return;
-            if (!locMap[techName]) locMap[techName] = { username: techName, group: nav.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง', isOnline: true, updatedAt: nav.updatedAt || new Date().toISOString() };
-            if (getNavEffectiveTimeMs(nav) >= getNavEffectiveTimeMs(locMap[techName].activeEquipNav)) locMap[techName].activeEquipNav = { ...nav };
+            const grp = normTechGrp(nav.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+            if (!locMap[techName]) locMap[techName] = { username: techName, group: grp, isOnline: true, updatedAt: nav.updatedAt || new Date().toISOString() };
+            if (getNavEffectiveTimeMs(nav) >= getNavEffectiveTimeMs(locMap[techName].activeEquipNav)) locMap[techName].activeEquipNav = { ...nav, ownerGroup: grp };
             if (nav.isTraveling && getNavEffectiveTimeMs(nav) > Number(mergedEquipCancel[key] || 0)) delete mergedEquipCancel[key];
         });
 
@@ -1516,10 +1517,10 @@
             const pTime = getNavEffectiveTimeMs(pNav), cTime = getNavEffectiveTimeMs(cNav);
             if (pNav?.isTraveling && (pTime >= cTime || Date.now() - lastLocalEquipNavStartMs < 10000)) return;
 
-            const maxCancel = Math.max(Number(localCancel[navKey] || 0), Number(cloudCancel[navKey] || 0), Number(cNav.cancelledAtMs || 0));
+            const maxCancel = Math.max(Number(localCancel[navKey] || 0), Number(cloudCancel[navKey] || 0), Number(localCancel[cNav.techName] || 0), Number(cloudCancel[cNav.techName] || 0), Number(cNav.cancelledAtMs || 0));
             if (cTime > pTime) {
                 if (maxCancel >= cTime || cNav.isTraveling === false) { if (equipMap[navKey]) { delete equipMap[navKey]; changed = true; } }
-                else if (cNav.isTraveling) { equipMap[navKey] = { ...cNav, id: navKey }; changed = true; }
+                else if (cNav.isTraveling) { equipMap[navKey] = { ...cNav, id: navKey, ownerGroup: normTechGrp(cNav.ownerGroup || 'กฟส.บึง') }; changed = true; }
             } else if (pNav && maxCancel >= pTime) { delete equipMap[navKey]; changed = true; }
         });
 
@@ -1547,13 +1548,14 @@
 
         const cMap = getCancelledEquipNavMap();
         delete cMap[navKey];
+        delete cMap[techName];
         localStorage.setItem(CANCELLED_EQUIP_NAV_KEY, JSON.stringify(cMap));
 
         const equipMap = getEquipNavMap();
         equipMap[navKey] = {
             id: navKey, placeId: targetPin.id || '', placeTitle: targetPin.name || 'อุปกรณ์ไฟฟ้า',
             placeCategory: 'อุปกรณ์ไฟฟ้า', placeDetails: targetPin.note || '',
-            ownerGroup: targetPin.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง',
+            ownerGroup: normTechGrp(targetPin.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
             techName, destLat: Number(targetPin.lat), destLon: Number(targetPin.lon),
             distanceKm: String(routeInfo?.distanceKm || '2.0'), initialDistanceKm: String(routeInfo?.distanceKm || '2.0'),
             durationMin: durMin, initialDurationMin: durMin, departTime: depStr, departTimestamp: nowMs,
@@ -1600,6 +1602,7 @@
         const safeIso = new Date(safeMs).toISOString();
         const cancelMap = getCancelledEquipNavMap();
         cancelMap[navKey] = safeMs;
+        if (techName) cancelMap[techName] = safeMs;
         localStorage.setItem(CANCELLED_EQUIP_NAV_KEY, JSON.stringify(cancelMap));
 
         delete equipMap[navKey];
@@ -1667,16 +1670,13 @@
         return items.map(nav => {
             const canCtrl = !isViewerRole() && canUserControlNavigation(nav.techName);
             const safeKey = String(nav.id || normalizeEquipTechKey(nav.techName)).replace(/'/g, "\\'");
-            const grp = escapeHtmlStr(nav.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง');
+            const grp = escapeHtmlStr(normTechGrp(nav.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง'));
             const details = nav.placeDetails ? ` | 📝 รายละเอียด: ${escapeHtmlStr(nav.placeDetails)}` : '';
             return `
             <div class="p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 border-sky-300 border-l-[6px] border-l-sky-500 ring-1 ring-sky-100 mb-3">
                 <div class="flex justify-between items-start gap-2">
                     <div class="min-w-0 flex-1">
-                        <div class="mb-1 flex flex-wrap items-center gap-1">
-                            <span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">🏢 ${grp}</span>
-                            <span class="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⚡ แผนที่อุปกรณ์</span>
-                        </div>
+                        <div class="mb-1 flex flex-wrap items-center gap-1"><span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">🏢 ${grp}</span><span class="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-2 py-0.5 rounded-md">⚡ แผนที่อุปกรณ์</span></div>
                         <div class="text-sky-900 text-sm font-extrabold">⚡ อุปกรณ์ไฟฟ้า: ${escapeHtmlStr(nav.placeTitle || 'หมุดอุปกรณ์')}</div>
                     </div>
                     <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 bg-blue-100 text-blue-700 border-blue-300 animate-pulse">🚗 กำลังเดินทาง</span>
@@ -1695,9 +1695,18 @@
     }
 
     // ========================================================================
-    // 8. เรนเดอร์การ์ดใบงานซ่อม (Anti-Flicker + ล็อกตำแหน่ง Scroll + ปุ่มเสียง & แผนที่)
+    // 8. เรนเดอร์การ์ดใบงานซ่อม (Anti-Flicker + ยอดตรงหน้าหลัก + ปุ่มเสียง)
     // ========================================================================
-    function computeJobCardsRenderSignature(rawList, equipNavItems) {
+    function getEffectiveJobReport(item, jobKey, closedReg) {
+        if (item?.techReport && !isAutoGeneratedFakeClosure(item.techReport)) return item.techReport;
+        const cRep = jobKey ? closedReg[jobKey] : null;
+        if (cRep && !isAutoGeneratedFakeClosure(cRep) && (!item?.reopenedAt || (cRep.updatedAt && cRep.updatedAt > item.reopenedAt))) {
+            return cRep;
+        }
+        return null;
+    }
+
+    function computeJobCardsRenderSignature(rawList, equipNavItems, closedReg) {
         const jobType = document.getElementById('filterJobType')?.value || 'outage';
         const fStat = document.getElementById('filterJobStatus')?.value || 'pending';
         const fShift = document.getElementById('filterJobShift')?.value || 'all';
@@ -1705,11 +1714,11 @@
         const sOrd = document.getElementById('sortJobOrder')?.value || 'shift_job_asc';
         const kw = (document.getElementById('searchJobKeyword')?.value || '').trim().toLowerCase();
         const role = localStorage.getItem('elec_app_current_role') || '';
-        const grp = localStorage.getItem('elec_app_current_group') || '';
+        const grp = normTechGrp(localStorage.getItem('elec_app_current_group') || '');
         const eqSig = equipNavItems.map(n => `${n.id}:${n.placeTitle}:${n.isTraveling}`).join('|');
         const jSig = rawList.map(it => {
             const k = jobType === 'outage' ? it.dateTimeSaved : it.timestamp;
-            const tr = it.techReport || {};
+            const tr = getEffectiveJobReport(it, k, closedReg) || {};
             const rec = (!tr.status && !it.techNav) ? findNearestTechForJob(it) : null;
             return `${k}~${it.jobNo}~${it.shift}~${it.issueType}~${it.gps}~${tr.status || ''}~${tr.finishTime || ''}~${it.techNav ? it.techNav.techName + ':' + Boolean(it.techNav.isArrived) : ''}~${rec ? rec.techName + ':' + rec.distanceKm : ''}`;
         }).join('|');
@@ -1731,28 +1740,43 @@
         const sortOrder = document.getElementById('sortJobOrder')?.value || 'shift_job_asc';
         const keyword = (document.getElementById('searchJobKeyword')?.value || '').toLowerCase().trim();
         const isViewer = isViewerRole();
+        const delReg = getDeletedJobsRegistry();
+        const closedReg = readClosedReg();
 
-        let targetThaiDateStr = '';
+        let targetThaiDateStr = '', allowAfterMidnightThai = '';
         if (selectedDateIso) {
             const [y, m, d] = selectedDateIso.split('-');
             targetThaiDateStr = `${d}/${m}/${parseInt(y, 10) + 543}`;
+            const now = new Date();
+            if (selectedDateIso === getShiftCycleTodayIso() && (now.getHours() * 60 + now.getMinutes() < 30)) {
+                allowAfterMidnightThai = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543}`;
+            }
         }
 
         const allRawList = JSON.parse(localStorage.getItem(jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all') || '[]');
-        const rawList = allRawList.filter(it => canCurrentUserSeeJob(it) && (!targetThaiDateStr || getJobDateDisplay(it) === targetThaiDateStr));
+        const rawList = allRawList.filter(it => {
+            if (!it) return false;
+            const jk = jobType === 'outage' ? it.dateTimeSaved : it.timestamp;
+            if (!jk || delReg[jk] || !canCurrentUserSeeJob(it)) return false;
+            if (!targetThaiDateStr) return true;
+            const dDisp = getJobDateDisplay(it);
+            return dDisp === targetThaiDateStr || (allowAfterMidnightThai && dDisp === allowAfterMidnightThai);
+        });
         const equipNavItems = getActiveEquipmentNavItems();
 
-        const newSig = computeJobCardsRenderSignature(rawList, equipNavItems);
+        const newSig = computeJobCardsRenderSignature(rawList, equipNavItems, closedReg);
         if (container.children.length > 0 && newSig === lastRenderedCardsSignature) {
             updateLiveNavDomElements();
-            renderRepairJobsMapMarkers(false);
+            if (typeof renderRepairJobsMapMarkers === 'function') renderRepairJobsMapMarkers(false);
             return;
         }
         lastRenderedCardsSignature = newSig;
 
         let pendingCount = 0, jobTravelingCount = 0, doneCount = 0;
         rawList.forEach(it => {
-            const isDone = it.techReport && String(it.techReport.status || '').includes('เสร็จสิ้น');
+            const jk = jobType === 'outage' ? it.dateTimeSaved : it.timestamp;
+            const rep = getEffectiveJobReport(it, jk, closedReg);
+            const isDone = Boolean(rep && String(rep.status || '').includes('เสร็จสิ้น'));
             if (isDone) doneCount++;
             else if (it.techNav) jobTravelingCount++;
             else pendingCount++;
@@ -1765,7 +1789,9 @@
         document.getElementById('countDoneJobs').textContent = String(doneCount);
 
         const statusFiltered = rawList.filter(it => {
-            const isDone = it.techReport && String(it.techReport.status || '').includes('เสร็จสิ้น');
+            const jk = jobType === 'outage' ? it.dateTimeSaved : it.timestamp;
+            const rep = getEffectiveJobReport(it, jk, closedReg);
+            const isDone = Boolean(rep && String(rep.status || '').includes('เสร็จสิ้น'));
             const isTrav = !isDone && Boolean(it.techNav);
             if (statusFilter === 'pending' && (isDone || isTrav)) return false;
             if (statusFilter === 'traveling' && !isTrav) return false;
@@ -1847,9 +1873,9 @@
 
                 const key = jobType === 'outage' ? item.dateTimeSaved : item.timestamp;
                 const safeKey = String(key).replace(/'/g, "\\'");
-                const tr = item.techReport, nav = item.techNav;
+                const tr = getEffectiveJobReport(item, key, closedReg), nav = item.techNav;
                 const isDone = Boolean(tr && String(tr.status || '').includes('เสร็จสิ้น'));
-                const jobGroup = getJobGroupName(item);
+                const jobGroup = normTechGrp(getJobGroupName(item));
                 const loggedTimeStr = getJobLoggedTimeDisplay(item, jobType);
                 const urgency = getJobUrgencyInfo(item, jobType);
                 const badgeClass = isDone ? 'bg-emerald-100 text-emerald-700 border-emerald-300' : (tr ? 'bg-amber-100 text-amber-700 border-amber-300' : (nav ? 'bg-blue-100 text-blue-700 border-blue-300 animate-pulse' : 'bg-rose-100 text-rose-700 border-rose-300'));
@@ -1870,10 +1896,7 @@
                 card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 ${urgency.cardBorder}`;
                 card.innerHTML = `
                     <div class="flex justify-between items-start gap-2">
-                        <div class="min-w-0 flex-1">
-                            <div class="mb-1 flex flex-wrap items-center gap-y-1">${metaBadges}</div>
-                            <div class="${urgency.titleColor} text-sm font-extrabold flex items-center gap-1"><span>${urgency.dot}</span><span>${mainTitle}</span></div>
-                        </div>
+                        <div class="min-w-0 flex-1"><div class="mb-1 flex flex-wrap items-center gap-y-1">${metaBadges}</div><div class="${urgency.titleColor} text-sm font-extrabold flex items-center gap-1"><span>${urgency.dot}</span><span>${mainTitle}</span></div></div>
                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${badgeClass}">${escapeHtmlStr(badgeLabel)}</span>
                     </div>
                     <div class="text-xs text-slate-600">${subHtml}</div>
@@ -1894,7 +1917,7 @@
             });
         }
 
-        renderRepairJobsMapMarkers(false);
+        if (typeof renderRepairJobsMapMarkers === 'function') renderRepairJobsMapMarkers(false);
         requestAnimationFrame(() => {
             container.style.minHeight = '';
             if (savedScrollY > 0 && Math.abs(window.scrollY - savedScrollY) > 40) window.scrollTo(0, savedScrollY);
@@ -1902,7 +1925,7 @@
     }
 
     // ========================================================================
-    // 9. ฟอร์มบันทึกผลตรวจสอบหน้างาน & ระบบสั่งปิดงานด้วยเสียงพูดประโยคเดียว (One-Tap Voice)
+    // 9. ระบบสั่งปิดงานด้วยเสียงพูดประโยคเดียว (One-Tap Voice Engine)
     // ========================================================================
     let activeVoiceRecognition = null;
     let autoSubmitVoiceTimer = null;
@@ -1995,7 +2018,7 @@
         rec.lang = 'th-TH';
         rec.onstart = () => {
             if (activeBtn) { activeBtn.classList.add('voice-listening-active', 'bg-rose-600'); activeBtn.innerHTML = '🔴 กำลังฟัง... พูดได้เลยครับ'; }
-            if (banner) banner.classList.remove('hidden');
+            banner?.classList.remove('hidden');
             if (previewEl) previewEl.innerHTML = '🎙️ <span class="text-rose-600">กำลังฟังเสียงพูดของคุณ...</span>';
             showToast('🎙️ กำลังฟัง... พูดสาเหตุและการแก้ไขได้เลยครับ');
         };
@@ -2049,6 +2072,8 @@
         };
         rec.start();
     }
+    // ===== จบพาทที่ 3 / 4 ของไฟล์ tech-jobs.js (นำพาทที่ 4 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+        // ===== เริ่มพาทที่ 4 / 4 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 3 / 4 จนจบไฟล์) =====
 
     function openInspectModal(key, jobType) {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
@@ -2079,7 +2104,7 @@
 
         const now = new Date();
         const defTime = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
-        const tr = item.techReport || {};
+        const tr = getEffectiveJobReport(item, key, readClosedReg()) || {};
         const loggedUser = (localStorage.getItem('elec_app_current_user') || '').trim();
 
         statusSelect.value = tr.status || 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
@@ -2118,7 +2143,7 @@
 
         const item = list[idx];
         const loggedUser = (localStorage.getItem('elec_app_current_user') || '').trim();
-        const myGroup = getCurrentUserGroup();
+        const myGroup = normTechGrp(getCurrentUserGroup());
         const status = document.getElementById('techStatusInput').value;
         const realCause = document.getElementById('techCauseInput').value.trim() || '-';
         const actionTaken = document.getElementById('techActionInput').value.trim() || '-';
@@ -2126,17 +2151,21 @@
         const finishTime = document.getElementById('techFinishTimeInput').value.trim() || '-';
         const inspector = document.getElementById('techInspectorInput').value.trim() || (loggedUser ? formatTechDisplayName(loggedUser) : '-');
 
-        if (myGroup && !item.ownerGroup) item.ownerGroup = myGroup;
+        item.ownerGroup = normTechGrp(getJobGroupName(item) || myGroup || 'กฟส.บึง') || 'กฟส.บึง';
         if (fieldGps) item.gps = fieldGps;
 
         if (status === 'รอแก้ไข') {
+            const closedMap = readClosedReg();
+            const prevRepMs = Math.max(
+                item.techReport?.updatedAt ? new Date(item.techReport.updatedAt).getTime() : 0,
+                closedMap[currentEditingJobKey]?.updatedAt ? new Date(closedMap[currentEditingJobKey].updatedAt).getTime() : 0
+            );
             delete item.techReport;
             delete item.techNav;
-            item.reopenedAt = new Date().toISOString();
+            item.reopenedAt = new Date(Math.max(Date.now(), prevRepMs) + 2000).toISOString();
             item.formattedText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
-            const closedMap = getClosedReportsRegistry();
             delete closedMap[currentEditingJobKey];
-            saveClosedReportsRegistry(closedMap);
+            writeClosedReg(closedMap);
 
             localStorage.setItem(storageKey, JSON.stringify(list));
             closeInspectModal();
@@ -2147,14 +2176,16 @@
             return;
         }
 
-        item.techReport = { status, realCause, actionTaken, fieldGps: fieldGps || item.gps || '', finishTime, inspector, updatedAt: new Date().toISOString(), needsMainSync: true };
+        const safeUpdateIso = new Date(Math.max(Date.now(), item.reopenedAt ? new Date(item.reopenedAt).getTime() + 1000 : 0)).toISOString();
+        item.techReport = { status, realCause, actionTaken, fieldGps: fieldGps || item.gps || '', finishTime, inspector, updatedAt: safeUpdateIso, needsMainSync: true };
         if (status.includes('เสร็จสิ้น')) {
             delete item.techNav;
             delete item.pendingInitialUpload;
             delete item.reopenedAt;
-            const closedMap = getClosedReportsRegistry();
+            const closedMap = readClosedReg();
             closedMap[currentEditingJobKey] = item.techReport;
-            saveClosedReportsRegistry(closedMap);
+            writeClosedReg(closedMap);
+            if (typeof saveClosedJobToRegistry === 'function') saveClosedJobToRegistry(currentEditingJobKey, item.techReport);
         }
 
         const urgency = getJobUrgencyInfo(item, currentEditingJobType);
@@ -2189,6 +2220,7 @@
     let showRepairJobTooltips = true;
     let lastRepairJobsSignature = '';
     let lastAutoFittedCoordsSig = '';
+    let isUpgradingShortLinks = false;
 
     function injectRepairJobsMapSection() {
         if (document.getElementById('repairJobsMapSection')) return;
@@ -2259,7 +2291,11 @@
         const dIso = document.getElementById('filterJobDate')?.value || '';
         const kw = (document.getElementById('searchJobKeyword')?.value || '').toLowerCase().trim();
         const tThai = dIso ? `${dIso.split('-')[2]}/${dIso.split('-')[1]}/${parseInt(dIso.split('-')[0], 10) + 543}` : '';
-        const delMap = getDeletedJobsRegistry(), closedMap = getClosedReportsRegistry();
+        const now = new Date();
+        const allowMidnightThai = (dIso && dIso === getShiftCycleTodayIso() && (now.getHours() * 60 + now.getMinutes() < 30))
+            ? `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543}` : '';
+
+        const delMap = getDeletedJobsRegistry(), closedMap = readClosedReg();
         let shortCache = {};
         try { shortCache = JSON.parse(localStorage.getItem(SHORT_URL_COORD_CACHE_KEY) || '{}'); } catch (e) {}
 
@@ -2267,13 +2303,14 @@
         const results = [];
 
         list.forEach(item => {
-            if (!canCurrentUserSeeJob(item)) return;
+            if (!item || !canCurrentUserSeeJob(item)) return;
             const key = jType === 'fault' ? item.timestamp : item.dateTimeSaved;
             if (!key || delMap[key]) return;
-            if (item.techReport && String(item.techReport.status || '').includes('เสร็จสิ้น')) return;
-            const cRep = closedMap[key];
-            if (cRep && String(cRep.status || '').includes('เสร็จสิ้น') && (!item.reopenedAt || (cRep.updatedAt && cRep.updatedAt > item.reopenedAt))) return;
-            if (tThai && getJobDateDisplay(item) !== tThai) return;
+            const rep = getEffectiveJobReport(item, key, closedMap);
+            if (rep && String(rep.status || '').includes('เสร็จสิ้น')) return;
+
+            const dDisp = getJobDateDisplay(item);
+            if (tThai && dDisp !== tThai && (!allowMidnightThai || dDisp !== allowMidnightThai)) return;
             if (shFilter !== 'all' && getEffectiveJobShift(item) !== shFilter) return;
             if (kw && !JSON.stringify(item).toLowerCase().includes(kw)) return;
 
@@ -2310,6 +2347,7 @@
         lastRepairJobsSignature = sig;
 
         const savedKey = currentlyOpenRepairPopupKey;
+        const isViewer = isViewerRole();
         repairJobsMarkersLayer.clearLayers();
         repairJobMarkersByKey = {};
         if (pendingList.length === 0) { currentlyOpenRepairPopupKey = null; lastAutoFittedCoordsSig = ''; return; }
@@ -2329,7 +2367,7 @@
             const sKey = String(key).replace(/'/g, "\\'"), sMaps = mapsUrl.replace(/'/g, "\\'");
             const stTxt = item.techReport?.status || (isTrav ? `🚗 กำลังเดินทาง (${formatTechDisplayName(item.techNav?.techName || 'ช่าง')})` : '⏳ รอแก้ไข');
 
-            mk.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:250px;" class="space-y-1.5 text-xs"><div class="flex justify-between gap-1"><span class="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">⚡ ${escapeHtmlStr(stTxt)}</span><span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(getJobGroupName(item))}</span></div><div class="font-extrabold text-slate-900 text-sm pt-0.5">${urg.dot} ${escapeHtmlStr(tip)}</div><div class="text-slate-600 text-[11px] space-y-0.5">${jobType === 'outage' ? `<div>📍 <b>บริเวณ:</b> ${escapeHtmlStr(item.area || '-')}</div><div>🏠 <b>ที่อยู่:</b> ${escapeHtmlStr(item.address || '-')}</div>` : `<div>🚨 <b>สาเหตุ:</b> ${escapeHtmlStr(item.cause || '-')}</div>`}<div>⏰ <b>เวลาแจ้ง:</b> ${escapeHtmlStr(tStr)} (${escapeHtmlStr(dStr)})</div>${isApproxTambon ? '<div class="text-amber-700 font-semibold text-[10px]">⚠️ พิกัดอ้างอิงระดับตำบล</div>' : ''}</div><div class="pt-1.5 border-t border-slate-200 flex flex-wrap gap-1">${(item.phone && item.phone !== '-') ? `<a href="tel:${escapeHtmlStr(item.phone)}" style="background:#f1f5f9;color:#334155;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;text-decoration:none;">📞 โทร</a>` : ''}<button type="button" onclick="handleStartNavigation('${sKey}','${jobType}','')" style="background:#0284c7;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🚗 ออกเดินทาง</button><button type="button" onclick="handleStartNavigation('${sKey}','${jobType}','${sMaps}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🗺️ นำทาง Maps</button><button type="button" onclick="openInspectModal('${sKey}','${jobType}')" style="background:#0d9488;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;width:100%;margin-top:2px;">🛠️ แจ้งผลตรวจสอบ / ปิดงาน</button></div></div>`);
+            mk.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:250px;" class="space-y-1.5 text-xs"><div class="flex justify-between gap-1"><span class="bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">⚡ ${escapeHtmlStr(stTxt)}</span><span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(normTechGrp(getJobGroupName(item)))}</span></div><div class="font-extrabold text-slate-900 text-sm pt-0.5">${urg.dot} ${escapeHtmlStr(tip)}</div><div class="text-slate-600 text-[11px] space-y-0.5">${jobType === 'outage' ? `<div>📍 <b>บริเวณ:</b> ${escapeHtmlStr(item.area || '-')}</div><div>🏠 <b>ที่อยู่:</b> ${escapeHtmlStr(item.address || '-')}</div>` : `<div>🚨 <b>สาเหตุ:</b> ${escapeHtmlStr(item.cause || '-')}</div>`}<div>⏰ <b>เวลาแจ้ง:</b> ${escapeHtmlStr(tStr)} (${escapeHtmlStr(dStr)})</div>${isApproxTambon ? '<div class="text-amber-700 font-semibold text-[10px]">⚠️ พิกัดอ้างอิงระดับตำบล</div>' : ''}</div><div class="pt-1.5 border-t border-slate-200 flex flex-wrap gap-1">${(item.phone && item.phone !== '-') ? `<a href="tel:${escapeHtmlStr(item.phone)}" style="background:#f1f5f9;color:#334155;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;text-decoration:none;">📞 โทร</a>` : ''}${!isViewer ? `<button type="button" onclick="handleStartNavigation('${sKey}','${jobType}','')" style="background:#0284c7;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🚗 ออกเดินทาง</button>` : ''}<button type="button" onclick="handleStartNavigation('${sKey}','${jobType}','${sMaps}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🗺️ นำทาง Maps</button>${!isViewer ? `<button type="button" onclick="openInspectModal('${sKey}','${jobType}')" style="background:#0d9488;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;width:100%;margin-top:2px;">🛠️ แจ้งผลตรวจสอบ / ปิดงาน</button>` : ''}</div></div>`);
             mk.on('popupopen', () => { currentlyOpenRepairPopupKey = key; });
             mk.on('popupclose', () => { if (currentlyOpenRepairPopupKey === key) currentlyOpenRepairPopupKey = null; });
             mk.addTo(repairJobsMarkersLayer);
@@ -2405,24 +2443,48 @@
         setTimeout(() => { repairJobsMap?.invalidateSize(); fitAllRepairJobPinsOnMap(false); }, 150);
     }
 
-    function upgradeRepairJobsShortLinks() {
-        let cache = {};
-        try { cache = JSON.parse(localStorage.getItem(SHORT_URL_COORD_CACHE_KEY) || '{}'); } catch (e) {}
-        ['elecReportsComplete_all', 'fault_reports_all'].forEach(sk => {
-            const isF = (sk === 'fault_reports_all');
-            JSON.parse(localStorage.getItem(sk) || '[]').forEach(async item => {
-                const jk = isF ? item?.timestamp : item?.dateTimeSaved;
-                const rawGps = String(item?.techReport?.fieldGps || item?.gps || '').trim();
-                if (!jk || cache[jk] || !/(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(rawGps)) return;
-                const c = await resolveGoogleShortLinkUniversal(rawGps);
-                if (c?.lat && c?.lon) {
-                    const latest = JSON.parse(localStorage.getItem(SHORT_URL_COORD_CACHE_KEY) || '{}');
-                    latest[jk] = { lat: parseFloat(c.lat), lon: parseFloat(c.lon), updatedAt: Date.now() };
-                    localStorage.setItem(SHORT_URL_COORD_CACHE_KEY, JSON.stringify(latest));
-                    renderRepairJobsMapMarkers(true);
-                }
+    // คลายลิงก์สั้นทีละคิวพร้อมตัวจำกัดความถี่ ป้องกันยิง API ซ้ำทุก 6 วินาทีเมื่อลิงก์คลายไม่สำเร็จ
+    async function upgradeRepairJobsShortLinks() {
+        if (isUpgradingShortLinks || !navigator.onLine) return;
+        isUpgradingShortLinks = true;
+        try {
+            let cache = {};
+            try { cache = JSON.parse(localStorage.getItem(SHORT_URL_COORD_CACHE_KEY) || '{}'); } catch (e) {}
+            const now = Date.now(), delMap = getDeletedJobsRegistry(), closedMap = readClosedReg(), queue = [];
+
+            ['elecReportsComplete_all', 'fault_reports_all'].forEach(sk => {
+                const isF = (sk === 'fault_reports_all');
+                JSON.parse(localStorage.getItem(sk) || '[]').forEach(item => {
+                    if (!item || !canCurrentUserSeeJob(item)) return;
+                    const jk = isF ? item.timestamp : item.dateTimeSaved;
+                    if (!jk || delMap[jk] || cache[jk]) return;
+                    const rep = getEffectiveJobReport(item, jk, closedMap);
+                    if (rep && String(rep.status || '').includes('เสร็จสิ้น')) return;
+                    const rawGps = String(item.techReport?.fieldGps || item.gps || '').trim();
+                    if (!/(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(rawGps)) return;
+                    const att = shortLinkAttemptMap.get(jk);
+                    if (att && att.count >= 2 && (now - att.lastMs < 600000)) return;
+                    queue.push({ jk, rawGps, prevCount: att ? att.count : 0 });
+                });
             });
-        });
+
+            let resolvedAny = false;
+            for (const task of queue.slice(0, 2)) {
+                shortLinkAttemptMap.set(task.jk, { count: task.prevCount + 1, lastMs: Date.now() });
+                const c = await resolveGoogleShortLinkUniversal(task.rawGps);
+                if (c?.lat && c?.lon) {
+                    cache[task.jk] = { lat: parseFloat(c.lat), lon: parseFloat(c.lon), updatedAt: Date.now() };
+                    resolvedAny = true;
+                }
+            }
+            if (resolvedAny) {
+                const trimmed = Object.entries(cache).sort((a, b) => (b[1]?.updatedAt || 0) - (a[1]?.updatedAt || 0)).slice(0, 300);
+                localStorage.setItem(SHORT_URL_COORD_CACHE_KEY, JSON.stringify(Object.fromEntries(trimmed)));
+                renderRepairJobsMapMarkers(true);
+            }
+        } catch (e) {} finally {
+            isUpgradingShortLinks = false;
+        }
     }
 
     // ========================================================================
@@ -2488,7 +2550,7 @@
         checkNewIncomingPendingJobs();
         if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) await pushAllJobsToCloud(false);
         initTechGpsTracker();
-        setTimeout(upgradeRepairJobsShortLinks, 1200);
+        setTimeout(upgradeRepairJobsShortLinks, 1500);
 
         setInterval(() => {
             updateLiveNavDomElements();
@@ -2498,7 +2560,7 @@
             });
         }, 1000);
         setInterval(syncEquipNavFromTechLocations, 2000);
-        setInterval(upgradeRepairJobsShortLinks, 6000);
+        setInterval(upgradeRepairJobsShortLinks, 15000);
         setInterval(() => {
             if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
                 Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled);
