@@ -1,6 +1,6 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v95 (sw.js)
-// แก้แคชค้างบน GitHub Pages (บังคับ no-cache ไฟล์ระบบ + กัน cache.addAll พังจากไฟล์ 404)
+// ⚡ PEA SMART GRID — SERVICE WORKER v107 (sw.js)
+// เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
 const CACHE_NAME = 'pea-smart-tools-v107';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
@@ -14,20 +14,24 @@ const APP_SHELL_ASSETS = [
     './tech-jobs.js',
     './scada-engine.js',
     './pm-calendar.js',
+    './pm-push.js',
     './manifest.json',
     './manifest-main.json',
-    './pm-push.js'
     'https://cdn.tailwindcss.com',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
     'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js',
-    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js',
+    'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
 const BYPASS_HOSTS = [
     'script.google.com',
     'script.googleusercontent.com',
     'generativelanguage.googleapis.com',
+    'firebaseinstallations.googleapis.com',
+    'fcmregistrations.googleapis.com',
     'broker.emqx.io',
     'broker.hivemq.com',
     'mqtt.eclipseprojects.io',
@@ -47,11 +51,15 @@ self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) =>
             Promise.allSettled(
-                APP_SHELL_ASSETS.map((url) =>
-                    fetch(url, { cache: 'reload' })
-                        .then((res) => (res && (res.ok || res.type === 'opaque') ? cache.put(url, res) : null))
-                        .catch(() => null)
-                )
+                APP_SHELL_ASSETS.map((assetUrl) => {
+                    const isLocal = assetUrl.startsWith('./');
+                    const fetchUrl = isLocal
+                        ? `${assetUrl}${assetUrl.includes('?') ? '&' : '?'}_sw=${encodeURIComponent(CACHE_NAME)}`
+                        : assetUrl;
+                    return fetch(fetchUrl, isLocal ? { cache: 'no-store' } : { cache: 'reload' })
+                        .then((res) => (res && (res.ok || res.type === 'opaque') ? cache.put(assetUrl, res) : null))
+                        .catch(() => null);
+                })
             )
         )
     );
@@ -90,29 +98,41 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. ไฟล์ระบบ HTML / JS / JSON: บังคับดึงสดจากเซิร์ฟเวอร์ (no-cache) ไม่ติดแคช GitHub Pages
+    // 2. ไฟล์ระบบ HTML / JS / JSON: ทะลุแคชอัตโนมัติตามเลข CACHE_NAME โดยไม่ต้องแก้ ?v= ใน HTML
     const isAppShellFile = url.origin === self.location.origin &&
         (req.mode === 'navigate' || /\.(?:html|js|json)$/i.test(url.pathname) || url.pathname.endsWith('/'));
 
     if (isAppShellFile) {
+        const cleanCacheKey = url.origin + url.pathname;
         event.respondWith(
-            fetch(req, { cache: 'no-cache' }).then((res) => {
-                if (res && res.ok) {
-                    const copy = res.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+            (async () => {
+                try {
+                    let netRes;
+                    if (req.mode === 'navigate') {
+                        netRes = await fetch(req, { cache: 'no-store' });
+                    } else {
+                        const bustUrl = new URL(req.url);
+                        bustUrl.searchParams.set('_sw', CACHE_NAME);
+                        netRes = await fetch(bustUrl.href, { cache: 'no-cache' });
+                    }
+                    if (netRes && netRes.ok) {
+                        const cache = await caches.open(CACHE_NAME);
+                        cache.put(cleanCacheKey, netRes.clone());
+                    }
+                    return netRes;
+                } catch (err) {
+                    const cache = await caches.open(CACHE_NAME);
+                    const cached = await cache.match(cleanCacheKey, { ignoreSearch: true }) ||
+                                   await cache.match(req, { ignoreSearch: true });
+                    if (cached) return cached;
+                    if (req.mode === 'navigate') {
+                        return url.pathname.includes('page2')
+                            ? cache.match('./page2.html', { ignoreSearch: true })
+                            : cache.match('./index.html', { ignoreSearch: true });
+                    }
+                    return Response.error();
                 }
-                return res;
-            }).catch(async () => {
-                const cache = await caches.open(CACHE_NAME);
-                const exact = await cache.match(req, { ignoreSearch: true });
-                if (exact) return exact;
-                if (req.mode === 'navigate') {
-                    return url.pathname.includes('page2')
-                        ? cache.match('./page2.html', { ignoreSearch: true })
-                        : cache.match('./index.html', { ignoreSearch: true });
-                }
-                return Response.error();
-            })
+            })()
         );
         return;
     }
@@ -139,7 +159,11 @@ self.addEventListener('push', (event) => {
     let payload = {};
     try {
         const raw = event.data ? event.data.json() : {};
-        payload = raw.data || raw.notification || raw;
+        payload = {
+            ...(raw.notification || {}),
+            ...(raw.data || {}),
+            ...(!raw.notification && !raw.data ? raw : {})
+        };
     } catch (e) {
         payload = { body: event.data ? event.data.text() : '' };
     }
