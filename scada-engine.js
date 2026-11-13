@@ -474,7 +474,7 @@
             .slice(0, 50);
     }
 
-    function deduplicateEquipPins(rawList) {
+        function deduplicateEquipPins(rawList) {
         if (!Array.isArray(rawList)) return [];
         const byId = new Map();
         rawList.forEach(pin => {
@@ -487,7 +487,7 @@
             }
             const ex = byId.get(pin.id);
             if (!ex || (new Date(pin.updatedAt || 0).getTime() || 0) >= (new Date(ex.updatedAt || 0).getTime() || 0)) {
-                byId.set(pin.id, ex ? { ...ex, ...pin } : pin);
+                byId.set(pin.id, pin);
             }
         });
         return Array.from(byId.values());
@@ -2307,8 +2307,31 @@
                 nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, hasStandbyPower: false, primaryColor: liveColsAtNode.get(pinId)?.[0] || prim.color, secondaryColor: secCol, primarySource: prim, conductingSources: isNodeParallel ? cond : [prim], terminalSources: term, isParallel: isNodeParallel, isTieTwoSources: false, isBackfeed: isBf });
             } else if (term.length > 0) {
                 energizedNodes++;
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, hasStandbyPower: true, primaryColor: term[0].color, secondaryColor: term[1]?.color || null, primarySource: term[0], conductingSources: [], terminalSources: term, isParallel: false, isTieTwoSources: term.length >= 2, isBackfeed: false });
+                const liveNeighborBrkSets = new Map();
+                (adjMap.get(pinId) || []).forEach(({ neighborId, entry }) => {
+                    if (entry.off || liveNeighborBrkSets.has(neighborId)) return;
+                    const nb = rawNodes.get(neighborId);
+                    if (nb && nb.st === 'C' && nb.conductingMap.size > 0) {
+                        liveNeighborBrkSets.set(neighborId, new Set(nb.conductingMap.keys()));
+                    }
+                });
+                const sideSets = Array.from(liveNeighborBrkSets.values());
+                let isRealTieTwoSources = false;
+                if (term.length >= 2 && sideSets.length >= 2) {
+                    for (let i = 0; i < sideSets.length && !isRealTieTwoSources; i++) {
+                        for (let j = i + 1; j < sideSets.length; j++) {
+                            if (hasDistinctBrkPair(sideSets[i], sideSets[j])) {
+                                isRealTieTwoSources = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                const dispTerms = isRealTieTwoSources ? term : [term[0]];
+                const secTermCol = isRealTieTwoSources ? (term.find(t => t.breakerId !== term[0].breakerId)?.color || null) : null;
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, hasStandbyPower: true, primaryColor: term[0].color, secondaryColor: secTermCol, primarySource: term[0], conductingSources: [], terminalSources: dispTerms, isParallel: false, isTieTwoSources: isRealTieTwoSources, isBackfeed: false });
             } else {
+
                 deenergizedNodes++;
                 nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, hasStandbyPower: false, primaryColor: '#334155', secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], isParallel: false, isTieTwoSources: false, isBackfeed: false });
             }
