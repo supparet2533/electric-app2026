@@ -2244,10 +2244,10 @@
             if (!historyList) return;
             const searchQ = (document.getElementById('searchOutageInput')?.value || '').toLowerCase().trim();
             const prioFilter = document.getElementById('filterPrioritySelect')?.value || 'all';
-            const selDate = document.getElementById('exportDateTab2')?.value || '';
+                        const selDate = document.getElementById('exportDateTab2')?.value || '';
             const allHistory = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]')
-                .filter(it => it && !(it.dateTimeSaved && delReg[it.dateTimeSaved]));
-
+                .filter(it => it && !(it.dateTimeSaved && delReg[it.dateTimeSaved]))
+                .sort((a, b) => parseOutageDateTimeToMs(b) - parseOutageDateTimeToMs(a));
             const { dateStr: cycleDateStr, calendarDateStr } = getRealTimeShiftAndDate();
             let history = [...allHistory];
             if (selDate) {
@@ -2313,10 +2313,10 @@
             const historyList = document.getElementById('historyListFault');
             if (!historyList) return;
             const searchQ = (document.getElementById('searchFaultInput')?.value || '').toLowerCase().trim();
-            const selDate = document.getElementById('exportDateTab1')?.value || '';
+                        const selDate = document.getElementById('exportDateTab1')?.value || '';
             const allHistory = JSON.parse(localStorage.getItem('fault_reports_all') || '[]')
-                .filter(it => it && !(it.timestamp && delReg[it.timestamp]));
-
+                .filter(it => it && !(it.timestamp && delReg[it.timestamp]))
+                .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
             document.getElementById('statFaultTotal').textContent = String(allHistory.length);
             document.getElementById('statFault22kV').textContent = String(allHistory.filter(i => i.system === '22kV').length);
             document.getElementById('statFault115kV').textContent = String(allHistory.filter(i => i.system === '115kV').length);
@@ -2826,12 +2826,28 @@
         const apiUrl = getActiveCloudApiUrl(); if (!apiUrl) return false;
         isUploadingFromMain = true;
         try {
+            let baseCloud = Array.isArray(cloudSnapshot) ? cloudSnapshot : cachedCloudJobs;
+            if (!Array.isArray(cloudSnapshot)) {
+                try {
+                    Core.forceCloudRead();
+                    const preRes = await fetch(apiUrl + '?t=' + Date.now(), { cache: 'no-store' });
+                    const preData = await preRes.json();
+                    if (Array.isArray(preData?.jobs)) {
+                        baseCloud = preData.jobs;
+                        cachedCloudJobs = preData.jobs;
+                    }
+                } catch (e) {}
+            }
+
             Core.cleanReopenedAndCancelledJobsInStorage();
             tagUntaggedLocalJobsWithCurrentGroup();
             Core.unlockCloudWrite(20000);
+            const prevLocEntry = (baseCloud || []).find(j => j && j.jobType === 'tech_loc') || {};
+            if (prevLocEntry.deletedJobsMap) syncDeletedRegistryObject({ ...getDeletedJobsRegistry(), ...prevLocEntry.deletedJobsMap });
+            if (prevLocEntry.closedJobsMap || prevLocEntry.closedReports) syncClosedRegistryObject({ ...getClosedJobsRegistry(), ...(prevLocEntry.closedJobsMap || {}), ...(prevLocEntry.closedReports || {}) });
+
             const delReg = getDeletedJobsRegistry(), closedReg = getClosedJobsRegistry(), myGrp = normGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
-            const baseCloud = Array.isArray(cloudSnapshot) ? cloudSnapshot : cachedCloudJobs;
-            const combined = new Map();
+            const combined = new Map(), pendingClearTasks = [];
 
             (baseCloud || []).forEach(cj => {
                 if (!cj || cj.jobType === 'tech_loc') return;
@@ -2842,25 +2858,47 @@
             const pushLocal = (sk, type) => {
                 const kf = type === 'fault' ? 'timestamp' : 'dateTimeSaved';
                 const list = dedupeJobsByKey(JSON.parse(Core.rawStorageGet(sk) || '[]'), kf, delReg);
-                let clearedFlag = false;
+                let hasPending = false;
                 list.filter(i => canCurrentUserSeeJob(i)).slice(0, 300).forEach(it => {
                     const rk = it[kf], uk = (type === 'fault' ? 'F_' : 'O_') + rk, cj = combined.get(uk);
                     const rep = (cj?.techReport?.updatedAt || '') > (it.techReport?.updatedAt || '') ? cj.techReport : (it.techReport || closedReg[rk]);
-                    const merged = { ...(cj || {}), ...it, jobType: type, ownerGroup: normGrp(getJobGroupName(it) || myGrp), techReport: rep };
-                    if (it.pendingInitialUpload) { delete it.pendingInitialUpload; clearedFlag = true; }
+                    const baseCore = ((cj?.editedAt || '') > (it.editedAt || '') && !it.pendingInitialUpload) ? { ...it, ...cj } : { ...(cj || {}), ...it };
+                    const merged = { ...baseCore, jobType: type, ownerGroup: normGrp(getJobGroupName(baseCore) || myGrp), techReport: rep };
+                    if (it.pendingInitialUpload) hasPending = true;
                     delete merged.pendingInitialUpload;
                     if (!rep) delete merged.techReport;
                     combined.set(uk, merged);
                 });
-                if (clearedFlag) Core.rawStorageSet(sk, JSON.stringify(list));
+                if (hasPending) pendingClearTasks.push({ sk, list });
             };
             pushLocal('elecReportsComplete_all', 'outage');
             pushLocal('fault_reports_all', 'fault');
 
-            const finalJobs = [...Array.from(combined.values()), { jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: getTechLocationsMap(), closedJobsMap: closedReg, deletedJobsMap: delReg, updatedAt: new Date().toISOString() }];
+            const finalJobs = [
+                ...Array.from(combined.values()),
+                {
+                    ...prevLocEntry,
+                    jobType: 'tech_loc',
+                    dateTimeSaved: 'TECH_LOC_REGISTRY',
+                    techLocations: getTechLocationsMap(),
+                    closedJobsMap: closedReg,
+                    deletedJobsMap: delReg,
+                    electricEquipmentPins: JSON.parse(Core.rawStorageGet('elec_labeled_places_list') || '[]'),
+                    deletedElectricEquipmentMap: JSON.parse(Core.rawStorageGet('elec_deleted_labeled_places_map') || '{}'),
+                    updatedAt: new Date().toISOString()
+                }
+            ];
             cachedCloudJobs = finalJobs;
-            await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'saveJobs', jobs: finalJobs }) });
-            return true;
+            const postRes = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'saveJobs', jobs: finalJobs }) });
+            const postData = await postRes.json();
+            if (postData?.status === 'ok') {
+                pendingClearTasks.forEach(({ sk, list }) => {
+                    list.forEach(it => { if (it) delete it.pendingInitialUpload; });
+                    Core.rawStorageSet(sk, JSON.stringify(list));
+                });
+                return true;
+            }
+            return false;
         } catch (e) { return false; } finally { isUploadingFromMain = false; }
     });
 
@@ -3083,7 +3121,8 @@
             let code = cols[0], lat = parseFloat(cols[1]), lon = parseFloat(cols[2]); if (!code || isNaN(lat) || isNaN(lon)) return;
             if (lat > 90 && lon < 90) { const t = lat; lat = lon; lon = t; }
             let eqT = (cols[3] || '').toUpperCase().trim(); if (eqT === 'CB') eqT = 'RC';
-            if (!['PIN', 'TAP', 'VS', 'VSC', 'S', 'DF', 'RC', 'VB', 'GEN'].includes(eqT)) eqT = /CB|RC/i.test(code) ? 'RC' : (/VB/i.test(code) ? 'VB' : (/DF|FCO/i.test(code) ? 'DF' : (/S-?\d+/i.test(code) ? 'S' : 'VS')));
+if (!['PIN', 'TAP', 'VS', 'VSC', 'S', 'DF', 'RC', 'VB', 'GEN'].includes(eqT)) eqT = /CB|RC/i.test(code) ? 'RC' : (/VB/i.test(code) ? 'VB' : (/DF|FCO/i.test(code) ? 'DF' : (/VS-?\d+/i.test(code) ? 'VS' : (/S-?\d+/i.test(code) ? 'S' : 'VS'))));
+
             const scId = (cols[4] || '').replace(/^ID\s*/i, '').trim(), fd = (cols[5] || '').toUpperCase().trim(), st = /O|OPEN|ปลด/i.test(cols[6] || 'C') ? 'O' : 'C', lk = (cols.slice(7).join(', ') || '').trim();
             const scadaNode = { t: eqT, st, col: '#10b981', ...(scId ? { id: scId } : {}), ...(fd ? { fd } : {}), ...(lk ? { lk } : {}) };
             const exIdx = pins.findIndex(p => normGrp(p?.ownerGroup || 'กฟส.บึง') === myGrp && String(p?.name || '').toLowerCase() === code.toLowerCase());
@@ -3155,7 +3194,10 @@
         document.getElementById('gpsInput')?.addEventListener('input', function () { clearTimeout(gT1); const v = this.value.trim(); if (!v) return updateMapPreviewTab1(null); gT1 = setTimeout(async () => updateMapPreviewTab1(extractCoordsFromInput(v) || await resolveGoogleShortLinkUniversal(v)), 500); });
 
         ['deviceInput', 'disconnectDeviceInput', 'powerUpToDeviceInput'].forEach(id => document.getElementById(id)?.addEventListener('input', checkAndRenderFormScadaWarnings));
+        document.getElementById('timeInput')?.addEventListener('input', e => { if (e.isTrusted) isTimeManuallyEdited = true; });
+        document.getElementById('reportDate')?.addEventListener('input', e => { if (e.isTrusted) { isManualShiftOverride = true; isManualJobNoOverride = false; localStorage.setItem(LAST_SHIFT_STATE_KEY, getRealTimeShiftAndDate().shiftStateId); autoFillJobNo(true); saveOutageDraft(); } });
         document.getElementById('shift')?.addEventListener('input', e => { if (e.isTrusted) { isManualShiftOverride = true; isManualJobNoOverride = false; localStorage.setItem(LAST_SHIFT_STATE_KEY, getRealTimeShiftAndDate().shiftStateId); autoFillJobNo(true); saveOutageDraft(); } });
+
         document.getElementById('jobNo')?.addEventListener('input', e => { if (e.isTrusted) { isManualJobNoOverride = Boolean(String(e.target.value || '').trim()); if (e.target.value) localStorage.removeItem(RESET_LOCK_KEY); saveOutageDraft(); } });
         document.getElementById('sortable-tab1')?.addEventListener('input', saveFaultDraft);
         document.getElementById('sortable-tab2')?.addEventListener('input', saveOutageDraft);
