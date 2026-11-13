@@ -389,13 +389,20 @@
         return true;
     }
 
+    function normScadaGrp(raw) {
+        if (typeof window.normalizePeaGroupName === 'function') {
+            return window.normalizePeaGroupName(raw) || 'กฟส.บึง';
+        }
+        return String(raw || '').trim().replace(/\s+/g, ' ').replace(/^(กฟ[สฟจตอ])\.?\s+/, '$1.').replace(/^(กฟ[สฟจตอ])(?![.\s])/, '$1.') || 'กฟส.บึง';
+    }
+
     function getActiveEquipUserGroup() {
-        return (getCurrentUserGroup() || localStorage.getItem('elec_app_current_group') || 'กฟส.บึง').trim();
+        return normScadaGrp(getCurrentUserGroup() || localStorage.getItem('elec_app_current_group') || 'กฟส.บึง');
     }
 
     function getPinOwnerGroup(pin) {
-        if (pin?.ownerGroup && String(pin.ownerGroup).trim()) return String(pin.ownerGroup).trim();
-        if (pin?.ownerUser) { const g = getUserGroupName(pin.ownerUser); if (g) return g; }
+        if (pin?.ownerGroup && String(pin.ownerGroup).trim()) return normScadaGrp(pin.ownerGroup);
+        if (pin?.ownerUser) { const g = getUserGroupName(pin.ownerUser); if (g) return normScadaGrp(g); }
         return 'กฟส.บึง';
     }
 
@@ -2121,7 +2128,7 @@
         });
     };
 
-    function computeUnifiedTopology(pinsInput) {
+        function computeUnifiedTopology(pinsInput) {
         const pins = Array.isArray(pinsInput) ? pinsInput : labeledPlaces.filter(canCurrentUserSeeEquipPin);
         const pinMap = new Map(pins.map(p => [p.id, p])), adjMap = new Map(), edgesList = [], feedersSet = new Set();
         pins.forEach(p => { adjMap.set(p.id, []); if (p.scadaNode?.fd) feedersSet.add(p.scadaNode.fd); });
@@ -2180,6 +2187,64 @@
             }
         });
 
+        // ตัดกิ่งแยกปลายสายที่มีไฟจ่ายเข้าฝั่งเดียวออกจากการนับเป็นสายขนาน 2 CB
+        const anchorBrkMap = new Map(closedBreakers.map(b => [b.breakerId, b]));
+        const condAdj = new Map(), trimmedNodes = new Set(), trimmedEdges = new Set();
+
+        if (closedBreakers.length > 1) {
+            rawNodes.forEach((tr, id) => { if (tr.st === 'C') condAdj.set(id, []); });
+            edgesList.forEach(entry => {
+                if (!entry.off && condAdj.has(entry.fromId) && condAdj.has(entry.toId)) {
+                    condAdj.get(entry.fromId).push({ neighborId: entry.toId, edgeKey: entry.edgeKey });
+                    condAdj.get(entry.toId).push({ neighborId: entry.fromId, edgeKey: entry.edgeKey });
+                }
+            });
+            const deg = new Map(), trimQ = [];
+            condAdj.forEach((list, id) => {
+                deg.set(id, list.length);
+                if (!anchorBrkMap.has(id) && list.length <= 1) trimQ.push(id);
+            });
+            for (let h = 0; h < trimQ.length; h++) {
+                const u = trimQ[h];
+                if (trimmedNodes.has(u)) continue;
+                trimmedNodes.add(u);
+                (condAdj.get(u) || []).forEach(({ neighborId, edgeKey }) => {
+                    if (trimmedEdges.has(edgeKey)) return;
+                    trimmedEdges.add(edgeKey);
+                    if (!anchorBrkMap.has(neighborId) && !trimmedNodes.has(neighborId)) {
+                        const nextDeg = (deg.get(neighborId) || 0) - 1;
+                        deg.set(neighborId, nextDeg);
+                        if (nextDeg <= 1) trimQ.push(neighborId);
+                    }
+                });
+            }
+        }
+
+        const reachBrksWithout = (startId, blockedNodeId, blockedEdgeKey) => {
+            const found = new Set();
+            if (!condAdj.has(startId) || startId === blockedNodeId) return found;
+            const vis = new Set([startId]), q = [startId];
+            if (blockedNodeId) vis.add(blockedNodeId);
+            for (let h = 0; h < q.length; h++) {
+                const cur = q[h];
+                if (anchorBrkMap.has(cur)) found.add(cur);
+                (condAdj.get(cur) || []).forEach(({ neighborId, edgeKey }) => {
+                    if (edgeKey === blockedEdgeKey || trimmedEdges.has(edgeKey) || vis.has(neighborId)) return;
+                    vis.add(neighborId);
+                    q.push(neighborId);
+                });
+            }
+            return found;
+        };
+
+        const hasDistinctBrkPair = (setA, setB) => {
+            if (!setA.size || !setB.size) return false;
+            for (const a of setA) {
+                for (const b of setB) { if (a !== b) return true; }
+            }
+            return false;
+        };
+
         const edgeStates = new Map(), liveColsAtNode = new Map(pins.map(p => [p.id, []]));
         edgesList.forEach(entry => {
             const sources = Array.from(entry.sourcesMap.values()).sort((a, b) => a.dist - b.dist);
@@ -2190,10 +2255,18 @@
             }
             const prim = sources[0], eFd = normFd(entry.edge.fd), pDist = entry.physDistByBrk.get(prim.breakerId) ?? 999999;
             const isBackfeed = Boolean((eFd && prim.feeder && eFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === eFd && !entry.sourcesMap.has(b.breakerId))) || allBreakers.some(b => b.breakerId !== prim.breakerId && !entry.sourcesMap.has(b.breakerId) && !(eFd && prim.feeder && eFd === prim.feeder) && (entry.physDistByBrk.get(b.breakerId) ?? Infinity) < pDist));
+
+            let isEdgeParallel = false;
+            if (sources.length > 1 && !trimmedEdges.has(entry.edgeKey) && condAdj.has(entry.fromId) && condAdj.has(entry.toId)) {
+                const sideFrom = reachBrksWithout(entry.fromId, entry.toId, entry.edgeKey);
+                const sideTo = reachBrksWithout(entry.toId, entry.fromId, entry.edgeKey);
+                isEdgeParallel = hasDistinctBrkPair(sideFrom, sideTo);
+            }
+
             const dispCol = (entry.edge.customSingleCol && !isBackfeed && (!entry.edge.customOwnerBrk || entry.edge.customOwnerBrk === prim.breakerId)) ? savedCol : prim.color;
             liveColsAtNode.get(entry.fromId)?.push(dispCol);
             liveColsAtNode.get(entry.toId)?.push(dispCol);
-            edgeStates.set(entry.edgeKey, { ...entry, energized: true, color: dispCol, savedColor: savedCol, primarySource: prim, sources, isBackfeed, isParallel: sources.length > 1 });
+            edgeStates.set(entry.edgeKey, { ...entry, energized: true, color: dispCol, savedColor: savedCol, primarySource: prim, sources: isEdgeParallel ? sources : [prim], isBackfeed, isParallel: isEdgeParallel });
         });
 
         const nodeStates = new Map();
@@ -2208,7 +2281,30 @@
                 energizedNodes++;
                 const prim = cond[0], nFd = normFd(tr.pin.scadaNode?.fd);
                 const isBf = Boolean(nFd && prim.feeder && nFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === nFd && !tr.conductingMap.has(b.breakerId)));
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, hasStandbyPower: false, primaryColor: liveColsAtNode.get(pinId)?.[0] || prim.color, secondaryColor: cond[1]?.color || null, primarySource: prim, conductingSources: cond, terminalSources: term, isParallel: cond.length > 1, isTieTwoSources: false, isBackfeed: isBf });
+
+                let isNodeParallel = false, secCol = null;
+                if (cond.length > 1 && !trimmedNodes.has(pinId) && condAdj.has(pinId)) {
+                    const branchSets = [];
+                    (condAdj.get(pinId) || []).forEach(({ neighborId, edgeKey }) => {
+                        if (trimmedEdges.has(edgeKey)) return;
+                        const bs = reachBrksWithout(neighborId, pinId, edgeKey);
+                        if (bs.size > 0) branchSets.push(bs);
+                    });
+                    for (let i = 0; i < branchSets.length && !isNodeParallel; i++) {
+                        for (let j = i + 1; j < branchSets.length; j++) {
+                            if (hasDistinctBrkPair(branchSets[i], branchSets[j])) {
+                                isNodeParallel = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (isNodeParallel) {
+                        const secondBrk = cond.find(c => c.breakerId !== prim.breakerId);
+                        secCol = secondBrk?.color || null;
+                    }
+                }
+
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, hasStandbyPower: false, primaryColor: liveColsAtNode.get(pinId)?.[0] || prim.color, secondaryColor: secCol, primarySource: prim, conductingSources: isNodeParallel ? cond : [prim], terminalSources: term, isParallel: isNodeParallel, isTieTwoSources: false, isBackfeed: isBf });
             } else if (term.length > 0) {
                 energizedNodes++;
                 nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, hasStandbyPower: true, primaryColor: term[0].color, secondaryColor: term[1]?.color || null, primarySource: term[0], conductingSources: [], terminalSources: term, isParallel: false, isTieTwoSources: term.length >= 2, isBackfeed: false });
@@ -2805,7 +2901,19 @@
     function straightenScadaEdge(fId, idx) { return mutateSingleEdge(fId, idx, e => { delete e.w; }, '📐 ปรับเป็นเส้นตรงแล้ว'); }
     function cycleScadaEdgeJumpLayer(fId, idx) { return mutateSingleEdge(fId, idx, e => { e.jp = (e.jp || 0) === 0 ? 1 : ((e.jp || 0) === 1 ? -1 : 0); if (!e.jp) delete e.jp; }, '⌒ สลับชั้นการโค้งข้ามสายแล้ว'); }
     function flipScadaEdgeJumpDir(fId, idx) { return mutateSingleEdge(fId, idx, e => { if (e.jf) delete e.jf; else e.jf = 1; }, '🔄 กลับทิศทางโค้งสะพานแล้ว'); }
-    function deleteScadaEdge(fId, idx) { if (!guardRealScadaEdit()) return; showCustomConfirm('ต้องการลบเส้นวงจรจ่ายไฟช่วงนี้ใช่หรือไม่?', () => mutateSingleEdge(fId, idx, (_, p) => {}, '🗑️ ลบเส้นวงจรแล้ว').then(() => commitPinsUpdate(pins => { const p = pins.find(i => i?.id === fId); if (!p?.scadaLines?.[idx]) return false; p.scadaLines.splice(idx, 1); p.updatedAt = new Date().toISOString(); return true; }, '🗑️ ลบเส้นวงจรแล้ว')), '🗑️ ยืนยันลบเส้นวงจร'); }
+        function deleteScadaEdge(fId, idx) {
+        if (!guardRealScadaEdit()) return;
+        showCustomConfirm('ต้องการลบเส้นวงจรจ่ายไฟช่วงนี้ใช่หรือไม่?', () => {
+            leafletMap?.closePopup();
+            commitPinsUpdate(pins => {
+                const p = pins.find(i => i?.id === fId);
+                if (!p?.scadaLines?.[idx]) return false;
+                p.scadaLines.splice(idx, 1);
+                p.updatedAt = new Date().toISOString();
+                return true;
+            }, '🗑️ ลบเส้นวงจรแล้ว');
+        }, '🗑️ ยืนยันลบเส้นวงจร');
+    }
 
     // โหมดดัดสาย (CAD Grip) & โหมดขยับหมุด (Draggable Pin)
     const getClientXY = ev => { const t = ev.touches?.[0] || ev.changedTouches?.[0] || ev; return { x: t.clientX, y: t.clientY }; };
