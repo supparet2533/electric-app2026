@@ -1,6 +1,6 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SHARED CORE ENGINE v6.2 (shared-core.js)
-// ระบบแกนกลางร่วมสำหรับ index.html และ page2.html
+// ⚡ PEA SMART GRID — SHARED CORE ENGINE v6.3 (shared-core.js)
+// ระบบแกนกลางร่วมสำหรับ index.html และ page2.html (แก้ครบ 16 จุด เชื่อม PM v7.3 & SW v116)
 // พาทที่ 1 / 4 : Config, Group Normalization, RBAC, UI Modals & Export Helpers
 // ============================================================================
 (function () {
@@ -9,6 +9,7 @@
     const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
     const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
     const MAX_REGISTRY_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+    const MAX_STALE_LOC_AGE_MS = 14 * 24 * 60 * 60 * 1000;
     const ONLINE_THRESHOLD_MS = 180 * 1000;
     const CHANNEL_NAME = 'pea_smart_grid_hyper_v4';
     const SHORT_LINK_CACHE_KEY = 'elec_resolved_shortlinks_cache_v2';
@@ -16,6 +17,7 @@
     const LAST_GROUP_SESSION_KEY = 'elec_last_logged_group_name';
     const SHEET_CACHE_STORAGE_KEY = 'elec_sheet_cache_by_group_v3';
     const REGISTRY_LOC_KEY = '__NAV_CANCEL_REGISTRY__';
+    const PM_LOC_PREFIX = '__PM_SCHEDULE__';
 
     const isEmbeddedIframe = (window.self !== window.top);
     const MY_PEER_ID = 'p20k_' + Math.random().toString(36).substring(2, 9) + '_' + (Date.now() % 100000);
@@ -79,8 +81,13 @@
         }
     }
 
+    function isSystemLocRegistryKey(k, itemObj) {
+        if (!k) return true;
+        return k === REGISTRY_LOC_KEY || String(k).startsWith(PM_LOC_PREFIX) || Boolean(itemObj && itemObj.isSystemRegistry);
+    }
+
     // ========================================================================
-    // 1. ระบบจัดมาตรฐานกลุ่มสังกัด (กฟส.), รหัสพนักงาน และสิทธิ์การใช้งาน (RBAC)
+    // 1. ระบบจัดมาตรฐานกลุ่มสังกัด (กฟส.), รหัสพนักงาน/ชื่อเต็ม และสิทธิ์การใช้งาน (RBAC)
     // ========================================================================
     function getActiveCloudApiUrl() {
         const custom = (rawStorageGet('elec_cloud_user_api_url') || '').trim();
@@ -96,45 +103,56 @@
         return g.trim();
     }
 
+    function stripPeaGroupSuffix(rawUsername) {
+        return String(rawUsername || '').trim().replace(/\s+/g, ' ').replace(/\s*(กฟ[สฟจตอ]\.?.*)$/i, '').trim();
+    }
+
     function getUserGroupName(username) {
         if (!username) return '';
-        const s = String(username).trim();
+        const s = String(username).trim().replace(/\s+/g, ' ');
         if (s.toLowerCase() === 'admin') return '';
         const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
         if (peaMatch) return normalizePeaGroupName(peaMatch[1]);
-        const parts = s.split(/\s+/);
-        if (parts.length > 1) return normalizePeaGroupName(parts.slice(1).join(' '));
-        const numGroupMatch = s.match(/^(\d{4,10})([ก-๙a-zA-Z].*)$/);
+        const numGroupMatch = s.match(/^(\d{4,10})\s*([ก-๙a-zA-Z].*)$/);
         if (numGroupMatch) return normalizePeaGroupName(numGroupMatch[2]);
+        const parts = s.split(/\s+/);
+        if (parts.length > 1 && /^กฟ/.test(parts[parts.length - 1])) return normalizePeaGroupName(parts[parts.length - 1]);
         return '';
     }
 
     function getUserBaseId(username) {
         if (!username) return '';
-        const s = String(username).trim();
-        const firstPart = s.split(/\s+/)[0];
-        const withoutPea = firstPart.replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim();
+        const s = String(username).trim().replace(/\s+/g, ' ');
+        if (s.toLowerCase() === 'admin') return 'admin';
+        const withoutPea = stripPeaGroupSuffix(s);
         if (!withoutPea) return s.toLowerCase();
-        const numMatch = withoutPea.match(/^(\d{4,10})/);
-        return (numMatch ? numMatch[1] : withoutPea).toLowerCase();
+        const numMatch = withoutPea.match(/^(\d{4,10})(?:\b|$)/);
+        if (numMatch) return numMatch[1].toLowerCase();
+        const stuckNumMatch = s.match(/^(\d{4,10})(?=[ก-๙a-zA-Z])/);
+        if (stuckNumMatch) return stuckNumMatch[1].toLowerCase();
+        return withoutPea.toLowerCase();
     }
 
     function normalizeUsernameFormat(rawUsername) {
-        const s = String(rawUsername || '').trim();
+        const s = String(rawUsername || '').trim().replace(/\s+/g, ' ');
         if (!s) return '';
-        const baseId = getUserBaseId(s);
+        if (s.toLowerCase() === 'admin') return 'admin';
         const groupName = getUserGroupName(s);
-        if (baseId && groupName && baseId.toLowerCase() !== groupName.toLowerCase() && s.toLowerCase() !== 'admin') {
-            const origBase = s.split(/\s+/)[0].replace(/(กฟ[สฟจตอ]\.?.*)$/, '').trim() || baseId;
-            return `${origBase} ${groupName}`;
+        let frontPart = stripPeaGroupSuffix(s);
+        if (!frontPart && groupName) return s;
+        if (!groupName) {
+            const stuckNum = s.match(/^(\d{4,10})([ก-๙a-zA-Z].*)$/);
+            if (stuckNum) return `${stuckNum[1]} ${normalizePeaGroupName(stuckNum[2])}`;
+            return s;
         }
-        return s;
+        if (frontPart.toLowerCase() === groupName.toLowerCase()) return s;
+        return `${frontPart} ${groupName}`;
     }
 
     function isUsernameMatchingAccount(inputUser, accountUser) {
         if (!inputUser || !accountUser) return false;
-        const inTrim = String(inputUser).trim().toLowerCase();
-        const accTrim = String(accountUser).trim().toLowerCase();
+        const inTrim = String(inputUser).trim().replace(/\s+/g, ' ').toLowerCase();
+        const accTrim = String(accountUser).trim().replace(/\s+/g, ' ').toLowerCase();
         if (inTrim === accTrim) return true;
         const inBase = getUserBaseId(inputUser);
         const accBase = getUserBaseId(accountUser);
@@ -180,11 +198,8 @@
     function formatTechDisplayName(rawNameOrList) {
         if (!rawNameOrList || rawNameOrList === '-') return '-';
         const str = String(rawNameOrList).trim();
-        if (str.includes(',')) {
-            return str.split(',').map(s => formatTechDisplayName(s.trim())).join(', ');
-        }
-        const accounts = getParsedUserAccounts();
-        const matched = accounts.find(a => isUsernameMatchingAccount(str, a.username));
+        if (str.includes(',')) return str.split(',').map(s => formatTechDisplayName(s.trim())).join(', ');
+        const matched = getParsedUserAccounts().find(a => isUsernameMatchingAccount(str, a.username));
         if (matched && matched.displayName) {
             const grp = getUserGroupName(matched.username) || getUserGroupName(str);
             return (grp && !matched.displayName.includes(grp)) ? `${matched.displayName} ${grp}` : matched.displayName;
@@ -202,10 +217,7 @@
 
     function getValidSystemGroupsSet() {
         const set = new Set();
-        getParsedUserAccounts().forEach(a => {
-            const g = getUserGroupName(a.username);
-            if (g) set.add(g);
-        });
+        getParsedUserAccounts().forEach(a => { const g = getUserGroupName(a.username); if (g) set.add(g); });
         return set;
     }
 
@@ -214,17 +226,12 @@
         const role = (rawStorageGet('elec_app_current_role') || 'user').trim();
         const direct = getUserGroupName(curUser);
         if (direct) return direct;
-
         const saved = normalizePeaGroupName(rawStorageGet('elec_app_current_group') || '');
         if (saved) return saved;
-
         const baseId = getUserBaseId(curUser);
-        const matched = getParsedUserAccounts().find(a =>
-            isUsernameMatchingAccount(curUser, a.username) || (baseId && getUserBaseId(a.username) === baseId)
-        );
+        const matched = getParsedUserAccounts().find(a => isUsernameMatchingAccount(curUser, a.username) || (baseId && getUserBaseId(a.username) === baseId));
         const fromAcc = matched ? getUserGroupName(matched.username) : '';
         if (fromAcc) return fromAcc;
-
         if (role !== 'admin') {
             const lastGrp = normalizePeaGroupName(rawStorageGet(LAST_GROUP_SESSION_KEY) || '');
             if (lastGrp) return lastGrp;
@@ -242,8 +249,7 @@
             if (og && (validGroups.size === 0 || validGroups.has(og) || /^กฟ/.test(og))) return og;
         }
         const accounts = getParsedUserAccounts();
-        const candidates = [job.ownerUser, job.techNav?.techName, job.techReport?.inspector].filter(Boolean);
-        for (const c of candidates) {
+        for (const c of [job.ownerUser, job.techNav?.techName, job.techReport?.inspector].filter(Boolean)) {
             const g = getUserGroupName(c);
             if (g && (validGroups.size === 0 || validGroups.has(g) || /^กฟ/.test(g))) return g;
             const cBase = getUserBaseId(c);
@@ -255,12 +261,8 @@
         return 'กฟส.บึง';
     }
 
-    function isCurrentUserAdmin() {
-        return rawStorageGet('elec_app_logged_in') === 'true' && rawStorageGet('elec_app_current_role') === 'admin';
-    }
-    function isViewerRole() {
-        return rawStorageGet('elec_app_logged_in') === 'true' && rawStorageGet('elec_app_current_role') === 'viewer';
-    }
+    function isCurrentUserAdmin() { return rawStorageGet('elec_app_logged_in') === 'true' && rawStorageGet('elec_app_current_role') === 'admin'; }
+    function isViewerRole() { return rawStorageGet('elec_app_logged_in') === 'true' && rawStorageGet('elec_app_current_role') === 'viewer'; }
     function canCurrentUserEditScada() {
         if (rawStorageGet('elec_app_logged_in') !== 'true') return false;
         const r = (rawStorageGet('elec_app_current_role') || '').trim();
@@ -268,42 +270,32 @@
     }
     function canCurrentUserSeeJob(job) {
         if ((rawStorageGet('elec_app_current_role') || 'user') === 'admin') return true;
-        const myGroup = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง');
-        const jobGroup = normalizePeaGroupName(getJobGroupName(job) || 'กฟส.บึง');
-        return myGroup === jobGroup;
+        const myGrp = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง');
+        return myGrp === normalizePeaGroupName(getJobGroupName(job) || 'กฟส.บึง');
     }
-
     function runWithGroupViewFilter(fn, context, args) {
         isGroupViewFilterActive = true;
-        try { return fn.apply(context, args || []); }
-        finally { isGroupViewFilterActive = false; }
+        try { return fn.apply(context, args || []); } finally { isGroupViewFilterActive = false; }
     }
-
     function escapeHtmlStr(str) {
-        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
-
     function hexToClosestPinColorKey(hexStr) {
         const s = String(hexStr || '').trim();
         if (!/^#[0-9A-Fa-f]{6}$/.test(s)) return 'green';
         const r = parseInt(s.slice(1, 3), 16), g = parseInt(s.slice(3, 5), 16), b = parseInt(s.slice(5, 7), 16);
         let best = 'green', minD = Infinity;
-        THEME_RGB_LIST.forEach(t => {
-            const d = (r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2;
-            if (d < minD) { minD = d; best = t.key; }
-        });
+        THEME_RGB_LIST.forEach(t => { const d = (r - t.r) ** 2 + (g - t.g) ** 2 + (b - t.b) ** 2; if (d < minD) { minD = d; best = t.key; } });
         return best;
     }
 
     // ========================================================================
-    // 2. กล่องแจ้งเตือนมาตรฐาน (Toast, Alert, Confirm, Prompt) & ส่งออกตาราง
+    // 2. กล่องแจ้งเตือนมาตรฐาน (z-[1480] ไม่ถูกบัง) & ส่งออกตารางคืนแรมปลอดภัย
     // ========================================================================
     function showToast(msg) {
         const t = document.getElementById('toast');
         if (!t) return;
-        t.textContent = msg;
-        t.classList.remove('opacity-0');
-        t.classList.add('opacity-100');
+        t.textContent = msg; t.classList.remove('opacity-0'); t.classList.add('opacity-100');
         clearTimeout(t.__hideTimer);
         t.__hideTimer = setTimeout(() => { t.classList.remove('opacity-100'); t.classList.add('opacity-0'); }, 2500);
     }
@@ -311,9 +303,8 @@
     function showCustomAlert(message, title = '⚡ แจ้งเตือนระบบ') {
         let modal = document.getElementById('customAlertModal');
         if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'customAlertModal';
-            modal.className = 'fixed inset-0 z-[1450] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+            modal = document.createElement('div'); modal.id = 'customAlertModal';
+            modal.className = 'fixed inset-0 z-[1480] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
             modal.innerHTML = `<div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700"><h3 id="customAlertTitle" class="text-lg font-bold text-amber-400"></h3><p id="customAlertMessage" class="text-sm text-slate-200 leading-relaxed whitespace-pre-line"></p><div class="flex justify-end pt-2"><button type="button" onclick="document.getElementById('customAlertModal').classList.add('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">ตกลง</button></div></div>`;
             document.body.appendChild(modal);
         }
@@ -327,98 +318,74 @@
         if (typeof window.__customConfirmInterceptor === 'function' && window.__customConfirmInterceptor(message, onConfirm, title)) return;
         let modal = document.getElementById('customConfirmModal');
         if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'customConfirmModal';
-            modal.className = 'fixed inset-0 z-[1450] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+            modal = document.createElement('div'); modal.id = 'customConfirmModal';
+            modal.className = 'fixed inset-0 z-[1480] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
             modal.innerHTML = `<div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700"><h3 id="customConfirmTitle" class="text-lg font-bold text-amber-400"></h3><p id="customConfirmMessage" class="text-sm text-slate-200 leading-relaxed whitespace-pre-line"></p><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="document.getElementById('customConfirmModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">ยกเลิก</button><button type="button" id="customConfirmOkBtn" class="bg-rose-500 hover:bg-rose-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">ตกลง</button></div></div>`;
             document.body.appendChild(modal);
         }
         document.getElementById('customConfirmTitle').textContent = title;
         document.getElementById('customConfirmMessage').textContent = message;
-        document.getElementById('customConfirmOkBtn').onclick = function () {
-            modal.classList.add('hidden');
-            unlockCloudWrite(20000);
-            if (typeof onConfirm === 'function') onConfirm();
-        };
+        document.getElementById('customConfirmOkBtn').onclick = function () { modal.classList.add('hidden'); unlockCloudWrite(20000); if (typeof onConfirm === 'function') onConfirm(); };
         modal.classList.remove('hidden');
     }
 
     function showCustomPrompt(message, defaultValue = '', onConfirm, title = '✏️ แก้ไขข้อมูล') {
         let modal = document.getElementById('customPromptModal');
         if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'customPromptModal';
-            modal.className = 'fixed inset-0 z-[1450] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
+            modal = document.createElement('div'); modal.id = 'customPromptModal';
+            modal.className = 'fixed inset-0 z-[1480] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
             modal.innerHTML = `<div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700"><h3 id="customPromptTitle" class="text-lg font-bold text-amber-400"></h3><p id="customPromptMessage" class="text-sm text-slate-200 leading-relaxed"></p><input type="text" id="customPromptInput" class="w-full px-3.5 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none"><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="document.getElementById('customPromptModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">ยกเลิก</button><button type="button" id="customPromptOkBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">บันทึก</button></div></div>`;
             document.body.appendChild(modal);
         }
         document.getElementById('customPromptTitle').textContent = title;
         document.getElementById('customPromptMessage').textContent = message;
-        const inp = document.getElementById('customPromptInput');
-        inp.value = defaultValue;
+        const inp = document.getElementById('customPromptInput'); inp.value = defaultValue;
         const submit = () => { modal.classList.add('hidden'); unlockCloudWrite(20000); if (typeof onConfirm === 'function') onConfirm(inp.value); };
         document.getElementById('customPromptOkBtn').onclick = submit;
-        inp.onkeypress = (e) => { if (e.key === 'Enter') submit(); };
-        modal.classList.remove('hidden');
-        setTimeout(() => inp.focus(), 50);
+        inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+        modal.classList.remove('hidden'); setTimeout(() => inp.focus(), 50);
     }
 
     function fallbackCopy(text, successMsg) {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+        const ta = document.createElement('textarea'); ta.value = text; ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
         document.body.appendChild(ta); ta.focus(); ta.select();
         try { document.execCommand('copy'); showToast(successMsg); } catch (e) { showToast('⚠️ คัดลอกไม่สำเร็จ'); }
         document.body.removeChild(ta);
     }
-
     function copyTextToClipboard(text, successMsg = '📋 คัดลอกข้อความสำเร็จ!') {
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text).then(() => showToast(successMsg)).catch(() => fallbackCopy(text, successMsg));
-        } else fallbackCopy(text, successMsg);
+        if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(() => showToast(successMsg)).catch(() => fallbackCopy(text, successMsg));
+        else fallbackCopy(text, successMsg);
     }
-
     function ensureXlsxLibraryLoaded() {
         return new Promise((resolve) => {
             if (typeof XLSX !== 'undefined') return resolve(true);
-            const s = document.createElement('script');
-            s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-            s.onload = () => resolve(true); s.onerror = () => resolve(false);
-            document.head.appendChild(s);
+            const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+            s.onload = () => resolve(true); s.onerror = () => resolve(false); document.head.appendChild(s);
         });
     }
-
     function downloadCsvFallback(headers, rows, filename) {
         const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
         const csv = '\uFEFF' + [headers.map(esc).join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+        const blobUrl = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+        const link = document.createElement('a'); link.href = blobUrl;
         link.download = String(filename || 'export.csv').replace(/\.xlsx?$/i, '.csv');
         document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 5000);
     }
-    // ===== จบพาทที่ 1 / 4 ของไฟล์ shared-core.js (นำพาทที่ 2 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+    // ===== จบพาทที่ 1 / 4 ของไฟล์ shared-core.js =====
         // ===== เริ่มพาทที่ 2 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 1 / 4) =====
-
     // ========================================================================
     // 3. ระบบ Storage Bus รวมศูนย์, RAM Index, Quota Guard & Simulation Sandbox
     // ========================================================================
     const simSandbox = {
-        active: false,
-        committing: false,
-        bypassRead: false,
-        workingJson: '[]',
-        deferredCloudLocReg: null
+        active: false, committing: false, bypassRead: false,
+        workingJson: '[]', deferredCloudLocReg: null
     };
 
     const ramIndex = {
-        pinsRaw: null,
-        pinsById: new Map(),
-        hasBackboneSwitches: false,
-        delPinsRaw: null,
-        delPinsObj: {},
-        knownPinUpdatedMs: new Map(),
-        pendingJsonImportMap: new Map(),
-        topoEpoch: 1
+        pinsRaw: null, pinsById: new Map(), hasBackboneSwitches: false,
+        delPinsRaw: null, delPinsObj: {}, knownPinUpdatedMs: new Map(),
+        pendingJsonImportMap: new Map(), topoEpoch: 1
     };
 
     function refreshRamPinsIndex() {
@@ -437,9 +404,7 @@
                     if (!p || !p.id) return;
                     ramIndex.pinsById.set(p.id, p);
                     const ms = new Date(p.updatedAt || 0).getTime() || 0;
-                    if (ms > (ramIndex.knownPinUpdatedMs.get(p.id) || 0)) {
-                        ramIndex.knownPinUpdatedMs.set(p.id, ms);
-                    }
+                    if (ms > (ramIndex.knownPinUpdatedMs.get(p.id) || 0)) ramIndex.knownPinUpdatedMs.set(p.id, ms);
                     const t = p.scadaNode?.t;
                     if (t === 'RC' || t === 'CB' || t === 'VB' || t === 'VS' || t === 'VSC' || t === 'S' || t === 'GEN') {
                         ramIndex.hasBackboneSwitches = true;
@@ -489,6 +454,37 @@
         return trimmed;
     }
 
+    function pruneDeletedJobsMap(rawMap) {
+        if (!rawMap || typeof rawMap !== 'object') return {};
+        const now = Date.now();
+        const entries = Object.entries(rawMap)
+            .filter(([jk, ts]) => Boolean(jk) && !isNaN(Number(ts)) && (now - Number(ts) < MAX_REGISTRY_AGE_MS))
+            .sort((a, b) => Number(b[1]) - Number(a[1]))
+            .slice(0, 300);
+        return Object.fromEntries(entries);
+    }
+
+    function pruneTechLocationsForSheetQuota(locMapObj) {
+        if (!locMapObj || typeof locMapObj !== 'object') return {};
+        const now = Date.now();
+        const out = {};
+        Object.entries(locMapObj).forEach(([k, v]) => {
+            if (!k || !v || typeof v !== 'object') return;
+            if (isSystemLocRegistryKey(k, v)) { out[k] = v; return; }
+            const seenMs = new Date(v.lastSeenAt || v.updatedAt || 0).getTime() || 0;
+            if (seenMs > 0 && (now - seenMs > MAX_STALE_LOC_AGE_MS) && v.isOnline === false) return;
+            out[k] = v;
+        });
+        if (JSON.stringify(out).length > 40000) {
+            const techKeys = Object.keys(out).filter(k => !isSystemLocRegistryKey(k, out[k]))
+                .sort((a, b) => (new Date(out[a]?.lastSeenAt || 0).getTime() || 0) - (new Date(out[b]?.lastSeenAt || 0).getTime() || 0));
+            while (techKeys.length > 15 && JSON.stringify(out).length > 40000) {
+                delete out[techKeys.shift()];
+            }
+        }
+        return out;
+    }
+
     function parseJobTimeMs(item) {
         if (!item) return 0;
         if (item.createdAtMs) return Number(item.createdAtMs) || 0;
@@ -508,7 +504,6 @@
         try {
             const parsed = JSON.parse(rawValStr);
             if (!Array.isArray(parsed)) return rawValStr;
-
             let delMap = {};
             try { delMap = JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}') || {}; } catch (e) {}
             let delMapChanged = false;
@@ -536,9 +531,7 @@
                     p.pinColor = hexToClosestPinColorKey(p.scadaNode.col);
                 }
                 const ex = byId.get(p.id);
-                if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) {
-                    byId.set(p.id, p);
-                }
+                if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) byId.set(p.id, p);
             });
 
             if (delMapChanged && !simSandbox.active) {
@@ -621,21 +614,19 @@
                 } else if (key === 'elec_cloud_group_backups_map') {
                     value = slimGroupBackupsJson(value);
                 } else if (key === 'elec_deleted_jobs_registry') {
-                    value = JSON.stringify({ ...JSON.parse(rawStorageGet('elec_deleted_jobs_registry') || '{}'), ...JSON.parse(value || '{}') });
+                    const mergedDelJobs = { ...JSON.parse(rawStorageGet('elec_deleted_jobs_registry') || '{}'), ...JSON.parse(value || '{}') };
+                    value = JSON.stringify(pruneDeletedJobsMap(mergedDelJobs));
                 } else if (key === 'elec_tech_locations_map') {
                     const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
                     const role = rawStorageGet('elec_app_current_role') || 'user';
-                    if (curUser) {
-                        const locObj = JSON.parse(value || '{}');
-                        if (locObj[curUser]) {
-                            if (isEmbeddedIframe && String(locObj[curUser].currentPage || '').includes('หน้าช่าง')) locObj[curUser].currentPage = '💻 หน้าหลัก (เปิดคู่หน้าช่าง)';
-                            if (isEmbeddedIframe || role === 'viewer') { locObj[curUser].gpsDisabled = true; locObj[curUser].lat = null; locObj[curUser].lon = null; }
-                            value = JSON.stringify(locObj);
-                        }
+                    const locObj = pruneTechLocationsForSheetQuota(JSON.parse(value || '{}'));
+                    if (curUser && locObj[curUser] && !isSystemLocRegistryKey(curUser, locObj[curUser])) {
+                        if (isEmbeddedIframe && String(locObj[curUser].currentPage || '').includes('หน้าช่าง')) locObj[curUser].currentPage = '💻 หน้าหลัก (เปิดคู่หน้าช่าง)';
+                        if (isEmbeddedIframe || role === 'viewer') { locObj[curUser].gpsDisabled = true; locObj[curUser].lat = null; locObj[curUser].lon = null; }
                     }
+                    value = JSON.stringify(locObj);
                 } else if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                    const isF = (key === 'fault_reports_all');
-                    const arr = JSON.parse(value || '[]');
+                    const isF = (key === 'fault_reports_all'), arr = JSON.parse(value || '[]');
                     const closedReg = JSON.parse(rawStorageGet('elec_closed_jobs_registry') || '{}');
                     let closedDirty = false;
                     arr.forEach(item => {
@@ -645,17 +636,10 @@
                         if (item.reopenedAt) {
                             const rMs = new Date(item.reopenedAt).getTime() || 0;
                             const repMs = new Date(item.techReport?.updatedAt || 0).getTime() || 0;
-                            if (item.techReport) {
-                                if (repMs > rMs) delete item.reopenedAt;
-                                else delete item.techReport;
-                            }
+                            if (item.techReport) { if (repMs > rMs) delete item.reopenedAt; else delete item.techReport; }
                             if (!item.techReport) {
-                                if (item.formattedText && item.formattedText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) {
-                                    item.formattedText = item.formattedText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
-                                }
-                                if (jk && closedReg[jk] && rMs >= (new Date(closedReg[jk]?.updatedAt || 0).getTime() || 0)) {
-                                    delete closedReg[jk]; closedDirty = true;
-                                }
+                                if (item.formattedText && item.formattedText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) item.formattedText = item.formattedText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+                                if (jk && closedReg[jk] && rMs >= (new Date(closedReg[jk]?.updatedAt || 0).getTime() || 0)) { delete closedReg[jk]; closedDirty = true; }
                             }
                         }
                     });
@@ -721,10 +705,7 @@
         const closedReg = getClosedJobsRegistry();
         ['elecReportsComplete_all', 'fault_reports_all'].forEach(k => {
             const isF = (k === 'fault_reports_all'), arr = JSON.parse(rawStorageGet(k) || '[]');
-            arr.forEach(it => {
-                const id = isF ? it?.timestamp : it?.dateTimeSaved;
-                if (it && !it.techReport && !it.reopenedAt && id && closedReg[id]) it.techReport = closedReg[id];
-            });
+            arr.forEach(it => { const id = isF ? it?.timestamp : it?.dateTimeSaved; if (it && !it.techReport && !it.reopenedAt && id && closedReg[id]) it.techReport = closedReg[id]; });
             localStorage.setItem(k, JSON.stringify(arr));
         });
         syncClosedRegistryObject(closedReg);
@@ -732,7 +713,7 @@
     }
 
     // ========================================================================
-    // 4. ทะเบียนงานที่ปิด/ลบแล้ว, พิกัดช่าง & ตัวล้างสถานะเปิดใบงานใหม่
+    // 4. ทะเบียนงานที่ปิด/ลบแล้ว, พิกัดช่าง & ซิงค์แผนงาน PM แบบรักษา Priority
     // ========================================================================
     function isAutoGeneratedFakeClosure(rep) {
         if (!rep) return false;
@@ -748,8 +729,7 @@
                 JSON.parse(rawStorageGet(sk) || '[]').forEach(it => {
                     const jk = isF ? it?.timestamp : it?.dateTimeSaved;
                     if (!jk || !it?.reopenedAt) return;
-                    const rMs = new Date(it.reopenedAt).getTime() || 0;
-                    const repMs = new Date(it.techReport?.updatedAt || 0).getTime() || 0;
+                    const rMs = new Date(it.reopenedAt).getTime() || 0, repMs = new Date(it.techReport?.updatedAt || 0).getTime() || 0;
                     if (rMs > repMs) map.set(jk, rMs);
                 });
             });
@@ -772,50 +752,33 @@
     }
 
     function getClosedJobsRegistry() {
-        try {
-            const r1 = JSON.parse(rawStorageGet('elec_closed_jobs_registry') || '{}');
-            const r2 = JSON.parse(rawStorageGet('elec_closed_reports_map') || '{}');
-            return pruneClosedRegistryMap({ ...r1, ...r2 });
-        } catch (e) { return {}; }
+        try { return pruneClosedRegistryMap({ ...JSON.parse(rawStorageGet('elec_closed_jobs_registry') || '{}'), ...JSON.parse(rawStorageGet('elec_closed_reports_map') || '{}') }); }
+        catch (e) { return {}; }
     }
-
     function syncClosedRegistryObject(mapObj) {
         if (!mapObj || typeof mapObj !== 'object') return;
         localStorage.setItem('elec_closed_jobs_registry', JSON.stringify(pruneClosedRegistryMap(mapObj)));
         nativeRemoveItem.call(localStorage, 'elec_closed_reports_map');
     }
-
     function saveClosedJobToRegistry(jobKey, reportObj) {
         if (!jobKey) return;
         const reg = getClosedJobsRegistry();
-        reg[jobKey] = reportObj || {
-            status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)', realCause: '-', actionTaken: 'ปิดงานเรียบร้อย',
-            finishTime: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.',
-            inspector: formatTechDisplayName(rawStorageGet('elec_app_current_user') || 'ผู้ใช้งาน'),
-            updatedAt: new Date().toISOString()
-        };
+        reg[jobKey] = reportObj || { status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)', realCause: '-', actionTaken: 'ปิดงานเรียบร้อย', finishTime: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.', inspector: formatTechDisplayName(rawStorageGet('elec_app_current_user') || 'ผู้ใช้งาน'), updatedAt: new Date().toISOString() };
         syncClosedRegistryObject(reg);
     }
 
     function getDeletedJobsRegistry() {
-        try {
-            const raw = JSON.parse(rawStorageGet('elec_deleted_jobs_registry') || '{}'), now = Date.now();
-            return Object.fromEntries(Object.entries(raw).filter(([, ts]) => (now - Number(ts)) < MAX_REGISTRY_AGE_MS).slice(-300));
-        } catch (e) { return {}; }
+        try { return pruneDeletedJobsMap(JSON.parse(rawStorageGet('elec_deleted_jobs_registry') || '{}')); } catch (e) { return {}; }
     }
-
     function recordDeletedJobToRegistry(jobKey) {
         if (!jobKey) return;
         unlockCloudWrite(20000);
-        const reg = getDeletedJobsRegistry();
-        reg[jobKey] = Date.now();
+        const reg = getDeletedJobsRegistry(); reg[jobKey] = Date.now();
         localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(reg));
     }
-
     function syncDeletedRegistryObject(mergedObj) {
         if (!mergedObj || typeof mergedObj !== 'object') return;
-        const now = Date.now();
-        localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(Object.fromEntries(Object.entries(mergedObj).filter(([, ts]) => (now - Number(ts)) < MAX_REGISTRY_AGE_MS).slice(-300))));
+        localStorage.setItem('elec_deleted_jobs_registry', JSON.stringify(pruneDeletedJobsMap(mergedObj)));
     }
 
     function getTechLocationsMap() {
@@ -827,14 +790,36 @@
         const localMap = getTechLocationsMap();
         const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
         const gpsDisabledLocal = rawStorageGet('elec_tech_gps_enabled') === 'false' || isEmbeddedIframe || isViewerRole();
+        const nowMs = Date.now(), RECENT_PM_MS = 7 * 24 * 60 * 60 * 1000;
 
         Object.keys(cloudLocs).forEach(uKey => {
             const cItem = cloudLocs[uKey];
             if (!cItem || typeof cItem !== 'object') return;
-            if (gpsDisabledLocal && curUser && uKey !== REGISTRY_LOC_KEY && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) return;
+            if (uKey.startsWith(PM_LOC_PREFIX)) {
+                const lItem = localMap[uKey];
+                const mergedPlans = { ...(lItem?.pmPlansMap || {}) };
+                Object.entries(cItem.pmPlansMap || {}).forEach(([pid, pObj]) => {
+                    if (!pObj?.id) return;
+                    const exP = mergedPlans[pid];
+                    const cUpd = new Date(pObj.updatedAt || 0).getTime() || 0, lUpd = exP ? (new Date(exP.updatedAt || 0).getTime() || 0) : -1;
+                    if (!exP || cUpd > lUpd || (cUpd === lUpd && pObj.pmDeleted && !exP.pmDeleted)) mergedPlans[pid] = pObj;
+                });
+                const validEntries = Object.entries(mergedPlans).filter(([, p]) => p?.id && !(p.pmDeleted && (nowMs - (new Date(p.updatedAt || 0).getTime() || 0)) > MAX_REGISTRY_AGE_MS));
+                const recentTrans = validEntries.filter(([, p]) => (p.pmDeleted || p.status === 'done') && (nowMs - (new Date(p.updatedAt || 0).getTime() || 0)) <= RECENT_PM_MS)
+                    .sort((a, b) => (new Date(b[1]?.updatedAt || 0).getTime() || 0) - (new Date(a[1]?.updatedAt || 0).getTime() || 0)).slice(0, 15);
+                const rSet = new Set(recentTrans.map(([id]) => id));
+                const restEntries = validEntries.filter(([id]) => !rSet.has(id)).sort((a, b) => {
+                    const pa = a[1], pb = b[1], rk = x => (!x.pmDeleted && x.status !== 'done') ? 0 : (x.pmDeleted ? 1 : 2);
+                    return (rk(pa) - rk(pb)) || String(pa.date || '').localeCompare(String(pb.date || '')) || ((new Date(pb.updatedAt || 0).getTime() || 0) - (new Date(pa.updatedAt || 0).getTime() || 0));
+                });
+                const cT = new Date(cItem.updatedAt || cItem.lastSeenAt || 0).getTime() || 0, lT = new Date(lItem?.updatedAt || lItem?.lastSeenAt || 0).getTime() || 0;
+                const bestIso = (cT >= lT ? (cItem.updatedAt || cItem.lastSeenAt) : (lItem?.updatedAt || lItem?.lastSeenAt)) || new Date().toISOString();
+                localMap[uKey] = { ...(lItem || {}), ...cItem, pmPlansMap: Object.fromEntries([...recentTrans, ...restEntries].slice(0, 60)), lastSeenAt: bestIso, updatedAt: bestIso };
+                return;
+            }
+            if (gpsDisabledLocal && curUser && !isSystemLocRegistryKey(uKey, cItem) && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) return;
             const lItem = localMap[uKey];
-            const cTime = new Date(cItem.lastSeenAt || cItem.updatedAt || 0).getTime() || 0;
-            const lTime = new Date(lItem?.lastSeenAt || lItem?.updatedAt || 0).getTime() || 0;
+            const cTime = new Date(cItem.lastSeenAt || cItem.updatedAt || 0).getTime() || 0, lTime = new Date(lItem?.lastSeenAt || lItem?.updatedAt || 0).getTime() || 0;
             if (!lItem || cTime >= lTime) {
                 const exNavT = Number(lItem?.activeEquipNav?.departTimestamp || 0), inNavT = Number(cItem?.activeEquipNav?.departTimestamp || 0);
                 localMap[uKey] = (exNavT > inNavT && lItem?.activeEquipNav) ? { ...cItem, activeEquipNav: lItem.activeEquipNav } : cItem;
@@ -845,27 +830,21 @@
 
     function cleanReopenedAndCancelledJobsInStorage() {
         try {
-            const closedReg = getClosedJobsRegistry();
-            const cancelJobMap = JSON.parse(rawStorageGet('elec_cancelled_job_nav_map') || '{}');
+            const closedReg = getClosedJobsRegistry(), cancelJobMap = JSON.parse(rawStorageGet('elec_cancelled_job_nav_map') || '{}');
             let regChanged = false;
             ['elecReportsComplete_all', 'fault_reports_all'].forEach(sk => {
                 const isF = (sk === 'fault_reports_all'), list = JSON.parse(rawStorageGet(sk) || '[]');
                 let listChanged = false;
                 list.forEach(item => {
                     if (!item) return;
-                    const k = isF ? item.timestamp : item.dateTimeSaved;
-                    const cancelIso = (k && cancelJobMap[k]) ? cancelJobMap[k] : (item.navCancelledAt || '');
-                    if (cancelIso && item.techNav && (new Date(cancelIso).getTime() || 0) >= (new Date(item.techNav.updatedAt || 0).getTime() || 0)) {
-                        delete item.techNav; item.navCancelledAt = cancelIso; listChanged = true;
-                    }
+                    const k = isF ? item.timestamp : item.dateTimeSaved, cancelIso = (k && cancelJobMap[k]) ? cancelJobMap[k] : (item.navCancelledAt || '');
+                    if (cancelIso && item.techNav && (new Date(cancelIso).getTime() || 0) >= (new Date(item.techNav.updatedAt || 0).getTime() || 0)) { delete item.techNav; item.navCancelledAt = cancelIso; listChanged = true; }
                     if (!item.reopenedAt) return;
                     const rMs = new Date(item.reopenedAt).getTime() || 0;
                     if (item.techReport && rMs >= (new Date(item.techReport.updatedAt || 0).getTime() || 0)) { delete item.techReport; listChanged = true; }
                     if (!item.techReport) {
                         if (k && closedReg[k] && rMs >= (new Date(closedReg[k]?.updatedAt || 0).getTime() || 0)) { delete closedReg[k]; regChanged = true; }
-                        if (item.formattedText && item.formattedText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) {
-                            item.formattedText = item.formattedText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0]; listChanged = true;
-                        }
+                        if (item.formattedText && item.formattedText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) { item.formattedText = item.formattedText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0]; listChanged = true; }
                     }
                 });
                 if (listChanged) localStorage.setItem(sk, JSON.stringify(list));
@@ -873,11 +852,10 @@
             if (regChanged) syncClosedRegistryObject(closedReg);
         } catch (e) {}
     }
-    // ===== จบพาทที่ 2 / 4 ของไฟล์ shared-core.js (นำพาทที่ 3 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+    // ===== จบพาทที่ 2 / 4 ของไฟล์ shared-core.js =====
         // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 2 / 4) =====
-
     // ========================================================================
-    // 5. ท่อซิงค์เรียลไทม์ (Encrypted MQTT + BroadcastChannel) & แยกแคชรายกลุ่ม กฟส.
+    // 5. ท่อซิงค์เรียลไทม์ (MQTT Failover + Multi-Shard Admin + RAM Sync) & แยกแคชรายกลุ่ม
     // ========================================================================
     const WS_BROKERS = [
         'wss://broker.emqx.io:8084/mqtt',
@@ -886,7 +864,10 @@
     ];
     let mqttClient = null;
     let lastMqttAuthSig = '';
+    const activeSubscribedTopics = new Set();
     let brokerFallbackIdx = 0;
+    let consecutiveMqttErrors = 0;
+    let mqttFailoverTimer = null;
     const debounceMqttTimers = {};
     const realtimeSubscribers = new Set();
     let uiRefreshRaf = null;
@@ -935,17 +916,14 @@
     }
 
     function encryptMqttPayload(plainStr, ts) {
-        try {
-            const secret = getOrgSecretKey() + '#' + (ts % 9973);
-            return 'ENC1_' + btoa(xorCipherTransform(encodeURIComponent(plainStr), secret));
-        } catch (e) { return plainStr; }
+        try { return 'ENC1_' + btoa(xorCipherTransform(encodeURIComponent(plainStr), getOrgSecretKey() + '#' + (ts % 9973))); }
+        catch (e) { return plainStr; }
     }
 
     function decryptMqttPayload(cipherStr, ts) {
         try {
             if (!cipherStr || !cipherStr.startsWith('ENC1_')) return null;
-            const secret = getOrgSecretKey() + '#' + (ts % 9973);
-            return decodeURIComponent(xorCipherTransform(atob(cipherStr.slice(5)), secret));
+            return decodeURIComponent(xorCipherTransform(atob(cipherStr.slice(5)), getOrgSecretKey() + '#' + (ts % 9973)));
         } catch (e) { return null; }
     }
 
@@ -954,19 +932,12 @@
         const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
         if (!curUser) return usersArr;
         let localToken = rawStorageGet('elec_app_session_token') || '';
-        if (!localToken) {
-            localToken = 'sess_' + Date.now();
-            rawStorageSet('elec_app_session_token', localToken);
-        }
+        if (!localToken) { localToken = 'sess_' + Date.now(); rawStorageSet('elec_app_session_token', localToken); }
         usersArr.forEach(u => {
-            if (!u || !u.username) return;
-            if (isUsernameMatchingAccount(curUser, u.username)) {
-                u.sessionToken = localToken;
-                if (typeof u.role === 'string' && u.role.includes('::')) {
-                    const parts = u.role.split('::');
-                    parts[1] = localToken;
-                    u.role = parts.join('::');
-                }
+            if (!u?.username || !isUsernameMatchingAccount(curUser, u.username)) return;
+            u.sessionToken = localToken;
+            if (typeof u.role === 'string' && u.role.includes('::')) {
+                const parts = u.role.split('::'); parts[1] = localToken; u.role = parts.join('::');
             }
         });
         return usersArr;
@@ -979,8 +950,13 @@
             uiRefreshRaf = null;
             const keys = Array.from(pendingRefreshKeys);
             pendingRefreshKeys.clear();
+            if (keys.includes('elec_labeled_places_list')) refreshRamPinsIndex();
+            if (keys.includes('elec_deleted_labeled_places_map')) refreshRamDelPinsIndex();
+            if (keys.includes('elec_user_accounts')) cachedAccountsStr = '';
             realtimeSubscribers.forEach(fn => { try { fn(keys); } catch (e) {} });
-            keys.forEach(k => { try { window.dispatchEvent(new StorageEvent('storage', { key: k })); } catch (e) {} });
+            keys.forEach(k => {
+                try { window.dispatchEvent(new StorageEvent('storage', { key: k, newValue: rawStorageGet(k) })); } catch (e) {}
+            });
         });
     }
 
@@ -991,12 +967,12 @@
         try {
             const curStr = rawStorageGet(key);
             if (curStr === incomingValStr) return;
+            const isAdmin = (rawStorageGet('elec_app_current_role') || 'user') === 'admin';
+            const myGrp = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
 
             if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                const isFault = (key === 'fault_reports_all');
-                const kField = isFault ? 'timestamp' : 'dateTimeSaved';
-                const delReg = getDeletedJobsRegistry();
-                const closedReg = getClosedJobsRegistry();
+                const isFault = (key === 'fault_reports_all'), kField = isFault ? 'timestamp' : 'dateTimeSaved';
+                const delReg = getDeletedJobsRegistry(), closedReg = getClosedJobsRegistry();
                 const cancelJobMap = JSON.parse(rawStorageGet('elec_cancelled_job_nav_map') || '{}');
                 let closedChanged = false;
                 const map = new Map();
@@ -1009,30 +985,22 @@
                     if (inItem.techReport && isAutoGeneratedFakeClosure(inItem.techReport)) delete inItem.techReport;
                     inItem.ownerGroup = getJobGroupName(inItem);
                     if (!canCurrentUserSeeJob(inItem)) return;
-                    const id = inItem[kField];
-                    const ex = map.get(id);
+                    const id = inItem[kField], ex = map.get(id);
                     if (!ex) { map.set(id, inItem); return; }
 
-                    const bestRep = (inItem.techReport?.updatedAt || '') >= (ex.techReport?.updatedAt || '')
-                        ? (inItem.techReport || ex.techReport) : ex.techReport;
+                    const bestRep = (inItem.techReport?.updatedAt || '') >= (ex.techReport?.updatedAt || '') ? (inItem.techReport || ex.techReport) : ex.techReport;
                     const latestReopen = (inItem.reopenedAt || '') >= (ex.reopenedAt || '') ? inItem.reopenedAt : ex.reopenedAt;
                     const validRep = (latestReopen && (!bestRep?.updatedAt || latestReopen > bestRep.updatedAt)) ? undefined : bestRep;
-
-                    if (!validRep && latestReopen && closedReg[id] && latestReopen >= (closedReg[id]?.updatedAt || '')) {
-                        delete closedReg[id];
-                        closedChanged = true;
-                    }
+                    if (!validRep && latestReopen && closedReg[id] && latestReopen >= (closedReg[id]?.updatedAt || '')) { delete closedReg[id]; closedChanged = true; }
 
                     const cancelIso = cancelJobMap[id] || ((inItem.navCancelledAt || '') >= (ex.navCancelledAt || '') ? inItem.navCancelledAt : ex.navCancelledAt) || '';
                     let bestNav = (inItem.techNav?.updatedAt || '') >= (ex.techNav?.updatedAt || '') ? (inItem.techNav || ex.techNav) : ex.techNav;
-                    if ((validRep && String(validRep.status || '').includes('เสร็จสิ้น')) || (cancelIso && (!bestNav?.updatedAt || cancelIso >= bestNav.updatedAt))) {
-                        bestNav = undefined;
-                    }
+                    if ((validRep && String(validRep.status || '').includes('เสร็จสิ้น')) || (cancelIso && (!bestNav?.updatedAt || cancelIso >= bestNav.updatedAt))) bestNav = undefined;
+
                     const baseCore = (ex.editedAt || '') > (inItem.editedAt || '') ? { ...inItem, ...ex } : { ...ex, ...inItem };
                     let fmtText = baseCore.formattedText || '';
-                    if (!validRep && fmtText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) {
-                        fmtText = fmtText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
-                    }
+                    if (!validRep && fmtText.includes('--- 🛠️ ผลตรวจสอบหน้างาน ---')) fmtText = fmtText.split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+
                     const merged = { ...baseCore, formattedText: fmtText, ownerGroup: getJobGroupName(baseCore), techReport: validRep, reopenedAt: latestReopen || undefined, navCancelledAt: cancelIso || undefined };
                     if (!validRep) delete merged.techReport;
                     if (bestNav) merged.techNav = bestNav; else delete merged.techNav;
@@ -1040,19 +1008,17 @@
                 });
                 const sorted = Array.from(map.values()).sort((a, b) => parseJobTimeMs(b) - parseJobTimeMs(a));
                 localStorage.setItem(key, JSON.stringify(sorted.slice(0, 300)));
-                if (closedChanged) {
-                    syncClosedRegistryObject(closedReg);
-                    scheduleRealtimeRefresh('elec_closed_jobs_registry');
-                }
+                if (closedChanged) { syncClosedRegistryObject(closedReg); scheduleRealtimeRefresh('elec_closed_jobs_registry'); }
             } else if (key === 'elec_deleted_labeled_places_map') {
-                const mergedDel = { ...JSON.parse(curStr || '{}'), ...JSON.parse(incomingValStr || '{}') };
-                localStorage.setItem(key, JSON.stringify(mergedDel));
+                localStorage.setItem(key, JSON.stringify({ ...JSON.parse(curStr || '{}'), ...JSON.parse(incomingValStr || '{}') }));
                 scheduleRealtimeRefresh('elec_labeled_places_list');
             } else if (key === 'elec_labeled_places_list') {
                 const delEquip = JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}');
                 const pinMap = new Map();
                 [...JSON.parse(curStr || '[]'), ...JSON.parse(incomingValStr || '[]')].forEach(p => {
                     if (!p?.id) return;
+                    const pGrp = normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง';
+                    if (!isAdmin && pGrp !== myGrp) return;
                     const pMs = new Date(p.updatedAt || 0).getTime() || 0;
                     if (delEquip[p.id] && pMs <= (new Date(delEquip[p.id]).getTime() || 0)) return;
                     const ex = pinMap.get(p.id);
@@ -1061,7 +1027,9 @@
                 localStorage.setItem(key, JSON.stringify(Array.from(pinMap.values())));
             } else if (key === 'elec_deleted_equip_audit_logs') {
                 const logMap = new Map();
-                [...JSON.parse(curStr || '[]'), ...JSON.parse(incomingValStr || '[]')].forEach(l => { if (l?.logId) logMap.set(l.logId, l); });
+                [...JSON.parse(curStr || '[]'), ...JSON.parse(incomingValStr || '[]')].forEach(l => {
+                    if (l?.logId && (isAdmin || normalizePeaGroupName(l.ownerGroup || 'กฟส.บึง') === myGrp)) logMap.set(l.logId, l);
+                });
                 localStorage.setItem(key, JSON.stringify(Array.from(logMap.values())));
             } else if (key === 'elec_tech_locations_map') {
                 mergeTechLocationsMap(JSON.parse(incomingValStr || '{}'));
@@ -1075,7 +1043,11 @@
             } else {
                 localStorage.setItem(key, incomingValStr);
             }
-            scheduleRealtimeRefresh(key);
+
+            if (rawStorageGet(key) !== curStr) {
+                invalidateSheetCaches();
+                scheduleRealtimeRefresh(key);
+            }
         } catch (e) {} finally { isApplyingRemotePacket = false; }
     }
 
@@ -1089,10 +1061,25 @@
         const shard = getMyGroupShard(), base = getMqttTopicBase(), sig = `${role}::${shard}::${base}`;
         if (sig === lastMqttAuthSig) return;
         lastMqttAuthSig = sig;
+
+        const desired = new Set();
+        if (isLogged) {
+            desired.add(`${base}/global/+`);
+            desired.add(role === 'admin' ? `${base}/grp/+/+` : `${base}/grp/${shard}/+`);
+        }
+        const toUnsub = Array.from(activeSubscribedTopics).filter(t => !desired.has(t));
+        const toSub = Array.from(desired).filter(t => !activeSubscribedTopics.has(t));
         try {
-            if (role === 'admin') mqttClient.subscribe([`${base}/grp/+/+`, `${base}/global/+`], { qos: 0 });
-            else mqttClient.unsubscribe(`${base}/grp/+/+`, () => { if (isLogged) mqttClient.subscribe([`${base}/grp/${shard}/+`, `${base}/global/+`], { qos: 0 }); });
+            if (toUnsub.length > 0) mqttClient.unsubscribe(toUnsub, () => toUnsub.forEach(t => activeSubscribedTopics.delete(t)));
+            if (toSub.length > 0) mqttClient.subscribe(toSub, { qos: 0 }, (err) => { if (!err) toSub.forEach(t => activeSubscribedTopics.add(t)); });
         } catch (e) {}
+    }
+
+    function triggerMqttBrokerFailover() {
+        if (mqttFailoverTimer) return;
+        brokerFallbackIdx++;
+        consecutiveMqttErrors = 0;
+        mqttFailoverTimer = setTimeout(() => { mqttFailoverTimer = null; initMqttTransport(); }, 1800);
     }
 
     function initMqttTransport() {
@@ -1104,16 +1091,18 @@
             }
             return;
         }
-        if (mqttClient) { try { mqttClient.end(true); } catch (e) {} }
+        if (mqttClient) { try { mqttClient.removeAllListeners(); mqttClient.end(true); } catch (e) {} mqttClient = null; }
+        activeSubscribedTopics.clear(); lastMqttAuthSig = '';
         const brokerUrl = WS_BROKERS[(hashString(getMyGroupShard()) + brokerFallbackIdx) % WS_BROKERS.length];
-        const opts = { clientId: MY_PEER_ID, clean: true, connectTimeout: 4500, reconnectPeriod: 3500 };
+        const opts = { clientId: MY_PEER_ID + '_' + (brokerFallbackIdx % 99), clean: true, connectTimeout: 5000, reconnectPeriod: 3500 };
         const mUser = rawStorageGet('elec_mqtt_username'), mPass = rawStorageGet('elec_mqtt_password');
         if (mUser && mPass) { opts.username = mUser; opts.password = mPass; }
 
         try {
             mqttClient = mqtt.connect(brokerUrl, opts);
-            mqttClient.on('connect', () => { lastMqttAuthSig = ''; refreshMqttSubscriptions(); });
-            mqttClient.on('error', () => { brokerFallbackIdx++; });
+            mqttClient.on('connect', () => { consecutiveMqttErrors = 0; lastMqttAuthSig = ''; refreshMqttSubscriptions(); });
+            mqttClient.on('error', () => { if (++consecutiveMqttErrors >= 2) triggerMqttBrokerFailover(); });
+            mqttClient.on('close', () => { if (!navigator.onLine) return; if (++consecutiveMqttErrors >= 3) triggerMqttBrokerFailover(); });
             mqttClient.on('message', (topic, buf) => {
                 try {
                     const pkt = JSON.parse((buf && typeof buf.toString === 'function') ? buf.toString() : String(buf || ''));
@@ -1128,24 +1117,47 @@
     }
     setInterval(() => { if (mqttClient && mqttClient.connected) refreshMqttSubscriptions(); }, 6000);
 
+    function publishSingleShardDelta(shardEnc, key, payloadStr) {
+        const maxLen = (key === 'elec_labeled_places_list' || key === 'elec_tech_locations_map') ? 240000 : 95000;
+        if (!payloadStr || payloadStr.length >= maxLen) return;
+        const ts = Date.now(), sig = computePacketSignature(payloadStr, ts, getOrgSecretKey());
+        mqttClient.publish(`${getMqttTopicBase()}/grp/${shardEnc}/${key}`, JSON.stringify({ type: 'DELTA_KEY', sender: MY_PEER_ID, key, val: encryptMqttPayload(payloadStr, ts), ts, sig }), { qos: 0, retain: false });
+    }
+
     function broadcastDeltaOverMqtt(key, valStr) {
         if (!SYNC_KEYS.has(key) || simSandbox.active) return;
         clearTimeout(debounceMqttTimers[key]);
         debounceMqttTimers[key] = setTimeout(() => {
             try {
                 if (!mqttClient || !mqttClient.connected) return;
-                const shard = getMyGroupShard(), myGrp = normalizePeaGroupName(decodeURIComponent(shard));
-                let payloadStr = valStr;
+                const isAdmin = (rawStorageGet('elec_app_current_role') || 'user') === 'admin';
+                const defaultShard = getMyGroupShard(), myGrp = normalizePeaGroupName(decodeURIComponent(defaultShard)) || 'กฟส.บึง';
+
                 if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                    payloadStr = JSON.stringify(JSON.parse(valStr || '[]').filter(i => normalizePeaGroupName(getJobGroupName(i)) === myGrp).slice(0, 35));
+                    const arr = JSON.parse(valStr || '[]');
+                    const groups = isAdmin ? Array.from(new Set(arr.map(i => normalizePeaGroupName(getJobGroupName(i))).filter(Boolean))) : [myGrp];
+                    groups.forEach(g => publishSingleShardDelta(encodeURIComponent(g), key, JSON.stringify(arr.filter(i => normalizePeaGroupName(getJobGroupName(i)) === g).slice(0, 35))));
                 } else if (key === 'elec_labeled_places_list') {
-                    payloadStr = JSON.stringify(JSON.parse(valStr || '[]').filter(p => normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') === myGrp));
+                    const arr = JSON.parse(valStr || '[]');
+                    const groups = isAdmin ? Array.from(new Set(arr.map(p => normalizePeaGroupName(p?.ownerGroup || 'กฟส.บึง')).filter(Boolean))) : [myGrp];
+                    groups.forEach(g => publishSingleShardDelta(encodeURIComponent(g), key, JSON.stringify(arr.filter(p => normalizePeaGroupName(p?.ownerGroup || 'กฟส.บึง') === g))));
+                } else if (key === 'elec_tech_locations_map') {
+                    const locObj = JSON.parse(valStr || '{}');
+                    const groups = isAdmin
+                        ? Array.from(new Set([myGrp, ...Object.keys(locObj).map(k => k.startsWith(PM_LOC_PREFIX) ? normalizePeaGroupName(k.slice(PM_LOC_PREFIX.length)) : normalizePeaGroupName(locObj[k]?.group || '')).filter(Boolean)]))
+                        : [myGrp];
+                    groups.forEach(g => {
+                        const sub = {};
+                        Object.entries(locObj).forEach(([k, v]) => {
+                            if (k === REGISTRY_LOC_KEY || k === PM_LOC_PREFIX + g || (!isSystemLocRegistryKey(k, v) && normalizePeaGroupName(v?.group || getUserGroupName(k) || g) === g)) sub[k] = v;
+                        });
+                        publishSingleShardDelta(encodeURIComponent(g), key, JSON.stringify(sub));
+                    });
+                } else {
+                    publishSingleShardDelta(defaultShard, key, valStr);
                 }
-                if (payloadStr.length >= (key === 'elec_labeled_places_list' ? 250000 : 65000)) return;
-                const ts = Date.now(), sig = computePacketSignature(payloadStr, ts, getOrgSecretKey());
-                mqttClient.publish(`${getMqttTopicBase()}/grp/${shard}/${key}`, JSON.stringify({ type: 'DELTA_KEY', sender: MY_PEER_ID, key, val: encryptMqttPayload(payloadStr, ts), ts, sig }), { qos: 0, retain: false });
             } catch (e) {}
-        }, 25);
+        }, 30);
     }
 
     let localChannel = null;
@@ -1169,7 +1181,6 @@
         const grp = role === 'admin' ? 'ADMIN_ALL' : (normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง');
         return `SHEET::${grp}::${role}::${cleanBase}`;
     }
-
     function readSheetCacheBucket(bucketKey) {
         const mem = sheetMemoryCacheMap.get(bucketKey);
         if (mem?.text) return mem;
@@ -1179,7 +1190,6 @@
         } catch (e) {}
         return null;
     }
-
     function writeSheetCacheBucket(bucketKey, text) {
         const entry = { ts: Date.now(), text };
         sheetMemoryCacheMap.set(bucketKey, entry);
@@ -1189,7 +1199,6 @@
             rawStorageSet(SHEET_CACHE_STORAGE_KEY, JSON.stringify(Object.fromEntries(Object.entries(all).sort((a, b) => (b[1]?.ts || 0) - (a[1]?.ts || 0)).slice(0, 3))));
         } catch (e) {}
     }
-
     function invalidateSheetCaches() {
         sheetMemoryCacheMap.clear();
         nativeRemoveItem.call(localStorage, 'elec_sheet_cache_2k');
@@ -1229,10 +1238,10 @@
         jobsArr.forEach(j => {
             if (!j || typeof j !== 'object') return;
             if (j.jobType === 'tech_loc') {
-                if (j.cloudGroupBackups) lastBackupsHash = JSON.stringify(j.cloudGroupBackups);
-                if (j.electricEquipmentPins) lastPinsHash = JSON.stringify(j.electricEquipmentPins);
-                if (j.deletedElectricEquipmentMap) lastDelPinsHash = JSON.stringify(j.deletedElectricEquipmentMap);
-                if (j.deletedEquipAuditLogs) lastAuditLogsHash = JSON.stringify(j.deletedEquipAuditLogs);
+                lastBackupsHash = JSON.stringify(j.cloudGroupBackups || {});
+                lastPinsHash = JSON.stringify(j.electricEquipmentPins || []);
+                lastDelPinsHash = JSON.stringify(j.deletedElectricEquipmentMap || {});
+                lastAuditLogsHash = JSON.stringify(j.deletedEquipAuditLogs || []);
             } else {
                 const k = getJobDiffKey(j);
                 if (k) { seen.add(k); syncedJobHashes.set(k, JSON.stringify(j)); }
@@ -1254,24 +1263,31 @@
         let auditLogs = trimAuditLogsForSheetQuota(JSON.parse(rawStorageGet('elec_deleted_equip_audit_logs') || '[]'));
         const clearedTs = parseInt(rawStorageGet('elec_cleared_audit_logs_ts') || '0', 10);
         const overrides = window.cloudEditedJobsOverrideMap || {};
+        const latestLocalLocs = getTechLocationsMap();
 
         if (role !== 'admin' && myGrp) {
             localPins = localPins.filter(p => p && normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') === myGrp);
             auditLogs = auditLogs.filter(l => l && normalizePeaGroupName(l.ownerGroup || 'กฟส.บึง') === myGrp);
         }
 
-        return jobsArr.filter(j => {
+        const list = [...jobsArr];
+        if (!list.some(j => j && j.jobType === 'tech_loc')) {
+            list.push({ id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: latestLocalLocs, updatedAt: new Date().toISOString() });
+        }
+
+        return list.filter(j => {
             if (!j) return false;
             if (j.jobType === 'tech_loc') return true;
             const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
             return !(rk && delJobs[rk]);
         }).map(j => {
             if (j.jobType === 'tech_loc') {
+                const mergedLocMap = pruneTechLocationsForSheetQuota({ ...(j.techLocations || {}), ...latestLocalLocs });
                 const mergedDelPins = { ...(j.deletedElectricEquipmentMap || {}), ...localDelPins };
                 const prevCloudPins = Array.isArray(j.electricEquipmentPins) ? j.electricEquipmentPins : [];
                 const pinMap = new Map();
                 [...prevCloudPins, ...localPins].forEach(p => {
-                    if (!p || !p.id) return;
+                    if (!p?.id) return;
                     const pMs = new Date(p.updatedAt || 0).getTime() || 0;
                     if (mergedDelPins[p.id]) {
                         if (pMs > (new Date(mergedDelPins[p.id]).getTime() || 0)) delete mergedDelPins[p.id];
@@ -1280,7 +1296,7 @@
                     const ex = pinMap.get(p.id);
                     if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) pinMap.set(p.id, p);
                 });
-                                    const effClearedTs = Math.max(clearedTs, Number(j.clearedAuditLogsTimestamp || 0));
+                const effClearedTs = Math.max(clearedTs, Number(j.clearedAuditLogsTimestamp || 0));
                 const restoredIds = new Set(JSON.parse(rawStorageGet('elec_restored_audit_log_ids') || '[]'));
                 const auditMap = new Map();
                 [...(Array.isArray(j.deletedEquipAuditLogs) ? j.deletedEquipAuditLogs : []), ...auditLogs].forEach(l => {
@@ -1288,19 +1304,13 @@
                     if (effClearedTs > 0 && (new Date(l.deletedAt || 0).getTime() || 0) <= effClearedTs) return;
                     auditMap.set(l.logId, l);
                 });
-                const mergedAuditLogs = trimAuditLogsForSheetQuota(
-                    Array.from(auditMap.values()).sort((a, b) => (new Date(b.deletedAt || 0).getTime() || 0) - (new Date(a.deletedAt || 0).getTime() || 0))
-                );
-                const cleanLoc = { ...j };
-                delete cleanLoc.closedReports;
+                const mergedAuditLogs = trimAuditLogsForSheetQuota(Array.from(auditMap.values()).sort((a, b) => (new Date(b.deletedAt || 0).getTime() || 0) - (new Date(a.deletedAt || 0).getTime() || 0)));
+                const cleanLoc = { ...j }; delete cleanLoc.closedReports;
                 return {
-                    ...cleanLoc,
-                    closedJobsMap: getClosedJobsRegistry(),
-                    deletedJobsMap: delJobs,
-                    electricEquipmentPins: Array.from(pinMap.values()),
-                    deletedElectricEquipmentMap: mergedDelPins,
-                                        deletedEquipAuditLogs: mergedAuditLogs,
-                    clearedAuditLogsTimestamp: effClearedTs,
+                    ...cleanLoc, dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: mergedLocMap,
+                    closedJobsMap: getClosedJobsRegistry(), deletedJobsMap: delJobs,
+                    electricEquipmentPins: Array.from(pinMap.values()), deletedElectricEquipmentMap: mergedDelPins,
+                    deletedEquipAuditLogs: mergedAuditLogs, clearedAuditLogsTimestamp: effClearedTs,
                     ...(Object.keys(backups).length > 0 ? { cloudGroupBackups: backups } : {})
                 };
             }
@@ -1309,8 +1319,38 @@
             return overrides[uKey] ? { ...j, ...overrides[uKey], ownerGroup: normGrp } : { ...j, ownerGroup: normGrp };
         });
     }
-    // ===== จบพาทที่ 3 / 4 ของไฟล์ shared-core.js (นำพาทที่ 4 / 4 มาวางต่อจากบรรทัดนี้ได้เลยครับ) =====
+    // ===== จบพาทที่ 3 / 4 ของไฟล์ shared-core.js =====
         // ===== เริ่มพาทที่ 4 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 3 / 4 จนจบไฟล์) =====
+    function sanitizeDirectPatchDeltaPayload(deltaObj) {
+        const out = { ...deltaObj, action: 'patchDelta', ramOnly: Boolean(deltaObj.ramOnly) };
+        if (!Array.isArray(out.upsertedJobs)) out.upsertedJobs = [];
+        if (!Array.isArray(out.removedJobKeys)) out.removedJobKeys = [];
+        if (out.techLocDelta && typeof out.techLocDelta === 'object') {
+            const td = { ...out.techLocDelta };
+            td.jobType = 'tech_loc';
+            td.dateTimeSaved = 'TECH_LOC_REGISTRY';
+            td.techLocations = pruneTechLocationsForSheetQuota({ ...getTechLocationsMap(), ...(td.techLocations || {}) });
+            if (!td.closedJobsMap) td.closedJobsMap = getClosedJobsRegistry();
+            if (!td.deletedJobsMap) td.deletedJobsMap = getDeletedJobsRegistry();
+            if (td._keepBackups === undefined) td._keepBackups = td.cloudGroupBackups === undefined;
+            if (td._keepPins === undefined) td._keepPins = td.electricEquipmentPins === undefined;
+            if (td._keepDelPins === undefined) td._keepDelPins = td.deletedElectricEquipmentMap === undefined;
+            if (td._keepAuditLogs === undefined) td._keepAuditLogs = td.deletedEquipAuditLogs === undefined;
+            td.updatedAt = td.updatedAt || new Date().toISOString();
+            out.techLocDelta = td;
+        }
+        return out;
+    }
+
+    function buildFullSavePayloadFromLocalStorage() {
+        const outages = JSON.parse(rawStorageGet('elecReportsComplete_all') || '[]').map(o => ({ ...o, jobType: 'outage' }));
+        const faults = JSON.parse(rawStorageGet('fault_reports_all') || '[]').map(f => ({ ...f, jobType: 'fault' }));
+        const locReg = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: getTechLocationsMap(), updatedAt: new Date().toISOString() };
+        simSandbox.bypassRead = true;
+        try { return { action: 'saveJobs', jobs: prepareJobsArrayForCloud([...outages, ...faults, locReg]) }; }
+        finally { simSandbox.bypassRead = false; }
+    }
+
     function buildDeltaFromSaveJobs(fullJobs) {
         if (!hasFirstBaseline || !Array.isArray(fullJobs)) return null;
         const upsertedJobs = [], currentKeys = new Set(); let techLoc = null;
@@ -1344,6 +1384,16 @@
         return { action: 'patchDelta', ramOnly: false, upsertedJobs, removedJobKeys, techLocDelta };
     }
 
+    function enqueueCloudPostTask(urlStr, initObj, rawBodyStr, resolveFn) {
+        if (pendingPostTask && pendingPostTask.isFullSave && rawBodyStr.includes('"patchDelta"')) {
+            pendingPostWaiters.push(resolveFn);
+            return;
+        }
+        pendingPostTask = { url: urlStr, init: { ...initObj }, bodyStr: rawBodyStr, isFullSave: rawBodyStr.includes('"saveJobs"') };
+        pendingPostWaiters.push(resolveFn);
+        setTimeout(runPostQueueWorker, 10);
+    }
+
     async function runPostQueueWorker() {
         if (isPostWorkerRunning) return;
         isPostWorkerRunning = true;
@@ -1352,30 +1402,39 @@
                 const task = pendingPostTask, waiters = pendingPostWaiters.splice(0);
                 pendingPostTask = null; let ok = false;
                 try {
-                    let bodyStr = task.bodyStr; const origObj = JSON.parse(bodyStr);
+                    let bodyStr = task.bodyStr;
+                    let origObj = JSON.parse(bodyStr);
                     if (origObj?.action === 'saveJobs' && Array.isArray(origObj.jobs)) {
                         simSandbox.bypassRead = true;
                         try { origObj.jobs = prepareJobsArrayForCloud(origObj.jobs); } finally { simSandbox.bypassRead = false; }
                         bodyStr = JSON.stringify(buildDeltaFromSaveJobs(origObj.jobs) || origObj);
+                    } else if (origObj?.action === 'patchDelta') {
+                        origObj = sanitizeDirectPatchDeltaPayload(origObj);
+                        bodyStr = JSON.stringify(origObj);
                     }
                     const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 25000);
                     try {
                         const res = await nativeFetch.call(window, task.url, { ...task.init, body: bodyStr, signal: ctrl.signal });
                         if (res && res.ok) {
                             let rJson = await res.clone().json().catch(() => ({}));
-                            if (rJson?.requireFullSync && origObj?.action === 'saveJobs') {
-                                const fullRes = await nativeFetch.call(window, task.url, { ...task.init, body: JSON.stringify(origObj), signal: ctrl.signal });
-                                if (fullRes && fullRes.ok) rJson = await fullRes.clone().json().catch(() => ({ status: 'ok' }));
+                            if (rJson?.requireFullSync) {
+                                const fullPayload = (origObj?.action === 'saveJobs' && Array.isArray(origObj.jobs)) ? origObj : buildFullSavePayloadFromLocalStorage();
+                                const fullRes = await nativeFetch.call(window, task.url, { ...task.init, body: JSON.stringify(fullPayload), signal: ctrl.signal });
+                                if (fullRes && fullRes.ok) {
+                                    rJson = await fullRes.clone().json().catch(() => ({ status: 'ok' }));
+                                    if (Array.isArray(fullPayload.jobs)) origObj = fullPayload;
+                                }
                             }
-                            if (!rJson?.status || rJson.status === 'ok') {
-                                ok = true; if (Array.isArray(origObj?.jobs)) recordCloudBaseline(origObj.jobs);
+                            if ((!rJson?.status || rJson.status === 'ok') && rJson?.ok !== false) {
+                                ok = true;
+                                if (Array.isArray(origObj?.jobs)) recordCloudBaseline(origObj.jobs);
                                 invalidateSheetCaches(); nativeRemoveItem.call(localStorage, 'elec_tech_has_pending_push');
                             }
                         }
                     } finally { clearTimeout(tm); }
                 } catch (err) { ok = false; }
                 if (!ok) rawStorageSet('elec_tech_has_pending_push', 'true');
-                const respBody = JSON.stringify(ok ? { status: 'ok', synced: true } : { status: 'error' });
+                const respBody = JSON.stringify(ok ? { status: 'ok', ok: true, synced: true } : { status: 'error', ok: false });
                 waiters.forEach(resolve => resolve(new Response(respBody, { status: 200, headers: { 'Content-Type': 'application/json' } })));
             }
         } finally { isPostWorkerRunning = false; }
@@ -1389,7 +1448,10 @@
 
     window.fetch = async function (input, init) {
         let urlStr = typeof input === 'string' ? input : (input?.url || '');
-        if (urlStr.includes('generativelanguage.googleapis.com')) input = urlStr = urlStr.replace('models/gemini-3.8-flash-preview:', 'models/gemini-2.5-flash:').replace('models/gemini-3.8-flash:', 'models/gemini-2.5-flash:');
+        if (urlStr.includes('generativelanguage.googleapis.com')) {
+            const fixedGeminiUrl = urlStr.replace('models/gemini-3.8-flash-preview:', 'models/gemini-2.5-flash:').replace('models/gemini-3.8-flash:', 'models/gemini-2.5-flash:');
+            return nativeFetch.call(this, fixedGeminiUrl, init);
+        }
         if (!urlStr.includes('script.google.com')) return nativeFetch.apply(this, arguments);
         if (!urlStr.includes('group=')) urlStr += `${urlStr.includes('?') ? '&' : '?'}group=${encodeURIComponent(getCurrentUserGroup())}&role=${encodeURIComponent(rawStorageGet('elec_app_current_role') || 'user')}`;
         const method = (init?.method || 'GET').toUpperCase(), now = Date.now();
@@ -1422,8 +1484,12 @@
                 invalidateSheetCaches(); return nativeFetch.call(window, urlStr, init);
             }
             if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
-                if (isViewerRole() || now > allowWriteUntilMs) return new Response(JSON.stringify({ status: 'ok', skippedQuota: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-                return new Promise((resolve) => { pendingPostTask = { url: urlStr, init: { ...init }, bodyStr: init.body }; pendingPostWaiters.push(resolve); setTimeout(runPostQueueWorker, 10); });
+                const hasPendingRetry = rawStorageGet('elec_tech_has_pending_push') === 'true';
+                const isDirectPmDelta = init.body.includes(PM_LOC_PREFIX) && init.body.includes('"patchDelta"');
+                if (isViewerRole() || (now > allowWriteUntilMs && !hasPendingRetry && !isDirectPmDelta)) {
+                    return new Response(JSON.stringify({ status: 'skipped_quota', ok: false, skippedQuota: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+                }
+                return new Promise((resolve) => enqueueCloudPostTask(urlStr, init, init.body, resolve));
             }
         }
         return nativeFetch.call(window, urlStr, init);
@@ -1459,7 +1525,9 @@
         ramIndex.pinsRaw = null; refreshRamPinsIndex();
     }
 
-    // 6. ยืนยันตัวตนหลังบ้าน, Inactivity, Online Presence, ShortLink & PWA
+    // ========================================================================
+    // 6. ยืนยันตัวตน, ตัดเซสชัน 1 ชม. แม่นยำ, Online Presence, ShortLink & PWA Push
+    // ========================================================================
     async function verifyLoginOnServer(username, password) {
         unlockCloudWrite(20000); forceCloudRead();
         const newSessionToken = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
@@ -1483,7 +1551,10 @@
             if (grp) rawStorageSet(LAST_GROUP_SESSION_KEY, grp);
             rawStorageSet('elec_app_logged_in', 'true'); rawStorageSet('elec_app_current_user', fullUser); rawStorageSet('elec_app_current_group', grp);
             rawStorageSet('elec_app_current_role', role); rawStorageSet('elec_app_session_token', data.user.sessionToken || newSessionToken); rawStorageSet('elec_app_last_active', String(Date.now()));
-            invalidateSheetCaches(); hasFirstBaseline = false; syncedJobHashes.clear(); refreshMqttSubscriptions();
+            ramIndex.pinsRaw = null; ramIndex.delPinsRaw = null; refreshRamDelPinsIndex(); refreshRamPinsIndex();
+            invalidateSheetCaches(); hasFirstBaseline = false; syncedJobHashes.clear();
+            lastBackupsHash = ''; lastPinsHash = ''; lastDelPinsHash = ''; lastAuditLogsHash = '';
+            refreshMqttSubscriptions();
         }
         return data;
     }
@@ -1491,38 +1562,54 @@
         const res = await fetch(CLOUD_USER_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'verifyUserPassword', username: usernameOpt || rawStorageGet('elec_app_current_user') || '', password }) });
         const data = await res.json(); return Boolean(data?.status === 'ok' && data.verified);
     }
+
     function updateUserOnlineHeartbeat(pageLabel = '📱 หน้าช่าง', coords = null, gpsEnabled = true) {
         if (rawStorageGet('elec_app_logged_in') !== 'true') return;
         const curUser = (rawStorageGet('elec_app_current_user') || '').trim(); if (!curUser) return;
         const curRole = rawStorageGet('elec_app_current_role') || 'user', nowIso = new Date().toISOString(), locMap = getTechLocationsMap(), existing = locMap[curUser] || {};
-        Object.keys(locMap).forEach(k => { if (k !== curUser && k !== REGISTRY_LOC_KEY && isSameTechPerson(k, curUser)) delete locMap[k]; });
+        Object.keys(locMap).forEach(k => { if (k !== curUser && !isSystemLocRegistryKey(k, locMap[k]) && isSameTechPerson(k, curUser)) delete locMap[k]; });
         const allowGps = gpsEnabled && !isEmbeddedIframe && curRole !== 'viewer' && curRole !== 'admin';
         locMap[curUser] = { ...existing, username: curUser, role: curRole, group: getCurrentUserGroup(), lat: allowGps ? (coords?.lat ?? existing.lat ?? null) : null, lon: allowGps ? (coords?.lon ?? existing.lon ?? null) : null, gpsDisabled: !allowGps, currentPage: isEmbeddedIframe ? '💻 หน้าหลัก (เปิดคู่หน้าช่าง)' : pageLabel, isOnline: true, lastSeenAt: nowIso, updatedAt: nowIso };
         localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
     }
+
     function getAccountsOnlineStatusList(localPageLabel = '📱 หน้าช่าง', hasLocalGps = false) {
         const curUser = (rawStorageGet('elec_app_current_user') || '').trim(), locMap = getTechLocationsMap(), now = Date.now();
         return getParsedUserAccounts().map(acc => {
             let matchedLoc = null, bestMs = -1;
-            Object.keys(locMap).forEach(k => { if (k === REGISTRY_LOC_KEY) return; const c = locMap[k]; if (c && (isSameTechPerson(k, acc.username) || isSameTechPerson(c.username, acc.username))) { const tMs = new Date(c.lastSeenAt || c.updatedAt || 0).getTime() || 0; if (tMs > bestMs) { bestMs = tMs; matchedLoc = c; } } });
+            Object.keys(locMap).forEach(k => {
+                const c = locMap[k];
+                if (!c || isSystemLocRegistryKey(k, c)) return;
+                if (isSameTechPerson(k, acc.username) || isSameTechPerson(c.username, acc.username)) {
+                    const tMs = new Date(c.lastSeenAt || c.updatedAt || 0).getTime() || 0;
+                    if (tMs > bestMs) { bestMs = tMs; matchedLoc = c; }
+                }
+            });
             const isMe = isSameTechPerson(curUser, acc.username), lastSeenMs = bestMs > 0 ? bestMs : 0, diffMs = now - lastSeenMs;
             const isOnline = isMe || Boolean(matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
             return { username: acc.username, displayName: formatTechDisplayName(acc.username), role: acc.role || 'user', isOnline, isMe, lastSeenMs, diffMs, currentPage: isMe ? localPageLabel : (matchedLoc?.currentPage || (acc.role === 'tech' ? '📱 หน้าช่าง' : '💻 หน้าหลัก')), hasGps: isMe ? Boolean(hasLocalGps) : Boolean(matchedLoc && !matchedLoc.gpsDisabled && matchedLoc.lat && matchedLoc.lon) };
         }).sort((a, b) => (a.isOnline !== b.isOnline ? (a.isOnline ? -1 : 1) : (b.lastSeenMs || 0) - (a.lastSeenMs || 0)));
     }
+
     let lastActivityTouchMs = 0;
-    function touchSessionActivity() {
-        const now = Date.now(); if (now - lastActivityTouchMs < 4000 || rawStorageGet('elec_app_logged_in') !== 'true') return;
-        lastActivityTouchMs = now; const last = parseInt(rawStorageGet('elec_app_last_active') || '0', 10);
+    function checkSessionInactivity(markActiveNow = true) {
+        if (rawStorageGet('elec_app_logged_in') !== 'true') return false;
+        const now = Date.now(), last = parseInt(rawStorageGet('elec_app_last_active') || '0', 10);
         if (last > 0 && (now - last > INACTIVITY_TIMEOUT_MS)) {
             if (typeof window.triggerAutoLogout === 'function') window.triggerAutoLogout();
             else if (typeof window.handleTechLogout === 'function') { window.handleTechLogout(); showCustomAlert('⏳ ระบบได้ออกจากระบบอัตโนมัติ เนื่องจากไม่มีการใช้งานเกิน 1 ชั่วโมง', '🔒 หมดเวลาการเชื่อมต่อ'); }
-            return;
+            return true;
         }
-        rawStorageSet('elec_app_last_active', String(now));
+        if (markActiveNow && (now - lastActivityTouchMs >= 4000 || last === 0)) {
+            lastActivityTouchMs = now;
+            rawStorageSet('elec_app_last_active', String(now));
+        }
+        return false;
     }
-    ['mousedown', 'keydown', 'touchstart', 'click'].forEach(ev => window.addEventListener(ev, touchSessionActivity, { passive: true }));
-    window.addEventListener('focus', () => { if (rawStorageGet('elec_app_logged_in') === 'true') rawStorageSet('elec_app_last_active', String(Date.now())); });
+    ['mousedown', 'keydown', 'touchstart', 'click'].forEach(ev => window.addEventListener(ev, () => checkSessionInactivity(true), { passive: true }));
+    window.addEventListener('focus', () => checkSessionInactivity(true));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSessionInactivity(false); });
+    setInterval(() => checkSessionInactivity(false), 30000);
 
     function calcHaversineKm(lat1, lon1, lat2, lon2) {
         const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
@@ -1553,7 +1640,10 @@
         const mLL = s.match(/Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i); if (mLL) return { lat: parseFloat(mLL[1]).toFixed(6), lon: parseFloat(mLL[2]).toFixed(6) };
         const mFt = s.match(/(?:!1s|ftid=|\b)0x([0-9a-f]{16}):0x[0-9a-f]{8,16}/i); if (mFt) { const s2 = decodeS2CellIdToLatLon(mFt[1]); if (s2) return s2; }
         const mNl = s.match(/\[null\s*,\s*null\s*,\s*([5-9]\.\d{4,}|1\d\.\d{4,}|20\.\d{4,})\s*,\s*(9[7-9]\.\d{4,}|10[0-6]\.\d{4,})\]/); if (mNl) return { lat: parseFloat(mNl[1]).toFixed(6), lon: parseFloat(mNl[2]).toFixed(6) };
-        if (!isHtmlBody && s.length < 400) { const mP = s.match(/(-?\d{1,2}\.\d{3,})\s*,\s*\+?(-?\d{2,3}\.\d{3,})/); if (mP) { const a = parseFloat(mP[1]), b = parseFloat(mP[2]); return (a >= 95 && a <= 108 && b >= 4 && b <= 23) ? { lat: b.toFixed(6), lon: a.toFixed(6) } : { lat: a.toFixed(6), lon: b.toFixed(6) }; } }
+        if (!isHtmlBody && s.length < 400) {
+            const mP = s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+            if (mP) { const a = parseFloat(mP[1]), b = parseFloat(mP[2]); return (a >= 95 && a <= 108 && b >= 4 && b <= 23) ? { lat: b.toFixed(6), lon: a.toFixed(6) } : { lat: a.toFixed(6), lon: b.toFixed(6) }; }
+        }
         return null;
     }
     async function fetchWithTimeout(url, ms = 6000) { const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), ms); try { return await nativeFetch.call(window, url, { signal: ctrl.signal, cache: 'no-store' }); } finally { clearTimeout(tm); } }
@@ -1575,15 +1665,21 @@
         try { const cache = JSON.parse(rawStorageGet(SHORT_LINK_CACHE_KEY) || '{}'); if (cache[shortUrl]?.lat && cache[shortUrl]?.lon) return cache[shortUrl]; } catch (e) {}
         try {
             const s1 = await queryUnshorteners(shortUrl), coords = s1?.coords || (s1?.nextUrl ? (deepParseCoords(s1.nextUrl, false) || (await queryUnshorteners(s1.nextUrl))?.coords) : null);
-            if (coords?.lat && coords?.lon) { const cache = JSON.parse(rawStorageGet(SHORT_LINK_CACHE_KEY) || '{}'); cache[shortUrl] = coords; rawStorageSet(SHORT_LINK_CACHE_KEY, JSON.stringify(cache)); return coords; }
+            if (coords?.lat && coords?.lon) {
+                const cache = JSON.parse(rawStorageGet(SHORT_LINK_CACHE_KEY) || '{}'); cache[shortUrl] = coords;
+                const keys = Object.keys(cache); if (keys.length > 200) keys.slice(0, keys.length - 200).forEach(k => delete cache[k]);
+                rawStorageSet(SHORT_LINK_CACHE_KEY, JSON.stringify(cache)); return coords;
+            }
         } catch (e) {} return null;
     }
     async function autoResolveShortLinkInputEl(el) {
         if (!el || el.dataset.resolvingShort === 'true') return;
         const match = (el.value || '').match(SHORT_URL_REGEX); if (!match || el.id === 'rawCustomerPasteInput' || el.id === 'address') return;
-        el.dataset.resolvingShort = 'true'; showToast('⏳ กำลังแปลงลิงก์ย่อ Google Maps เป็นพิกัด...');
+        const matchedToken = match[0]; el.dataset.resolvingShort = 'true'; showToast('⏳ กำลังแปลงลิงก์ย่อ Google Maps เป็นพิกัด...');
         try {
-            const coords = await resolveGoogleShortLinkUniversal(match[0]); if (!coords?.lat || !coords?.lon) return showToast('⚠️ คลายลิงก์สั้นไม่สำเร็จ กรุณาวางพิกัดตัวเลขแทน');
+            const coords = await resolveGoogleShortLinkUniversal(matchedToken);
+            if (!coords?.lat || !coords?.lon) return showToast('⚠️ คลายลิงก์สั้นไม่สำเร็จ กรุณาวางพิกัดตัวเลขแทน');
+            if (!(el.value || '').includes(matchedToken)) return;
             const id = el.id || '', pairStr = `${coords.lat}, ${coords.lon}`, fullUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}`;
             if (id.includes('LatInput') || id.includes('LonInput')) { const pfx = id.replace(/(?:Lat|Lon)Input$/, ''); if (document.getElementById(pfx + 'LatInput') && document.getElementById(pfx + 'LonInput')) { document.getElementById(pfx + 'LatInput').value = coords.lat; document.getElementById(pfx + 'LonInput').value = coords.lon; } }
             else if (id === 'leftBrowserUrlInput') { el.value = fullUrl; const ifr = document.getElementById('leftBrowserIframe'); if (ifr) ifr.src = `${fullUrl}&hl=th&z=16&output=embed`; }
@@ -1607,9 +1703,24 @@
             const png = cv.toDataURL('image/png'); if (favEl) favEl.href = png; if (touchEl) touchEl.href = png;
         } catch (e) {}
     }
+
+    function openPmCalendarFromPushIfRequested() {
+        if (typeof window.openPmCalendarModal === 'function') window.openPmCalendarModal();
+    }
     function initPwaAndServiceWorker() {
         renderCanvasHomeIconIfPresent();
-        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').then(reg => reg.update()).catch(() => {});
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js').then(reg => reg.update()).catch(() => {});
+            navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'OPEN_PM_FROM_PUSH') openPmCalendarFromPushIfRequested(); });
+        }
+        try {
+            const urlObj = new URL(window.location.href);
+            if (urlObj.searchParams.get('openPm') === '1') {
+                urlObj.searchParams.delete('openPm');
+                window.history.replaceState({}, '', urlObj.pathname + urlObj.search + urlObj.hash);
+                setTimeout(openPmCalendarFromPushIfRequested, 650);
+            }
+        } catch (e) {}
         if (isEmbeddedIframe || window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true || document.getElementById('pwaInstallBanner')) return;
         let deferredPrompt = null; const banner = document.createElement('div'); banner.id = 'pwaInstallBanner';
         banner.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[180] hidden items-center gap-2 bg-slate-900/95 text-white px-4 py-2 rounded-full shadow-2xl border border-emerald-400/50 text-xs font-bold backdrop-blur-md';
@@ -1640,8 +1751,11 @@
         getDeletedJobsRegistry, recordDeletedJobToRegistry, syncDeletedRegistryObject, getTechLocationsMap, mergeTechLocationsMap,
         calcHaversineKm, deepParseCoords, resolveGoogleShortLinkUniversal, __unlockCloudWrite: unlockCloudWrite
     });
-    if (rawStorageGet('elec_app_logged_in') === 'true') rawStorageSet('elec_app_last_active', String(Date.now()));
-    if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', () => { initPwaAndServiceWorker(); initMqttTransport(); });
-    else { initPwaAndServiceWorker(); initMqttTransport(); }
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', () => { checkSessionInactivity(true); initPwaAndServiceWorker(); initMqttTransport(); });
+    } else {
+        checkSessionInactivity(true); initPwaAndServiceWorker(); initMqttTransport();
+    }
 })();
 // ==================== จบไฟล์ shared-core.js ====================
