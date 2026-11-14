@@ -513,7 +513,7 @@
 
         if (syncCloud && !simState.active && typeof window.pushAllJobsToCloud === 'function') {
             Core.unlockCloudWrite(20000);
-            await window.pushAllJobsToCloud(true);
+            window.pushAllJobsToCloud(true);
         }
     }
 
