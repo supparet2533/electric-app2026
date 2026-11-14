@@ -2842,10 +2842,10 @@
             Core.cleanReopenedAndCancelledJobsInStorage();
             tagUntaggedLocalJobsWithCurrentGroup();
             Core.unlockCloudWrite(20000);
-            const prevLocEntry = (baseCloud || []).find(j => j && j.jobType === 'tech_loc') || {};
+                        const prevLocEntry = (baseCloud || []).find(j => j && j.jobType === 'tech_loc') || {};
+            if (prevLocEntry.techLocations) mergeTechLocationsMap(prevLocEntry.techLocations);
             if (prevLocEntry.deletedJobsMap) syncDeletedRegistryObject({ ...getDeletedJobsRegistry(), ...prevLocEntry.deletedJobsMap });
             if (prevLocEntry.closedJobsMap || prevLocEntry.closedReports) syncClosedRegistryObject({ ...getClosedJobsRegistry(), ...(prevLocEntry.closedJobsMap || {}), ...(prevLocEntry.closedReports || {}) });
-
             const delReg = getDeletedJobsRegistry(), closedReg = getClosedJobsRegistry(), myGrp = normGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
             const combined = new Map(), pendingClearTasks = [];
 
@@ -2874,7 +2874,7 @@
             pushLocal('elecReportsComplete_all', 'outage');
             pushLocal('fault_reports_all', 'fault');
 
-            const finalJobs = [
+                        const finalJobs = [
                 ...Array.from(combined.values()),
                 {
                     ...prevLocEntry,
@@ -2883,8 +2883,6 @@
                     techLocations: getTechLocationsMap(),
                     closedJobsMap: closedReg,
                     deletedJobsMap: delReg,
-                    electricEquipmentPins: JSON.parse(Core.rawStorageGet('elec_labeled_places_list') || '[]'),
-                    deletedElectricEquipmentMap: JSON.parse(Core.rawStorageGet('elec_deleted_labeled_places_map') || '{}'),
                     updatedAt: new Date().toISOString()
                 }
             ];
@@ -3039,7 +3037,7 @@
             try {
                 const parsed = JSON.parse(e.target.result), d = parsed.data || parsed;
                 showCustomConfirm('⚠️ ยืนยันการกู้คืนข้อมูลทับข้อมูลปัจจุบันหรือไม่?', async () => {
-                    ['fault_reports_all', 'elecReportsComplete_all', 'overdue_ca_list', 'stationList_custom', 'tambonCoordinates_custom', 'issueList_custom', 'elec_labeled_places_list', 'elec_deleted_labeled_places_map', 'elec_paste_strip_words', 'elec_paste_strip_rules'].forEach(k => { if (d[k] !== undefined) localStorage.setItem(k, JSON.stringify(d[k])); });
+['elec_deleted_labeled_places_map', 'elec_labeled_places_list', 'fault_reports_all', 'elecReportsComplete_all', 'overdue_ca_list', 'stationList_custom', 'tambonCoordinates_custom', 'issueList_custom', 'elec_paste_strip_words', 'elec_paste_strip_rules'].forEach(k => { if (d[k] !== undefined) localStorage.setItem(k, JSON.stringify(d[k])); });
                     await syncJobsWithFieldPage(); setTimeout(() => location.reload(), 600);
                 }, '📂 ยืนยันการกู้คืนข้อมูล');
             } catch (err) { showCustomAlert('❌ ไฟล์สำรองไม่ถูกต้อง'); }
