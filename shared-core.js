@@ -1280,6 +1280,17 @@
                     const ex = pinMap.get(p.id);
                     if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) pinMap.set(p.id, p);
                 });
+                                    const effClearedTs = Math.max(clearedTs, Number(j.clearedAuditLogsTimestamp || 0));
+                const restoredIds = new Set(JSON.parse(rawStorageGet('elec_restored_audit_log_ids') || '[]'));
+                const auditMap = new Map();
+                [...(Array.isArray(j.deletedEquipAuditLogs) ? j.deletedEquipAuditLogs : []), ...auditLogs].forEach(l => {
+                    if (!l?.logId || restoredIds.has(l.logId)) return;
+                    if (effClearedTs > 0 && (new Date(l.deletedAt || 0).getTime() || 0) <= effClearedTs) return;
+                    auditMap.set(l.logId, l);
+                });
+                const mergedAuditLogs = trimAuditLogsForSheetQuota(
+                    Array.from(auditMap.values()).sort((a, b) => (new Date(b.deletedAt || 0).getTime() || 0) - (new Date(a.deletedAt || 0).getTime() || 0))
+                );
                 const cleanLoc = { ...j };
                 delete cleanLoc.closedReports;
                 return {
@@ -1288,8 +1299,8 @@
                     deletedJobsMap: delJobs,
                     electricEquipmentPins: Array.from(pinMap.values()),
                     deletedElectricEquipmentMap: mergedDelPins,
-                    deletedEquipAuditLogs: auditLogs,
-                    clearedAuditLogsTimestamp: clearedTs,
+                                        deletedEquipAuditLogs: mergedAuditLogs,
+                    clearedAuditLogsTimestamp: effClearedTs,
                     ...(Object.keys(backups).length > 0 ? { cloudGroupBackups: backups } : {})
                 };
             }
