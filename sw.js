@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v116 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v122 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v119';
+const CACHE_NAME = 'pea-smart-tools-v122';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -10,15 +10,20 @@ const APP_SHELL_ASSETS = [
     './',
     './index.html',
     './page2.html',
+    './pea-idb-store.js',
     './shared-core.js',
     './main-app.js',
     './tech-jobs.js',
     './scada-engine.js',
+    './scada-fault-locator.js',
     './pm-calendar.js',
     './pm-push.js',
     './manifest.json',
     './manifest-main.json',
     'https://cdn.tailwindcss.com',
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
+    'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+    'https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
     'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js',
@@ -31,10 +36,12 @@ const REQUIRED_LOCAL_SHELL = new Set([
     './',
     './index.html',
     './page2.html',
+    './pea-idb-store.js',
     './shared-core.js',
     './main-app.js',
     './tech-jobs.js',
     './scada-engine.js',
+    './scada-fault-locator.js',
     './pm-calendar.js'
 ]);
 
@@ -100,11 +107,11 @@ function isValidShellPayload(pathname, res, buf, destination = '') {
     if (!isValidAssetResponse(pathname, res, destination)) return false;
     const baseDirPath = self.location.pathname.replace(/[^/]*$/, '');
     const isMainHtml = pathname === baseDirPath ||
-                       /(?:^\/$|\/index\.html$|\/page2\.html$|^\.\/$|^\.\/index\.html$|^\.\/page2\.html$)/i.test(pathname);
+                       /(?:^\/$|\/(?:index|page2)(?:\.html)?$|^\.\/$|^\.\/(?:index|page2)(?:\.html)?$)/i.test(pathname);
     if (isMainHtml && buf) {
         try {
             const text = new TextDecoder('utf-8').decode(buf);
-            if (!/(?:shared-core|main-app|tech-jobs|scada-engine|pm-calendar)\.js/i.test(text)) {
+            if (!/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|pm-calendar)\.js/i.test(text)) {
                 return false;
             }
         } catch (e) {}
@@ -160,7 +167,6 @@ self.addEventListener('install', (event) => {
                 const localAssets = APP_SHELL_ASSETS.filter((u) => u.startsWith('./'));
                 const externalAssets = APP_SHELL_ASSETS.filter((u) => !u.startsWith('./'));
 
-                // 1. ไฟล์หลักของแอปต้องโหลดครบและปลอดภัยจาก Captive Portal ก่อนยอมสลับเวอร์ชันแคช
                 await Promise.all(
                     localAssets.map(async (assetUrl) => {
                         const isRequired = REQUIRED_LOCAL_SHELL.has(assetUrl);
@@ -189,15 +195,15 @@ self.addEventListener('install', (event) => {
                     })
                 );
 
-                // 2. ไลบรารี CDN ภายนอก: มี Timeout 8 วิ หากค้างดึงแคชเก่ามาสำรองทันทีไม่บล็อกการอัปเดต
                 await Promise.allSettled(
                     externalAssets.map(async (assetUrl) => {
                         const cleanPath = assetUrl.split('?')[0];
+                        const destHint = /\.css$/i.test(cleanPath) ? 'style' : 'script';
                         try {
                             let res = await fetchWithTimeout(assetUrl, { cache: 'reload' }, 8000);
                             if (res && res.status === 200) {
                                 const buf = await res.clone().arrayBuffer();
-                                if (!isValidShellPayload(cleanPath, res, buf, 'script')) return;
+                                if (!isValidShellPayload(cleanPath, res, buf, destHint)) return;
                                 if (res.redirected) res = await cleanRedirectedResponse(res, buf);
                                 await cache.put(assetUrl, res).catch(() => {});
                                 return;
@@ -280,17 +286,18 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: โหลดครบทั้งไฟล์ภายใน 5 วิ + กัน Captive Portal ทับแคช
+    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2) + Timeout 5 วิ
     const isAppShellFile = url.origin === self.location.origin &&
         (req.mode === 'navigate' || /\.(?:html|js|mjs|css|json|webmanifest)$/i.test(url.pathname) || url.pathname.endsWith('/'));
 
     if (isAppShellFile) {
         const baseDirPath = self.location.pathname.replace(/[^/]*$/, '');
         const cleanCacheKey = url.origin + url.pathname;
-        const isRootOrIndex = url.pathname === baseDirPath || url.pathname === baseDirPath + 'index.html';
-        const mirrorIndexKey = isRootOrIndex
+        const isPage2Route = /\/page2(?:\.html)?$/i.test(url.pathname);
+        const isRootOrIndex = url.pathname === baseDirPath || /\/index(?:\.html)?$/i.test(url.pathname);
+        const mirrorKey = isRootOrIndex
             ? url.origin + (url.pathname === baseDirPath ? baseDirPath + 'index.html' : baseDirPath)
-            : '';
+            : (isPage2Route ? url.origin + baseDirPath + 'page2.html' : '');
 
         event.respondWith(
             (async () => {
@@ -300,7 +307,7 @@ self.addEventListener('fetch', (event) => {
                     cache = await caches.open(CACHE_NAME);
                     cachedFallback = await cache.match(cleanCacheKey, { ignoreSearch: true, ignoreVary: true }) ||
                                      await cache.match(req, { ignoreSearch: true, ignoreVary: true }) ||
-                                     (mirrorIndexKey ? await cache.match(mirrorIndexKey, { ignoreSearch: true, ignoreVary: true }) : null);
+                                     (mirrorKey ? await cache.match(mirrorKey, { ignoreSearch: true, ignoreVary: true }) : null);
                 } catch (e) {}
 
                 const ctrl = cachedFallback && typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -345,11 +352,11 @@ self.addEventListener('fetch', (event) => {
 
                         if (cache && finalRes.status === 200) {
                             const copyMain = finalRes.clone();
-                            const copyMirror = mirrorIndexKey ? finalRes.clone() : null;
+                            const copyMirror = (mirrorKey && mirrorKey !== cleanCacheKey) ? finalRes.clone() : null;
                             event.waitUntil(
                                 Promise.all([
                                     cache.put(cleanCacheKey, copyMain).catch(() => {}),
-                                    copyMirror ? cache.put(mirrorIndexKey, copyMirror).catch(() => {}) : null
+                                    copyMirror ? cache.put(mirrorKey, copyMirror).catch(() => {}) : null
                                 ])
                             );
                         }
@@ -357,7 +364,7 @@ self.addEventListener('fetch', (event) => {
                     }
 
                     if (timer) clearTimeout(timer);
-                    if (netRes && netRes.status >= 500 && cachedFallback) {
+                    if (netRes && (netRes.status >= 500 || netRes.status === 429 || netRes.status === 408) && cachedFallback) {
                         return cachedFallback;
                     }
                     return netRes || cachedFallback || Response.error();
@@ -365,7 +372,7 @@ self.addEventListener('fetch', (event) => {
                     if (timer) clearTimeout(timer);
                     if (cachedFallback) return cachedFallback;
                     if (req.mode === 'navigate' && cache) {
-                        const fallbackPage = url.pathname.includes('page2')
+                        const fallbackPage = isPage2Route
                             ? await cache.match('./page2.html', { ignoreSearch: true, ignoreVary: true })
                             : (await cache.match('./index.html', { ignoreSearch: true, ignoreVary: true }) ||
                                await cache.match('./', { ignoreSearch: true, ignoreVary: true }));
@@ -378,7 +385,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 3. ไฟล์ Static ในเว็บตัวเอง และ CDN ไลบรารีมาตรฐานเท่านั้น (ไม่ดักแคช API ภายนอก)
+    // 3. ไฟล์ Static ในเว็บตัวเอง และ CDN ไลบรารีมาตรฐาน
     const isSameOriginStatic = url.origin === self.location.origin;
     const isStaticCdn = STATIC_CDN_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith('.' + host));
     if (!isSameOriginStatic && !isStaticCdn) return;
@@ -391,8 +398,11 @@ self.addEventListener('fetch', (event) => {
                 return cached;
             }
             try {
-                const res = await fetch(req);
+                let res = await fetch(req);
                 if (res && (res.status === 200 || res.type === 'opaque') && isValidAssetResponse(url.pathname, res, req.destination)) {
+                    if (res.redirected && res.type !== 'opaque') {
+                        res = await cleanRedirectedResponse(res);
+                    }
                     const copy = res.clone();
                     event.waitUntil(cache.put(req, copy).catch(() => {}));
                 }
@@ -407,9 +417,6 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-// ============================================================================
-// 🔔 รับสัญญาณ Web Push จาก Firebase แม้ปัดปิดแอปไปแล้ว + แจ้งเตือนจาก PM Calendar
-// ============================================================================
 self.addEventListener('push', (event) => {
     let payload = {};
     try {
@@ -448,7 +455,7 @@ self.addEventListener('notificationclick', (event) => {
                               appClients.find((c) => c.visibilityState === 'visible') ||
                               appClients[0];
             if (topClient && 'focus' in topClient) {
-                topClient.postMessage({ type: 'OPEN_PM_FROM_PUSH' });
+                topClient.postMessage({ type: 'OPEN_PM_FROM_PUSH', url: targetFullUrl });
                 return topClient.focus().catch(() =>
                     self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
                 );
