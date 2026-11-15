@@ -1,6 +1,6 @@
 // ============================================================================
-// 🎯⚡ PEA SMART GRID — FAULT DISTANCE LOCATOR v1.6 (scada-fault-locator.js)
-// จับคู่รหัสแม่นยำไม่สับสนหลักหน่วย/หลักสิบ (VB-1 vs VB-10) + กั้นขั้วรับไฟเข้าตามจริง + ปลอด SecurityError
+// 🎯⚡ PEA SMART GRID — FAULT DISTANCE LOCATOR v1.7 (scada-fault-locator.js)
+// แสดงแถบวัดระยะแท็บ 1 ทุกโครงสร้างหน้า + รองรับวัดระยะจากหมุดสายไฟทั่วไป + แม่นยำทั้งลูปและจุดทริป
 // ============================================================================
 (function () {
     'use strict';
@@ -182,7 +182,6 @@
         return out;
     }
 
-    // กั้นเฉพาะขั้วรับไฟเข้า (Supply-side Terminal) ของอุปกรณ์กลางสาย โดยเคารพสายที่ปลด (e.off) และรองรับวงจรลูปปิด
     function computeUpstreamFilter(sourcePinId, pins, pinMap, activeAdj, fullPhysAdj) {
         const srcPin = pinMap.get(sourcePinId);
         const srcT = srcPin?.scadaNode?.t || 'PIN';
@@ -420,23 +419,32 @@
         if (resBox) { resBox.innerHTML = ''; resBox.classList.add('hidden'); }
     }
 
-    // จับคู่รหัสอุปกรณ์แบบปลอดภัย 100% (ไม่เอา VB-10 มาสวมรอย VB-1)
     function populateFaultSourceDropdown(preferFeeder = '', preferDevice = '', preferStation = '') {
         const sel = document.getElementById('scadaFaultSourceSelect');
         if (!sel) return;
         const pins = getVisibleScadaPins();
         const prevVal = sel.value;
-        const breakers = [], switches = [];
+        const wiredIds = new Set();
+        pins.forEach((p) => {
+            (p.scadaLines || []).forEach((l) => {
+                if (l?.to && l.to !== p.id) { wiredIds.add(p.id); wiredIds.add(l.to); }
+            });
+        });
+
+        const breakers = [], switches = [], wiredPlainPins = [];
         pins.forEach((p) => {
             const t = p.scadaNode?.t || 'PIN';
             if (t === 'RC' || t === 'CB') breakers.push(p);
-            else if (['VB', 'VS', 'VSC', 'S', 'DF'].includes(t)) switches.push(p);
+            else if (['VB', 'VS', 'VSC', 'S', 'DF', 'GEN'].includes(t)) switches.push(p);
+            else if (wiredIds.has(p.id) && !isNodeTTap(p, pins)) wiredPlainPins.push(p);
         });
-        const allCandidates = [...breakers, ...switches];
+
+        const allCandidates = [...breakers, ...switches, ...wiredPlainPins];
         const opts = [];
         breakers.forEach((b) => opts.push(`<option value="${escHtml(b.id)}">■ [CB] ${escHtml(b.name)}${b.scadaNode?.fd ? ` (${escHtml(b.scadaNode.fd)})` : ''}</option>`));
         switches.forEach((s) => opts.push(`<option value="${escHtml(s.id)}">⚡ [${escHtml(s.scadaNode?.t)}] ${escHtml(s.name)}</option>`));
-        sel.innerHTML = opts.length ? opts.join('') : '<option value="">-- ยังไม่มีหมุด CB / สวิตช์ในผัง --</option>';
+        wiredPlainPins.forEach((wp) => opts.push(`<option value="${escHtml(wp.id)}">📍 [หมุด] ${escHtml(wp.name)}</option>`));
+        sel.innerHTML = opts.length ? opts.join('') : '<option value="">-- ยังไม่มีหมุดที่เชื่อมสายไฟในผัง --</option>';
 
         const devClean = String(preferDevice || '').replace(/\(ID[^)]*\)/gi, '').trim().toLowerCase();
         if (devClean.length >= 2) {
@@ -460,8 +468,9 @@
             const cleanFd = String(preferFeeder).trim().toUpperCase().replace(/\s+/g, '');
             const stCodeM = String(preferStation || '').toUpperCase().match(/[A-Z]{2,4}/);
             const stPrefix = stCodeM ? stCodeM[0] : '';
+            const poolForFeeder = breakers.length > 0 ? breakers : allCandidates;
 
-            const scored = breakers.map((b) => {
+            const scored = poolForFeeder.map((b) => {
                 const bFd = String(b.scadaNode?.fd || '').toUpperCase().replace(/\s+/g, '');
                 const bTxt = `${bFd} ${b.name || ''} ${b.note || ''}`.toUpperCase();
                 let score = 0;
@@ -501,10 +510,9 @@
         const stopOpen = document.getElementById('scadaFaultStopOpenChk')?.checked !== false;
         const downstreamOnly = document.getElementById('scadaFaultDownstreamChk')?.checked !== false;
 
-        if (!srcId) return window.showToast?.('⚠️ กรุณาตั้งค่าหมุด ■ CB หรือสวิตช์ต้นทางในผังก่อนครับ');
+        if (!srcId) return window.showToast?.('⚠️ กรุณาตั้งค่าหมุด ■ CB หรือลากสายเชื่อมหมุดต้นทางในผังก่อนครับ');
         if (isNaN(distVal) || distVal <= 0) return window.showToast?.('⚠️ กรุณาระบุระยะทางฟอลต์ (กม.) ให้มากกว่า 0');
 
-        // หากเปิดกรองเฉพาะวงจรอื่นค้างไว้ ให้สลับเป็นแสดงทุกวงจรเพื่อให้เห็นสายไฟจริงใต้เส้นชี้เป้าชัดเจน
         const fdFilterEl = document.getElementById('scadaFeederFilterSelect');
         const checkSrcPin = getVisibleScadaPins().find((p) => p.id === srcId);
         if (fdFilterEl && fdFilterEl.value !== 'ALL' && fdFilterEl.value !== (checkSrcPin?.scadaNode?.fd || '')) {
@@ -668,15 +676,16 @@
     }
 
     function injectIndexTab1QuickLocatorBar() {
-        const tab1Btns = document.getElementById('tab1ScadaActionBtns');
+        if (document.getElementById('techMainApp') || document.getElementById('tab1FaultLocatorQuickBox')) return;
         const sortTab1 = document.getElementById('sortable-tab1');
-        if (!tab1Btns || !sortTab1 || document.getElementById('tab1FaultLocatorQuickBox')) return;
+        const anchorEl = sortTab1 || document.getElementById('distanceZoneField') || document.getElementById('deviceInput')?.closest('div');
+        if (!anchorEl || !anchorEl.parentElement) return;
 
         const box = document.createElement('div');
         box.id = 'tab1FaultLocatorQuickBox';
-        box.className = 'p-2.5 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 rounded-xl flex flex-wrap items-center justify-between gap-2';
+        box.className = 'mb-2.5 p-2.5 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 rounded-xl flex flex-wrap items-center justify-between gap-2';
         box.innerHTML = `<span class="text-xs font-bold text-rose-900 flex items-center gap-1">🎯 <span>วัดระยะฟอลต์บนผังสาย:</span></span><div class="flex items-center gap-1.5 flex-1 sm:flex-initial justify-end"><input type="number" step="0.01" min="0.05" inputmode="decimal" id="tab1QuickFaultKmInput" placeholder="กม. จากรีเลย์" oninput="onQuickFaultKmBarInput(this.value)" onkeydown="if(event.key==='Enter' && !event.isComposing){event.preventDefault();triggerFaultLocatorFromMainForm();}" class="w-28 px-2.5 py-1 text-xs font-bold bg-white border border-rose-300 rounded-lg text-slate-800"><button type="button" onclick="triggerFaultLocatorFromMainForm()" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold shadow-sm shrink-0">🎯 ชี้เป้าบนผัง</button></div>`;
-        sortTab1.parentElement.insertBefore(box, sortTab1);
+        anchorEl.parentElement.insertBefore(box, anchorEl);
 
         const dist115 = document.getElementById('distanceInput');
         if (dist115) {
@@ -709,6 +718,8 @@
         try { localStorage.setItem(FAULT_PKT_KEY, JSON.stringify(pkt)); } catch (e) {}
 
         if (typeof window.openScadaDiagramWorkspace === 'function') window.openScadaDiagramWorkspace();
+        else window.open('page2.html?tab=map', '_blank');
+
         setTimeout(() => {
             const ifr = document.getElementById('leftBrowserIframe');
             const sendToFrame = () => {
