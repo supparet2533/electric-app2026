@@ -12,7 +12,7 @@
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     <meta name="theme-color" content="#2563eb">
 
-    <link id="mainFavIconPng" rel="icon" type="image/png" sizes="512x512" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
+    <link id="mainFavIconPng" rel="icon" sizes="any" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
     <link id="mainAppleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
     <link id="webManifestLink" rel="manifest" href="manifest-main.json">
 
@@ -22,12 +22,18 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
-        html, body { overflow-x: hidden; overflow-y: auto !important; height: auto !important; touch-action: pan-y pinch-zoom !important; }
+        html { overflow-x: clip; }
         body {
+            overflow-x: clip;
+            min-height: 100vh;
+            touch-action: pan-y pinch-zoom;
             font-family: 'Prompt', sans-serif;
             background: #f8fafc;
             background-image: radial-gradient(at 0% 0%, rgba(37,99,235,0.03) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(79,70,229,0.03) 0px, transparent 50%);
             color: #1e293b;
+        }
+        @supports not (overflow-x: clip) {
+            body { overflow-x: hidden; }
         }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
@@ -45,18 +51,48 @@
         mark.search-highlight { background-color: #fef08a; color: #854d0e; padding: 0 3px; border-radius: 4px; font-weight: 600; }
         #historyListFault, #historyListOutage { overflow-x: hidden !important; max-width: 100%; }
         #historyListFault > div, #historyListOutage > div { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; word-break: break-word; }
-        #sortable-tab1 > div:focus-within, #sortable-tab2 > div:focus-within { position: relative !important; z-index: 60 !important; }
+
+        /* ยกเฉพาะแถวที่กำลังโฟกัสหรือกางเมนู Dropdown/Autocomplete จริง (ไม่นับปุ่มไมค์) */
+        #sortable-tab1 > div, #sortable-tab2 > div { position: relative; }
+        #sortable-tab1 > div:focus-within,
+        #sortable-tab2 > div:focus-within {
+            position: relative !important;
+            z-index: 75 !important;
+        }
+        #sortable-tab1 > div:has(#stationDropdownMenu:not(.hidden), #tambonDropdownMenu:not(.hidden), ul[id^="suggest-"]:not(.hidden)),
+        #sortable-tab2 > div:has(#issueDropdownMenu:not(.hidden), ul[id^="suggest-"]:not(.hidden)) {
+            position: relative !important;
+            z-index: 80 !important;
+        }
+
+        /* จัดระเบียบแถบเบราว์เซอร์ฝั่งซ้ายให้ไม่เบียดช่อง URL ทุกขนาดจอ */
+        #leftBrowserDock > div:first-child { flex-wrap: wrap !important; row-gap: 0.35rem !important; }
+        #leftBrowserDock #leftBrowserUrlInput { min-width: 150px !important; }
+        #leftBrowserBookmarksBar { touch-action: pan-x; -webkit-overflow-scrolling: touch; }
+
         @media (max-width: 1023px) {
             #historyListFault, #historyListOutage { max-height: none !important; overflow-y: visible !important; }
             #leftBrowserDock:not(.mobile-force-open) { display: none !important; }
-            #leftBrowserDock > div:first-child { flex-wrap: wrap !important; row-gap: 0.35rem !important; }
-            #leftBrowserDock #leftBrowserUrlInput { min-width: 140px !important; }
+            #leftBrowserDock.mobile-force-open { width: 100vw !important; z-index: 900 !important; padding-bottom: 3.75rem !important; }
         }
+        #mobileScadaReturnBar { z-index: 910 !important; }
+
+        /* มาตรฐานลำดับชั้น Z-Index ป้องกันหน้าต่างยืนยันจมหลังป๊อปอัปอื่น */
+        #loginScreen { z-index: 1100 !important; }
+        #stationModal, #issueModal, #tambonModal, #apiKeyModal, #meterLinkModal, #backupModal, #caModal, #stripWordsModal { z-index: 1150 !important; }
+        #scadaCadImportModal, #userManageModal { z-index: 1250 !important; }
+        #customAlertModal, #customConfirmModal { z-index: 1450 !important; }
+        #toast { z-index: 1500 !important; }
+
         @keyframes scadaFieldFlash {
             0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.65); background-color: #ecfdf5; }
             100% { box-shadow: 0 0 0 6px rgba(16,185,129,0); background-color: #ffffff; }
         }
         .scada-filled-flash { animation: scadaFieldFlash 0.9s ease-out; border-color: #10b981 !important; }
+
+        body.role-scada-readonly .scada-main-edit-only,
+        body.role-viewer-readonly .scada-main-edit-only,
+        body.role-viewer-readonly .viewer-hide-restore,
         body.role-viewer-readonly button[onclick*="saveAndCopyFault"],
         body.role-viewer-readonly button[onclick*="confirmResetFaultForm"],
         body.role-viewer-readonly button[onclick*="generateOutageMessage"],
@@ -68,6 +104,7 @@
         body.role-viewer-readonly button[onclick*="openApiKeyModal"],
         body.role-viewer-readonly button[onclick*="openCaManageModal"],
         body.role-viewer-readonly button[onclick*="openStripWordsModal"],
+        body.role-viewer-readonly button[onclick*="processScadaCadBatchImport"],
         body.role-viewer-readonly button[onclick^="editFaultItem"],
         body.role-viewer-readonly button[onclick^="deleteFaultItem"],
         body.role-viewer-readonly button[onclick^="editOutageItem"],
@@ -76,14 +113,13 @@
         body.role-viewer-readonly button[onclick^="stopEquipNavFromMainPage"],
         body.role-viewer-readonly #cloudDataManageBtn,
         body.role-viewer-readonly #autoFillCustomerContainer,
-        body.role-viewer-readonly #geminiChatbot,
-        body.role-viewer-readonly .scada-main-edit-only { display: none !important; }
+        body.role-viewer-readonly #geminiChatbot { display: none !important; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen py-6 px-4 lg:py-10 flex items-start justify-center">
 
     <!-- 🔐 หน้าล็อกอิน Smart Grid -->
-    <div id="loginScreen" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
+    <div id="loginScreen" class="hidden fixed inset-0 z-[1100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
         <svg class="absolute inset-0 w-full h-full object-cover pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
             <defs>
                 <linearGradient id="gridSky" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -136,8 +172,8 @@
             <div class="bg-white/95 backdrop-blur-md p-7 rounded-2xl shadow-2xl w-full max-w-sm space-y-5 border border-white/40">
                 <h3 class="text-2xl font-normal text-slate-600">เข้าสู่ระบบ</h3>
                 <div class="space-y-3">
-                    <input type="text" id="loginUsername" placeholder="ชื่อผู้ใช้งาน หรือ รหัสพนักงาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key==='Enter') document.getElementById('loginPassword').focus()">
-                    <input type="password" id="loginPassword" placeholder="รหัสผ่านเข้าใช้งาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key==='Enter') handleLogin()">
+                    <input type="text" id="loginUsername" placeholder="ชื่อผู้ใช้งาน หรือ รหัสพนักงาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); document.getElementById('loginPassword').focus(); }">
+                    <input type="password" id="loginPassword" placeholder="รหัสผ่านเข้าใช้งาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); handleLogin(); }">
                     <button type="button" onclick="handleLogin()" class="w-full bg-[#9b4dca] hover:bg-[#833ab4] text-white font-semibold py-2.5 rounded-xl shadow-md transition duration-200 text-sm">เข้าสู่ระบบ</button>
                 </div>
                 <div class="pt-3 border-t border-slate-200 text-[11px] text-slate-500 space-y-1">
@@ -175,7 +211,7 @@
                 </svg>
             </div>
             <div class="px-2">
-                <div class="inline-block bg-blue-100 text-blue-700 font-bold text-xs px-3 py-1 rounded-full mb-3 shadow-sm">เวอร์ชัน 6.0 Modular</div>
+                <div class="inline-block bg-blue-100 text-blue-700 font-bold text-xs px-3 py-1 rounded-full mb-3 shadow-sm">เวอร์ชัน 6.4 Modular</div>
                 <h1 class="text-4xl font-bold text-slate-800 leading-tight tracking-tight mb-4">ระบบจัดการ<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">งานไฟฟ้าขัดข้อง</span></h1>
                 <p class="text-slate-500 text-sm leading-relaxed mb-6">บันทึกการแจ้งเหตุ เชื่อมผังวงจร SCADA คำนวณขนาดฟิวส์ และวิเคราะห์สถิติข้อมูลแบบเรียลไทม์พร้อมผู้ช่วย AI</p>
                 <div class="flex flex-wrap gap-2.5 text-[11px] font-semibold text-slate-600">
@@ -189,7 +225,7 @@
         <div id="leftBrowserDock" class="hidden fixed top-0 left-0 bottom-0 z-40 flex-col bg-slate-900 border-r border-slate-300 shadow-2xl transition-all duration-200" style="width: 55vw;">
             <div class="bg-slate-800 px-3 py-2 border-b border-slate-700 flex items-center gap-1.5">
                 <span class="text-blue-400 text-sm shrink-0">🌐</span>
-                <input type="text" id="leftBrowserUrlInput" placeholder="วางลิงก์เว็บไซต์ หรือลิงก์ Maps แล้วกด Enter" onkeypress="if(event.key==='Enter') navigateLeftBrowser()" class="flex-1 min-w-0 px-3 py-1.5 text-xs bg-white text-black font-semibold border border-slate-400 rounded-lg focus:outline-none font-mono">
+                <input type="text" id="leftBrowserUrlInput" placeholder="วางลิงก์เว็บไซต์ หรือลิงก์ Maps แล้วกด Enter" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); navigateLeftBrowser(); }" class="flex-1 min-w-0 px-3 py-1.5 text-xs bg-white text-black font-semibold border border-slate-400 rounded-lg focus:outline-none font-mono">
                 <button type="button" onclick="pasteClipboardToLeftBrowser()" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-amber-400/30 px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0">📋 วางลิงก์</button>
                 <button type="button" onclick="navigateLeftBrowser()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shrink-0">ไป ➔</button>
                 <button type="button" onclick="reloadLeftBrowser()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0">🔄</button>
@@ -207,7 +243,7 @@
                 <button type="button" onclick="openLeftBrowserPopup()" class="text-[10px] text-emerald-300 hover:text-emerald-200 underline shrink-0 whitespace-nowrap">💡 เว็บปฏิเสธเชื่อมต่อ? กดเปิดหน้าต่างลอย</button>
             </div>
             <div class="relative flex-1 w-full bg-white">
-                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" allow="geolocation; clipboard-read; clipboard-write; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
             </div>
         </div>
 
@@ -246,7 +282,7 @@
             </div>
 
             <!-- ================= TAB 1: รายงานเหตุ TR / TL ================= -->
-            <div id="tab1" class="tab-content p-6 space-y-4">
+            <div id="tab1" class="tab-content active p-6 space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-1.5 border-b pb-2">
                     <h2 class="text-base font-bold text-slate-800">⚡ ฟอร์มรายงานเหตุ (TR / TL)</h2>
                     <div id="tab1ScadaActionBtns" class="flex items-center gap-1.5 flex-wrap">
@@ -283,7 +319,7 @@
                         </select>
                     </div>
 
-                    <div data-id="station" class="relative z-30">
+                    <div data-id="station" class="relative z-10">
                         <div class="flex items-center justify-between mb-1">
                             <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>🏭 สถานี</span></label>
                             <button type="button" onclick="openStationManageModal()" class="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded font-semibold">⚙️ จัดการ</button>
@@ -322,10 +358,10 @@
                     <div id="currentsField" data-id="currents" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100">
                         <div class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>💥 กระแส (A, B, C, G)</span></div>
                         <div class="grid grid-cols-4 gap-2 px-2 pb-1">
-                            <div><span class="text-xs text-slate-500">A</span><input type="number" id="currA" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
-                            <div><span class="text-xs text-slate-500">B</span><input type="number" id="currB" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
-                            <div><span class="text-xs text-slate-500">C</span><input type="number" id="currC" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
-                            <div><span class="text-xs text-slate-500">G</span><input type="number" id="currG" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
+                            <div><span class="text-xs text-slate-500">A</span><input type="number" step="any" min="0" inputmode="decimal" id="currA" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
+                            <div><span class="text-xs text-slate-500">B</span><input type="number" step="any" min="0" inputmode="decimal" id="currB" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
+                            <div><span class="text-xs text-slate-500">C</span><input type="number" step="any" min="0" inputmode="decimal" id="currC" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
+                            <div><span class="text-xs text-slate-500">G</span><input type="number" step="any" min="0" inputmode="decimal" id="currG" class="w-full px-2 py-1.5 text-sm" placeholder="-"></div>
                         </div>
                     </div>
 
@@ -337,7 +373,7 @@
                         </div>
                     </div>
 
-                    <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100 relative z-20 overflow-visible">
+                    <div data-id="weather" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100 relative z-10 overflow-visible">
                         <div class="drag-handle flex items-center gap-1.5 text-sm font-semibold text-slate-700 mb-2 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>🌤️ พื้นที่ &amp; สภาพอากาศ (Rain Alarm)</span></div>
                         <div class="grid grid-cols-2 gap-2 px-2 pb-1">
                             <div class="relative min-w-0">
@@ -382,7 +418,7 @@
                     <div id="deviceField" data-id="device">
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>📟 อุปกรณ์เห็นฟอลต์</span></label>
                         <div class="relative">
-                            <input type="text" id="deviceInput" autocomplete="off" oninput="showSuggestionsData(this, 'suggest-device', 'equipment')" onfocus="showSuggestionsData(this, 'suggest-device', 'equipment')" class="w-full px-4 py-2 pr-10" placeholder="ระบุอุปกรณ์">
+                            <input type="text" id="deviceInput" autocomplete="off" oninput="if (document.activeElement === this) showSuggestionsData(this, 'suggest-device', 'equipment')" onfocus="showSuggestionsData(this, 'suggest-device', 'equipment')" class="w-full px-4 py-2 pr-10" placeholder="ระบุอุปกรณ์">
                             <button type="button" onclick="startVoiceInput('deviceInput', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button>
                             <ul id="suggest-device" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul>
                         </div>
@@ -391,7 +427,7 @@
                     <div id="disconnectField" data-id="disconnect">
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>🔌 ปัจจุบันปลดอุปกรณ์</span></label>
                         <div class="relative">
-                            <input type="text" id="disconnectDeviceInput" autocomplete="off" oninput="document.getElementById('powerUpToDeviceInput').value = this.value; document.getElementById('powerUpToDeviceInput').dispatchEvent(new Event('input')); showSuggestionsData(this, 'suggest-disconnect', 'equipment');" onfocus="showSuggestionsData(this, 'suggest-disconnect', 'equipment')" class="w-full px-4 py-2 pr-10" placeholder="ระบุอุปกรณ์ที่ปลด">
+                            <input type="text" id="disconnectDeviceInput" autocomplete="off" oninput="const p = document.getElementById('powerUpToDeviceInput'); if (p) { p.value = this.value; p.dispatchEvent(new Event('input')); } document.getElementById('suggest-powerup')?.classList.add('hidden'); if (document.activeElement === this) showSuggestionsData(this, 'suggest-disconnect', 'equipment');" onfocus="showSuggestionsData(this, 'suggest-disconnect', 'equipment')" class="w-full px-4 py-2 pr-10" placeholder="ระบุอุปกรณ์ที่ปลด">
                             <button type="button" onclick="startVoiceInput('disconnectDeviceInput', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button>
                             <ul id="suggest-disconnect" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul>
                         </div>
@@ -401,7 +437,7 @@
                         <div class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>⚡ จ่ายไฟมาชนอุปกรณ์ / เวลา</span></div>
                         <div class="flex gap-2 px-2 pb-1">
                             <div class="relative flex-1 min-w-0">
-                                <input type="text" id="powerUpToDeviceInput" autocomplete="off" oninput="showSuggestionsData(this, 'suggest-powerup', 'equipment')" onfocus="showSuggestionsData(this, 'suggest-powerup', 'equipment')" class="w-full px-3 py-2 pr-10" placeholder="ระบุอุปกรณ์">
+                                <input type="text" id="powerUpToDeviceInput" autocomplete="off" oninput="if (document.activeElement === this) showSuggestionsData(this, 'suggest-powerup', 'equipment')" onfocus="showSuggestionsData(this, 'suggest-powerup', 'equipment')" class="w-full px-3 py-2 pr-10" placeholder="ระบุอุปกรณ์">
                                 <button type="button" onclick="startVoiceInput('powerUpToDeviceInput', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button>
                                 <ul id="suggest-powerup" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul>
                             </div>
@@ -444,7 +480,8 @@
                     <div id="historyListFault" class="space-y-3 max-h-80 overflow-y-auto"><p class="text-sm text-slate-500 text-center py-4">ยังไม่มีประวัติการบันทึก</p></div>
                 </div>
             </div>
-
+            <!-- ===== จบพาทที่ 1 / 2 ของไฟล์ index.html ===== -->
+                        <!-- ===== เริ่มพาทที่ 2 / 2 ของไฟล์ index.html (วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) ===== -->
             <!-- ================= TAB 2: รับแจ้งไฟฟ้าขัดข้อง ================= -->
             <div id="tab2" class="tab-content p-6 space-y-4">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
@@ -462,7 +499,7 @@
                         <div class="flex justify-start"><div class="bg-purple-100 text-purple-800 p-2.5 rounded-xl rounded-tl-none max-w-[85%] shadow-sm">สวัสดีครับ แจ้งรายละเอียดเหตุไฟฟ้าขัดข้องมาได้เลยครับ ผมจะช่วยสรุปและกรอกลงฟอร์มให้อัตโนมัติ</div></div>
                     </div>
                     <div class="p-2 border-t border-slate-200 bg-white flex gap-1.5 items-center">
-                        <input type="text" id="chatInput" class="flex-1 min-w-0 px-3 py-2 text-sm bg-white" placeholder="พิมพ์รายละเอียด..." onkeypress="if(event.key==='Enter') sendChatMessage()">
+                        <input type="text" id="chatInput" class="flex-1 min-w-0 px-3 py-2 text-sm bg-white" placeholder="พิมพ์รายละเอียด..." onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); sendChatMessage(); }">
                         <button type="button" onclick="startChatVoiceInput()" class="shrink-0 p-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg">🎙️</button>
                         <button type="button" onclick="sendChatMessage()" class="shrink-0 bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-2 rounded-lg text-sm font-bold">ส่ง</button>
                     </div>
@@ -488,18 +525,18 @@
                         <div class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>📅 ข้อมูลการแจ้ง</span></div>
                         <div class="grid grid-cols-3 gap-2 px-2 pb-1">
                             <div><label class="text-xs font-bold text-slate-700">วันที่แจ้ง:</label><input type="text" id="reportDate" class="text-sm px-2 py-1.5 w-full" placeholder="วว/ดด/ปปปป" onchange="autoFillJobNo()" oninput="autoFillJobNo()"></div>
-                            <div><label class="text-xs font-bold text-slate-700">งานที่:</label><input type="number" id="jobNo" class="text-sm px-2 py-1.5 w-full" placeholder="เช่น 1"></div>
-                            <div><label class="text-xs font-bold text-slate-700">กะ:</label><input type="number" id="shift" class="text-sm px-2 py-1.5 w-full" placeholder="เช่น 1"></div>
+                            <div><label class="text-xs font-bold text-slate-700">งานที่:</label><input type="number" min="1" inputmode="numeric" id="jobNo" class="text-sm px-2 py-1.5 w-full" placeholder="เช่น 1"></div>
+                            <div><label class="text-xs font-bold text-slate-700">กะ:</label><input type="number" min="1" inputmode="numeric" id="shift" class="text-sm px-2 py-1.5 w-full" placeholder="เช่น 1"></div>
                         </div>
                     </div>
 
-                    <div data-id="issueTypeField" class="relative z-30">
+                    <div data-id="issueTypeField" class="relative z-10">
                         <div class="flex items-center justify-between mb-1">
                             <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>⚡ ลักษณะอาการ:</span></label>
                             <button type="button" onclick="openIssueManageModal()" class="text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded font-semibold">⚙️ จัดการ</button>
                         </div>
                         <div class="relative flex items-center">
-                            <input type="text" id="issueType" autocomplete="off" oninput="showSuggestionsData(this, 'suggest-issue', 'issue')" onfocus="showSuggestionsData(this, 'suggest-issue', 'issue')" class="w-full px-4 py-2 pr-[4.5rem] bg-white text-sm" placeholder="พิมพ์อาการขัดข้อง หรือเลือกจากรายการ">
+                            <input type="text" id="issueType" autocomplete="off" oninput="if (document.activeElement === this) showSuggestionsData(this, 'suggest-issue', 'issue')" onfocus="showSuggestionsData(this, 'suggest-issue', 'issue')" class="w-full px-4 py-2 pr-[4.5rem] bg-white text-sm" placeholder="พิมพ์อาการขัดข้อง หรือเลือกจากรายการ">
                             <div class="absolute right-1 top-1/2 -translate-y-1/2 flex items-center">
                                 <button type="button" onclick="startVoiceInput('issueType', this)" class="p-1.5 text-slate-400 hover:text-blue-600">🎙️</button>
                                 <div class="w-px h-5 bg-slate-200 mx-0.5"></div>
@@ -515,12 +552,12 @@
 
                     <div data-id="workerName">
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>👷 ผู้ปฏิบัติงาน / ผู้แจ้ง:</span></label>
-                        <div class="relative"><input type="text" id="workerName" autocomplete="off" oninput="showSuggestionsData(this, 'suggest-worker', 'worker')" onfocus="showSuggestionsData(this, 'suggest-worker', 'worker')" class="w-full px-4 py-2 pr-10 text-sm" placeholder="ชื่อผู้ปฏิบัติงาน"><button type="button" onclick="startVoiceInput('workerName', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button><ul id="suggest-worker" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul></div>
+                        <div class="relative"><input type="text" id="workerName" autocomplete="off" oninput="if (document.activeElement === this) showSuggestionsData(this, 'suggest-worker', 'worker')" onfocus="showSuggestionsData(this, 'suggest-worker', 'worker')" class="w-full px-4 py-2 pr-10 text-sm" placeholder="ชื่อผู้ปฏิบัติงาน"><button type="button" onclick="startVoiceInput('workerName', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button><ul id="suggest-worker" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul></div>
                     </div>
 
                     <div data-id="area">
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>🏠 บริเวณ:</span></label>
-                        <div class="relative"><input type="text" id="area" autocomplete="off" oninput="showSuggestionsData(this, 'suggest-area', 'area')" onfocus="showSuggestionsData(this, 'suggest-area', 'area')" class="w-full px-4 py-2 pr-10 text-sm" placeholder="ระบุบริเวณที่เกิดเหตุ"><button type="button" onclick="startVoiceInput('area', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button><ul id="suggest-area" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul></div>
+                        <div class="relative"><input type="text" id="area" autocomplete="off" oninput="if (document.activeElement === this) showSuggestionsData(this, 'suggest-area', 'area')" onfocus="showSuggestionsData(this, 'suggest-area', 'area')" class="w-full px-4 py-2 pr-10 text-sm" placeholder="ระบุบริเวณที่เกิดเหตุ"><button type="button" onclick="startVoiceInput('area', this)" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-blue-600">🎙️</button><ul id="suggest-area" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 text-sm"></ul></div>
                     </div>
 
                     <div data-id="address">
@@ -582,14 +619,14 @@
                                 <option value="1000">1,000 kVA</option><option value="1250">1,250 kVA</option><option value="1600">1,600 kVA</option><option value="2000">2,000 kVA</option><option value="2500">2,500 kVA</option>
                             </optgroup>
                         </select>
-                        <input type="number" class="tx-qty w-1/4 p-2 text-sm text-center" min="1" value="1">
+                        <input type="number" inputmode="numeric" class="tx-qty w-1/4 p-2 text-sm text-center" min="1" value="1">
                         <button type="button" class="btn-del bg-rose-100 text-rose-600 p-2 rounded text-xs" style="visibility: hidden;">✕</button>
                     </div>
                 </div>
                 <button type="button" class="w-full bg-blue-50 text-blue-600 hover:bg-blue-100 font-semibold py-2 rounded-lg text-sm" onclick="addTxRow()">+ เพิ่มขนาดอื่น</button>
                 <div class="p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <label class="text-xs font-bold text-amber-800 block mb-1">⚙️ ตัวคูณเผื่อกระแส (Multiplier)</label>
-                    <div class="flex items-center gap-2"><input type="number" id="multiplier-input" value="1.5" step="0.1" min="1" class="w-24 p-1.5 text-sm bg-white" oninput="saveMultiplierSetting(this.value)"><span class="text-xs text-slate-600">เท่า (มาตรฐาน 1.4-1.5)</span></div>
+                    <div class="flex items-center gap-2"><input type="number" inputmode="decimal" id="multiplier-input" value="1.5" step="0.1" min="1" class="w-24 p-1.5 text-sm bg-white" oninput="saveMultiplierSetting(this.value)"><span class="text-xs text-slate-600">เท่า (มาตรฐาน 1.4-1.5)</span></div>
                 </div>
                 <button type="button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl shadow" onclick="calculateFuseCalc()">🧮 คำนวณขนาดฟิวส์</button>
                 <div class="bg-slate-50 p-4 rounded-xl border-l-4 border-blue-600 hidden" id="result-box-fuse">
@@ -640,23 +677,23 @@
     </div>
 
     <!-- ================= หน้าต่างป๊อปอัปตั้งค่าและจัดการข้อมูล ================= -->
-    <div id="stationModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="stationModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
             <div class="px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white flex justify-between items-center"><h3 class="font-bold text-sm">⚙️ จัดการรายชื่อสถานี</h3><button type="button" onclick="closeStationManageModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-4 flex-1 overflow-y-auto space-y-2 bg-slate-50" id="stationListContainer"></div>
-            <div class="p-4 border-t bg-white flex gap-2"><input type="text" id="newStationInput" placeholder="เพิ่มสถานีใหม่..." onkeypress="if(event.key==='Enter') addStation()" class="flex-1 px-3 py-2 text-sm bg-white"><button type="button" onclick="addStation()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">เพิ่ม</button></div>
+            <div class="p-4 border-t bg-white flex gap-2"><input type="text" id="newStationInput" placeholder="เพิ่มสถานีใหม่..." onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); addStation(); }" class="flex-1 px-3 py-2 text-sm bg-white"><button type="button" onclick="addStation()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">เพิ่ม</button></div>
         </div>
     </div>
 
-    <div id="issueModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="issueModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
             <div class="px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white flex justify-between items-center"><h3 class="font-bold text-sm">⚙️ จัดการลักษณะอาการ</h3><button type="button" onclick="closeIssueManageModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-4 flex-1 overflow-y-auto space-y-2 bg-slate-50" id="issueListContainer"></div>
-            <div class="p-4 border-t bg-white flex gap-2"><input type="text" id="newIssueInput" placeholder="เพิ่มลักษณะอาการใหม่..." onkeypress="if(event.key==='Enter') addIssueItem()" class="flex-1 px-3 py-2 text-sm bg-white"><button type="button" onclick="addIssueItem()" class="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold">เพิ่ม</button></div>
+            <div class="p-4 border-t bg-white flex gap-2"><input type="text" id="newIssueInput" placeholder="เพิ่มลักษณะอาการใหม่..." onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); addIssueItem(); }" class="flex-1 px-3 py-2 text-sm bg-white"><button type="button" onclick="addIssueItem()" class="bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold">เพิ่ม</button></div>
         </div>
     </div>
 
-    <div id="tambonModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="tambonModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
             <div class="px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex justify-between items-center"><h3 class="font-bold text-sm">⚙️ จัดการรายชื่อตำบลและพิกัด</h3><button type="button" onclick="closeTambonManageModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-4 flex-1 overflow-y-auto space-y-2 bg-slate-50" id="tambonListContainer"></div>
@@ -668,7 +705,7 @@
         </div>
     </div>
 
-    <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
             <div class="px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex justify-between items-center"><h3 class="font-bold text-sm">🔑 ตั้งค่า Gemini API Key</h3><button type="button" onclick="closeApiKeyModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-4 space-y-3 bg-slate-50 text-xs text-slate-600"><p>ระบุ API Key สำหรับใช้งานผู้ช่วย AI (บันทึกเฉพาะในเบราว์เซอร์เครื่องนี้)</p><input type="password" id="apiKeyInput" placeholder="กรอก API Key ที่นี่..." class="w-full px-3 py-2 text-sm font-mono bg-white"></div>
@@ -676,7 +713,7 @@
         </div>
     </div>
 
-    <div id="meterLinkModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="meterLinkModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
             <div class="px-4 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 text-white flex justify-between items-center"><h3 class="font-bold text-sm">📄 ตั้งค่าลิงก์ใบแจ้งสับเปลี่ยนมิเตอร์</h3><button type="button" onclick="closeMeterLinkModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-4 space-y-3 bg-slate-50 text-xs text-slate-600"><p>ลิงก์แบบฟอร์มที่จะแนบอัตโนมัติเมื่อรับแจ้งเหตุเกี่ยวกับมิเตอร์ชำรุด</p><input type="text" id="meterLinkInput" placeholder="วางลิงก์ที่นี่..." class="w-full px-3 py-2 text-sm font-mono bg-white"></div>
@@ -684,23 +721,23 @@
         </div>
     </div>
 
-    <div id="backupModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="backupModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
             <div class="px-5 py-4 bg-gradient-to-r from-slate-800 to-slate-900 text-white flex justify-between items-center"><h3 class="font-bold text-sm">💾 ระบบสำรองและกู้คืนข้อมูล</h3><button type="button" onclick="closeBackupModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-5 space-y-4 bg-slate-50 overflow-y-auto flex-1">
                 <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2"><h4 class="text-xs font-bold text-slate-800">📦 1. สำรองข้อมูลลงเครื่อง (Export JSON)</h4><p class="text-[11px] text-slate-500">ดาวน์โหลดประวัติใบงาน หมุดอุปกรณ์ SCADA และการตั้งค่าทั้งหมดเก็บไว้เป็นไฟล์ .json</p><button type="button" onclick="exportBackupJson()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-xs shadow">📥 ดาวน์โหลดไฟล์สำรอง (JSON)</button></div>
-                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2"><h4 class="text-xs font-bold text-slate-800">📂 2. กู้คืนข้อมูลจากไฟล์ (Import JSON)</h4><input type="file" id="importJsonFile" accept=".json" onchange="importBackupJson(event)" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 cursor-pointer"></div>
-                <div class="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-[11px] text-blue-900 space-y-1"><div class="font-bold">🛡️ ระบบสำรองอัตโนมัติในเบราว์เซอร์</div><button type="button" onclick="restoreFromAutoBackup()" class="mt-1.5 w-full bg-white hover:bg-blue-100 border border-blue-200 text-blue-700 font-semibold py-1.5 rounded-lg text-xs">🔄 กู้คืนจากตัวสำรองอัตโนมัติล่าสุด</button></div>
+                <div class="viewer-hide-restore bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2"><h4 class="text-xs font-bold text-slate-800">📂 2. กู้คืนข้อมูลจากไฟล์ (Import JSON)</h4><input type="file" id="importJsonFile" accept=".json" onchange="importBackupJson(event)" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 cursor-pointer"></div>
+                <div class="viewer-hide-restore p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-[11px] text-blue-900 space-y-1"><div class="font-bold">🛡️ ระบบสำรองอัตโนมัติในเบราว์เซอร์</div><button type="button" onclick="restoreFromAutoBackup()" class="mt-1.5 w-full bg-white hover:bg-blue-100 border border-blue-200 text-blue-700 font-semibold py-1.5 rounded-lg text-xs">🔄 กู้คืนจากตัวสำรองอัตโนมัติล่าสุด</button></div>
             </div>
             <div class="p-4 border-t bg-white flex justify-end"><button type="button" onclick="closeBackupModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">ปิดหน้าต่าง</button></div>
         </div>
     </div>
 
-    <div id="caModal" class="fixed inset-0 bg-slate-900/50 hidden z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+    <div id="caModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
             <div class="px-4 py-3 bg-gradient-to-r from-rose-600 to-red-700 text-white flex justify-between items-center"><h3 class="font-bold text-sm">💳 ฐานข้อมูล CA ค้างจ่าย (12 หลัก)</h3><button type="button" onclick="closeCaManageModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-3 bg-white border-b space-y-2">
-                <div class="flex gap-2"><input type="text" id="newCaInput" placeholder="วางเลข CA 12 หลัก (หลายชุดได้)..." onkeypress="if(event.key==='Enter') addCaNumber()" class="flex-1 px-3 py-2 text-sm font-mono bg-white"><button type="button" onclick="addCaNumber()" class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">เพิ่ม</button></div>
+                <div class="flex gap-2"><input type="text" id="newCaInput" placeholder="วางเลข CA 12 หลัก (หลายชุดได้)..." onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); addCaNumber(); }" class="flex-1 px-3 py-2 text-sm font-mono bg-white"><button type="button" onclick="addCaNumber()" class="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">เพิ่ม</button></div>
                 <input type="text" id="searchCaInput" oninput="renderCaModalList()" placeholder="🔍 ค้นหาเลข CA..." class="w-full px-3 py-1.5 text-xs font-mono bg-slate-50">
             </div>
             <div class="p-3 flex-1 overflow-y-auto space-y-1.5 bg-slate-50" id="caListContainer"></div>
@@ -708,29 +745,59 @@
         </div>
     </div>
 
-    <div id="scadaCadImportModal" class="fixed inset-0 bg-slate-900/65 hidden z-[195] flex items-center justify-center p-3 backdrop-blur-sm">
+    <div id="scadaCadImportModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1250] flex items-center justify-center p-3 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] border border-slate-200">
             <div class="px-4 py-3 bg-gradient-to-r from-slate-900 via-teal-900 to-emerald-800 text-white flex justify-between items-center"><h3 class="font-bold text-sm">📐 นำเข้าอุปกรณ์สวิตช์จาก AutoCAD / Excel</h3><button type="button" onclick="closeScadaCadImportModal()" class="text-xl font-bold">&times;</button></div>
             <div class="p-4 space-y-3 text-xs overflow-y-auto flex-1 bg-slate-50">
                 <div class="p-3 bg-teal-50 border border-teal-200 rounded-xl text-teal-950 flex items-center justify-between"><span class="font-bold">🏢 นำเข้าสู่กลุ่มสังกัด:</span><span id="scadaCadImportGroupBadge" class="bg-teal-700 text-white px-2.5 py-0.5 rounded-md text-[11px] font-extrabold">กฟส.บึง</span></div>
                 <div><label class="block font-bold text-slate-700 mb-1">📋 รูปแบบ: <span class="font-mono text-[11px] text-indigo-700">รหัสสวิตช์, Lat, Lon, ประเภท, SCADA_ID, วงจร, สถานะ(C/O/F), คำเตือน</span></label><textarea id="scadaCadRawTextInput" rows="7" placeholder="BNF06CB-01, 13.13610, 101.03220, CB, 1006, BNF06, C," class="w-full px-3 py-2.5 text-xs font-mono bg-white border border-slate-300 rounded-xl"></textarea></div>
             </div>
-            <div class="p-3 bg-white border-t flex justify-end gap-2"><button type="button" onclick="closeScadaCadImportModal()" class="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" onclick="processScadaCadBatchImport()" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs shadow">📥 นำเข้าสู่ผัง SCADA</button></div>
+            <div class="p-3 bg-white border-t flex justify-end gap-2"><button type="button" onclick="closeScadaCadImportModal()" class="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" onclick="processScadaCadBatchImport()" class="scada-main-edit-only px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs shadow">📥 นำเข้าสู่ผัง SCADA</button></div>
         </div>
     </div>
 
-    <div id="mobileScadaReturnBar" class="hidden fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] items-center gap-2 bg-slate-900/95 text-white px-4 py-2.5 rounded-full shadow-2xl border border-teal-400/50 text-xs font-bold backdrop-blur-md">
+    <div id="mobileScadaReturnBar" class="hidden fixed bottom-2.5 left-1/2 -translate-x-1/2 z-[910] items-center gap-2 bg-slate-900/95 text-white px-4 py-2 rounded-full shadow-2xl border border-teal-400/50 text-xs font-bold backdrop-blur-md">
         <span id="mobileScadaReturnText" class="truncate max-w-[210px]">⚡ เลือกสวิตช์จากผัง SCADA</span>
         <button type="button" onclick="closeLeftWebBrowser()" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded-full text-[11px] font-extrabold shadow shrink-0">กลับหน้าฟอร์ม ➔</button>
     </div>
 
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 text-sm z-[1500]">แจ้งเตือนระบบ</div>
 
-    <!-- 📦 โหลด MQTT และโมดูลระบบหลักตามลำดับ -->
-        <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="shared-core.js?v=106"></script>
-    <script src="main-app.js?v=106"></script>
-        <script src="pm-calendar.js?v=106"></script>
-    <script src="pm-push.js?v=106"></script>
+    <!-- 📦 โหลด MQTT และโมดูลระบบตามลำดับ ไม่ซ้ำซ้อน -->
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
+    <script src="shared-core.js?v=121"></script>
+    <script src="main-app.js?v=121"></script>
+    <script src="pm-calendar.js?v=121"></script>
+    <script src="pm-push.js?v=121"></script>
+
+    <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยน & กันกล่องแนะนำเด้งเองตอนรับค่าจาก SCADA/AI -->
+    <script>
+        (function () {
+            document.addEventListener('wheel', function (e) {
+                const el = e.target;
+                if (el && el.tagName === 'INPUT' && el.type === 'number' && document.activeElement === el) {
+                    el.blur();
+                }
+            }, { passive: true });
+
+            function attachSuggestFocusGuard() {
+                if (typeof window.showSuggestionsData === 'function' && !window.showSuggestionsData.__focusGuarded) {
+                    const origShowSuggest = window.showSuggestionsData;
+                    const guarded = function (inputEl, listId) {
+                        if (!inputEl || document.activeElement !== inputEl) {
+                            document.getElementById(listId)?.classList.add('hidden');
+                            return;
+                        }
+                        return origShowSuggest.apply(this, arguments);
+                    };
+                    guarded.__focusGuarded = true;
+                    window.showSuggestionsData = guarded;
+                }
+            }
+            attachSuggestFocusGuard();
+            window.addEventListener('DOMContentLoaded', attachSuggestFocusGuard);
+        })();
+    </script>
+
 </body>
 </html>
