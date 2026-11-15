@@ -1,7 +1,7 @@
 // ============================================================================
-// ⚡🗺️ PEA SMART GRID — UNIFIED SCADA, AUTOCAD & EQUIPMENT MAP ENGINE v6.4 (scada-engine.js)
-// รวมระบบแผนที่อุปกรณ์ ผังวงจร SCADA 9 สัญลักษณ์ ดัดสาย/ย้ายหมุด ซ่อนป้าย T-Tap ลดกระตุก Canvas และโหมดซ้อมสับ-ปลด
-// พาทที่ 1 / 6 : Constants, State, Quota Compactor, Safe Helpers, Master Styles & Modal Injector
+// ⚡🗺️ PEA SMART GRID — UNIFIED SCADA, AUTOCAD & EQUIPMENT MAP ENGINE v6.5 (scada-engine.js)
+// แยกสีหมุดอุปกรณ์และสีเส้นสายไฟอิสระ 100% + ผังวงจร SCADA 9 สัญลักษณ์ ดัดสาย/ย้ายหมุด และโหมดซ้อมสับ-ปลด
+// พาทที่ 1 / 12 : Constants, State, Safe Helpers & Storage Compactor
 // ============================================================================
 (function () {
     'use strict';
@@ -13,6 +13,7 @@
     const RECENT_COLORS_KEY = 'elec_scada_recent_custom_colors';
     const LOD_MODE_KEY = 'elec_scada_lod_mode';
     const SCADA_BRIDGE_CHANNEL = 'pea_scada_form_bridge_v1';
+    const STORAGE_KEY_ACTIVE_EQUIP_NAV = 'elec_scada_active_map_nav';
 
     const MAX_DELETED_EQUIP_AGE_MS = 30 * 24 * 60 * 60 * 1000;
     const AUTO_LABEL_MIN_ZOOM = 15;
@@ -71,7 +72,6 @@
     let scadaBroadcast = null;
     try { if ('BroadcastChannel' in window) scadaBroadcast = new BroadcastChannel(SCADA_BRIDGE_CHANNEL); } catch (e) {}
 
-    // ประกาศตัวแปรสถานะทั้งหมดไว้ต้น IIFE ป้องกัน Temporal Dead Zone (TDZ) 100%
     let labeledPlaces = [];
     let deletedLabeledMap = {};
     let deletedEquipAuditLogs = [];
@@ -102,6 +102,7 @@
 
     let showAllPinLabels = true;
     let editingEquipPinId = null;
+    let equipModalColorTouched = false;
     let equipModalSessionSeq = 0;
     let isSavingEquipPin = false;
     let isClearingEquipPins = false;
@@ -246,7 +247,6 @@
         return new Date(Math.max(Date.now(), prevMax > 0 ? prevMax + extraOffsetMs : 0)).toISOString();
     }
 
-    // บีบอัดโครงสร้างหมุดและบังคับ st: 'C' เสมอสำหรับจุดต่อที่ไม่ใช่สวิตช์ (PIN / TAP) ป้องกันไฟขาดค้าง
     function compactEquipPinForStorage(pin) {
         if (!pin || typeof pin !== 'object') return null;
         const lat = Number(parseFloat(pin.lat).toFixed(6)), lon = Number(parseFloat(pin.lon).toFixed(6));
@@ -303,7 +303,8 @@
         }
         return out;
     }
-
+    // ===== จบพาทที่ 1 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 2 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 1 / 12) =====
     // ========================================================================
     // 1. สไตล์ชีตหลักของแผนที่อุปกรณ์, สัญลักษณ์ SCADA, โหมดแก้ไข & โหมดซ้อม
     // ========================================================================
@@ -368,11 +369,12 @@
             .scada-sim-live-pill { animation: scadaSimPulseGlow 1.8s infinite ease-in-out; }
             .scada-sim-float-badge { pointer-events: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 440; background: linear-gradient(135deg,rgba(88,28,135,0.94),rgba(126,34,206,0.94)); color: #fff; border: 1.5px solid #e9d5ff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 800; box-shadow: 0 4px 14px rgba(88,28,135,0.55); white-space: nowrap; }
             body.role-viewer-readonly .scada-edit-only, body.role-scada-readonly .scada-edit-only, body.scada-sim-active .scada-edit-only,
+            body.role-viewer-readonly #btnTogglePinMoveMode, body.role-viewer-readonly #btnToggleWireMoveMode, body.role-viewer-readonly #btnToggleScadaDrawMode,
             body.role-scada-readonly #btnTogglePinMoveMode, body.role-scada-readonly #btnToggleWireMoveMode, body.role-scada-readonly #btnToggleScadaDrawMode,
             body.scada-sim-active #btnTogglePinMoveMode, body.scada-sim-active #btnToggleWireMoveMode, body.scada-sim-active #btnToggleScadaDrawMode,
-            body.role-scada-readonly #mapLongPressHintBadge, body.scada-sim-active #mapLongPressHintBadge,
-            body.role-scada-readonly #adminBulkPinColorBar, body.scada-sim-active #adminBulkPinColorBar,
-            body.role-scada-readonly .equip-real-edit-btn, body.scada-sim-active .equip-real-edit-btn,
+            body.role-viewer-readonly #mapLongPressHintBadge, body.role-scada-readonly #mapLongPressHintBadge, body.scada-sim-active #mapLongPressHintBadge,
+            body.role-viewer-readonly #adminBulkPinColorBar, body.role-scada-readonly #adminBulkPinColorBar, body.scada-sim-active #adminBulkPinColorBar,
+            body.role-viewer-readonly .equip-real-edit-btn, body.role-scada-readonly .equip-real-edit-btn, body.scada-sim-active .equip-real-edit-btn,
             body.role-viewer-readonly .equip-color-quick-row, body.role-scada-readonly .equip-color-quick-row, body.scada-sim-active .equip-color-quick-row { display: none !important; }
         `;
         document.head.appendChild(st);
@@ -402,7 +404,7 @@
             const mapSection = document.createElement('div');
             mapSection.id = 'labeledMapViewWrapper';
             mapSection.className = 'hidden flex-col lg:grid-cols-12 lg:items-start';
-            mapSection.innerHTML = `<div class="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:border-l lg:border-slate-200"><div class="flex items-center justify-between bg-teal-50/90 border border-teal-200 px-3 py-1.5 rounded-xl text-[11px]"><span class="font-bold text-teal-900 flex items-center gap-1"><span>⚡ แผนที่ อุปกรณ์ ไฟฟ้า</span><span id="currentEquipGroupHeaderBadge" class="bg-teal-700 text-white px-2 py-0.5 rounded-md text-[10px] font-extrabold">-</span></span><span class="text-[10px] text-teal-700 font-semibold">🔒 แยกตามสังกัด</span></div><div class="flex gap-1.5 relative"><div class="relative flex-1" id="searchEquipAutocompleteBox"><input type="text" id="searchLabeledPinInput" autocomplete="off" oninput="onSearchEquipInputChange(this.value)" onfocus="onSearchEquipInputChange(this.value)" onkeydown="onSearchEquipKeyDown(event)" placeholder="🔍 พิมพ์ค้นหาชื่อรหัส, อุปกรณ์ไฟฟ้า..." class="w-full px-3.5 py-2 pr-8 text-xs bg-white font-medium"><button type="button" onclick="clearSearchEquipInput()" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-bold">&times;</button><div id="searchEquipDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-[600] divide-y divide-slate-100"></div></div><button type="button" onclick="focusMapOnSearchMatch()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-sm whitespace-nowrap">🗺️ ค้นหาดู Map</button></div><div class="space-y-1"><div class="text-[10px] font-bold text-slate-500 flex items-center justify-between px-0.5"><span>🎨 ตัวกรองแสดงตามสีหมุดสายฟ้า (7 สี):</span><button type="button" onclick="selectEquipPinColorFilter('all')" class="text-teal-700 hover:underline font-bold">แสดงทุกสี</button></div><div class="grid grid-cols-4 sm:grid-cols-8 lg:grid-cols-4 gap-1" id="equipColorFilterPills">${filterPillsHtml}</div></div><div class="flex flex-wrap items-center justify-between gap-1.5"><div class="flex flex-wrap gap-1.5"><button type="button" onclick="openEquipPinModal(null)" class="equip-real-edit-btn bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">➕ เพิ่มป้ายกำกับ</button><button type="button" onclick="document.getElementById('importLabelsFileInput').click()" class="equip-real-edit-btn bg-white hover:bg-slate-100 text-teal-700 border border-teal-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">📂 นำเข้าไฟล์</button><input type="file" id="importLabelsFileInput" accept=".json,.geojson,.kml,.csv,.xlsx,.xls" class="hidden" onchange="handleImportLabeledFile(event)"><button type="button" onclick="exportLabeledPinsToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">📊 ส่งออก Excel</button><button type="button" onclick="exportLabeledPinsToJson()" class="bg-sky-600 hover:bg-sky-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">📥 ส่งออก JSON</button></div><div class="flex items-center gap-1"><button type="button" id="togglePinNamesBtn" onclick="toggleShowAllPinNames()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-2 py-1.5 rounded-xl text-[11px] font-semibold">🏷️ ชื่อรหัส: อัตโนมัติ (ซูม ≥15)</button><button type="button" onclick="centerMapOnMyGps()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">📍 พิกัดฉัน</button></div></div><div id="adminBulkPinColorBar" class="hidden flex-col gap-2 p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-[11px]"><div class="flex flex-wrap items-center justify-between gap-1.5"><span class="font-extrabold text-amber-900">👑 เครื่องมือแอดมิน (Admin):</span><button type="button" onclick="openDeletedEquipAuditModal()" class="bg-rose-700 hover:bg-rose-800 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-sm">📜 ประวัติผู้ลบหมุด (<span id="adminDeletedAuditCountBadge">0</span>)</button></div><div class="flex flex-wrap items-center gap-1 pt-1 border-t border-amber-200/80"><span class="text-[10px] font-bold text-amber-800 mr-0.5">เปลี่ยนสีทั้งหมด:</span>${bulkColorBtns}</div></div></div><div class="lg:col-span-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 flex flex-col"><div id="mapActiveNavContainer" class="hidden px-3.5 pt-3"><div class="p-3 bg-blue-50/95 border-2 border-blue-400 rounded-2xl shadow-sm space-y-2 text-xs text-blue-950"><div id="mapActiveNavBody"></div><div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-blue-200"><div class="flex flex-wrap gap-1.5"><button type="button" onclick="openExternalGoogleMapsForActiveNav()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">🗺️ เปิด Google Maps</button><button type="button" onclick="copyActiveNavPinToClipboard()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">📋 คัดลอก</button><button type="button" onclick="shareActiveNavPinToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">💬 แชร์ LINE</button><button type="button" onclick="zoomToActiveNavRoute()" class="bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">🔍 ดูเส้นทาง</button></div><button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">❌ ยกเลิก</button></div></div></div><div id="mapFullscreenContainer" class="p-3.5 pb-2 lg:p-4 isolate z-10"><div class="relative isolate rounded-2xl overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100"><div id="labeledInteractiveMap" class="w-full h-[350px] sm:h-[420px] z-0 hide-pin-tooltips"></div><div id="mapFloatingActionBtns" class="absolute bottom-3 left-3 z-[400] flex flex-wrap items-center gap-1.5"><button type="button" onclick="fitAllLabeledPinsOnMap()" class="bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md">🌐 ดูหมุดทั้งหมดในกลุ่ม</button><button type="button" id="toggleFullscreenMapBtn" onclick="toggleMapFullscreenMode()" class="bg-slate-900/90 hover:bg-slate-900 text-white border border-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md">⛶ ขยายแผนที่เต็มจอ</button></div></div></div></div><div class="lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:border-l lg:border-slate-200 flex flex-col"><div class="px-4 py-2 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs"><span id="labeledListSummaryText" class="font-bold text-teal-800">⚡ อุปกรณ์ไฟฟ้าในกลุ่ม (0)</span><div class="flex items-center gap-1.5"><select id="sortLabeledPinsSelect" onchange="renderLabeledPlacesList(false)" class="px-2 py-1 text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg"><option value="nearest">📏 เรียงตามระยะใกล้ฉันที่สุด</option><option value="name_asc">🔤 เรียงตามชื่อรหัส ก ➔ ฮ</option></select><button type="button" onclick="openClearEquipModal()" class="equip-real-edit-btn bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1 rounded-lg text-[11px] font-bold">🗑️ ล้างข้อมูล</button></div></div><div id="labeledPlacesCardsContainer" class="p-3.5 pt-2 space-y-2.5 max-h-[42vh] lg:max-h-[46vh] overflow-y-auto"></div></div>`;
+            mapSection.innerHTML = `<div class="p-3.5 bg-slate-50 border-b border-slate-200 space-y-2.5 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:border-l lg:border-slate-200"><div class="flex items-center justify-between bg-teal-50/90 border border-teal-200 px-3 py-1.5 rounded-xl text-[11px]"><span class="font-bold text-teal-900 flex items-center gap-1"><span>⚡ แผนที่ อุปกรณ์ ไฟฟ้า</span><span id="currentEquipGroupHeaderBadge" class="bg-teal-700 text-white px-2 py-0.5 rounded-md text-[10px] font-extrabold">-</span></span><span class="text-[10px] text-teal-700 font-semibold">🔒 แยกตามสังกัด</span></div><div class="flex gap-1.5 relative"><div class="relative flex-1" id="searchEquipAutocompleteBox"><input type="text" id="searchLabeledPinInput" autocomplete="off" oninput="onSearchEquipInputChange(this.value)" onfocus="onSearchEquipInputChange(this.value)" onkeydown="onSearchEquipKeyDown(event)" placeholder="🔍 พิมพ์ค้นหาชื่อรหัส, อุปกรณ์ไฟฟ้า..." class="w-full px-3.5 py-2 pr-8 text-xs bg-white font-medium"><button type="button" onclick="clearSearchEquipInput()" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-bold">&times;</button><div id="searchEquipDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-[600] divide-y divide-slate-100"></div></div><button type="button" onclick="focusMapOnSearchMatch()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-bold shadow-sm whitespace-nowrap">🗺️ ค้นหาดู Map</button></div><div class="space-y-1"><div class="text-[10px] font-bold text-slate-500 flex items-center justify-between px-0.5"><span>🎨 ตัวกรองแสดงตามสีหมุด (แยกจากสีสายไฟ):</span><button type="button" onclick="selectEquipPinColorFilter('all')" class="text-teal-700 hover:underline font-bold">แสดงทุกสี</button></div><div class="grid grid-cols-4 sm:grid-cols-8 lg:grid-cols-4 gap-1" id="equipColorFilterPills">${filterPillsHtml}</div></div><div class="flex flex-wrap items-center justify-between gap-1.5"><div class="flex flex-wrap gap-1.5"><button type="button" onclick="openEquipPinModal(null)" class="equip-real-edit-btn bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">➕ เพิ่มป้ายกำกับ</button><button type="button" onclick="document.getElementById('importLabelsFileInput').click()" class="equip-real-edit-btn bg-white hover:bg-slate-100 text-teal-700 border border-teal-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">📂 นำเข้าไฟล์</button><input type="file" id="importLabelsFileInput" accept=".json,.geojson,.kml,.csv,.xlsx,.xls" class="hidden" onchange="handleImportLabeledFile(event)"><button type="button" onclick="exportLabeledPinsToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">📊 ส่งออก Excel</button><button type="button" onclick="exportLabeledPinsToJson()" class="bg-sky-600 hover:bg-sky-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">📥 ส่งออก JSON</button></div><div class="flex items-center gap-1"><button type="button" id="togglePinNamesBtn" onclick="toggleShowAllPinNames()" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 px-2 py-1.5 rounded-xl text-[11px] font-semibold">🏷️ ชื่อรหัส: อัตโนมัติ (ซูม ≥15)</button><button type="button" onclick="centerMapOnMyGps()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">📍 พิกัดฉัน</button></div></div><div id="adminBulkPinColorBar" class="hidden flex-col gap-2 p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl text-[11px]"><div class="flex flex-wrap items-center justify-between gap-1.5"><span class="font-extrabold text-amber-900">👑 เครื่องมือแอดมิน (Admin):</span><button type="button" onclick="openDeletedEquipAuditModal()" class="bg-rose-700 hover:bg-rose-800 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold shadow-sm">📜 ประวัติผู้ลบหมุด (<span id="adminDeletedAuditCountBadge">0</span>)</button></div><div class="flex flex-wrap items-center gap-1 pt-1 border-t border-amber-200/80"><span class="text-[10px] font-bold text-amber-800 mr-0.5">เปลี่ยนสีหมุดทั้งหมด:</span>${bulkColorBtns}</div></div></div><div class="lg:col-span-8 lg:col-start-1 lg:row-start-1 lg:row-span-2 flex flex-col"><div id="mapActiveNavContainer" class="hidden px-3.5 pt-3"><div class="p-3 bg-blue-50/95 border-2 border-blue-400 rounded-2xl shadow-sm space-y-2 text-xs text-blue-950"><div id="mapActiveNavBody"></div><div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-blue-200"><div class="flex flex-wrap gap-1.5"><button type="button" onclick="openExternalGoogleMapsForActiveNav()" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">🗺️ เปิด Google Maps</button><button type="button" onclick="copyActiveNavPinToClipboard()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">📋 คัดลอก</button><button type="button" onclick="shareActiveNavPinToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-sm">💬 แชร์ LINE</button><button type="button" onclick="zoomToActiveNavRoute()" class="bg-white hover:bg-blue-100 text-blue-700 border border-blue-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">🔍 ดูเส้นทาง</button></div><button type="button" onclick="stopLabeledPlaceNavigation()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl text-[11px] font-bold">❌ ยกเลิก</button></div></div></div><div id="mapFullscreenContainer" class="p-3.5 pb-2 lg:p-4 isolate z-10"><div class="relative isolate rounded-2xl overflow-hidden border-2 border-slate-200 shadow-inner bg-slate-100"><div id="labeledInteractiveMap" class="w-full h-[350px] sm:h-[420px] z-0 hide-pin-tooltips"></div><div id="mapFloatingActionBtns" class="absolute bottom-3 left-3 z-[400] flex flex-wrap items-center gap-1.5"><button type="button" onclick="fitAllLabeledPinsOnMap()" class="bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md">🌐 ดูหมุดทั้งหมดในกลุ่ม</button><button type="button" id="toggleFullscreenMapBtn" onclick="toggleMapFullscreenMode()" class="bg-slate-900/90 hover:bg-slate-900 text-white border border-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-md">⛶ ขยายแผนที่เต็มจอ</button></div></div></div></div><div class="lg:col-span-4 lg:col-start-9 lg:row-start-2 lg:border-l lg:border-slate-200 flex flex-col"><div class="px-4 py-2 bg-white border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs"><span id="labeledListSummaryText" class="font-bold text-teal-800">⚡ อุปกรณ์ไฟฟ้าในกลุ่ม (0)</span><div class="flex items-center gap-1.5"><select id="sortLabeledPinsSelect" onchange="renderLabeledPlacesList(false)" class="px-2 py-1 text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg"><option value="nearest">📏 เรียงตามระยะใกล้ฉันที่สุด</option><option value="name_asc">🔤 เรียงตามชื่อรหัส ก ➔ ฮ</option></select><button type="button" onclick="openClearEquipModal()" class="equip-real-edit-btn bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1 rounded-lg text-[11px] font-bold">🗑️ ล้างข้อมูล</button></div></div><div id="labeledPlacesCardsContainer" class="p-3.5 pt-2 space-y-2.5 max-h-[42vh] lg:max-h-[46vh] overflow-y-auto"></div></div>`;
 
             mainApp.insertBefore(switcherBar, footerEl);
             mainApp.insertBefore(jobsWrapper, footerEl);
@@ -412,19 +414,18 @@
         const modalColorBtns = [['green','from-emerald-500 to-teal-700','เขียว'],['yellow','from-amber-400 to-yellow-600','เหลือง'],['orange','from-orange-400 to-orange-600','ส้ม'],['red','from-rose-500 to-red-700','แดง'],['blue','from-sky-400 to-blue-600','ฟ้า'],['purple','from-purple-500 to-purple-800','ม่วง'],['brown','from-amber-700 to-yellow-950','น้ำตาล']].map(([k, g, lbl]) => `<button type="button" id="pinColorBtn-${k}" onclick="selectModalPinColor('${k}')" class="py-2 px-1.5 rounded-xl border-2 font-bold text-[11px] flex flex-col items-center gap-1 transition"><span class="w-6 h-6 rounded-full bg-gradient-to-br ${g} text-white flex items-center justify-center shadow-sm text-xs">⚡</span><span>${lbl}</span></button>`).join('');
 
         const modalsHtml = [
-            ['equipPinModal', `<div id="equipPinModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1150] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90dvh] overflow-hidden flex flex-col"><div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center"><h3 id="equipPinModalTitle" class="font-bold text-sm">⚡ เพิ่มข้อมูลอุปกรณ์ไฟฟ้า</h3><button type="button" onclick="closeEquipPinModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3.5 text-xs overflow-y-auto flex-1"><div class="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 flex items-center justify-between"><span class="font-bold">🏢 กลุ่มผู้ใช้งานที่มีสิทธิ์เห็นข้อมูลนี้:</span><span id="equipModalGroupBadge" class="bg-teal-700 text-white font-extrabold px-2.5 py-0.5 rounded-lg text-[11px]">-</span></div><div><label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อรหัส / ชื่ออุปกรณ์ไฟฟ้า <span class="text-rose-500">*</span></label><input type="text" id="equipCodeNameInput" placeholder="เช่น BNF05VS-107, TR-0125..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800"></div><div><div class="flex items-center justify-between mb-1"><label class="block font-bold text-slate-700">📍 พิกัด หรือ ลิงก์ GPS <span class="text-rose-500">*</span></label><button type="button" onclick="fillEquipCurrentGps()" class="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-bold">📍 ดึงพิกัดมือถือปัจจุบัน</button></div><input type="text" id="equipCoordInput" placeholder="วางพิกัด เช่น 13.1361, 101.0322 หรือลิงก์ maps.app.goo.gl..." class="w-full px-3.5 py-2 text-xs font-medium text-slate-800"><p id="equipShortLinkStatus" class="text-[10px] text-slate-400 mt-1">รองรับทั้งพิกัดตัวเลข ลิงก์เต็ม และลิงก์สั้น maps.app.goo.gl</p></div><div><label class="block font-bold text-slate-700 mb-1.5">🎨 เลือกสีหมุดสายฟ้าเริ่มต้น (7 สี)</label><input type="hidden" id="equipPinColorInput" value="green"><div class="grid grid-cols-4 sm:grid-cols-7 gap-1.5">${modalColorBtns}</div></div><div><label class="block font-bold text-slate-700 mb-1">📝 รายละเอียดเพิ่มเติม / บริเวณ</label><input type="text" id="equipNoteInput" placeholder="เช่น ขนาด 160 kVA, เสาต้นที่ 12..." class="w-full px-3.5 py-2 text-xs text-slate-700"></div><div class="p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2"><div class="flex items-center justify-between"><label class="font-bold text-amber-900 text-xs">⏰ ตั้งวันที่เปลี่ยนสีหมุดอัตโนมัติ (ถ้ามี)</label><button type="button" onclick="document.getElementById('equipDueDateInput').value='';" class="text-[10px] text-rose-600 hover:underline font-bold">✖ ล้างวันที่กำหนด</button></div><div class="grid grid-cols-2 gap-2"><div><label class="block text-[10px] font-semibold text-slate-600 mb-0.5">📅 เมื่อถึงวันที่</label><input type="date" id="equipDueDateInput" class="w-full px-2.5 py-1.5 text-xs bg-white font-semibold text-slate-800"></div><div><label class="block text-[10px] font-semibold text-slate-600 mb-0.5">🎨 ให้เปลี่ยนเป็น</label><select id="equipDueColorInput" class="w-full px-2.5 py-1.5 text-xs bg-white font-bold text-slate-800"><option value="red">🔴 สีแดง</option><option value="orange">🟠 สีส้ม</option><option value="yellow">🟡 สีเหลือง</option><option value="blue">🔵 สีฟ้า</option><option value="purple">🟣 สีม่วง</option><option value="brown">🟤 สีน้ำตาล</option><option value="green">🟢 สีเขียว</option></select></div></div></div></div><div class="p-3 bg-slate-50 border-t flex items-center gap-2"><button type="button" id="deleteEquipPinInModalBtn" onclick="deleteEquipPinFromModal()" class="hidden px-3.5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow">🗑️ ลบหมุด</button><button type="button" onclick="closeEquipPinModal()" class="px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" id="saveEquipPinSubmitBtn" onclick="saveEquipPinModal()" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl shadow text-xs sm:text-sm">💾 บันทึกข้อมูล</button></div></div></div>`],
+            ['equipPinModal', `<div id="equipPinModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1150] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90dvh] overflow-hidden flex flex-col"><div class="px-4 py-3 bg-gradient-to-r from-teal-700 to-emerald-600 text-white flex justify-between items-center"><h3 id="equipPinModalTitle" class="font-bold text-sm">⚡ เพิ่มข้อมูลอุปกรณ์ไฟฟ้า</h3><button type="button" onclick="closeEquipPinModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3.5 text-xs overflow-y-auto flex-1"><div class="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 flex items-center justify-between"><span class="font-bold">🏢 กลุ่มผู้ใช้งานที่มีสิทธิ์เห็นข้อมูลนี้:</span><span id="equipModalGroupBadge" class="bg-teal-700 text-white font-extrabold px-2.5 py-0.5 rounded-lg text-[11px]">-</span></div><div><label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อรหัส / ชื่ออุปกรณ์ไฟฟ้า <span class="text-rose-500">*</span></label><input type="text" id="equipCodeNameInput" placeholder="เช่น BNF05VS-107, TR-0125..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800"></div><div><div class="flex items-center justify-between mb-1"><label class="block font-bold text-slate-700">📍 พิกัด หรือ ลิงก์ GPS <span class="text-rose-500">*</span></label><button type="button" onclick="fillEquipCurrentGps()" class="text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 rounded-lg font-bold">📍 ดึงพิกัดมือถือปัจจุบัน</button></div><input type="text" id="equipCoordInput" placeholder="วางพิกัด เช่น 13.1361, 101.0322 หรือลิงก์ maps.app.goo.gl..." class="w-full px-3.5 py-2 text-xs font-medium text-slate-800"><p id="equipShortLinkStatus" class="text-[10px] text-slate-400 mt-1">รองรับทั้งพิกัดตัวเลข ลิงก์เต็ม และลิงก์สั้น maps.app.goo.gl</p></div><div><label class="block font-bold text-slate-700 mb-1.5">🎨 เลือกสีหมุดสายฟ้า (7 สี • แยกจากสีสายไฟ)</label><input type="hidden" id="equipPinColorInput" value="green"><div class="grid grid-cols-4 sm:grid-cols-7 gap-1.5">${modalColorBtns}</div></div><div><label class="block font-bold text-slate-700 mb-1">📝 รายละเอียดเพิ่มเติม / บริเวณ</label><input type="text" id="equipNoteInput" placeholder="เช่น ขนาด 160 kVA, เสาต้นที่ 12..." class="w-full px-3.5 py-2 text-xs text-slate-700"></div><div class="p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-2"><div class="flex items-center justify-between"><label class="font-bold text-amber-900 text-xs">⏰ ตั้งวันที่เปลี่ยนสีหมุดอัตโนมัติ (ถ้ามี)</label><button type="button" onclick="document.getElementById('equipDueDateInput').value='';" class="text-[10px] text-rose-600 hover:underline font-bold">✖ ล้างวันที่กำหนด</button></div><div class="grid grid-cols-2 gap-2"><div><label class="block text-[10px] font-semibold text-slate-600 mb-0.5">📅 เมื่อถึงวันที่</label><input type="date" id="equipDueDateInput" class="w-full px-2.5 py-1.5 text-xs bg-white font-semibold text-slate-800"></div><div><label class="block text-[10px] font-semibold text-slate-600 mb-0.5">🎨 ให้เปลี่ยนเป็น</label><select id="equipDueColorInput" class="w-full px-2.5 py-1.5 text-xs bg-white font-bold text-slate-800"><option value="red">🔴 สีแดง</option><option value="orange">🟠 สีส้ม</option><option value="yellow">🟡 สีเหลือง</option><option value="blue">🔵 สีฟ้า</option><option value="purple">🟣 สีม่วง</option><option value="brown">🟤 สีน้ำตาล</option><option value="green">🟢 สีเขียว</option></select></div></div></div></div><div class="p-3 bg-slate-50 border-t flex items-center gap-2"><button type="button" id="deleteEquipPinInModalBtn" onclick="deleteEquipPinFromModal()" class="hidden px-3.5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow">🗑️ ลบหมุด</button><button type="button" onclick="closeEquipPinModal()" class="px-3.5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" id="saveEquipPinSubmitBtn" onclick="saveEquipPinModal()" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl shadow text-xs sm:text-sm">💾 บันทึกข้อมูล</button></div></div></div>`],
             ['deletedEquipAuditModal', `<div id="deletedEquipAuditModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1150] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88dvh] overflow-hidden flex flex-col"><div class="px-4 py-3 bg-gradient-to-r from-rose-700 to-slate-900 text-white flex justify-between items-center"><h3 class="font-bold text-sm">📜 ประวัติการลบหมุดอุปกรณ์ไฟฟ้า (เฉพาะ Admin)</h3><button type="button" onclick="closeDeletedEquipAuditModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="px-4 py-2 bg-rose-50 border-b border-rose-200 flex justify-between items-center text-[11px] text-rose-900 font-semibold"><span id="deletedEquipAuditSummaryText">รายการที่ถูกลบทั้งหมด 0 รายการ</span><button type="button" onclick="clearDeletedEquipAuditLogs()" class="text-rose-700 hover:underline font-bold">🗑️ ล้างประวัติการลบ</button></div><div id="deletedEquipAuditListContainer" class="p-3.5 overflow-y-auto space-y-2 flex-1 bg-slate-50 text-xs"></div><div class="p-3 bg-white border-t flex justify-end"><button type="button" onclick="closeDeletedEquipAuditModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold">ปิดหน้าต่าง</button></div></div></div>`],
-            ['clearEquipPasswordModal', `<div id="clearEquipPasswordModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1150] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col"><div class="px-4 py-3 bg-gradient-to-r from-rose-600 to-red-700 text-white flex justify-between items-center"><h3 class="font-bold text-sm">🗑️ ยืนยันการล้างข้อมูลอุปกรณ์ไฟฟ้า</h3><button type="button" onclick="closeClearEquipModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3 text-xs"><p id="clearEquipWarningText" class="text-slate-600 leading-relaxed font-medium"></p><div><label class="block font-bold text-slate-700 mb-1">🔑 รหัสผ่านเข้าใช้งานของคุณ</label><input type="password" id="clearEquipPasswordInput" placeholder="กรอกรหัสผ่าน..." class="w-full px-3.5 py-2 text-center text-base font-extrabold tracking-widest text-rose-700" onkeypress="if(event.key==='Enter') confirmClearAllEquipPins()"></div></div><div class="p-3 bg-slate-50 border-t flex gap-2"><button type="button" onclick="closeClearEquipModal()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" id="confirmClearEquipSubmitBtn" onclick="confirmClearAllEquipPins()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl shadow text-xs">🗑️ ยืนยันล้างข้อมูล</button></div></div></div>`],
-            ['scadaNodeConfigModal', `<div id="scadaNodeConfigModal" class="fixed inset-0 bg-slate-900/70 hidden z-[1250] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90dvh]"><div class="px-4 py-3 bg-gradient-to-r from-slate-900 to-teal-800 text-white flex justify-between items-center"><h3 class="font-bold text-sm">⚡ ตั้งค่าสัญลักษณ์และข้อมูล SCADA</h3><button type="button" onclick="closeScadaNodeModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3 text-xs overflow-y-auto flex-1"><div class="flex items-center justify-between gap-2 p-2.5 bg-slate-100 rounded-xl border border-slate-200"><div id="scadaModalPinTitle" class="font-bold text-slate-800 text-sm truncate"></div><button type="button" onclick="autoDetectScadaFieldsFromTitle()" class="shrink-0 bg-teal-600 hover:bg-teal-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">✨ ดึงค่าจากชื่อรหัส</button></div><input type="hidden" id="scadaModalPinId" value=""><div class="grid grid-cols-2 gap-2.5"><div><label class="block font-bold text-slate-700 mb-1">🔣 ประเภทสัญลักษณ์ผัง</label><select id="scadaModalEquipType" class="w-full px-3 py-2 font-bold text-slate-800 bg-white"><option value="PIN">⚡ หมุดสายฟ้า (ทั่วไป)</option><option value="TAP">• หมุดแทปกลมเล็ก (T-Tap)</option><option value="VS">◆ สวิตช์ SCADA (VS / LBS)</option><option value="VSC">● สวิตช์ SCADA (VS / LBS)</option><option value="S">_/  _ สวิตช์ใบมีด Manual (S)</option><option value="DF">&amp; ดร็อปเอาต์ฟิวส์ (DF / FCO)</option><option value="RC">■ เบรกเกอร์ต้นทาง (CB / RC)</option><option value="VB">▣ เบรกเกอร์กลางสาย (VB)</option><option value="GEN">Ⓖ ผู้ผลิตไฟฟ้ารายเล็ก (GEN)</option></select></div><div><label class="block font-bold text-slate-700 mb-1">📟 เลข SCADA ID</label><input type="text" id="scadaModalIdInput" placeholder="เช่น 3419, 513" class="w-full px-3 py-2 font-mono font-bold text-slate-800 bg-white"></div></div><div class="grid grid-cols-2 gap-2.5"><div><label class="block font-bold text-slate-700 mb-1">🚦 สถานะสวิตช์ปัจจุบัน</label><select id="scadaModalStateSelect" class="w-full px-3 py-2 font-bold text-slate-800 bg-white"><option value="C">🟢 สับจ่ายไฟปกติ (NC)</option><option value="O">⚪ ปลด / จุดแบ่งเขต (N.O.)</option><option value="F">🔴 ทริป / ชำรุดห้ามสับ</option></select></div><div><label class="block font-bold text-slate-700 mb-1">🔌 รหัสวงจร / ฟีดเดอร์</label><input type="text" id="scadaModalFeederInput" placeholder="เช่น BNG6, BNF06" class="w-full px-3 py-2 font-bold text-slate-800 bg-white uppercase"></div></div><div><label class="block font-bold text-slate-700 mb-1.5">🎨 สีประจำสัญลักษณ์และวงจร</label><div class="flex flex-wrap items-center gap-2" id="scadaModalColorSwatches"></div><input type="hidden" id="scadaModalColorInput" value="#10b981"></div><div><label class="block font-bold text-rose-700 mb-1">⚠️ คำเตือน Interlock / สภาพชำรุดหน้างาน</label><input type="text" id="scadaModalWarnInput" placeholder="เช่น OFF 87L ก่อนสับขนาน, ใบมีดชำรุดเฟส A" class="w-full px-3 py-2 text-rose-800 font-semibold bg-rose-50/60 border-rose-200"></div></div><div class="p-3 bg-slate-50 border-t flex items-center justify-between gap-2"><button type="button" onclick="resetScadaNodeToDefaultPin()" class="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold rounded-xl text-xs">รีเซ็ตเป็นหมุดปกติ</button><div class="flex gap-2"><button type="button" onclick="closeScadaNodeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" onclick="saveScadaNodeModal()" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs shadow">💾 บันทึก</button></div></div></div></div>`],
-            ['scadaColorPaletteModal', `<div id="scadaColorPaletteModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1350] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-slate-900 text-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700 flex flex-col max-h-[90dvh]"><div class="px-4 py-3 bg-gradient-to-r from-slate-800 to-teal-900 border-b border-slate-700 flex justify-between items-center"><h3 class="font-bold text-sm">🎨 เลือกสีวงจร / อุปกรณ์ SCADA</h3><button type="button" onclick="closeScadaColorPaletteModal()" class="text-slate-300 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-4 text-xs overflow-y-auto flex-1"><div id="scadaV3ScopeSelectorBox" class="hidden p-3 bg-slate-800/95 rounded-xl border border-teal-500/40 space-y-1.5"><div class="text-[11px] font-extrabold text-teal-300">🔗 เลือกขอบเขตการเปลี่ยนสีระบบสายไฟ:</div><div class="grid grid-cols-3 gap-1.5"><button type="button" id="scadaV3ScopeBtn-connected" onclick="setScadaEdgeRecolorScopeV3('connected')">🔗 ทั้งระบบที่เชื่อมต่อ</button><button type="button" id="scadaV3ScopeBtn-all_thru" onclick="setScadaEdgeRecolorScopeV3('all_thru')">🌐 ทะลุจุดปลด N.O.</button><button type="button" id="scadaV3ScopeBtn-single" onclick="setScadaEdgeRecolorScopeV3('single')">📍 เฉพาะท่อนนี้</button></div></div><div class="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5"><div class="flex items-center justify-between gap-2"><span class="font-bold text-slate-300">🌈 ผสมสีเองอิสระ:</span><div class="flex items-center gap-2"><input type="color" id="scadaCustomColorWheel" value="#10b981" oninput="onScadaWheelColorInput(this.value)" class="w-9 h-8 rounded cursor-pointer bg-transparent border-0 p-0"><input type="text" id="scadaCustomHexInput" value="#10B981" maxlength="7" oninput="onScadaHexTextInput(this.value)" class="w-24 px-2.5 py-1.5 rounded-lg bg-slate-950 text-amber-300 border border-slate-600 font-mono font-bold text-xs uppercase text-center"></div></div><div class="flex items-center gap-2.5 pt-1"><span class="text-[11px] text-slate-400 shrink-0">ตัวอย่างเส้น:</span><div class="flex-1 h-6 bg-slate-950 rounded-lg border border-slate-700 flex items-center px-3"><div id="scadaPalettePreviewLine" class="w-full rounded-full" style="height:3px;background:#10b981;"></div></div></div></div><div><div class="font-bold text-slate-300 mb-2 flex items-center justify-between"><span>⚡ สีมาตรฐานผังวงจร &amp; AutoCAD (28 เฉดสี)</span><span id="scadaSelectedColorNameLabel" class="text-[11px] text-teal-300 font-semibold"></span></div><div id="scadaPresetColorsGrid" class="grid grid-cols-7 gap-2"></div></div><div id="scadaRecentColorsSection" class="hidden"><div class="font-bold text-slate-400 mb-1.5 flex items-center justify-between text-[11px]"><span>🕒 สีที่ผสมเอง / ใช้ล่าสุด</span><button type="button" onclick="clearScadaRecentColors()" class="text-rose-400 hover:underline">ล้างถาดสีล่าสุด</button></div><div id="scadaRecentColorsGrid" class="flex flex-wrap gap-2"></div></div></div><div class="p-3 bg-slate-800 border-t border-slate-700 flex justify-end gap-2"><button type="button" onclick="closeScadaColorPaletteModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" onclick="confirmScadaPaletteSelection()" class="px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold rounded-xl text-xs shadow">✅ ใช้สีนี้</button></div></div></div>`],
+            ['clearEquipPasswordModal', `<div id="clearEquipPasswordModal" class="fixed inset-0 bg-slate-900/65 hidden z-[1150] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col"><div class="px-4 py-3 bg-gradient-to-r from-rose-600 to-red-700 text-white flex justify-between items-center"><h3 class="font-bold text-sm">🗑️ ยืนยันการล้างข้อมูลอุปกรณ์ไฟฟ้า</h3><button type="button" onclick="closeClearEquipModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3 text-xs"><p id="clearEquipWarningText" class="text-slate-600 leading-relaxed font-medium"></p><div><label class="block font-bold text-slate-700 mb-1">🔑 รหัสผ่านเข้าใช้งานของคุณ</label><input type="password" id="clearEquipPasswordInput" placeholder="กรอกรหัสผ่าน..." class="w-full px-3.5 py-2 text-center text-base font-extrabold tracking-widest text-rose-700" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); confirmClearAllEquipPins(); }"></div></div><div class="p-3 bg-slate-50 border-t flex gap-2"><button type="button" onclick="closeClearEquipModal()" class="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" id="confirmClearEquipSubmitBtn" onclick="confirmClearAllEquipPins()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 rounded-xl shadow text-xs">🗑️ ยืนยันล้างข้อมูล</button></div></div></div>`],
+            ['scadaNodeConfigModal', `<div id="scadaNodeConfigModal" class="fixed inset-0 bg-slate-900/70 hidden z-[1250] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90dvh]"><div class="px-4 py-3 bg-gradient-to-r from-slate-900 to-teal-800 text-white flex justify-between items-center"><h3 class="font-bold text-sm">⚡ ตั้งค่าสัญลักษณ์และข้อมูล SCADA</h3><button type="button" onclick="closeScadaNodeModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3 text-xs overflow-y-auto flex-1"><div class="flex items-center justify-between gap-2 p-2.5 bg-slate-100 rounded-xl border border-slate-200"><div id="scadaModalPinTitle" class="font-bold text-slate-800 text-sm truncate"></div><button type="button" onclick="autoDetectScadaFieldsFromTitle()" class="shrink-0 bg-teal-600 hover:bg-teal-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">✨ ดึงค่าจากชื่อรหัส</button></div><input type="hidden" id="scadaModalPinId" value=""><div class="grid grid-cols-2 gap-2.5"><div><label class="block font-bold text-slate-700 mb-1">🔣 ประเภทสัญลักษณ์ผัง</label><select id="scadaModalEquipType" class="w-full px-3 py-2 font-bold text-slate-800 bg-white"><option value="PIN">⚡ หมุดสายฟ้า (ทั่วไป)</option><option value="TAP">• หมุดแทปกลมเล็ก (T-Tap)</option><option value="VS">◆ สวิตช์ SCADA (VS / LBS)</option><option value="VSC">● สวิตช์ SCADA (VS / LBS)</option><option value="S">_/  _ สวิตช์ใบมีด Manual (S)</option><option value="DF">&amp; ดร็อปเอาต์ฟิวส์ (DF / FCO)</option><option value="RC">■ เบรกเกอร์ต้นทาง (CB / RC)</option><option value="VB">▣ เบรกเกอร์กลางสาย (VB)</option><option value="GEN">Ⓖ ผู้ผลิตไฟฟ้ารายเล็ก (GEN)</option></select></div><div><label class="block font-bold text-slate-700 mb-1">📟 เลข SCADA ID</label><input type="text" id="scadaModalIdInput" placeholder="เช่น 3419, 513" class="w-full px-3 py-2 font-mono font-bold text-slate-800 bg-white"></div></div><div class="grid grid-cols-2 gap-2.5"><div><label class="block font-bold text-slate-700 mb-1">🚦 สถานะสวิตช์ปัจจุบัน</label><select id="scadaModalStateSelect" class="w-full px-3 py-2 font-bold text-slate-800 bg-white"><option value="C">🟢 สับจ่ายไฟปกติ (NC)</option><option value="O">⚪ ปลด / จุดแบ่งเขต (N.O.)</option><option value="F">🔴 ทริป / ชำรุดห้ามสับ</option></select></div><div><label class="block font-bold text-slate-700 mb-1">🔌 รหัสวงจร / ฟีดเดอร์</label><input type="text" id="scadaModalFeederInput" placeholder="เช่น BNG6, BNF06" class="w-full px-3 py-2 font-bold text-slate-800 bg-white uppercase"></div></div><div><label class="block font-bold text-slate-700 mb-1.5">🎨 สีประจำหมุด / สัญลักษณ์ (แยกจากสีสายไฟ)</label><div class="flex flex-wrap items-center gap-2" id="scadaModalColorSwatches"></div><input type="hidden" id="scadaModalColorInput" value="#10b981"></div><div><label class="block font-bold text-rose-700 mb-1">⚠️ คำเตือน Interlock / สภาพชำรุดหน้างาน</label><input type="text" id="scadaModalWarnInput" placeholder="เช่น OFF 87L ก่อนสับขนาน, ใบมีดชำรุดเฟส A" class="w-full px-3 py-2 text-rose-800 font-semibold bg-rose-50/60 border-rose-200"></div></div><div class="p-3 bg-slate-50 border-t flex items-center justify-between gap-2"><button type="button" onclick="resetScadaNodeToDefaultPin()" class="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold rounded-xl text-xs">รีเซ็ตเป็นหมุดปกติ</button><div class="flex gap-2"><button type="button" onclick="closeScadaNodeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" onclick="saveScadaNodeModal()" class="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs shadow">💾 บันทึก</button></div></div></div></div>`],
+            ['scadaColorPaletteModal', `<div id="scadaColorPaletteModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1350] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-slate-900 text-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-700 flex flex-col max-h-[90dvh]"><div class="px-4 py-3 bg-gradient-to-r from-slate-800 to-teal-900 border-b border-slate-700 flex justify-between items-center"><h3 id="scadaColorPaletteModalTitle" class="font-bold text-sm">🎨 เลือกสีเส้นสายไฟ</h3><button type="button" onclick="closeScadaColorPaletteModal()" class="text-slate-300 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-4 text-xs overflow-y-auto flex-1"><div id="scadaV3ScopeSelectorBox" class="hidden p-3 bg-slate-800/95 rounded-xl border border-teal-500/40 space-y-1.5"><div class="text-[11px] font-extrabold text-teal-300">🔗 เลือกขอบเขตการเปลี่ยนสีสายไฟ (ไม่กระทบสีหมุด):</div><div class="grid grid-cols-3 gap-1.5"><button type="button" id="scadaV3ScopeBtn-connected" onclick="setScadaEdgeRecolorScopeV3('connected')">🔗 ทั้งระบบที่เชื่อมต่อ</button><button type="button" id="scadaV3ScopeBtn-all_thru" onclick="setScadaEdgeRecolorScopeV3('all_thru')">🌐 ทะลุจุดปลด N.O.</button><button type="button" id="scadaV3ScopeBtn-single" onclick="setScadaEdgeRecolorScopeV3('single')">📍 เฉพาะท่อนนี้</button></div></div><div class="p-3 bg-slate-800/90 rounded-xl border border-slate-700 space-y-2.5"><div class="flex items-center justify-between gap-2"><span class="font-bold text-slate-300">🌈 ผสมสีเองอิสระ:</span><div class="flex items-center gap-2"><input type="color" id="scadaCustomColorWheel" value="#10b981" oninput="onScadaWheelColorInput(this.value)" class="w-9 h-8 rounded cursor-pointer bg-transparent border-0 p-0"><input type="text" id="scadaCustomHexInput" value="#10B981" maxlength="7" oninput="onScadaHexTextInput(this.value)" class="w-24 px-2.5 py-1.5 rounded-lg bg-slate-950 text-amber-300 border border-slate-600 font-mono font-bold text-xs uppercase text-center"></div></div><div class="flex items-center gap-2.5 pt-1"><span class="text-[11px] text-slate-400 shrink-0">ตัวอย่างสี:</span><div class="flex-1 h-6 bg-slate-950 rounded-lg border border-slate-700 flex items-center px-3"><div id="scadaPalettePreviewLine" class="w-full rounded-full" style="height:3px;background:#10b981;"></div></div></div></div><div><div class="font-bold text-slate-300 mb-2 flex items-center justify-between"><span>⚡ สีมาตรฐานผังวงจร &amp; AutoCAD (28 เฉดสี)</span><span id="scadaSelectedColorNameLabel" class="text-[11px] text-teal-300 font-semibold"></span></div><div id="scadaPresetColorsGrid" class="grid grid-cols-7 gap-2"></div></div><div id="scadaRecentColorsSection" class="hidden"><div class="font-bold text-slate-400 mb-1.5 flex items-center justify-between text-[11px]"><span>🕒 สีที่ผสมเอง / ใช้ล่าสุด</span><button type="button" onclick="clearScadaRecentColors()" class="text-rose-400 hover:underline">ล้างถาดสีล่าสุด</button></div><div id="scadaRecentColorsGrid" class="flex flex-wrap gap-2"></div></div></div><div class="p-3 bg-slate-800 border-t border-slate-700 flex justify-end gap-2"><button type="button" onclick="closeScadaColorPaletteModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" onclick="confirmScadaPaletteSelection()" class="px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-extrabold rounded-xl text-xs shadow">✅ ใช้สีนี้</button></div></div></div>`],
             ['scadaSimPlanModal', `<div id="scadaSimPlanModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1380] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90dvh] border border-purple-300"><div class="px-4 py-3 bg-gradient-to-r from-purple-900 via-fuchsia-900 to-indigo-900 text-white flex justify-between items-center"><h3 class="font-bold text-sm">📋 แผนลำดับการสับ-ปลดสวิตช์ (Switching Order)</h3><button type="button" onclick="closeScadaSimPlanModal()" class="text-purple-200 hover:text-white text-xl font-bold leading-none">&times;</button></div><div class="p-4 space-y-3 text-xs overflow-y-auto flex-1 bg-slate-50"><div><label class="block font-bold text-slate-700 mb-1">🏷️ หัวข้อแผนปฏิบัติงาน / วงจร</label><input type="text" id="scadaSimPlanTitleInput" oninput="rebuildScadaSimPlanText()" placeholder="เช่น แผนสับเปลี่ยนภาระไฟ วงจร BNF06" class="w-full px-3 py-2 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-xl"></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-[11px] font-semibold text-purple-950"><label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="scadaSimIncludeGpsChk" onchange="rebuildScadaSimPlanText()" class="w-4 h-4 accent-purple-600 rounded"><span>📍 แนบลิงก์ GPS รายจุดสวิตช์</span></label><label class="flex items-center gap-2 cursor-pointer select-none"><input type="checkbox" id="scadaSimIncludeImpactChk" checked onchange="rebuildScadaSimPlanText()" class="w-4 h-4 accent-purple-600 rounded"><span>⚡ แนบสรุปผลกระทบผังไฟหลังซ้อม</span></label></div><div><div class="flex items-center justify-between mb-1"><label class="font-bold text-slate-700">📝 ข้อความสำหรับส่ง LINE (พิมพ์แก้ไขเพิ่มเติมได้)</label><button type="button" onclick="rebuildScadaSimPlanText()" class="text-[11px] text-purple-700 hover:underline font-bold">🔄 รีเซ็ตข้อความ</button></div><textarea id="scadaSimPlanPreviewText" rows="10" class="w-full p-3 text-xs font-mono bg-white border border-slate-300 rounded-xl text-slate-800 leading-relaxed focus:outline-none"></textarea></div></div><div class="p-3 bg-white border-t flex flex-wrap items-center justify-between gap-2"><button type="button" onclick="closeScadaSimPlanModal()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">ปิดหน้าต่าง</button><div class="flex items-center gap-2"><button type="button" onclick="copyScadaSimPlanToClipboard()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs shadow">📋 คัดลอกแผน</button><button type="button" onclick="shareScadaSimPlanToLine()" class="px-4 py-2 bg-[#00B900] hover:bg-[#009900] text-white font-extrabold rounded-xl text-xs shadow">💬 ส่งเข้า LINE</button></div></div></div></div>`]
         ];
         modalsHtml.forEach(([id, html]) => { if (!document.getElementById(id)) document.body.insertAdjacentHTML('beforeend', html); });
     }
-    // ===== จบพาทที่ 1 / 6 ของไฟล์ scada-engine.js =====
-        // ===== เริ่มพาทที่ 2 / 6 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 1 / 6) =====
+
     // ========================================================================
-    // 3. ระบบสิทธิ์แก้ไขผัง, คลังหมุดปลอดสายค้าง, Global-Score T-Tap Auto-Heal & กู้คืนสายขาเข้า
+    // 3. ระบบสิทธิ์แก้ไขผัง, ขอบเขตสาขา & คลังหมุดปลอดสายค้าง
     // ========================================================================
     function clearTempLongPressMarker() {
         if (tempLongPressMarker && leafletMap) {
@@ -463,15 +464,12 @@
     function isAdminGlobalScope() {
         return isCurrentUserAdmin() && !normScadaGrpRaw(getCurrentUserGroup() || localStorage.getItem('elec_app_current_group'));
     }
-
     function getActiveEquipUserGroup() {
         return normScadaGrp(getCurrentUserGroup() || localStorage.getItem('elec_app_current_group') || 'กฟส.บึง');
     }
-
     function getActiveEquipScopeLabel() {
         return isAdminGlobalScope() ? 'ทุกสาขา (Admin ส่วนกลาง)' : getActiveEquipUserGroup();
     }
-
     function getPinOwnerGroup(pin) {
         if (pin?.ownerGroup && String(pin.ownerGroup).trim()) return normScadaGrp(pin.ownerGroup);
         if (pin?.ownerUser) { const g = getUserGroupName(pin.ownerUser); if (g) return normScadaGrp(g); }
@@ -503,13 +501,11 @@
     function getPinSavedColorHex(pin) {
         return normHex(pin?.scadaNode?.col) || PIN_KEY_TO_HEX[pin?.pinColor] || '#10b981';
     }
-
     function getEffectivePinColorKey(pin) {
         if (!pin) return 'green';
         if (pin.dueDate && pin.dueColor && PIN_COLOR_THEMES[pin.dueColor] && getTodayLocalIso() >= pin.dueDate) return pin.dueColor;
         return (pin.pinColor && PIN_COLOR_THEMES[pin.pinColor]) ? pin.pinColor : 'green';
     }
-
     function getPinEffectiveDisplayHex(pin) {
         if (pin?.dueDate && pin?.dueColor && PIN_COLOR_THEMES[pin.dueColor] && getTodayLocalIso() >= pin.dueDate) {
             return PIN_KEY_TO_HEX[pin.dueColor] || '#ef4444';
@@ -613,21 +609,19 @@
     function markEquipCloudPushPending() {
         if (simState.active || isViewerRole()) return;
         localStorage.setItem('elec_tech_has_pending_push', 'true');
-        Core.unlockCloudWrite(25000);
+        Core?.unlockCloudWrite?.(25000);
     }
 
     async function saveLabeledPlaces(syncCloud = true) {
         labeledPlaces = deduplicateEquipPins(labeledPlaces);
         deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
         deletedEquipAuditLogs = deduplicateAuditLogs(deletedEquipAuditLogs, labeledPlaces);
-
         if (!simState.active) {
             localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
             localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify(deletedEquipAuditLogs));
         }
         localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(labeledPlaces));
         updateAdminAuditCountBadge();
-
         if (syncCloud && !simState.active) {
             markEquipCloudPushPending();
             if (typeof window.pushAllJobsToCloud === 'function') window.pushAllJobsToCloud(true);
@@ -639,7 +633,6 @@
         loadStoredLabeledPlaces();
         const didChange = mutatorFn(labeledPlaces);
         if (!didChange) return false;
-
         labeledPlaces = deduplicateEquipPins(labeledPlaces);
         deletedLabeledMap = pruneDeletedLabeledMap(deletedLabeledMap);
         localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
@@ -651,8 +644,8 @@
         if (typeof window.pushAllJobsToCloud === 'function') window.pushAllJobsToCloud(true);
         return true;
     }
-
-    // บันทึกทั้งสายขาออกและสายขาเข้า (incomingLines) ไว้ในประวัติลบ เพื่อให้ Admin กู้คืนสวิตช์พร้อมเส้นไฟต้นทางได้ครบ 100%
+    // ===== จบพาทที่ 2 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 3 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 2 / 12) =====
     function recordPinDeletionAuditLog(pinObj, actionNote = 'ลบรายจุด') {
         if (!pinObj || simState.active) return;
         const curUser = (localStorage.getItem('elec_app_current_user') || 'ไม่ระบุชื่อ').trim();
@@ -691,6 +684,8 @@
         localStorage.setItem(STORAGE_KEY_DELETED_AUDIT_LOGS, JSON.stringify(deletedEquipAuditLogs));
         updateAdminAuditCountBadge();
     }
+
+    function inEdgeLastIdx(arr) { return arr.length - 1; }
 
     function healTTapConnectionsInList(pins, deletedPinId) {
         const targetPin = pins.find(p => p && p.id === deletedPinId);
@@ -777,7 +772,6 @@
         }
         return reconnectedCount;
     }
-    function inEdgeLastIdx(arr) { return arr.length - 1; }
 
     window.__mergeCloudEquipRegistry = function (locReg) {
         if (!locReg || simState.active) return;
@@ -915,10 +909,10 @@
             showToast('🗑️ ล้างประวัติการลบหมุดเรียบร้อยแล้ว');
         }, '🗑️ ยืนยันการล้างประวัติการลบ');
     }
-    // ===== จบพาทที่ 2 / 6 ของไฟล์ scada-engine.js =====
-        // ===== เริ่มพาทที่ 3 / 6 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 2 / 6) =====
+    // ===== จบพาทที่ 3 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 4 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 3 / 12) =====
     // ========================================================================
-    // 5. แถบสลับหน้าหลัก, ตัวกรองสี 7 สี, ค้นหา Autocomplete & แชร์พิกัด LINE
+    // 5. แถบสลับหน้าหลัก, ตัวกรองสีหมุด 7 สี, ค้นหา Autocomplete & แชร์พิกัด LINE
     // ========================================================================
     function updateMainSwitcherButtonsStyle() {
         const btnJobs = document.getElementById('mainTabBtn-jobs');
@@ -977,7 +971,6 @@
         else { const t = getPinColorTheme(currentPinColorFilter); showToast(`${t.dot} กรองเฉพาะหมุด${t.name}`); }
     }
 
-    // ปลดตัวกรองสีและช่องค้นหาอัตโนมัติเมื่อเข้าโหมดซ้อม/วาดสาย/ขยับหมุด เพื่อไม่ให้สวิตช์ N.O. (สีเหลือง) ถูกซ่อน
     function resetMapFiltersForScadaAction() {
         let changed = false;
         if (currentPinColorFilter !== 'all') {
@@ -1134,12 +1127,13 @@
     function shareActiveNavPinToLine() { if (activeMapNav?.placeId) shareEquipPinToLine(activeMapNav.placeId); }
 
     // ========================================================================
-    // 6. หน้าต่างเพิ่ม/แก้ไข/ลบหมุด (ป้องกันกดซ้ำ & ยกเลิกระหว่างคลายลิงก์สั้น)
+    // 6. หน้าต่างเพิ่ม/แก้ไข/ลบหมุด (แยกสีหมุดออกจากสีสายไฟ 100%)
     // ========================================================================
     function selectModalPinColor(colorKey) {
         const th = getPinColorTheme(colorKey);
         const inp = document.getElementById('equipPinColorInput');
         if (inp) inp.value = th.key;
+        equipModalColorTouched = true;
         ALL_PIN_COLOR_KEYS.forEach(k => {
             const btn = document.getElementById('pinColorBtn-' + k);
             if (!btn) return;
@@ -1149,6 +1143,7 @@
         });
     }
 
+    // เปลี่ยนเฉพาะสีหมุดเดี่ยว ไม่ไหลไปเปลี่ยนสีสายไฟหรือหมุดข้างเคียง
     async function quickChangeSinglePinColor(placeId, colorKey) {
         if (!guardRealScadaEdit()) return;
         loadStoredLabeledPlaces();
@@ -1169,15 +1164,14 @@
             updatedBy: curUser,
             updatedAt: updIso
         };
-        propagateColorToConnectedSystem(labeledPlaces, [placeId], newHex, { crossOpenSwitches: false });
-        setScadaDrawColor(newHex);
         await saveLabeledPlaces(true);
         renderLabeledPlacesList(true);
         scheduleUnifiedScadaRefresh();
         restoreMapFloatingUiIfNoPopup();
-        showToast(`${th.dot} เปลี่ยนสีหมุด "${labeledPlaces[idx].name}" เป็น${th.name}แล้ว`);
+        showToast(`${th.dot} เปลี่ยนสีหมุด "${labeledPlaces[idx].name}" เป็น${th.name}แล้ว (ไม่กระทบสีสายไฟ)`);
     }
 
+    // เปลี่ยนสีหมุดทั้งหมดสำหรับแอดมิน โดยไม่เขียนทับสีเส้นสายไฟ (scadaLines)
     function bulkChangeAllPinsColor(colorKey) {
         if (!isCurrentUserAdmin()) return showCustomAlert('⛔ เฉพาะแอดมินเท่านั้นที่เปลี่ยนสีหมุดทั้งหมดพร้อมกันได้', '🔒 จำกัดสิทธิ์เฉพาะ Admin');
         if (!guardRealScadaEdit()) return;
@@ -1187,14 +1181,13 @@
 
         const th = getPinColorTheme(colorKey), newHex = PIN_KEY_TO_HEX[th.key] || '#10b981';
         const scopeLabel = getActiveEquipScopeLabel();
-        showCustomConfirm(`👑 ยืนยันการเปลี่ยนสีหมุดทั้งหมดในขอบเขต "${scopeLabel}" (${visible.length} จุด) เป็น "${th.dot} ${th.name}" หรือไม่?`, async function () {
+        showCustomConfirm(`👑 ยืนยันการเปลี่ยนสีหมุดทั้งหมดในขอบเขต "${scopeLabel}" (${visible.length} จุด) เป็น "${th.dot} ${th.name}" หรือไม่?\n(เปลี่ยนเฉพาะสีหมุด ไม่กระทบสีเส้นสายไฟ)`, async function () {
             const todayIso = getTodayLocalIso(), curUser = (localStorage.getItem('elec_app_current_user') || 'admin').trim();
             labeledPlaces = labeledPlaces.map(p => {
                 if (!canCurrentUserSeeEquipPin(p)) return p;
                 const dueDone = Boolean(p.dueDate && todayIso >= p.dueDate);
                 const copy = { ...p, ownerGroup: getPinOwnerGroup(p), pinColor: th.key, dueDate: dueDone ? undefined : p.dueDate, dueColor: dueDone ? undefined : p.dueColor, updatedBy: curUser, updatedAt: nextPinUpdatedIso(p) };
                 if (copy.scadaNode) copy.scadaNode = { ...copy.scadaNode, col: newHex };
-                if (Array.isArray(copy.scadaLines)) copy.scadaLines = copy.scadaLines.map(l => l ? { ...l, col: newHex } : l);
                 return copy;
             });
             if (currentPinColorFilter !== 'all' && currentPinColorFilter !== th.key) currentPinColorFilter = th.key;
@@ -1205,7 +1198,8 @@
             showToast(`👑 เปลี่ยนสีหมุดทั้งหมด (${visible.length} จุด) เป็น${th.name}เรียบร้อยแล้ว!`);
         }, '👑 ยืนยันการเปลี่ยนสีหมุดทั้งหมด');
     }
-
+    // ===== จบพาทที่ 4 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 5 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 4 / 12) =====
     function normalizeThaiLatLon(valA, valB) {
         const a = parseFloat(valA), b = parseFloat(valB);
         if (isNaN(a) || isNaN(b)) return null;
@@ -1263,6 +1257,7 @@
             document.getElementById('equipDueDateInput').value = target.dueDate || '';
             document.getElementById('equipDueColorInput').value = target.dueColor || 'red';
             selectModalPinColor(target.pinColor || 'green');
+            equipModalColorTouched = false;
             delBtn?.classList.remove('hidden'); delBtn?.classList.add('inline-flex');
         } else {
             if (!hasPreset) clearTempLongPressMarker();
@@ -1276,6 +1271,7 @@
             document.getElementById('equipDueDateInput').value = '';
             document.getElementById('equipDueColorInput').value = 'red';
             selectModalPinColor(currentPinColorFilter !== 'all' ? currentPinColorFilter : 'green');
+            equipModalColorTouched = false;
             delBtn?.classList.add('hidden'); delBtn?.classList.remove('inline-flex');
         }
 
@@ -1287,6 +1283,7 @@
     function closeEquipPinModal() {
         equipModalSessionSeq++;
         isSavingEquipPin = false;
+        equipModalColorTouched = false;
         const saveBtn = document.getElementById('saveEquipPinSubmitBtn');
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 บันทึกข้อมูล'; }
         clearTempLongPressMarker();
@@ -1332,6 +1329,7 @@
 
         const mySession = equipModalSessionSeq;
         const targetEditId = editingEquipPinId;
+        const didTouchColor = equipModalColorTouched;
         isSavingEquipPin = true;
 
         try {
@@ -1353,17 +1351,20 @@
             if (targetEditId) {
                 const idx = labeledPlaces.findIndex(p => p.id === targetEditId);
                 if (idx !== -1) {
-                    const prevColor = labeledPlaces[idx].pinColor, updIso = nextPinUpdatedIso(labeledPlaces[idx]);
+                    const prevPin = labeledPlaces[idx];
+                    const shouldSyncNodeCol = Boolean(didTouchColor || pinColor !== prevPin.pinColor);
+                    const updIso = nextPinUpdatedIso(prevPin);
+                    const nextNode = prevPin.scadaNode
+                        ? { ...prevPin.scadaNode, ...(shouldSyncNodeCol && PIN_KEY_TO_HEX[pinColor] ? { col: PIN_KEY_TO_HEX[pinColor] } : {}) }
+                        : undefined;
                     labeledPlaces[idx] = compactEquipPinForStorage({
-                        ...labeledPlaces[idx],
+                        ...prevPin,
                         name: codeName, note, lat: pair.lat, lon: pair.lon, pinColor,
                         dueDate: dueDate || undefined, dueColor: dueDate ? dueColor : undefined,
-                        ownerGroup: labeledPlaces[idx].ownerGroup || myGroup,
+                        ...(nextNode ? { scadaNode: nextNode } : {}),
+                        ownerGroup: prevPin.ownerGroup || myGroup,
                         updatedBy: curUser, updatedAt: updIso
                     });
-                    if (pinColor !== prevColor && PIN_KEY_TO_HEX[pinColor]) {
-                        propagateColorToConnectedSystem(labeledPlaces, [targetEditId], PIN_KEY_TO_HEX[pinColor], { crossOpenSwitches: false });
-                    }
                     await saveLabeledPlaces(true);
                     closeEquipPinModal();
                     renderLabeledPlacesList(true);
@@ -1393,7 +1394,7 @@
     }
 
     function executePinDeletionWithHeal(placeId, actionSourceNote, closeEditModalAfter = false) {
-        if (placeId === '__unlock_write_quota__') { Core.unlockCloudWrite(25000); return; }
+        if (placeId === '__unlock_write_quota__') { Core?.unlockCloudWrite?.(25000); return; }
         if (!guardRealScadaEdit()) return;
         loadStoredLabeledPlaces();
         const target = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
@@ -1462,7 +1463,7 @@
         if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังตรวจสอบ...'; }
         showToast('⏳ กำลังตรวจสอบรหัสผ่านกับเซิร์ฟเวอร์...');
         try {
-            const ok = await Core.verifyPasswordOnServer(typedPass);
+            const ok = typeof Core?.verifyPasswordOnServer === 'function' ? await Core.verifyPasswordOnServer(typedPass) : false;
             if (document.getElementById('clearEquipPasswordModal')?.classList.contains('hidden')) return;
             if (!ok) return showToast('❌ รหัสผ่านไม่ถูกต้อง! กรุณาใช้รหัสผ่านบัญชีของคุณหรือรหัสแอดมิน');
 
@@ -1499,9 +1500,6 @@
             if (btn) { btn.disabled = false; btn.textContent = '🗑️ ยืนยันล้างข้อมูล'; }
         }
     }
-    // ===== จบพาทที่ 3 / 6 ของไฟล์ scada-engine.js =====
-        // ===== เริ่มพาทที่ 4 / 6 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 3 / 6) =====
-    const STORAGE_KEY_ACTIVE_EQUIP_NAV = 'elec_scada_active_map_nav';
 
     function exportLabeledPinsToJson() {
         loadStoredLabeledPlaces();
@@ -1537,11 +1535,12 @@
             XLSX.writeFile(wb, `${baseFn}.xlsx`);
             showToast(`📊 ส่งออกไฟล์ Excel (${visible.length} จุด) สำเร็จ!`);
         } else {
-            Core.downloadCsvFallback(headers, rows, `${baseFn}.csv`);
+            Core?.downloadCsvFallback?.(headers, rows, `${baseFn}.csv`);
             showToast(`📊 ส่งออกไฟล์ตาราง .csv (${visible.length} จุด) สำเร็จ!`);
         }
     }
-
+    // ===== จบพาทที่ 5 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 6 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 5 / 12) =====
     function parseImportedColorKey(raw) {
         const s = String(raw || '').trim().toLowerCase();
         if (PIN_COLOR_THEMES[s]) return s;
@@ -1681,7 +1680,6 @@
                 p.scadaLines = p.scadaLines.map(l => l?.to ? { ...l, to: idRemap.get(String(l.to).trim()) || sanitizeEquipPinId(l.to) } : null).filter(Boolean);
             }
             const existIdx = labeledPlaces.findIndex(ex => ex.id === p.id);
-            // คำนวณเวลาอัปเดตให้ชนะเวลาใน deletedLabeledMap ก่อนลบคีย์ออก ป้องกันหมุดหายตอนซิงค์ชีต
             const prevRef = existIdx !== -1 ? labeledPlaces[existIdx] : { id: p.id, updatedAt: p.updatedAt };
             const updIso = nextPinUpdatedIso(prevRef, 2500);
             delete deletedLabeledMap[p.id];
@@ -1734,18 +1732,11 @@
 
             const pid = candidate.placeId || candidate.pinId || storedNav?.placeId;
             const targetPin = pid ? labeledPlaces.find(p => p.id === pid && canCurrentUserSeeEquipPin(p)) : null;
-            if (!targetPin) {
-                localStorage.removeItem(STORAGE_KEY_ACTIVE_EQUIP_NAV);
-                return;
-            }
+            if (!targetPin) { localStorage.removeItem(STORAGE_KEY_ACTIVE_EQUIP_NAV); return; }
             activeMapNav = {
-                ...(storedNav || {}),
-                ...candidate,
-                placeId: targetPin.id,
-                placeName: candidate.placeName || targetPin.name,
-                destLat: parseFloat(targetPin.lat),
-                destLon: parseFloat(targetPin.lon),
-                techName: curUser
+                ...(storedNav || {}), ...candidate,
+                placeId: targetPin.id, placeName: candidate.placeName || targetPin.name,
+                destLat: parseFloat(targetPin.lat), destLon: parseFloat(targetPin.lon), techName: curUser
             };
             persistActiveEquipMapNav();
         }
@@ -1809,12 +1800,8 @@
         document.getElementById('mapActiveNavContainer')?.classList.remove('hidden');
         renderActiveMapNavBox();
         renderLabeledPlacesList(false);
-        if (hasRealGps) {
-            await drawAndRefreshRouteToLabeledPin(startCoord, destCoord, true);
-        } else {
-            routeLineLayer?.clearLayers();
-            leafletMap?.setView([destCoord.lat, destCoord.lon], 15);
-        }
+        if (hasRealGps) await drawAndRefreshRouteToLabeledPin(startCoord, destCoord, true);
+        else { routeLineLayer?.clearLayers(); leafletMap?.setView([destCoord.lat, destCoord.lon], 15); }
         startMapNavRealtimeWatch();
     }
 
@@ -1917,11 +1904,7 @@
     function updatePinTooltipsVisibilityByZoom() {
         const mapEl = document.getElementById('labeledInteractiveMap'), btn = document.getElementById('togglePinNamesBtn');
         if (!mapEl) return;
-        if (!showAllPinLabels) {
-            mapEl.classList.add('hide-pin-tooltips');
-            if (btn) btn.textContent = '🏷️ ชื่อรหัส: ปิด';
-            return;
-        }
+        if (!showAllPinLabels) { mapEl.classList.add('hide-pin-tooltips'); if (btn) btn.textContent = '🏷️ ชื่อรหัส: ปิด'; return; }
         const curZoom = leafletMap ? leafletMap.getZoom() : 12;
         mapEl.classList.toggle('hide-pin-tooltips', curZoom < AUTO_LABEL_MIN_ZOOM);
         if (btn) btn.textContent = curZoom >= AUTO_LABEL_MIN_ZOOM ? `🏷️ ชื่อรหัส: แสดง (ซูม ${curZoom})` : '🏷️ ชื่อรหัส: อัตโนมัติ (ซูม ≥15)';
@@ -1930,9 +1913,7 @@
     function toggleShowAllPinNames() {
         showAllPinLabels = !showAllPinLabels;
         updatePinTooltipsVisibilityByZoom();
-        if (showAllPinLabels && leafletMap && leafletMap.getZoom() < AUTO_LABEL_MIN_ZOOM) {
-            showToast(`🏷️ เปิดแสดงชื่อรหัสอัตโนมัติ (ซูมเข้าใกล้ระดับ ${AUTO_LABEL_MIN_ZOOM} ขึ้นไปเพื่อดูชื่อ)`);
-        }
+        if (showAllPinLabels && leafletMap && leafletMap.getZoom() < AUTO_LABEL_MIN_ZOOM) showToast(`🏷️ เปิดแสดงชื่อรหัสอัตโนมัติ (ซูมเข้าใกล้ระดับ ${AUTO_LABEL_MIN_ZOOM} ขึ้นไปเพื่อดูชื่อ)`);
     }
 
     function toggleMapFullscreenMode() {
@@ -1955,53 +1936,35 @@
     function updateLodToolbarButtonUI() {
         const btn = document.getElementById('btnToggleScadaSmartLod');
         if (!btn) return;
-        if (lodMode === 'auto') {
-            btn.textContent = hiddenByLodCount > 0 ? `🚀 ลดกระตุก (ย่อ ${hiddenByLodCount})` : '🚀 ลดกระตุก: อัตโนมัติ';
-            btn.className = 'bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/50 px-2.5 py-1 rounded-xl text-[11px] font-bold transition';
-        } else {
-            btn.textContent = '👁️ หมุด: แสดงครบ';
-            btn.className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 px-2.5 py-1 rounded-xl text-[11px] font-bold transition';
-        }
+        btn.textContent = lodMode === 'auto' ? (hiddenByLodCount > 0 ? `🚀 ลดกระตุก (ย่อ ${hiddenByLodCount})` : '🚀 ลดกระตุก: อัตโนมัติ') : '👁️ หมุด: แสดงครบ';
+        btn.className = `bg-slate-800 hover:bg-slate-700 px-2.5 py-1 rounded-xl text-[11px] font-bold transition border ${lodMode === 'auto' ? 'text-teal-300 border-teal-500/50' : 'text-slate-300 border-slate-600'}`;
     }
 
     function evaluatePinVisibility(pin, marker, zoom, paddedBounds, totalPins, editModeOn, hasSearchKw) {
         if (!marker || !pin) return { mount: false, hiddenByLod: false };
-        if (marker.isPopupOpen?.() || pin.id === currentlyOpenPopupPinId || pin.id === scadaSettings.fromPinId || pin.id === pinMoveState.selectedPinId) {
-            return { mount: true, hiddenByLod: false };
-        }
+        if (marker.isPopupOpen?.() || pin.id === currentlyOpenPopupPinId || pin.id === scadaSettings.fromPinId || pin.id === pinMoveState.selectedPinId) return { mount: true, hiddenByLod: false };
         if (paddedBounds && !paddedBounds.contains(marker.getLatLng())) return { mount: false, hiddenByLod: false };
-        if (lodMode === 'all' || hasSearchKw || simState.active || totalPins < ADAPTIVE_LOD_MIN_PINS) return { mount: true, hiddenByLod: false };
-        if (editModeOn && zoom >= 12) return { mount: true, hiddenByLod: false };
-
+        if (lodMode === 'all' || hasSearchKw || simState.active || totalPins < ADAPTIVE_LOD_MIN_PINS || (editModeOn && zoom >= 12)) return { mount: true, hiddenByLod: false };
         const eqType = pin.scadaNode?.t || (isPinTTap(pin, labeledPlaces) ? 'TAP' : 'PIN'), st = pin.scadaNode?.st || 'C';
         if (['RC', 'CB', 'VB', 'VS', 'VSC', 'S', 'GEN'].includes(eqType) || st === 'F') return { mount: true, hiddenByLod: false };
         const isTap = isPinTTap(pin, labeledPlaces);
-        if (zoom < 13) return (!Core.ramIndex.hasBackboneSwitches && eqType === 'PIN' && !isTap) ? { mount: true, hiddenByLod: false } : { mount: false, hiddenByLod: true };
+        if (zoom < 13) return (!Core?.ramIndex?.hasBackboneSwitches && eqType === 'PIN' && !isTap) ? { mount: true, hiddenByLod: false } : { mount: false, hiddenByLod: true };
         if (zoom < 14 && isTap) return { mount: false, hiddenByLod: true };
         return { mount: true, hiddenByLod: false };
     }
 
     function syncLodAndViewportMarkersNow() {
         if (activeDragCleanupFn) return;
-        if (!leafletMap || !markersLayer || lodPinPool.size === 0) {
-            hiddenByLodCount = 0; updateLodToolbarButtonUI(); return;
-        }
-        const zoom = leafletMap.getZoom() ?? 12;
-        const paddedBounds = leafletMap.getBounds ? leafletMap.getBounds().pad(0.28) : null;
-        const totalPins = lodPinPool.size, editOn = isAnyEditModeActive();
-        const hasKw = Boolean((document.getElementById('searchLabeledPinInput')?.value || '').trim());
+        if (!leafletMap || !markersLayer || lodPinPool.size === 0) { hiddenByLodCount = 0; updateLodToolbarButtonUI(); return; }
+        const zoom = leafletMap.getZoom() ?? 12, paddedBounds = leafletMap.getBounds ? leafletMap.getBounds().pad(0.28) : null;
+        const totalPins = lodPinPool.size, editOn = isAnyEditModeActive(), hasKw = Boolean((document.getElementById('searchLabeledPinInput')?.value || '').trim());
         let skipped = 0;
-
         lodPinPool.forEach((entry) => {
             const res = evaluatePinVisibility(entry.place, entry.marker, zoom, paddedBounds, totalPins, editOn, hasKw);
             if (res.hiddenByLod) skipped++;
             const mounted = markersLayer.hasLayer(entry.marker);
-            if (res.mount && !mounted) {
-                markersLayer.addLayer(entry.marker);
-                bindPinDragEventsOnMarker(entry.place.id, entry.marker);
-            } else if (!res.mount && mounted) {
-                markersLayer.removeLayer(entry.marker);
-            }
+            if (res.mount && !mounted) { markersLayer.addLayer(entry.marker); bindPinDragEventsOnMarker(entry.place.id, entry.marker); }
+            else if (!res.mount && mounted) markersLayer.removeLayer(entry.marker);
         });
         hiddenByLodCount = skipped;
         updateLodToolbarButtonUI();
@@ -2011,8 +1974,8 @@
         if (syncMarkersRafId) return;
         syncMarkersRafId = requestAnimationFrame(() => { syncMarkersRafId = null; syncLodAndViewportMarkersNow(); });
     }
-    // ===== จบพาทที่ 4 / 6 ของไฟล์ scada-engine.js =====
-        // ===== เริ่มพาทที่ 5 / 6 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 4 / 6) =====
+    // ===== จบพาทที่ 6 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 7 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 6 / 12) =====
     function initLabeledLeafletMap() {
         const mapContainer = document.getElementById('labeledInteractiveMap');
         if (!mapContainer || typeof L === 'undefined' || leafletMap) return;
@@ -2073,7 +2036,7 @@
         const cancelLp = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } lpStart = null; };
         const isMapInteractiveEl = (el) => Boolean(el?.closest?.('.leaflet-marker-icon, .leaflet-popup, .leaflet-control, button, a'));
         const triggerLongPressAt = (latlng) => {
-            if (!latlng || isAnyEditModeActive() || simState.active || !canCurrentUserEditScada() || Date.now() - lastLpMs < 900) return;
+            if (!latlng || isAnyEditModeActive() || simState.active || isViewerRole() || !canCurrentUserEditScada() || Date.now() - lastLpMs < 900) return;
             lastLpMs = Date.now();
             if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
             clearTempLongPressMarker();
@@ -2163,8 +2126,8 @@
     function buildPinPopupBaseHtml(place) {
         const safeId = escScadaJsAttr(place.id), lat = Number(place.lat).toFixed(6), lon = Number(place.lon).toFixed(6);
         const th = getPinColorTheme(getEffectivePinColorKey(place)), dueHtml = buildDueScheduleBadgeHtml(place);
-        const quickColors = ALL_PIN_COLOR_KEYS.map(k => `<button type="button" onclick="quickChangeSinglePinColor('${safeId}', '${k}')" class="text-sm leading-none hover:scale-125 transition">${PIN_COLOR_THEMES[k].dot}</button>`).join('');
-        return `<div style="font-family:'Prompt',sans-serif;min-width:240px;" class="space-y-1.5 text-xs"><div class="flex items-center justify-between gap-1"><span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(getPinOwnerGroup(place))}</span><div class="flex items-center gap-2"><button type="button" onclick="copyEquipPinToClipboard('${safeId}')" style="color:#4f46e5;font-weight:700;font-size:11px;">📋 คัดลอก</button><button type="button" onclick="shareEquipPinToLine('${safeId}')" style="color:#00B900;font-weight:700;font-size:11px;">💬 แชร์ LINE</button><button type="button" onclick="openEquipPinModal('${safeId}')" class="equip-real-edit-btn" style="color:#0f766e;font-weight:700;font-size:11px;">✏️ แก้ไข</button></div></div><div class="font-bold text-slate-900 text-sm break-words">${th.dot} ⚡ ${escapeHtmlStr(place.name)}</div>${dueHtml ? `<div>${dueHtml}</div>` : ''}${place.note ? `<div class="text-slate-600 text-[11px] break-words">${escapeHtmlStr(place.note)}</div>` : ''}<div class="text-[10px] text-slate-400">${lat}, ${lon}</div><div class="equip-color-quick-row flex items-center justify-between bg-slate-100 px-2 py-1 rounded-lg"><span class="text-[10px] font-bold text-slate-600">🎨 สีหมุด:</span><div class="flex items-center gap-1">${quickColors}</div></div><div class="pt-1 flex gap-1"><button type="button" onclick="startLabeledPlaceNavigation('${safeId}', false)" style="background:#0d9488;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🚗 เริ่มเดินทาง</button><button type="button" onclick="startLabeledPlaceNavigation('${safeId}', true)" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🗺️ นำทาง Maps</button></div></div>`;
+        const quickColors = ALL_PIN_COLOR_KEYS.map(k => `<button type="button" onclick="quickChangeSinglePinColor('${safeId}', '${k}')" class="text-sm leading-none hover:scale-125 transition" title="เปลี่ยนเฉพาะสีหมุด">${PIN_COLOR_THEMES[k].dot}</button>`).join('');
+        return `<div style="font-family:'Prompt',sans-serif;min-width:240px;" class="space-y-1.5 text-xs"><div class="flex items-center justify-between gap-1"><span class="bg-teal-100 text-teal-800 text-[10px] font-bold px-2 py-0.5 rounded">🏢 ${escapeHtmlStr(getPinOwnerGroup(place))}</span><div class="flex items-center gap-2"><button type="button" onclick="copyEquipPinToClipboard('${safeId}')" style="color:#4f46e5;font-weight:700;font-size:11px;">📋 คัดลอก</button><button type="button" onclick="shareEquipPinToLine('${safeId}')" style="color:#00B900;font-weight:700;font-size:11px;">💬 แชร์ LINE</button><button type="button" onclick="openEquipPinModal('${safeId}')" class="equip-real-edit-btn" style="color:#0f766e;font-weight:700;font-size:11px;">✏️ แก้ไข</button></div></div><div class="font-bold text-slate-900 text-sm break-words">${th.dot} ⚡ ${escapeHtmlStr(place.name)}</div>${dueHtml ? `<div>${dueHtml}</div>` : ''}${place.note ? `<div class="text-slate-600 text-[11px] break-words">${escapeHtmlStr(place.note)}</div>` : ''}<div class="text-[10px] text-slate-400">${lat}, ${lon}</div><div class="equip-color-quick-row flex items-center justify-between bg-slate-100 px-2 py-1 rounded-lg"><span class="text-[10px] font-bold text-slate-600">🎨 เฉพาะสีหมุด:</span><div class="flex items-center gap-1">${quickColors}</div></div><div class="pt-1 flex gap-1"><button type="button" onclick="startLabeledPlaceNavigation('${safeId}', false)" style="background:#0d9488;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🚗 เริ่มเดินทาง</button><button type="button" onclick="startLabeledPlaceNavigation('${safeId}', true)" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;flex:1;">🗺️ นำทาง Maps</button></div></div>`;
     }
 
     function refreshOpenPinPopupIfNeeded() {
@@ -2174,7 +2137,7 @@
         const latestPin = labeledPlaces.find(p => p?.id === currentlyOpenPopupPinId);
         if (!latestPin) return;
         const nSt = cachedTopology?.nodeStates?.get(latestPin.id);
-        const popSig = `${latestPin.updatedAt || ''}:${getEffectivePinColorKey(latestPin)}:${JSON.stringify(latestPin.scadaNode || null)}:${nSt?.energized}:${nSt?.primarySource?.breakerId || ''}:${nSt?.isParallel}:${nSt?.isTieTwoSources}:${nSt?.isBackfeed}:${nSt?.terminalSources?.length || 0}:${simState.active}:${simState.steps.length}`;
+        const popSig = `${latestPin.updatedAt || ''}:${getEffectivePinColorKey(latestPin)}:${getPinEffectiveDisplayHex(latestPin)}:${JSON.stringify(latestPin.scadaNode || null)}:${nSt?.energized}:${nSt?.isUnmonitored}:${nSt?.primarySource?.breakerId || ''}:${nSt?.isParallel}:${nSt?.isTieTwoSources}:${nSt?.isBackfeed}:${nSt?.terminalSources?.length || 0}:${simState.active}:${simState.steps.length}`;
         if (mk.__openPopSig === popSig) return;
         mk.__openPopSig = popSig;
         const popObj = mk.getPopup?.();
@@ -2189,22 +2152,18 @@
         if (!leafletMap || !markersLayer) return;
         if (activeDragCleanupFn) { pendingRefreshAfterDrag = true; return; }
         const list = Array.isArray(filteredItems) ? filteredItems : labeledPlaces.filter(canCurrentUserSeeEquipPin);
-        const newSig = list.map(p => `${p.id}:${p.name}:${Number(p.lat).toFixed(6)}:${Number(p.lon).toFixed(6)}:${getEffectivePinColorKey(p)}:${p.dueDate || ''}:${p.dueColor || ''}:${p.note || ''}:${JSON.stringify(p.scadaNode || null)}`).join('|');
+        const newSig = list.map(p => `${p.id}:${p.name}:${Number(p.lat).toFixed(6)}:${Number(p.lon).toFixed(6)}:${getEffectivePinColorKey(p)}:${getPinEffectiveDisplayHex(p)}:${p.dueDate || ''}:${p.dueColor || ''}:${p.note || ''}:${JSON.stringify(p.scadaNode || null)}`).join('|');
 
         if (!forceRedraw && !autoFit && newSig === lastRenderedMarkersSig) {
-            updatePinTooltipsVisibilityByZoom();
-            syncLodAndViewportMarkersNow();
-            refreshOpenPinPopupIfNeeded();
-            restoreMapFloatingUiIfNoPopup();
+            updatePinTooltipsVisibilityByZoom(); syncLodAndViewportMarkersNow();
+            refreshOpenPinPopupIfNeeded(); restoreMapFloatingUiIfNoPopup();
             return;
         }
         lastRenderedMarkersSig = newSig;
         cachedTopology = computeUnifiedTopology(labeledPlaces.filter(canCurrentUserSeeEquipPin));
 
         const savedPopupId = currentlyOpenPopupPinId;
-        isRebuildingUnifiedLines = true;
-        markersLayer.clearLayers();
-        isRebuildingUnifiedLines = false;
+        isRebuildingUnifiedLines = true; markersLayer.clearLayers(); isRebuildingUnifiedLines = false;
         lodPinPool.clear(); markerMapById = {};
         const bounds = [];
 
@@ -2221,7 +2180,6 @@
             marker.on('click', () => { if (scadaSettings.drawActive) { leafletMap.closePopup(); handlePinClickedInDrawMode(place.id); } });
             marker.on('popupopen', () => { currentlyOpenPopupPinId = place.id; currentlyOpenEdgePopup = null; });
             marker.on('popupclose', () => { if (!isRebuildingUnifiedLines && currentlyOpenPopupPinId === place.id) currentlyOpenPopupPinId = null; });
-
             markerMapById[place.id] = marker;
             lodPinPool.set(place.id, { place, marker });
         });
@@ -2233,17 +2191,12 @@
             markerMapById[savedPopupId].openPopup();
         } else if (savedPopupId) currentlyOpenPopupPinId = null;
         restoreMapFloatingUiIfNoPopup();
-        if (autoFit && bounds.length > 0 && leafletMap.getContainer()?.clientWidth > 0) {
-            leafletMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
-        }
+        if (autoFit && bounds.length > 0 && leafletMap.getContainer()?.clientWidth > 0) leafletMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
     }
 
     function fitAllLabeledPinsOnMap() {
         const searchInp = document.getElementById('searchLabeledPinInput');
-        if (searchInp && searchInp.value.trim()) {
-            searchInp.value = ''; hideSearchEquipDropdown();
-            renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
-        }
+        if (searchInp && searchInp.value.trim()) { searchInp.value = ''; hideSearchEquipDropdown(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
         const visible = labeledPlaces.filter(p => canCurrentUserSeeEquipPin(p) && (currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter));
         if (!leafletMap || visible.length === 0) return showToast('⚠️ ไม่มีหมุดอุปกรณ์ไฟฟ้าในหมวดที่เลือก');
         renderMarkersOnMap(visible, false, false);
@@ -2256,9 +2209,7 @@
     function ensurePinVisibleThroughColorFilter(place) {
         if (!place || currentPinColorFilter === 'all') return;
         if (getEffectivePinColorKey(place) !== currentPinColorFilter) {
-            currentPinColorFilter = 'all';
-            updateEquipColorFilterPillsUI();
-            renderLabeledPlacesList(true);
+            currentPinColorFilter = 'all'; updateEquipColorFilterPillsUI(); renderLabeledPlacesList(true);
         }
     }
 
@@ -2275,10 +2226,7 @@
         leafletMap.invalidateSize();
         leafletMap.setView([place.lat, place.lon], 17);
         const m = markerMapById[placeId];
-        if (m) {
-            if (!markersLayer.hasLayer(m)) { markersLayer.addLayer(m); bindPinDragEventsOnMarker(placeId, m); }
-            m.openPopup();
-        }
+        if (m) { if (!markersLayer.hasLayer(m)) { markersLayer.addLayer(m); bindPinDragEventsOnMarker(placeId, m); } m.openPopup(); }
     }
 
     function focusMapOnSearchMatch() {
@@ -2296,7 +2244,7 @@
         const distBadge = item.roadKm !== null
             ? `<span class="bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-bold px-2 py-0.5 rounded-full">📍 ห่าง ~${item.roadKm.toFixed(1)} กม. (~${item.estMin} นาที)</span>`
             : `<span class="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full">${Number(item.lat).toFixed(5)}, ${Number(item.lon).toFixed(5)}</span>`;
-        const colorBtns = ALL_PIN_COLOR_KEYS.map(k => `<button type="button" onclick="quickChangeSinglePinColor('${safeId}', '${k}')" class="text-xs leading-none hover:scale-125 transition ${th.key === k ? 'ring-1 ring-slate-700 rounded-full' : 'opacity-60 hover:opacity-100'}">${PIN_COLOR_THEMES[k].dot}</button>`).join('');
+        const colorBtns = ALL_PIN_COLOR_KEYS.map(k => `<button type="button" onclick="quickChangeSinglePinColor('${safeId}', '${k}')" class="text-xs leading-none hover:scale-125 transition ${th.key === k ? 'ring-1 ring-slate-700 rounded-full' : 'opacity-60 hover:opacity-100'}" title="เปลี่ยนเฉพาะสีหมุด">${PIN_COLOR_THEMES[k].dot}</button>`).join('');
 
         const card = document.createElement('div');
         card.className = `p-3 rounded-2xl border bg-white shadow-sm space-y-2 transition ${isCurNav ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50/30' : 'border-slate-200 hover:border-teal-300'}`;
@@ -2372,14 +2320,15 @@
         lazyCardsQueue = [...filtered]; lazyTotalCount = filtered.length; lazyMountedCount = 0;
         appendNextEquipCardsBatch();
     }
-
+    // ===== จบพาทที่ 7 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 8 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 7 / 12) =====
     // ========================================================================
-    // 9. เอนจินคำนวณการไหลของไฟ (BFS Topology), กั้นสีไม่รั่วจุดปลด N.O. & เตือนไฟย้อนขั้ว CB
+    // 9. เอนจินคำนวณการไหลของไฟ (BFS Topology) — แยกสีหมุดและสีสายไฟอิสระ 100%
     // ========================================================================
     function propagateColorToConnectedSystem(allPins, startNodeIds, newHex, options = {}) {
         const cleanHex = normHex(newHex);
         if (!cleanHex || !Array.isArray(allPins)) return 0;
-        const nearestKey = safeHexToPinKey(cleanHex), crossOpen = Boolean(options.crossOpenSwitches);
+        const crossOpen = Boolean(options.crossOpenSwitches);
 
         const pinById = new Map(), undirAdj = new Map();
         allPins.forEach(p => { if (p?.id && canCurrentUserSeeEquipPin(p)) { pinById.set(p.id, p); undirAdj.set(p.id, []); } });
@@ -2404,13 +2353,15 @@
             const foundBrks = [], bVis = new Set(), bQ = [];
             validStarts.forEach(id => {
                 const p = pinById.get(id); if (!p) return;
-                const eqT = p.scadaNode?.t || 'PIN', st = (p.scadaNode?.st === 'O' || p.scadaNode?.st === 'F') ? p.scadaNode.st : 'C';
+                const eqT = p.scadaNode?.t || 'PIN';
+                const st = isSwitchableScadaType(eqT) && (p.scadaNode?.st === 'O' || p.scadaNode?.st === 'F') ? p.scadaNode.st : 'C';
                 if (!crossOpen && !isBreakerType(eqT) && st !== 'C') return;
                 bVis.add(id); bQ.push({ id, dist: 0 });
             });
             for (let h = 0; h < bQ.length; h++) {
                 const { id, dist } = bQ[h], p = pinById.get(id); if (!p) continue;
-                const eqT = p.scadaNode?.t || 'PIN', st = (p.scadaNode?.st === 'O' || p.scadaNode?.st === 'F') ? p.scadaNode.st : 'C';
+                const eqT = p.scadaNode?.t || 'PIN';
+                const st = isSwitchableScadaType(eqT) && (p.scadaNode?.st === 'O' || p.scadaNode?.st === 'F') ? p.scadaNode.st : 'C';
                 if (isBreakerType(eqT)) { foundBrks.push({ id, st, fd: normFd(p.scadaNode?.fd), dist }); continue; }
                 if (!crossOpen && st !== 'C') continue;
                 (undirAdj.get(id) || []).forEach(({ neighborId, lineObj }) => {
@@ -2432,24 +2383,18 @@
 
         for (let head = 0; head < queue.length; head++) {
             const curId = queue[head], curPin = pinById.get(curId); if (!curPin) continue;
-            const eqT = curPin.scadaNode?.t || 'PIN', st = (curPin.scadaNode?.st === 'O' || curPin.scadaNode?.st === 'F') ? curPin.scadaNode.st : 'C';
+            const eqT = curPin.scadaNode?.t || 'PIN';
+            const st = isSwitchableScadaType(eqT) && (curPin.scadaNode?.st === 'O' || curPin.scadaNode?.st === 'F') ? curPin.scadaNode.st : 'C';
             const isBrk = isBreakerType(eqT);
             if (isBrk && curId !== allowedBrkId && !startSet.has(curId)) continue;
-            if (!crossOpen && !isBrk && st !== 'C' && !(isSingleDirectEdit && startSet.has(curId))) continue;
-
-            curPin.pinColor = (!isBrk && isSwitchableScadaType(eqT) && st !== 'C') ? (st === 'O' ? 'yellow' : 'red') : nearestKey;
-            if (curPin.scadaNode) curPin.scadaNode.col = cleanHex;
-            curPin.updatedAt = nextPinUpdatedIso(curPin);
-
-            const allowExpandFromOpenBrk = isSingleDirectEdit && isBrk && startSet.has(curId);
-            if (!crossOpen && st !== 'C' && !allowExpandFromOpenBrk) continue;
+            if (!crossOpen && st !== 'C' && !(isSingleDirectEdit && isBrk && startSet.has(curId))) continue;
 
             (undirAdj.get(curId) || []).forEach(({ neighborId, ownerPin, lineObj }) => {
                 if (!crossOpen && lineObj.off) return;
                 const nb = pinById.get(neighborId); if (!nb) return;
-                if (isBreakerType(nb.scadaNode?.t) && neighborId !== allowedBrkId && !startSet.has(neighborId)) return;
                 lineObj.col = cleanHex; delete lineObj.customSingleCol; delete lineObj.customOwnerBrk;
                 ownerPin.updatedAt = nextPinUpdatedIso(ownerPin); touchedEdges++;
+                if (isBreakerType(nb.scadaNode?.t) && neighborId !== allowedBrkId && !startSet.has(neighborId)) return;
                 if (!visited.has(neighborId)) { visited.add(neighborId); queue.push(neighborId); }
             });
         }
@@ -2476,10 +2421,20 @@
         const pinMap = new Map(pins.map(p => [p.id, p])), adjMap = new Map(), edgesList = [], feedersSet = new Set();
         pins.forEach(p => { adjMap.set(p.id, []); if (p.scadaNode?.fd) feedersSet.add(p.scadaNode.fd); });
 
+        const firstIncidentWireCol = new Map(), fallbackIncidentWireCol = new Map();
         pins.forEach((fromPin, pIdx) => {
             (fromPin.scadaLines || []).forEach((edge, edgeIdx) => {
                 const toPin = pinMap.get(edge?.to); if (!toPin) return;
                 if (edge.fd) feedersSet.add(edge.fd);
+                const eHex = normHex(edge.col);
+                if (eHex) {
+                    if (!fallbackIncidentWireCol.has(fromPin.id)) fallbackIncidentWireCol.set(fromPin.id, eHex);
+                    if (!fallbackIncidentWireCol.has(toPin.id)) fallbackIncidentWireCol.set(toPin.id, eHex);
+                    if (!edge.customSingleCol && !edge.off) {
+                        if (!firstIncidentWireCol.has(fromPin.id)) firstIncidentWireCol.set(fromPin.id, eHex);
+                        if (!firstIncidentWireCol.has(toPin.id)) firstIncidentWireCol.set(toPin.id, eHex);
+                    }
+                }
                 const jp = edge.jp !== undefined ? Number(edge.jp) : (edge.st === 'ug' ? -1 : 0);
                 const entry = { edgeKey: `${fromPin.id}__${edgeIdx}`, fromId: fromPin.id, toId: toPin.id, fromPin, toPin, edgeIdx, edge, off: Boolean(edge.off), orderScore: (jp * 1e15) + (edge.cat || ((pins.length - pIdx) * 100 + edgeIdx)), sourcesMap: new Map(), physDistByBrk: new Map() };
                 edgesList.push(entry);
@@ -2495,7 +2450,10 @@
             rawNodes.set(p.id, { pin: p, eqType, st, conductingMap: new Map(), terminalMap: new Map() });
             if (isBreakerType(eqType)) {
                 const fd = normFd(p.scadaNode?.fd);
-                const brk = { breakerId: p.id, name: p.name || 'CB', feeder: fd, color: getPinSavedColorHex(p), st, fullTitle: fd ? `${p.name || 'CB'} (${fd})` : (p.name || 'CB') };
+                const ownActiveOut = (p.scadaLines || []).find(l => l && !l.customSingleCol && !l.off && normHex(l.col));
+                const ownAnyOut = (p.scadaLines || []).find(l => l && normHex(l.col));
+                const wireColor = normHex(ownActiveOut?.col) || firstIncidentWireCol.get(p.id) || normHex(ownAnyOut?.col) || fallbackIncidentWireCol.get(p.id) || null;
+                const brk = { breakerId: p.id, name: p.name || 'CB', feeder: fd, wireColor, color: wireColor || '#10b981', st, fullTitle: fd ? `${p.name || 'CB'} (${fd})` : (p.name || 'CB') };
                 allBreakers.push(brk); if (st === 'C') closedBreakers.push(brk);
             }
         });
@@ -2553,47 +2511,45 @@
         };
         const hasDistinctBrkPair = (setA, setB) => { if (!setA.size || !setB.size) return false; for (const a of setA) for (const b of setB) if (a !== b) return true; return false; };
 
-        const edgeStates = new Map(), liveColsAtNode = new Map(pins.map(p => [p.id, []]));
+        const edgeStates = new Map();
         edgesList.forEach(entry => {
             const sources = Array.from(entry.sourcesMap.values()).sort((a, b) => a.dist - b.dist), savedCol = normHex(entry.edge.col) || '#10b981';
             if (entry.off || sources.length === 0) { edgeStates.set(entry.edgeKey, { ...entry, energized: false, color: '#ffffff', savedColor: savedCol, primarySource: null, sources: [], isBackfeed: false, isParallel: false }); return; }
             const prim = sources[0], eFd = normFd(entry.edge.fd), pDist = entry.physDistByBrk.get(prim.breakerId) ?? 999999;
             const isBackfeed = Boolean(
                 (eFd && prim.feeder && eFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === eFd && !entry.sourcesMap.has(b.breakerId))) ||
-                (!entry.edge.customSingleCol && savedCol !== prim.color && allBreakers.some(b => b.breakerId !== prim.breakerId && b.color === savedCol && !entry.sourcesMap.has(b.breakerId))) ||
-                (savedCol !== prim.color && allBreakers.some(b => b.breakerId !== prim.breakerId && b.st !== 'C' && !entry.sourcesMap.has(b.breakerId) && !(eFd && prim.feeder && eFd === prim.feeder) && (entry.physDistByBrk.get(b.breakerId) ?? Infinity) < pDist))
+                (!entry.edge.customSingleCol && prim.wireColor && savedCol !== prim.wireColor && allBreakers.some(b => b.breakerId !== prim.breakerId && b.wireColor === savedCol && !entry.sourcesMap.has(b.breakerId) && !(eFd && prim.feeder && eFd === prim.feeder) && (entry.physDistByBrk.get(b.breakerId) ?? Infinity) < pDist))
             );
             const isEdgeParallel = Boolean(sources.length > 1 && !trimmedEdges.has(entry.edgeKey) && condAdj.has(entry.fromId) && condAdj.has(entry.toId) && hasDistinctBrkPair(reachBrksWithout(entry.fromId, entry.toId, entry.edgeKey), reachBrksWithout(entry.toId, entry.fromId, entry.edgeKey)));
-            const dispCol = (entry.edge.customSingleCol && !isBackfeed && (!entry.edge.customOwnerBrk || entry.edge.customOwnerBrk === prim.breakerId)) ? savedCol : prim.color;
-            liveColsAtNode.get(entry.fromId)?.push(dispCol); liveColsAtNode.get(entry.toId)?.push(dispCol);
+            const dispCol = (isBackfeed && !entry.edge.customSingleCol && prim.wireColor) ? prim.wireColor : savedCol;
             edgeStates.set(entry.edgeKey, { ...entry, energized: true, color: dispCol, savedColor: savedCol, primarySource: prim, sources: isEdgeParallel ? sources : [prim], isBackfeed, isParallel: isEdgeParallel });
         });
 
-        const nodeStates = new Map();
+        const nodeStates = new Map(), noBreakerInMap = allBreakers.length === 0;
         let energizedNodes = 0, deenergizedNodes = 0;
         rawNodes.forEach((tr, pinId) => {
             const cond = Array.from(tr.conductingMap.values()).sort((a, b) => a.dist - b.dist);
             const term = Array.from(tr.terminalMap.values()).sort((a, b) => a.dist - b.dist);
-            const isUnwiredPlainPin = tr.eqType === 'PIN' && (adjMap.get(pinId)?.length || 0) === 0;
-            if (isUnwiredPlainPin) {
-                nodeStates.set(pinId, { eqType: 'PIN', st: 'C', energized: false, isStandalonePin: true, hasStandbyPower: false, primaryColor: getPinEffectiveDisplayHex(tr.pin), secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], isParallel: false, isTieTwoSources: false, isBackfeed: false });
-            } else if (isBreakerType(tr.eqType)) {
+            const ownPinHex = getPinEffectiveDisplayHex(tr.pin), hasNoWire = (adjMap.get(pinId)?.length || 0) === 0;
+
+            if (isBreakerType(tr.eqType)) {
                 if (tr.st === 'C') energizedNodes++; else deenergizedNodes++;
                 const openBrkHasBackfeed = tr.st !== 'C' && term.length > 0;
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: tr.st === 'C', isStandalonePin: false, hasStandbyPower: openBrkHasBackfeed, primaryColor: getPinSavedColorHex(tr.pin), secondaryColor: term[0]?.color || null, primarySource: cond[0] || term[0] || null, conductingSources: cond, terminalSources: term, isParallel: cond.length > 1, isTieTwoSources: openBrkHasBackfeed, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: tr.st === 'C', isStandalonePin: false, isUnmonitored: false, hasStandbyPower: openBrkHasBackfeed, primaryColor: ownPinHex, secondaryColor: term[0]?.wireColor || null, primarySource: cond[0] || term[0] || null, conductingSources: cond, terminalSources: term, isParallel: cond.length > 1, isTieTwoSources: openBrkHasBackfeed, isBackfeed: false });
+            } else if (hasNoWire || noBreakerInMap) {
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: tr.eqType === 'PIN' && hasNoWire, isUnmonitored: true, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], isParallel: false, isTieTwoSources: false, isBackfeed: false });
             } else if (cond.length > 0) {
                 energizedNodes++;
-                const prim = cond[0], nFd = normFd(tr.pin.scadaNode?.fd), nSavedHex = normHex(tr.pin.scadaNode?.col);
-                const isBf = Boolean((nFd && prim.feeder && nFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === nFd && !tr.conductingMap.has(b.breakerId))) || (nSavedHex && nSavedHex !== prim.color && allBreakers.some(b => b.breakerId !== prim.breakerId && b.color === nSavedHex && !tr.conductingMap.has(b.breakerId))));
+                const prim = cond[0], nFd = normFd(tr.pin.scadaNode?.fd);
+                const isBf = Boolean(nFd && prim.feeder && nFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === nFd && !tr.conductingMap.has(b.breakerId)));
                 let isNodeParallel = false, secCol = null;
                 if (cond.length > 1 && !trimmedNodes.has(pinId) && condAdj.has(pinId)) {
                     const branchSets = [];
                     (condAdj.get(pinId) || []).forEach(({ neighborId, edgeKey }) => { if (!trimmedEdges.has(edgeKey)) { const bs = reachBrksWithout(neighborId, pinId, edgeKey); if (bs.size > 0) branchSets.push(bs); } });
                     for (let i = 0; i < branchSets.length && !isNodeParallel; i++) for (let j = i + 1; j < branchSets.length; j++) if (hasDistinctBrkPair(branchSets[i], branchSets[j])) { isNodeParallel = true; break; }
-                    if (isNodeParallel) secCol = cond.find(c => c.breakerId !== prim.breakerId)?.color || null;
+                    if (isNodeParallel) secCol = cond.find(c => c.breakerId !== prim.breakerId)?.wireColor || '#f59e0b';
                 }
-                const dueHex = (tr.eqType === 'PIN' && tr.pin.dueDate && tr.pin.dueColor && PIN_COLOR_THEMES[tr.pin.dueColor] && getTodayLocalIso() >= tr.pin.dueDate) ? PIN_KEY_TO_HEX[tr.pin.dueColor] : null;
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, isStandalonePin: false, hasStandbyPower: false, primaryColor: dueHex || liveColsAtNode.get(pinId)?.[0] || prim.color, secondaryColor: secCol, primarySource: prim, conductingSources: isNodeParallel ? cond : [prim], terminalSources: term, isParallel: isNodeParallel, isTieTwoSources: false, isBackfeed: isBf });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: secCol, primarySource: prim, conductingSources: isNodeParallel ? cond : [prim], terminalSources: term, isParallel: isNodeParallel, isTieTwoSources: false, isBackfeed: isBf });
             } else if (term.length > 0) {
                 energizedNodes++;
                 const liveNeighborBrkSets = new Map();
@@ -2602,10 +2558,10 @@
                 let isRealTieTwoSources = false;
                 if (term.length >= 2 && sideSets.length >= 2) { for (let i = 0; i < sideSets.length && !isRealTieTwoSources; i++) for (let j = i + 1; j < sideSets.length; j++) if (hasDistinctBrkPair(sideSets[i], sideSets[j])) { isRealTieTwoSources = true; break; } }
                 const dispTerms = isRealTieTwoSources ? term : [term[0]];
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, hasStandbyPower: true, primaryColor: term[0].color, secondaryColor: isRealTieTwoSources ? (term.find(t => t.breakerId !== term[0].breakerId)?.color || null) : null, primarySource: term[0], conductingSources: [], terminalSources: dispTerms, isParallel: false, isTieTwoSources: isRealTieTwoSources, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: true, primaryColor: ownPinHex, secondaryColor: isRealTieTwoSources ? (term.find(t => t.breakerId !== term[0].breakerId)?.wireColor || '#f59e0b') : null, primarySource: term[0], conductingSources: [], terminalSources: dispTerms, isParallel: false, isTieTwoSources: isRealTieTwoSources, isBackfeed: false });
             } else {
                 deenergizedNodes++;
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, hasStandbyPower: false, primaryColor: '#334155', secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], isParallel: false, isTieTwoSources: false, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], isParallel: false, isTieTwoSources: false, isBackfeed: false });
             }
         });
         return { pinMap, nodeStates, edgeStates, edgesList, feedersSet, stats: { totalBreakers: allBreakers.length, closedBreakers: closedBreakers.length, totalEdges: edgesList.length, energizedNodes, deenergizedNodes } };
@@ -2614,28 +2570,29 @@
     function buildUnifiedNodeIcon(pin, nState) {
         const nd = pin?.scadaNode || {}, eqType = nState?.eqType || nd.t || (isPinTTap(pin, labeledPlaces) ? 'TAP' : 'PIN');
         const st = nState?.st || (isSwitchableScadaType(eqType) && (nd.st === 'O' || nd.st === 'F') ? nd.st : 'C');
+        const ownCol = getPinEffectiveDisplayHex(pin);
         const warnDot = nd.lk ? `<div class="scada-warn-dot" title="${escapeHtmlStr(nd.lk)}">!</div>` : '';
         const tieBadge = (!isBreakerType(eqType) && nState?.isTieTwoSources) ? `<div class="scada-tie-badge">⚡${nState.terminalSources.length}</div>` : '';
 
-        if (nState?.isStandalonePin && eqType === 'PIN') {
-            const standCol = getPinEffectiveDisplayHex(pin);
-            return L.divIcon({ className: '', html: `<div style="position:relative;width:28px;height:28px;"><div style="width:28px;height:28px;border-radius:9999px 9999px 9999px 2px;transform:rotate(-45deg);background:${standCol};border:2px solid #ffffff;box-shadow:0 3px 8px rgba(0,0,0,0.38);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);font-size:13px;">⚡</span></div>${warnDot}</div>`, iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -26] });
+        if (eqType === 'PIN') {
+            const isWiredDead = !nState?.isStandalonePin && !nState?.isUnmonitored && !nState?.energized;
+            const pinBg = isWiredDead ? '#ffffff' : ownCol, pinBrd = isWiredDead ? `2.5px solid ${ownCol}` : '2px solid #ffffff';
+            return L.divIcon({ className: isWiredDead ? 'scada-deenergized-pin' : '', html: `<div style="position:relative;width:28px;height:28px;"><div style="width:28px;height:28px;border-radius:9999px 9999px 9999px 2px;transform:rotate(-45deg);background:${pinBg};border:${pinBrd};box-shadow:0 3px 8px rgba(0,0,0,0.38);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);${isWiredDead ? 'font-size:12px;opacity:0.85;' : 'font-size:13px;'}">⚡</span></div>${warnDot}${tieBadge}</div>`, iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -26] });
         }
         if (isBreakerType(eqType)) {
-            const ownCol = nState?.primaryColor || getPinSavedColorHex(pin), isC = st === 'C', isF = st === 'F';
-            const bg = isF ? '#ef4444' : (isC ? ownCol : '#ffffff'), brd = isF ? '2.5px solid #fde047' : (isC ? '2.5px solid #ffffff' : `3px solid ${ownCol}`);
+            const isC = st === 'C', isF = st === 'F', bg = isF ? '#ef4444' : (isC ? ownCol : '#ffffff'), brd = isF ? '2.5px solid #fde047' : (isC ? '2.5px solid #ffffff' : `3px solid ${ownCol}`);
             const rev = (!isC && nState?.terminalSources?.length > 0 && !nd.lk) ? '<div class="scada-warn-dot" title="มีไฟย้อนมารอที่ขั้วเบรกเกอร์">⚡</div>' : warnDot;
             return L.divIcon({ className: '', html: `<div class="scada-sym-wrap"><div class="scada-sym-breaker" style="background:${bg};border:${brd};color:${(isC || isF) ? '#fff' : '#0f172a'};">CB</div>${rev}</div>`, iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -14] });
         }
-        const isEn = Boolean(nState?.energized), hasSb = Boolean(nState?.hasStandbyPower), pCol = nState?.primaryColor || '#334155', sCol = nState?.secondaryColor;
-        const bg = isEn ? pCol : (hasSb && st === 'F' ? '#fef2f2' : '#ffffff');
-        const brd = isEn ? '2px solid #ffffff' : (hasSb ? (st === 'F' ? '2.5px solid #ef4444' : `3px solid ${pCol}`) : '2.5px solid #334155');
-        const fg = isEn ? '#ffffff' : (hasSb && st === 'F' ? '#dc2626' : (hasSb ? '#0f172a' : '#334155'));
+        const isUnmon = Boolean(nState?.isUnmonitored), isEn = Boolean(nState?.energized || (isUnmon && st === 'C')), hasSb = Boolean(nState?.hasStandbyPower || (isUnmon && st === 'O'));
+        const isFaultSt = st === 'F', pCol = ownCol, sCol = nState?.secondaryColor;
+        const bg = isEn ? pCol : (isFaultSt ? '#fef2f2' : '#ffffff');
+        const brd = isEn ? '2px solid #ffffff' : (isFaultSt ? '2.5px solid #ef4444' : (hasSb ? `3px solid ${pCol}` : '2.5px solid #334155'));
+        const fg = isEn ? '#ffffff' : (isFaultSt ? '#dc2626' : (hasSb ? '#0f172a' : '#334155'));
         const shd = sCol && (isEn || hasSb) ? `box-shadow:0 0 0 2.5px ${sCol},0 2px 6px rgba(0,0,0,0.45);` : '';
-        const wCls = (isEn || hasSb) ? '' : 'scada-deenergized-pin';
+        const wCls = (isEn || hasSb || isFaultSt) ? '' : 'scada-deenergized-pin';
 
-        if (eqType === 'TAP') return L.divIcon({ className: wCls, html: `<div class="scada-sym-tap-wrap"><div class="scada-sym-tap-dot" style="background:${bg};border:${isEn ? '2px solid #fff' : (hasSb ? `2px solid ${st === 'F' ? '#ef4444' : pCol}` : '2px solid #334155')};${shd}"></div>${warnDot}${tieBadge}</div>`, iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -10] });
-        if (eqType === 'PIN') return L.divIcon({ className: wCls, html: `<div style="position:relative;width:28px;height:28px;"><div style="width:28px;height:28px;border-radius:9999px 9999px 9999px 2px;transform:rotate(-45deg);background:${isEn ? pCol : '#fff'};border:${brd};box-shadow:0 3px 8px rgba(0,0,0,0.38);display:flex;align-items:center;justify-content:center;"><span style="transform:rotate(45deg);${isEn ? 'font-size:13px;' : 'font-size:12px;filter:grayscale(1);opacity:0.75;'}">⚡</span></div>${warnDot}${tieBadge}</div>`, iconSize: [28, 28], iconAnchor: [14, 28], popupAnchor: [0, -26] });
+        if (eqType === 'TAP') return L.divIcon({ className: wCls, html: `<div class="scada-sym-tap-wrap"><div class="scada-sym-tap-dot" style="background:${bg};border:${isEn ? '2px solid #fff' : (isFaultSt ? '2px solid #ef4444' : (hasSb ? `2px solid ${pCol}` : '2px solid #334155'))};${shd}"></div>${warnDot}${tieBadge}</div>`, iconSize: [24, 24], iconAnchor: [12, 12], popupAnchor: [0, -10] });
         if (eqType === 'S') return L.divIcon({ className: wCls, html: `<div class="scada-sym-knife-wrap"><div class="scada-sym-knife" style="background:${bg};border:${brd};${shd}"><svg width="24" height="13" viewBox="0 0 28 16"><path d="${st === 'C' ? 'M2 10 H26' : 'M2 12 H9.5 L16.5 3.5 M19 12 H26'}" fill="none" stroke="${fg}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="${st === 'C' ? 10 : 12}" r="1.7" fill="${fg}"/><circle cx="18.5" cy="${st === 'C' ? 10 : 12}" r="1.7" fill="${fg}"/></svg></div>${warnDot}${tieBadge}</div>`, iconSize: [32, 22], iconAnchor: [16, 11], popupAnchor: [0, -13] });
 
         const shape = eqType === 'VS' ? `<div class="scada-sym-diamond" style="background:${bg};border:${brd};${shd}"></div>`
@@ -2649,7 +2606,8 @@
     function buildUnifiedTooltipHtml(pin, nState) {
         const nd = pin?.scadaNode || {}, eqType = nState?.eqType || nd.t || 'PIN', st = nState?.st || nd.st || 'C';
         const sym = { CB: '■', RC: '■', VB: '▣', VS: '◆', VSC: st === 'O' ? '○' : '●', S: '_/&nbsp;&nbsp;_', DF: '&amp;', GEN: 'Ⓖ', PIN: '⚡' }[eqType] || '⚡';
-        if (nState?.isStandalonePin) return `${sym} ${escapeHtmlStr(pin.name)}${nd.id ? ` [ID ${escapeHtmlStr(nd.id)}]` : ''}`;
+        if (nState?.isStandalonePin || (nState?.isUnmonitored && eqType === 'PIN')) return `${sym} ${escapeHtmlStr(pin.name)}${nd.id ? ` [ID ${escapeHtmlStr(nd.id)}]` : ''}`;
+        if (nState?.isUnmonitored) return `${sym} ${escapeHtmlStr(pin.name)}${nd.id ? ` [ID ${escapeHtmlStr(nd.id)}]` : ''}${st === 'O' ? ' (ปลด)' : (st === 'F' ? (eqType === 'DF' ? ' (ฟิวส์ขาด)' : ' (ทริป/ชำรุด)') : '')}`;
         const tail = isBreakerType(eqType) ? (st === 'C' ? ' (CB จ่ายไฟ)' : (nState?.terminalSources?.length ? ` (CB ${st === 'F' ? 'ทริป' : 'ปลด'} • ไฟย้อนรอ: ${escapeHtmlStr(nState.terminalSources[0].name)})` : (st === 'F' ? ' (CB ทริป!)' : ' (CB ปลด)')))
             : (nState?.energized ? (nState.isBackfeed && nState.primarySource ? ` (ไฟย้อน: ${escapeHtmlStr(nState.primarySource.name)})` : (nState.isParallel ? ' (ขนานไฟ 2 CB)' : ''))
             : (nState?.hasStandbyPower ? (nState.isTieTwoSources ? ` (N.O. ชนไฟ: ${escapeHtmlStr(nState.terminalSources[0]?.name || 'CB1')} ↔ ${escapeHtmlStr(nState.terminalSources[1]?.name || 'CB2')})` : ` (N.O. รอไฟ: ${escapeHtmlStr(nState.primarySource?.name || 'CB')})`)
@@ -2755,7 +2713,8 @@
         if (cur < tot - 0.1) slicePolylineByArc(myPts, cum, cur, tot).forEach((p, idx) => { if (!cont.length || idx > 0) cont.push(p); });
         return { segments: [cont], bridges, jointDots: dots };
     }
-
+    // ===== จบพาทที่ 8 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 9 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 8 / 12) =====
     function scheduleUnifiedScadaRefresh() {
         if (activeDragCleanupFn) { pendingRefreshAfterDrag = true; return; }
         if (renderTimer) clearTimeout(renderTimer);
@@ -2763,7 +2722,7 @@
     }
 
     // ========================================================================
-    // 10. เรนเดอร์เส้นสายส่งลง Canvas (จับคู่เปิดบอลลูนเส้นเดิมแม่นยำด้วย fromId+toId+fd)
+    // 10. เรนเดอร์เส้นสายส่งลง Canvas (แยกสีสายไฟอิสระจากสีหมุด 100%)
     // ========================================================================
     function renderUnifiedScadaMap() {
         if (activeDragCleanupFn) { pendingRefreshAfterDrag = true; return; }
@@ -2804,9 +2763,7 @@
         refreshOpenPinPopupIfNeeded();
 
         const savedEdgePop = (!isAnyEditModeActive() && currentlyOpenEdgePopup) ? { ...currentlyOpenEdgePopup } : null;
-        isRebuildingUnifiedLines = true;
-        unifiedLinesLayer.clearLayers();
-        isRebuildingUnifiedLines = false;
+        isRebuildingUnifiedLines = true; unifiedLinesLayer.clearLayers(); isRebuildingUnifiedLines = false;
         renderedEdgePathsMap.clear(); cachedUnderPolylinesPx = [];
         if (!scadaSettings.showLines) {
             currentlyOpenEdgePopup = null;
@@ -2866,14 +2823,12 @@
             hit.on('popupclose', () => { if (!isRebuildingUnifiedLines && currentlyOpenEdgePopup && currentlyOpenEdgePopup.fromId === fromPin.id && currentlyOpenEdgePopup.toId === toPin.id && currentlyOpenEdgePopup.fd === eFdNorm) currentlyOpenEdgePopup = null; });
 
             const stBdg = entry.off ? '<span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded text-[10px] font-bold">🔌 จำลองปลดสาย</span>' : (!eState.energized ? '<span class="bg-slate-100 text-slate-800 border border-slate-300 px-1.5 py-0.5 rounded text-[10px] font-extrabold">⚪ ไม่มีไฟ</span>' : (eState.isParallel ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-extrabold">⚡ ขนานเบรกเกอร์</span>' : (eState.isBackfeed ? '<span class="bg-indigo-100 text-indigo-800 border border-indigo-300 px-1.5 py-0.5 rounded text-[10px] font-extrabold">🔄 รับไฟย้อน</span>' : '<span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-extrabold">🟢 มีไฟปกติ</span>')));
-            const srcTxt = entry.off ? '<div class="text-[11px] text-rose-600 font-bold">⚪ ไม่มีไฟ (ปลดสายช่วงนี้)</div>' : (!eState.energized ? '<div class="text-[11px] text-slate-600 font-semibold">⚪ ยังไม่ได้รับไฟจาก ■ CB</div>' : (eState.isParallel ? `<div class="text-[11px] text-amber-800 font-bold">⚡ รับไฟขนานจาก: ${escapeHtmlStr(eState.sources.map(s => s.name).join(' + '))}</div>` : `<div class="text-[11px] ${eState.isBackfeed ? 'text-indigo-700' : 'text-emerald-700'} font-bold">${eState.isBackfeed ? '🔄 รับไฟย้อนจาก:' : '⚡ รับไฟจาก:'} ${escapeHtmlStr(eState.primarySource.fullTitle)}</div>`));
+            const srcTxt = entry.off ? '<div class="text-[11px] text-rose-600 font-bold">⚪ ไม่มีไฟ (ปลดสายช่วงนี้)</div>' : (!eState.energized ? '<div class="text-[11px] text-slate-600 font-semibold">⚪ ยังไม่ได้รับไฟจาก ■ CB</div>' : (eState.isParallel ? `<div class="text-[11px] text-amber-800 font-bold">⚡ รับไฟขนานจาก: ${escapeHtmlStr(eState.sources.map(s => s.name).join(' + '))}</div>` : `<div class="text-[11px] ${eState.isBackfeed ? 'text-indigo-700' : 'text-emerald-700'} font-bold">${eState.isBackfeed ? '🔄 รับไฟย้อนจาก:' : '⚡ รับไฟจาก:'} ${escapeHtmlStr(eState.primarySource?.fullTitle || '-')}</div>`));
             const lMode = edge.jp === 1 ? 'โค้งบน' : (edge.jp === -1 ? 'ลอดล่าง' : 'อัตโนมัติ');
 
-            hit.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:245px;" class="space-y-1.5 text-xs"><div class="flex justify-between gap-1"><span class="px-2 py-0.5 rounded font-extrabold text-white text-[10px]" style="background:${escapeHtmlStr(eState.energized ? eState.color : eState.savedColor)}">⚡ วงจร ${escapeHtmlStr(edge.fd || '-')}</span>${stBdg}</div><div class="font-bold text-slate-800">${escapeHtmlStr(fromPin.name)} ➔ ${escapeHtmlStr(toPin.name)}</div>${srcTxt}<div class="text-[11px] text-slate-500">${isUg ? '╍ UG.' : '⎯ OH'} ${edge.lb ? `• <b>${escapeHtmlStr(edge.lb)}</b>` : ''} (${Math.abs(laneOffset) > 0.3 ? `ขนาน ${laneOffset.toFixed(1)}px` : 'แนวกลาง'})</div><div class="scada-edit-only pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="startInteractiveWireMove('${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-sky-600 to-cyan-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">✋ จับขยับ / ดัดแนวสายไฟเส้นนี้</button><button type="button" onclick="openScadaColorPaletteModal('edge', '${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🎨 เปลี่ยนสีสายไฟ (ทั้งระบบที่เชื่อมต่อ)</button><button type="button" onclick="cycleScadaEdgeJumpLayer('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">⌒ ชั้น: ${lMode}</button><button type="button" onclick="flipScadaEdgeJumpDir('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 กลับโค้ง</button><button type="button" onclick="createTTapOnScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 px-2 rounded-lg font-bold text-[10px]">✂️ แทปสาย (T-Tap) / แยกวงจรตรงนี้</button><button type="button" onclick="toggleScadaEdgePower('${sFromId}', ${edgeIdx})" class="bg-slate-100 text-slate-800 py-1 px-2 rounded-lg font-bold text-[10px]">${entry.off ? '⚡ ต่อสายคืน' : '🔌 จำลองปลดสาย'}</button><button type="button" onclick="toggleScadaEdgeUgStyle('${sFromId}', ${edgeIdx})" class="bg-sky-50 text-sky-800 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 OH / UG.</button><button type="button" onclick="cycleScadaEdgeSide('${sFromId}', ${edgeIdx})" class="bg-emerald-50 text-emerald-800 py-1 px-2 rounded-lg font-bold text-[10px]">↔️ สลับฝั่งขนาน</button><button type="button" onclick="straightenScadaEdge('${sFromId}', ${edgeIdx})" class="bg-amber-50 text-amber-800 py-1 px-2 rounded-lg font-bold text-[10px]">📐 เส้นตรง</button><button type="button" onclick="deleteScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-rose-50 text-rose-600 py-1 px-2 rounded-lg font-bold text-[10px]">🗑️ ลบเส้นสายไฟช่วงนี้</button></div></div>`, { autoPan: true });
+            hit.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:245px;" class="space-y-1.5 text-xs"><div class="flex justify-between gap-1"><span class="px-2 py-0.5 rounded font-extrabold text-white text-[10px]" style="background:${escapeHtmlStr(eState.energized ? eState.color : eState.savedColor)}">⚡ วงจร ${escapeHtmlStr(edge.fd || '-')}</span>${stBdg}</div><div class="font-bold text-slate-800">${escapeHtmlStr(fromPin.name)} ➔ ${escapeHtmlStr(toPin.name)}</div>${srcTxt}<div class="text-[11px] text-slate-500">${isUg ? '╍ UG.' : '⎯ OH'} ${edge.lb ? `• <b>${escapeHtmlStr(edge.lb)}</b>` : ''} (${Math.abs(laneOffset) > 0.3 ? `ขนาน ${laneOffset.toFixed(1)}px` : 'แนวกลาง'})</div><div class="scada-edit-only pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="startInteractiveWireMove('${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-sky-600 to-cyan-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">✋ จับขยับ / ดัดแนวสายไฟเส้นนี้</button><button type="button" onclick="openScadaColorPaletteModal('edge', '${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🎨 เปลี่ยนสีสายไฟ (แยกจากสีหมุด)</button><button type="button" onclick="cycleScadaEdgeJumpLayer('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">⌒ ชั้น: ${lMode}</button><button type="button" onclick="flipScadaEdgeJumpDir('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 กลับโค้ง</button><button type="button" onclick="createTTapOnScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 px-2 rounded-lg font-bold text-[10px]">✂️ แทปสาย (T-Tap) / แยกวงจรตรงนี้</button><button type="button" onclick="toggleScadaEdgePower('${sFromId}', ${edgeIdx})" class="bg-slate-100 text-slate-800 py-1 px-2 rounded-lg font-bold text-[10px]">${entry.off ? '⚡ ต่อสายคืน' : '🔌 จำลองปลดสาย'}</button><button type="button" onclick="toggleScadaEdgeUgStyle('${sFromId}', ${edgeIdx})" class="bg-sky-50 text-sky-800 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 OH / UG.</button><button type="button" onclick="cycleScadaEdgeSide('${sFromId}', ${edgeIdx})" class="bg-emerald-50 text-emerald-800 py-1 px-2 rounded-lg font-bold text-[10px]">↔️ สลับฝั่งขนาน</button><button type="button" onclick="straightenScadaEdge('${sFromId}', ${edgeIdx})" class="bg-amber-50 text-amber-800 py-1 px-2 rounded-lg font-bold text-[10px]">📐 เส้นตรง</button><button type="button" onclick="deleteScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-rose-50 text-rose-600 py-1 px-2 rounded-lg font-bold text-[10px]">🗑️ ลบเส้นสายไฟช่วงนี้</button></div></div>`, { autoPan: true });
 
-            if (savedEdgePop && entry.fromId === savedEdgePop.fromId && entry.toId === savedEdgePop.toId && (!savedEdgePop.fd || eFdNorm === savedEdgePop.fd)) {
-                hitToReopen = { hit, latlng: savedEdgePop.latlng };
-            }
+            if (savedEdgePop && entry.fromId === savedEdgePop.fromId && entry.toId === savedEdgePop.toId && (!savedEdgePop.fd || eFdNorm === savedEdgePop.fd)) hitToReopen = { hit, latlng: savedEdgePop.latlng };
         });
         cachedUnderPolylinesPx = underPolys;
         if (hitToReopen) hitToReopen.hit.openPopup(hitToReopen.latlng || undefined);
@@ -2890,10 +2845,10 @@
     function renderQuickToolbarColorButtons(activeHex) {
         const wrap = document.getElementById('scadaQuickColorRowWrap'); if (!wrap) return;
         const clean = (normHex(activeHex) || '#10b981').toLowerCase(), inQuick = QUICK_BAR_COLORS.some(h => h.toLowerCase() === clean);
-        wrap.innerHTML = `<span class="text-[10px] text-slate-300 font-bold mr-0.5">สีวงจร:</span>` +
+        wrap.innerHTML = `<span class="text-[10px] text-slate-300 font-bold mr-0.5">สีสายไฟ:</span>` +
             QUICK_BAR_COLORS.map(h => `<button type="button" onclick="setScadaDrawColor('${h}')" class="w-5 h-5 rounded-full border-2 transition shrink-0" style="background:${h};border-color:${h.toLowerCase() === clean ? '#fff' : 'transparent'};"></button>`).join('') +
             (!inQuick ? `<button type="button" onclick="openScadaColorPaletteModal('toolbar')" class="w-5 h-5 rounded-full border-2 border-white shrink-0" style="background:${clean};"></button>` : '') +
-            `<button type="button" onclick="openScadaColorPaletteModal('toolbar')" class="ml-auto bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow shrink-0">🎨 จานสี+</button>`;
+            `<button type="button" onclick="openScadaColorPaletteModal('toolbar')" class="ml-auto bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow shrink-0">🎨 จานสีสายไฟ+</button>`;
     }
 
     function updateToolbarToggleButtonsUI() {
@@ -2934,31 +2889,21 @@
     function toggleScadaLinesVisibility() { scadaSettings.showLines = !scadaSettings.showLines; if (!scadaSettings.showLines) { currentlyOpenEdgePopup = null; leafletMap?.closePopup(); } updateToolbarToggleButtonsUI(); scheduleUnifiedScadaRefresh(); restoreMapFloatingUiIfNoPopup(); }
     function toggleScadaAutoJumperMode() { scadaSettings.autoJumper = !scadaSettings.autoJumper; localStorage.setItem('elec_scada_auto_jumper', String(scadaSettings.autoJumper)); updateToolbarToggleButtonsUI(); scheduleUnifiedScadaRefresh(); }
     function toggleScadaAntiOverlapMode() { scadaSettings.antiOverlap = !scadaSettings.antiOverlap; localStorage.setItem('elec_scada_anti_overlap', String(scadaSettings.antiOverlap)); updateToolbarToggleButtonsUI(); scheduleUnifiedScadaRefresh(); }
-    // ===== จบพาทที่ 5 / 6 ของไฟล์ scada-engine.js =====
-        // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 5 / 6 จนจบไฟล์) =====
+
     // ========================================================================
     // 11. โหมดวาดสายปลอด Race Condition, T-Tap คงเลนขนาน, ดัดสาย CAD & ย้ายหมุดรองรับ 2 นิ้วซูม
     // ========================================================================
     function flushPendingRefreshIfIdle() {
         if (!activeDragCleanupFn && pendingRefreshAfterDrag) {
-            pendingRefreshAfterDrag = false;
-            renderLabeledPlacesList(true);
-            scheduleUnifiedScadaRefresh();
+            pendingRefreshAfterDrag = false; renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
         }
     }
 
     function cancelActiveScadaDrag() {
-        if (typeof activeDragCleanupFn === 'function') {
-            const fn = activeDragCleanupFn;
-            activeDragCleanupFn = null;
-            try { fn(); } catch (e) {}
-        }
-        const mapEl = document.getElementById('labeledInteractiveMap');
-        mapEl?.classList.remove('scada-move-wire-dragging', 'scada-move-pin-dragging');
-        liveDragLayer?.clearLayers();
-        pinMovePreviewLayer?.clearLayers();
-        leafletMap?.dragging?.enable();
-        flushPendingRefreshIfIdle();
+        if (typeof activeDragCleanupFn === 'function') { const fn = activeDragCleanupFn; activeDragCleanupFn = null; try { fn(); } catch (e) {} }
+        document.getElementById('labeledInteractiveMap')?.classList.remove('scada-move-wire-dragging', 'scada-move-pin-dragging');
+        liveDragLayer?.clearLayers(); pinMovePreviewLayer?.clearLayers();
+        leafletMap?.dragging?.enable(); flushPendingRefreshIfIdle();
     }
 
     function simplifyCoordsDP(pts, tol) {
@@ -2970,9 +2915,7 @@
             const d = Math.hypot(pts[i][0] - (s[0] + t * dx), pts[i][1] - (s[1] + t * dy));
             if (d > maxD) { maxD = d; idx = i; }
         }
-        return maxD > tol
-            ? simplifyCoordsDP(pts.slice(0, idx + 1), tol).slice(0, -1).concat(simplifyCoordsDP(pts.slice(idx), tol))
-            : [s, e];
+        return maxD > tol ? simplifyCoordsDP(pts.slice(0, idx + 1), tol).slice(0, -1).concat(simplifyCoordsDP(pts.slice(idx), tol)) : [s, e];
     }
 
     async function fetchRoadCounterFlowSafeWaypoints(lat1, lon1, lat2, lon2) {
@@ -2983,12 +2926,10 @@
         for (const u of urls) {
             try {
                 const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 3000);
-                const res = await fetch(u, { signal: ctrl.signal });
-                clearTimeout(tm);
+                const res = await fetch(u, { signal: ctrl.signal }); clearTimeout(tm);
                 const coords = res.ok ? (await res.json())?.routes?.[0]?.geometry?.coordinates : null;
                 if (coords?.length > 2) {
-                    const ll = coords.map(c => [Number(c[1].toFixed(5)), Number(c[0].toFixed(5))]);
-                    const simp = simplifyCoordsDP(ll, 0.00007);
+                    const ll = coords.map(c => [Number(c[1].toFixed(5)), Number(c[0].toFixed(5))]), simp = simplifyCoordsDP(ll, 0.00007);
                     return (simp.length > 16 ? simplifyCoordsDP(ll, 0.00016) : simp).slice(1, -1).slice(0, 14);
                 }
             } catch (e) {}
@@ -2997,8 +2938,7 @@
     }
 
     function updateDrawHintText() {
-        const el = document.getElementById('scadaDrawStatusHint');
-        if (!el) return;
+        const el = document.getElementById('scadaDrawStatusHint'); if (!el) return;
         if (!scadaSettings.fromPinId) { el.textContent = '👆 จิ้มหมุดต้นทาง เพื่อเริ่มลากสายไฟ'; return; }
         const src = labeledPlaces.find(p => p?.id === scadaSettings.fromPinId);
         el.textContent = `📍 จาก "${src ? src.name : 'ต้นทาง'}" ${scadaSettings.tempWaypoints.length ? `[${scadaSettings.tempWaypoints.length} มุม] ` : ''}${scadaSettings.routeMode === 'cad' ? '(จิ้มแมพดัดมุม หรือจิ้มปลายทาง)' : '➔ จิ้มหมุดปลายทาง'}`;
@@ -3007,17 +2947,10 @@
     function updateDrawUndoButtonsUI() {
         const act = scadaSettings.drawActive && canCurrentUserEditScada() && !simState.active;
         const uCnt = drawTracker.undoStack.length, rCnt = drawTracker.redoStack.length;
-        const hBdg = document.getElementById('mapLongPressHintBadge');
-        if (hBdg) hBdg.style.display = isAnyEditModeActive() ? 'none' : '';
+        const hBdg = document.getElementById('mapLongPressHintBadge'); if (hBdg) hBdg.style.display = isAnyEditModeActive() ? 'none' : '';
         const tbU = document.getElementById('btnToolbarUndoOnePoint'), flU = document.getElementById('btnFloatUndoOnePoint');
-        if (tbU) {
-            tbU.innerHTML = `↩️ ย้อนกลับ (${uCnt})`; tbU.disabled = !uCnt;
-            tbU.className = uCnt ? 'bg-amber-500 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-extrabold' : 'bg-slate-700 text-slate-400 px-2.5 py-1 rounded-lg text-[10px] opacity-50';
-        }
-        if (flU) {
-            flU.innerHTML = uCnt ? `↩️ ย้อนกลับ (${uCnt})` : '↩️ ย้อนกลับ'; flU.disabled = !uCnt;
-            flU.className = uCnt ? 'bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[11px] font-extrabold' : 'bg-slate-800 text-slate-500 px-3 py-1.5 rounded-xl text-[11px] opacity-60';
-        }
+        if (tbU) { tbU.innerHTML = `↩️ ย้อนกลับ (${uCnt})`; tbU.disabled = !uCnt; tbU.className = uCnt ? 'bg-amber-500 text-slate-950 px-2.5 py-1 rounded-lg text-[10px] font-extrabold' : 'bg-slate-700 text-slate-400 px-2.5 py-1 rounded-lg text-[10px] opacity-50'; }
+        if (flU) { flU.innerHTML = uCnt ? `↩️ ย้อนกลับ (${uCnt})` : '↩️ ย้อนกลับ'; flU.disabled = !uCnt; flU.className = uCnt ? 'bg-amber-400 text-slate-950 px-3 py-1.5 rounded-xl text-[11px] font-extrabold' : 'bg-slate-800 text-slate-500 px-3 py-1.5 rounded-xl text-[11px] opacity-60'; }
         document.getElementById('btnToolbarRedoOnePoint')?.classList.toggle('hidden', !rCnt);
         document.getElementById('btnFloatRedoOnePoint')?.classList.toggle('hidden', !rCnt);
         const fb = document.getElementById('scadaFloatingDrawUndoBar');
@@ -3025,11 +2958,9 @@
     }
 
     function renderScadaDrawPreview() {
-        drawPreviewLayer?.clearLayers();
-        jumperPreviewLayer?.clearLayers();
+        drawPreviewLayer?.clearLayers(); jumperPreviewLayer?.clearLayers();
         if (!scadaSettings.drawActive || !scadaSettings.fromPinId || !drawPreviewLayer) return;
-        const src = labeledPlaces.find(p => p?.id === scadaSettings.fromPinId);
-        if (!src) return;
+        const src = labeledPlaces.find(p => p?.id === scadaSettings.fromPinId); if (!src) return;
         L.circleMarker([src.lat, src.lon], { pane: 'scadaPreviewPane', radius: 11, color: '#facc15', weight: 2.5, fillColor: scadaSettings.activeColor, fillOpacity: 0.3, interactive: false }).addTo(drawPreviewLayer);
         if (scadaSettings.tempWaypoints.length) {
             L.polyline([[src.lat, src.lon], ...scadaSettings.tempWaypoints], { pane: 'scadaPreviewPane', color: scadaSettings.activeColor, weight: scadaSettings.lineWeight, dashArray: '4, 4', interactive: false }).addTo(drawPreviewLayer);
@@ -3040,8 +2971,7 @@
     function renderLiveDrawCrossoverPreview(cursorLL) {
         jumperPreviewLayer?.clearLayers();
         if (!leafletMap || !jumperPreviewLayer || !scadaSettings.drawActive || !scadaSettings.fromPinId || !scadaSettings.autoJumper || !cachedUnderPolylinesPx.length) return;
-        const src = labeledPlaces.find(p => p?.id === scadaSettings.fromPinId);
-        if (!src) return;
+        const src = labeledPlaces.find(p => p?.id === scadaSettings.fromPinId); if (!src) return;
         const pathLL = [L.latLng(src.lat, src.lon), ...scadaSettings.tempWaypoints.map(w => L.latLng(w[0], w[1])), ...(cursorLL ? [cursorLL] : [])];
         if (pathLL.length < 2) return;
         const z = leafletMap.getZoom();
@@ -3056,48 +2986,26 @@
     function toggleScadaDrawMode(forceState) {
         const next = typeof forceState === 'boolean' ? forceState : !scadaSettings.drawActive;
         if (next && !guardRealScadaEdit()) return false;
-        cancelActiveScadaDrag();
-        isConnectingDrawPin = false;
-        if (next) {
-            if (moveState.active) toggleScadaWireMoveMode(false);
-            if (pinMoveState.active) toggleScadaPinMoveMode(false);
-            resetMapFiltersForScadaAction();
-        }
-        scadaSettings.drawActive = next;
-        scadaSettings.fromPinId = null;
-        scadaSettings.tempWaypoints = [];
-        drawTracker.undoStack = [];
-        drawTracker.redoStack = [];
-        currentlyOpenEdgePopup = null;
+        cancelActiveScadaDrag(); isConnectingDrawPin = false;
+        if (next) { if (moveState.active) toggleScadaWireMoveMode(false); if (pinMoveState.active) toggleScadaPinMoveMode(false); resetMapFiltersForScadaAction(); }
+        scadaSettings.drawActive = next; scadaSettings.fromPinId = null; scadaSettings.tempWaypoints = [];
+        drawTracker.undoStack = []; drawTracker.redoStack = []; currentlyOpenEdgePopup = null;
         document.getElementById('scadaDrawActivePanel')?.classList.toggle('hidden', !next);
         document.getElementById('labeledInteractiveMap')?.classList.toggle('scada-draw-cursor', next);
         const btn = document.getElementById('btnToggleScadaDrawMode');
-        if (btn) {
-            btn.innerHTML = next ? '✅ เสร็จสิ้นการวาด' : '✏️ วาดเส้นสายไฟ';
-            btn.className = `scada-edit-only ${next ? 'bg-emerald-500' : 'bg-amber-500'} text-slate-950 px-3 py-1 rounded-xl text-[11px] font-extrabold shadow transition`;
-        }
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
-        updateDrawHintText();
-        updateDrawUndoButtonsUI();
-        renderScadaDrawPreview();
-        syncLodAndViewportMarkersNow();
+        if (btn) { btn.innerHTML = next ? '✅ เสร็จสิ้นการวาด' : '✏️ วาดเส้นสายไฟ'; btn.className = `scada-edit-only ${next ? 'bg-emerald-500' : 'bg-amber-500'} text-slate-950 px-3 py-1 rounded-xl text-[11px] font-extrabold shadow transition`; }
+        leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
+        updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
         setTimeout(() => leafletMap?.invalidateSize(), 60);
     }
 
     function resetScadaDrawSource() {
-        if (scadaSettings.fromPinId) {
-            drawTracker.undoStack.push({ type: 'reset_source', prevPinId: scadaSettings.fromPinId, prevWaypoints: JSON.parse(JSON.stringify(scadaSettings.tempWaypoints)) });
-            drawTracker.redoStack = [];
-        }
-        scadaSettings.fromPinId = null;
-        scadaSettings.tempWaypoints = [];
-        updateDrawHintText();
-        updateDrawUndoButtonsUI();
-        renderScadaDrawPreview();
-        syncLodAndViewportMarkersNow();
+        if (scadaSettings.fromPinId) { drawTracker.undoStack.push({ type: 'reset_source', prevPinId: scadaSettings.fromPinId, prevWaypoints: JSON.parse(JSON.stringify(scadaSettings.tempWaypoints)) }); drawTracker.redoStack = []; }
+        scadaSettings.fromPinId = null; scadaSettings.tempWaypoints = [];
+        updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
     }
 
+    // ดึงเฉพาะสีและฟีดเดอร์ของเส้นสายไฟที่เชื่อมอยู่แยกกันอย่างแม่นยำ (ไม่ดึงสีหมุดมาปน)
     function startDrawFromPopupPin(pinId) {
         if (!pinId || !guardRealScadaEdit()) return;
         resetMapFiltersForScadaAction();
@@ -3106,52 +3014,47 @@
         scadaSettings.fromPinId = pinId;
         drawTracker.undoStack = [{ type: 'select_start', pinId }];
         if (target) {
-            let fd = target.scadaNode?.fd || '', col = target.scadaNode?.col || '';
-            if (!fd || !col) {
-                labeledPlaces.some(p => (p?.scadaLines || []).some(l => {
-                    if (l?.to === pinId) { fd = fd || l.fd || ''; col = col || l.col || ''; return true; }
-                    return false;
-                }));
+            let fd = target.scadaNode?.fd || '', wireCol = '';
+            for (const l of (target.scadaLines || [])) {
+                if (!l) continue;
+                if (!fd && l.fd) fd = l.fd;
+                if (!wireCol && normHex(l.col)) wireCol = normHex(l.col);
+                if (fd && wireCol) break;
             }
-            if (fd) {
-                const inp = document.getElementById('scadaActiveFeederInput');
-                if (inp) inp.value = fd.toUpperCase();
-                onScadaActiveFeederInput(fd);
+            if (!fd || !wireCol) {
+                for (const p of labeledPlaces) {
+                    for (const l of (p?.scadaLines || [])) {
+                        if (l?.to === pinId) { if (!fd && l.fd) fd = l.fd; if (!wireCol && normHex(l.col)) wireCol = normHex(l.col); if (fd && wireCol) break; }
+                    }
+                    if (fd && wireCol) break;
+                }
             }
-            if (col) setScadaDrawColor(col);
+            if (fd) { const inp = document.getElementById('scadaActiveFeederInput'); if (inp) inp.value = fd.toUpperCase(); onScadaActiveFeederInput(fd); }
+            if (wireCol) setScadaDrawColor(wireCol);
         }
-        updateDrawHintText();
-        updateDrawUndoButtonsUI();
-        renderScadaDrawPreview();
-        syncLodAndViewportMarkersNow();
+        updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
     }
-
+    // ===== จบพาทที่ 9 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 10 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 9 / 12) =====
     async function handlePinClickedInDrawMode(targetPinId) {
         lastMarkerClickTs = Date.now();
         if (isConnectingDrawPin) return showToast('⏳ กำลังคำนวณแนวสายไฟ กรุณารอสักครู่...');
         if (!scadaSettings.fromPinId) {
-            scadaSettings.fromPinId = targetPinId;
-            scadaSettings.tempWaypoints = [];
-            drawTracker.undoStack.push({ type: 'select_start', pinId: targetPinId });
-            drawTracker.redoStack = [];
-            updateDrawHintText();
-            updateDrawUndoButtonsUI();
-            renderScadaDrawPreview();
-            syncLodAndViewportMarkersNow();
+            scadaSettings.fromPinId = targetPinId; scadaSettings.tempWaypoints = [];
+            drawTracker.undoStack.push({ type: 'select_start', pinId: targetPinId }); drawTracker.redoStack = [];
+            updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
             return;
         }
         if (scadaSettings.fromPinId === targetPinId) return resetScadaDrawSource();
 
         const startFromId = scadaSettings.fromPinId;
-        const fromPin = labeledPlaces.find(p => p?.id === startFromId);
-        const toPin = labeledPlaces.find(p => p?.id === targetPinId);
+        const fromPin = labeledPlaces.find(p => p?.id === startFromId), toPin = labeledPlaces.find(p => p?.id === targetPinId);
         if (!fromPin || !toPin) return;
 
         isConnectingDrawPin = true;
         try {
             const prevW = JSON.parse(JSON.stringify(scadaSettings.tempWaypoints));
-            const prevLines = JSON.parse(JSON.stringify(fromPin.scadaLines || []));
-            const prevToLines = JSON.parse(JSON.stringify(toPin.scadaLines || []));
+            const prevLines = JSON.parse(JSON.stringify(fromPin.scadaLines || [])), prevToLines = JSON.parse(JSON.stringify(toPin.scadaLines || []));
             let finalW = [...scadaSettings.tempWaypoints];
             if (scadaSettings.routeMode === 'road' && !finalW.length) {
                 showToast('⏳ กำลังคำนวณแนวสายไฟตามถนน...');
@@ -3179,8 +3082,7 @@
                     ...(finalW.length ? { w: finalW.slice(0, MAX_WIRE_WAYPOINTS) } : {})
                 };
                 if (exIdx !== -1) lines[exIdx] = obj; else lines.push(obj);
-                p.scadaLines = lines;
-                p.updatedAt = nextPinUpdatedIso(p);
+                p.scadaLines = lines; p.updatedAt = nextPinUpdatedIso(p);
                 afterLines = JSON.parse(JSON.stringify(lines));
                 return true;
             }, `⚡ เชื่อมสาย ${fromPin.name} ➔ ${toPin.name} แล้ว`);
@@ -3189,98 +3091,70 @@
                 drawTracker.undoStack.push({ type: 'connect_pin', fromPinId: fromPin.id, toPinId: toPin.id, prevWaypoints: prevW, prevLines, afterLines, prevToLines, afterToLines });
                 drawTracker.redoStack = [];
             }
-            scadaSettings.fromPinId = toPin.id;
-            scadaSettings.tempWaypoints = [];
-            updateDrawHintText();
-            updateDrawUndoButtonsUI();
-            renderScadaDrawPreview();
-            syncLodAndViewportMarkersNow();
-        } finally {
-            isConnectingDrawPin = false;
-        }
+            scadaSettings.fromPinId = toPin.id; scadaSettings.tempWaypoints = [];
+            updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
+        } finally { isConnectingDrawPin = false; }
     }
 
     async function undoScadaDrawOnePoint() {
         if (!scadaSettings.drawActive || isConnectingDrawPin || !drawTracker.undoStack.length || !guardRealScadaEdit()) return;
-        const st = drawTracker.undoStack.pop();
-        drawTracker.redoStack.push(st);
+        const st = drawTracker.undoStack.pop(); drawTracker.redoStack.push(st);
         if (st.type === 'select_start') { scadaSettings.fromPinId = null; scadaSettings.tempWaypoints = []; }
         else if (st.type === 'add_waypoint') scadaSettings.tempWaypoints.pop();
         else if (st.type === 'reset_source') { scadaSettings.fromPinId = st.prevPinId; scadaSettings.tempWaypoints = JSON.parse(JSON.stringify(st.prevWaypoints)); }
         else if (st.type === 'connect_pin') {
             await commitPinsUpdate(pins => {
-                const p = pins.find(i => i?.id === st.fromPinId), pT = pins.find(i => i?.id === st.toPinId);
-                if (!p) return false;
+                const p = pins.find(i => i?.id === st.fromPinId), pT = pins.find(i => i?.id === st.toPinId); if (!p) return false;
                 p.scadaLines = JSON.parse(JSON.stringify(st.prevLines)); p.updatedAt = nextPinUpdatedIso(p);
                 if (pT && Array.isArray(st.prevToLines)) { pT.scadaLines = JSON.parse(JSON.stringify(st.prevToLines)); pT.updatedAt = nextPinUpdatedIso(pT); }
                 return true;
             });
-            scadaSettings.fromPinId = st.fromPinId;
-            scadaSettings.tempWaypoints = JSON.parse(JSON.stringify(st.prevWaypoints));
+            scadaSettings.fromPinId = st.fromPinId; scadaSettings.tempWaypoints = JSON.parse(JSON.stringify(st.prevWaypoints));
         }
-        updateDrawHintText();
-        updateDrawUndoButtonsUI();
-        renderScadaDrawPreview();
-        syncLodAndViewportMarkersNow();
+        updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
     }
 
     async function redoScadaDrawOnePoint() {
         if (!scadaSettings.drawActive || isConnectingDrawPin || !drawTracker.redoStack.length || !guardRealScadaEdit()) return;
-        const st = drawTracker.redoStack.pop();
-        drawTracker.undoStack.push(st);
+        const st = drawTracker.redoStack.pop(); drawTracker.undoStack.push(st);
         if (st.type === 'select_start') { scadaSettings.fromPinId = st.pinId; scadaSettings.tempWaypoints = []; }
         else if (st.type === 'add_waypoint') { scadaSettings.fromPinId = st.pinId; scadaSettings.tempWaypoints.push([...st.wp]); }
         else if (st.type === 'reset_source') { scadaSettings.fromPinId = null; scadaSettings.tempWaypoints = []; }
         else if (st.type === 'connect_pin') {
             await commitPinsUpdate(pins => {
-                const p = pins.find(i => i?.id === st.fromPinId), pT = pins.find(i => i?.id === st.toPinId);
-                if (!p) return false;
+                const p = pins.find(i => i?.id === st.fromPinId), pT = pins.find(i => i?.id === st.toPinId); if (!p) return false;
                 p.scadaLines = JSON.parse(JSON.stringify(st.afterLines)); p.updatedAt = nextPinUpdatedIso(p);
                 if (pT && Array.isArray(st.afterToLines)) { pT.scadaLines = JSON.parse(JSON.stringify(st.afterToLines)); pT.updatedAt = nextPinUpdatedIso(pT); }
                 return true;
             });
-            scadaSettings.fromPinId = st.toPinId;
-            scadaSettings.tempWaypoints = [];
+            scadaSettings.fromPinId = st.toPinId; scadaSettings.tempWaypoints = [];
         }
-        updateDrawHintText();
-        updateDrawUndoButtonsUI();
-        renderScadaDrawPreview();
-        syncLodAndViewportMarkersNow();
+        updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); syncLodAndViewportMarkersNow();
     }
 
     function computePolylineMidpointLatLon(pts) {
         if (!pts?.length) return { lat: 13.1361, lon: 101.0322 };
         if (pts.length === 1) return { lat: Number(pts[0][0]), lon: Number(pts[0][1]) };
-        let tot = 0;
-        const segs = [];
-        for (let i = 0; i < pts.length - 1; i++) {
-            const d = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
-            segs.push(d); tot += d;
-        }
+        let tot = 0; const segs = [];
+        for (let i = 0; i < pts.length - 1; i++) { const d = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); segs.push(d); tot += d; }
         let half = tot * 0.5;
         for (let i = 0; i < segs.length; i++) {
             if (half <= segs[i] || i === segs.length - 1) {
                 const t = segs[i] > 1e-9 ? Math.max(0.05, Math.min(0.95, half / segs[i])) : 0.5;
-                return {
-                    lat: Number((pts[i][0] + t * (pts[i + 1][0] - pts[i][0])).toFixed(6)),
-                    lon: Number((pts[i][1] + t * (pts[i + 1][1] - pts[i][1])).toFixed(6))
-                };
+                return { lat: Number((pts[i][0] + t * (pts[i + 1][0] - pts[i][0])).toFixed(6)), lon: Number((pts[i][1] + t * (pts[i + 1][1] - pts[i][1])).toFixed(6)) };
             }
             half -= segs[i];
         }
         return { lat: Number(pts[0][0]), lon: Number(pts[0][1]) };
     }
 
-    // สร้างจุด T-Tap บนแนวเลนสายไฟจริง พร้อมล็อกฝั่งขนานอัตโนมัติป้องกันสายคู่ขนานยุบทับกัน
     async function createTTapOnScadaEdge(fromPinId, edgeIdx) {
         if (!guardRealScadaEdit()) return;
         const lastClk = window.__scadaLastLineClick;
         const hasExactClk = Boolean(lastClk && lastClk.fromId === fromPinId && lastClk.edgeIdx === edgeIdx && !isNaN(parseFloat(lastClk.lat)) && !isNaN(parseFloat(lastClk.lon)));
         const renderedPath = renderedEdgePathsMap.get(`${fromPinId}__${edgeIdx}`);
-        window.__scadaLastLineClick = null;
-        currentlyOpenEdgePopup = null;
-        leafletMap?.closePopup();
-        resetMapFiltersForScadaAction();
+        window.__scadaLastLineClick = null; currentlyOpenEdgePopup = null;
+        leafletMap?.closePopup(); resetMapFiltersForScadaAction();
         let newId = '';
 
         const ok = await commitPinsUpdate(pins => {
@@ -3290,16 +3164,14 @@
             const raw = [[Number(pF.lat), Number(pF.lon)], ...(e.w || []), [Number(pT.lat), Number(pT.lon)]];
             const vis = (Array.isArray(renderedPath) && renderedPath.length >= 2) ? renderedPath : raw;
             const fallbackMid = computePolylineMidpointLatLon(vis);
-            const cLat = hasExactClk ? parseFloat(lastClk.lat) : fallbackMid.lat;
-            const cLon = hasExactClk ? parseFloat(lastClk.lon) : fallbackMid.lon;
+            const cLat = hasExactClk ? parseFloat(lastClk.lat) : fallbackMid.lat, cLon = hasExactClk ? parseFloat(lastClk.lon) : fallbackMid.lon;
             const cos = Math.cos((cLat * Math.PI) / 180) || 1;
 
             let bVisD = Infinity, bLat = cLat, bLon = cLon;
             for (let i = 0; i < vis.length - 1; i++) {
                 const dx = (vis[i + 1][1] - vis[i][1]) * cos, dy = vis[i + 1][0] - vis[i][0], lSq = dx * dx + dy * dy;
                 const t = Math.max(0.03, Math.min(0.97, lSq > 1e-14 ? (((cLon - vis[i][1]) * cos * dx + (cLat - vis[i][0]) * dy) / lSq) : 0.5));
-                const la = vis[i][0] + t * dy, lo = vis[i][1] + t * (vis[i + 1][1] - vis[i][1]);
-                const d = ((cLon - lo) * cos) ** 2 + (cLat - la) ** 2;
+                const la = vis[i][0] + t * dy, lo = vis[i][1] + t * (vis[i + 1][1] - vis[i][1]), d = ((cLon - lo) * cos) ** 2 + (cLat - la) ** 2;
                 if (d < bVisD) { bVisD = d; bLat = Number(la.toFixed(6)); bLon = Number(lo.toFixed(6)); }
             }
 
@@ -3307,30 +3179,23 @@
             for (let i = 0; i < raw.length - 1; i++) {
                 const dx = (raw[i + 1][1] - raw[i][1]) * cos, dy = raw[i + 1][0] - raw[i][0], lSq = dx * dx + dy * dy;
                 const t = Math.max(0.03, Math.min(0.97, lSq > 1e-14 ? (((bLon - raw[i][1]) * cos * dx + (bLat - raw[i][0]) * dy) / lSq) : 0.5));
-                const la = raw[i][0] + t * dy, lo = raw[i][1] + t * (raw[i + 1][1] - raw[i][1]);
-                const d = ((bLon - lo) * cos) ** 2 + (bLat - la) ** 2;
+                const la = raw[i][0] + t * dy, lo = raw[i][1] + t * (raw[i + 1][1] - raw[i][1]), d = ((bLon - lo) * cos) ** 2 + (bLat - la) ** 2;
                 if (d < bRawD) { bRawD = d; bSeg = i; rawProjLa = la; rawProjLo = lo; }
             }
 
             let keepSide = e.side || 0;
             const siblingRefs = [];
             pins.forEach(sp => {
-                if (!sp || !Array.isArray(sp.scadaLines)) return;
-                sp.scadaLines.forEach((sl, sIdx) => {
+                (sp?.scadaLines || []).forEach((sl, sIdx) => {
                     if (!sl || (sp.id === fromPinId && sIdx === edgeIdx)) return;
-                    if ((sp.id === pF.id && sl.to === oldToId) || (sp.id === oldToId && sl.to === pF.id)) {
-                        siblingRefs.push({ owner: sp, line: sl, sameDir: sp.id === pF.id });
-                    }
+                    if ((sp.id === pF.id && sl.to === oldToId) || (sp.id === oldToId && sl.to === pF.id)) siblingRefs.push({ owner: sp, line: sl, sameDir: sp.id === pF.id });
                 });
             });
             if (siblingRefs.length > 0 && !keepSide && leafletMap) {
-                const pRawA = leafletMap.latLngToLayerPoint([raw[bSeg][0], raw[bSeg][1]]);
-                const pRawB = leafletMap.latLngToLayerPoint([raw[bSeg + 1][0], raw[bSeg + 1][1]]);
-                const pTap = leafletMap.latLngToLayerPoint([bLat, bLon]);
-                const pBase = leafletMap.latLngToLayerPoint([rawProjLa, rawProjLo]);
+                const pRawA = leafletMap.latLngToLayerPoint([raw[bSeg][0], raw[bSeg][1]]), pRawB = leafletMap.latLngToLayerPoint([raw[bSeg + 1][0], raw[bSeg + 1][1]]);
+                const pTap = leafletMap.latLngToLayerPoint([bLat, bLon]), pBase = leafletMap.latLngToLayerPoint([rawProjLa, rawProjLo]);
                 const vx = pRawB.x - pRawA.x, vy = pRawB.y - pRawA.y;
-                const cross = (-vy) * (pTap.x - pBase.x) + vx * (pTap.y - pBase.y);
-                keepSide = cross >= 0 ? 1 : -1;
+                keepSide = ((-vy) * (pTap.x - pBase.x) + vx * (pTap.y - pBase.y)) >= 0 ? 1 : -1;
                 if (siblingRefs.length === 1 && !siblingRefs[0].line.side) {
                     siblingRefs[0].line.side = siblingRefs[0].sameDir ? -keepSide : keepSide;
                     siblingRefs[0].owner.updatedAt = nextPinUpdatedIso(siblingRefs[0].owner);
@@ -3338,9 +3203,10 @@
             }
 
             const w1 = raw.slice(1, bSeg + 1), w2 = raw.slice(bSeg + 1, -1), updIso = nextPinUpdatedIso(pF), chId = 'ttc_' + Date.now();
+            const initCol = normHex(e.col) || '#10b981';
             newId = sanitizeEquipPinId('');
             const cont = {
-                to: oldToId, fd: e.fd, col: e.col, st: e.st || 'oh',
+                to: oldToId, fd: e.fd, col: initCol, st: e.st || 'oh',
                 ...(e.cat ? { cat: e.cat } : {}), ...(e.lb ? { lb: e.lb } : {}), ...(keepSide ? { side: keepSide } : {}),
                 ...(e.off ? { off: e.off } : {}), ...(e.jp ? { jp: e.jp } : {}), ...(e.jf ? { jf: e.jf } : {}),
                 ...(e.customSingleCol ? { customSingleCol: 1, ...(e.customOwnerBrk ? { customOwnerBrk: e.customOwnerBrk } : {}) } : {}),
@@ -3348,9 +3214,9 @@
             };
             pins.unshift({
                 id: newId, name: `T-Tap (${e.fd || 'Line'})`, note: 'จุดแทปกลางสาย', isTTap: true, lat: bLat, lon: bLon,
-                pinColor: safeHexToPinKey(e.col || '#10b981'), ownerGroup: pF.ownerGroup || getActiveEquipUserGroup(),
+                pinColor: safeHexToPinKey(initCol), ownerGroup: pF.ownerGroup || getActiveEquipUserGroup(),
                 ownerUser: localStorage.getItem('elec_app_current_user') || 'admin',
-                scadaNode: { t: 'TAP', st: 'C', col: e.col || '#10b981', fd: e.fd || '' }, scadaLines: [cont], updatedAt: updIso
+                scadaNode: { t: 'TAP', st: 'C', col: initCol, fd: e.fd || '' }, scadaLines: [cont], updatedAt: updIso
             });
             e.to = newId; e._ttapId = chId;
             if (keepSide) e.side = keepSide;
@@ -3364,16 +3230,8 @@
 
     function quickDeleteTTapFromPopup(pinId) { leafletMap?.closePopup(); deleteSingleLabeledPin(pinId); }
     function mutateSingleEdge(fId, idx, fn, msg) {
-        currentlyOpenEdgePopup = null;
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
-        return commitPinsUpdate(pins => {
-            const p = pins.find(i => i?.id === fId);
-            if (!p?.scadaLines?.[idx]) return false;
-            fn(p.scadaLines[idx]);
-            p.updatedAt = nextPinUpdatedIso(p);
-            return true;
-        }, msg);
+        currentlyOpenEdgePopup = null; leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
+        return commitPinsUpdate(pins => { const p = pins.find(i => i?.id === fId); if (!p?.scadaLines?.[idx]) return false; fn(p.scadaLines[idx]); p.updatedAt = nextPinUpdatedIso(p); return true; }, msg);
     }
     function toggleScadaEdgePower(fId, idx) { return simState.active ? simulateEdgePowerToggle(fId, idx) : mutateSingleEdge(fId, idx, e => { e.off = e.off ? 0 : 1; }); }
     function toggleScadaEdgeUgStyle(fId, idx) { return mutateSingleEdge(fId, idx, e => { e.st = e.st === 'ug' ? 'oh' : 'ug'; }); }
@@ -3384,16 +3242,8 @@
     function deleteScadaEdge(fId, idx) {
         if (!guardRealScadaEdit()) return;
         showCustomConfirm('ต้องการลบเส้นวงจรจ่ายไฟช่วงนี้ใช่หรือไม่?', () => {
-            currentlyOpenEdgePopup = null;
-            moveState.selectedRef = null;
-            leafletMap?.closePopup();
-            commitPinsUpdate(pins => {
-                const p = pins.find(i => i?.id === fId);
-                if (!p?.scadaLines?.[idx]) return false;
-                p.scadaLines.splice(idx, 1);
-                p.updatedAt = nextPinUpdatedIso(p);
-                return true;
-            }, '🗑️ ลบเส้นวงจรแล้ว');
+            currentlyOpenEdgePopup = null; moveState.selectedRef = null; leafletMap?.closePopup();
+            commitPinsUpdate(pins => { const p = pins.find(i => i?.id === fId); if (!p?.scadaLines?.[idx]) return false; p.scadaLines.splice(idx, 1); p.updatedAt = nextPinUpdatedIso(p); return true; }, '🗑️ ลบเส้นวงจรแล้ว');
             restoreMapFloatingUiIfNoPopup();
         }, '🗑️ ยืนยันลบเส้นวงจร');
     }
@@ -3403,32 +3253,24 @@
 
     function bindGripPointerSafe(layer, handlerFn, touchOnly = false) {
         const attach = () => {
-            const domEl = layer?.getElement?.();
-            if (!domEl || domEl.__scadaGripBound) return;
+            const domEl = layer?.getElement?.(); if (!domEl || domEl.__scadaGripBound) return;
             domEl.__scadaGripBound = true;
             if (!touchOnly) domEl.addEventListener('mousedown', handlerFn);
             domEl.addEventListener('touchstart', handlerFn, { passive: false });
         };
-        layer.on('add', attach);
-        attach();
+        layer.on('add', attach); attach();
     }
 
     async function commitWireWaypoints(fromId, edgeIdx, newW, recUndo = true, snap = null) {
         const ok = await commitPinsUpdate(pins => {
-            const p = pins.find(x => x?.id === fromId), e = p?.scadaLines?.[edgeIdx];
-            if (!p || !e) return false;
-            if (recUndo) {
-                moveState.undoStack.push({ fromId, edgeIdx, toId: e.to, w: snap ? snap.w : (e.w ? JSON.parse(JSON.stringify(e.w)) : null), side: snap ? snap.side : (e.side || 0) });
-                if (moveState.undoStack.length > 25) moveState.undoStack.shift();
-            }
+            const p = pins.find(x => x?.id === fromId), e = p?.scadaLines?.[edgeIdx]; if (!p || !e) return false;
+            if (recUndo) { moveState.undoStack.push({ fromId, edgeIdx, toId: e.to, w: snap ? snap.w : (e.w ? JSON.parse(JSON.stringify(e.w)) : null), side: snap ? snap.side : (e.side || 0) }); if (moveState.undoStack.length > 25) moveState.undoStack.shift(); }
             const cl = (newW || []).slice(0, MAX_WIRE_WAYPOINTS).map(pt => [Number(Number(pt[0]).toFixed(5)), Number(Number(pt[1]).toFixed(5))]);
             if (cl.length) e.w = cl; else delete e.w;
-            delete e.side;
-            p.updatedAt = nextPinUpdatedIso(p);
+            delete e.side; p.updatedAt = nextPinUpdatedIso(p);
             return true;
         });
-        updateMovePanelButtonsUI();
-        scheduleRebuildGrabHandles();
+        updateMovePanelButtonsUI(); scheduleRebuildGrabHandles();
         return ok;
     }
 
@@ -3436,8 +3278,7 @@
         if (!moveState.active || !guardRealScadaEdit() || !leafletMap || (ev.type === 'mousedown' && ev.button !== 0)) return;
         if (ev.touches && ev.touches.length > 1) return;
         if (ev.cancelable) ev.preventDefault();
-        ev.stopPropagation();
-        cancelActiveScadaDrag();
+        ev.stopPropagation(); cancelActiveScadaDrag();
 
         const fP = cachedTopology?.pinMap.get(ref.fromId), e = fP?.scadaLines?.[ref.edgeIdx], tP = e ? cachedTopology.pinMap.get(e.to) : null;
         if (!fP || !e || !tP) return;
@@ -3445,38 +3286,24 @@
         const p0 = [Number(fP.lat), Number(fP.lon)], pn = [Number(tP.lat), Number(tP.lon)];
         const origW = (e.w || []).map(c => [Number(c[0]), Number(c[1])]), full = [p0, ...origW, pn];
 
-        if (moveState.subMode === 'delete_vertex' && action === 'vertex') {
-            return commitWireWaypoints(ref.fromId, ref.edgeIdx, origW.filter((_, i) => i !== tIdx), true, { w: origW, side: e.side || 0 });
-        }
+        if (moveState.subMode === 'delete_vertex' && action === 'vertex') return commitWireWaypoints(ref.fromId, ref.edgeIdx, origW.filter((_, i) => i !== tIdx), true, { w: origW, side: e.side || 0 });
         if (action === 'wire_body') {
             if (moveState.subMode === 'shift') action = 'shift_whole';
             else {
                 const pC = leafletMap.latLngToLayerPoint(sLL);
                 let vIdx = -1, bSeg = 0, bD = Infinity;
-                for (let i = 1; i < full.length - 1; i++) {
-                    if (pC.distanceTo(leafletMap.latLngToLayerPoint(full[i])) <= 14) { vIdx = i - 1; break; }
-                }
+                for (let i = 1; i < full.length - 1; i++) if (pC.distanceTo(leafletMap.latLngToLayerPoint(full[i])) <= 14) { vIdx = i - 1; break; }
                 for (let i = 0; i < full.length - 1; i++) {
                     const A = leafletMap.latLngToLayerPoint(full[i]), B = leafletMap.latLngToLayerPoint(full[i + 1]);
-                    const dx = B.x - A.x, dy = B.y - A.y, lS = dx * dx + dy * dy;
-                    const t = Math.max(0, Math.min(1, lS > 1e-4 ? ((pC.x - A.x) * dx + (pC.y - A.y) * dy) / lS : 0.5));
+                    const dx = B.x - A.x, dy = B.y - A.y, lS = dx * dx + dy * dy, t = Math.max(0, Math.min(1, lS > 1e-4 ? ((pC.x - A.x) * dx + (pC.y - A.y) * dy) / lS : 0.5));
                     const d = Math.hypot(pC.x - (A.x + t * dx), pC.y - (A.y + t * dy));
                     if (d < bD) { bD = d; bSeg = i; }
                 }
-                if (moveState.subMode === 'delete_vertex') {
-                    return vIdx !== -1
-                        ? commitWireWaypoints(ref.fromId, ref.edgeIdx, origW.filter((_, i) => i !== vIdx), true, { w: origW, side: e.side || 0 })
-                        : (moveState.selectedRef = { ...ref }, scheduleRebuildGrabHandles());
-                }
-                action = vIdx !== -1 ? 'vertex' : 'insert_stretch';
-                tIdx = vIdx !== -1 ? vIdx : bSeg;
+                if (moveState.subMode === 'delete_vertex') return vIdx !== -1 ? commitWireWaypoints(ref.fromId, ref.edgeIdx, origW.filter((_, i) => i !== vIdx), true, { w: origW, side: e.side || 0 }) : (moveState.selectedRef = { ...ref }, scheduleRebuildGrabHandles());
+                action = vIdx !== -1 ? 'vertex' : 'insert_stretch'; tIdx = vIdx !== -1 ? vIdx : bSeg;
             }
         }
-        if (action === 'insert_stretch' && origW.length >= MAX_WIRE_WAYPOINTS) {
-            moveState.selectedRef = { ...ref };
-            scheduleRebuildGrabHandles();
-            return showToast(`⚠️ เส้นนี้ดัดมุมครบเพดานสูงสุด ${MAX_WIRE_WAYPOINTS} จุดแล้ว`);
-        }
+        if (action === 'insert_stretch' && origW.length >= MAX_WIRE_WAYPOINTS) { moveState.selectedRef = { ...ref }; scheduleRebuildGrabHandles(); return showToast(`⚠️ เส้นนี้ดัดมุมครบเพดานสูงสุด ${MAX_WIRE_WAYPOINTS} จุดแล้ว`); }
 
         leafletMap.dragging.disable();
         document.getElementById('labeledInteractiveMap')?.classList.add('scada-move-wire-dragging');
@@ -3487,16 +3314,10 @@
             ['mouseup', 'touchend', 'touchcancel'].forEach(k => window.removeEventListener(k, onEnd));
             activeDragCleanupFn = null;
             document.getElementById('labeledInteractiveMap')?.classList.remove('scada-move-wire-dragging');
-            leafletMap?.dragging?.enable();
-            liveDragLayer?.clearLayers();
+            leafletMap?.dragging?.enable(); liveDragLayer?.clearLayers();
         };
         const onMove = mEv => {
-            if (mEv.touches && mEv.touches.length > 1) {
-                detach();
-                scheduleRebuildGrabHandles();
-                flushPendingRefreshIfIdle();
-                return;
-            }
+            if (mEv.touches && mEv.touches.length > 1) { detach(); scheduleRebuildGrabHandles(); flushPendingRefreshIfIdle(); return; }
             if (mEv.cancelable) mEv.preventDefault();
             const mXY = getClientXY(mEv);
             if (!st.moved && Math.hypot(mXY.x - st.startX, mXY.y - st.startY) < 4) return;
@@ -3504,22 +3325,16 @@
             const cLL = xyToLL(mXY.x, mXY.y);
             if (st.action === 'shift_whole') {
                 const dLa = cLL.lat - st.sLL.lat, dLo = cLL.lng - st.sLL.lng;
-                st.workW = st.origW.length
-                    ? st.origW.map(p => [p[0] + dLa, p[1] + dLo])
-                    : [[st.p0[0] + (st.pn[0] - st.p0[0]) * 0.2 + dLa, st.p0[1] + (st.pn[1] - st.p0[1]) * 0.2 + dLo], [st.p0[0] + (st.pn[0] - st.p0[0]) * 0.8 + dLa, st.p0[1] + (st.pn[1] - st.p0[1]) * 0.8 + dLo]];
+                st.workW = st.origW.length ? st.origW.map(p => [p[0] + dLa, p[1] + dLo]) : [[st.p0[0] + (st.pn[0] - st.p0[0]) * 0.2 + dLa, st.p0[1] + (st.pn[1] - st.p0[1]) * 0.2 + dLo], [st.p0[0] + (st.pn[0] - st.p0[0]) * 0.8 + dLa, st.p0[1] + (st.pn[1] - st.p0[1]) * 0.8 + dLo]];
             } else {
                 if (st.action === 'insert_stretch' && !st.ins) { st.workW.splice(st.idx, 0, [cLL.lat, cLL.lng]); st.ins = true; }
                 let fLL = [cLL.lat, cLL.lng];
                 if (moveState.orthoSnap) {
-                    const cP = leafletMap.latLngToLayerPoint(cLL);
-                    let sx = cP.x, sy = cP.y;
+                    const cP = leafletMap.latLngToLayerPoint(cLL); let sx = cP.x, sy = cP.y;
                     [st.idx === 0 ? st.p0 : st.workW[st.idx - 1], st.idx === st.workW.length - 1 ? st.pn : st.workW[st.idx + 1]].forEach(nb => {
-                        const nP = leafletMap.latLngToLayerPoint(nb);
-                        if (Math.abs(cP.x - nP.x) <= 12) sx = nP.x;
-                        if (Math.abs(cP.y - nP.y) <= 12) sy = nP.y;
+                        const nP = leafletMap.latLngToLayerPoint(nb); if (Math.abs(cP.x - nP.x) <= 12) sx = nP.x; if (Math.abs(cP.y - nP.y) <= 12) sy = nP.y;
                     });
-                    const oL = leafletMap.layerPointToLatLng(L.point(sx, sy));
-                    fLL = [oL.lat, oL.lng];
+                    const oL = leafletMap.layerPointToLatLng(L.point(sx, sy)); fLL = [oL.lat, oL.lng];
                 }
                 st.workW[st.idx] = fLL;
             }
@@ -3527,8 +3342,7 @@
             L.polyline([st.p0, ...st.workW, st.pn], { pane: 'scadaWireMovePreviewPane', color: st.col, weight: 3.4 }).addTo(liveDragLayer);
         };
         const onEnd = async () => {
-            detach();
-            moveState.selectedRef = { ...st.ref };
+            detach(); moveState.selectedRef = { ...st.ref };
             if (st.moved) await commitWireWaypoints(st.ref.fromId, st.ref.edgeIdx, st.workW, true, { w: st.origW, side: st.origSide });
             else { updateMovePanelButtonsUI(); scheduleRebuildGrabHandles(); }
             flushPendingRefreshIfIdle();
@@ -3537,28 +3351,20 @@
         ['mousemove', 'touchmove'].forEach(k => window.addEventListener(k, onMove, { passive: false }));
         ['mouseup', 'touchend', 'touchcancel'].forEach(k => window.addEventListener(k, onEnd, { passive: false }));
     }
-
+    // ===== จบพาทที่ 10 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 11 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 10 / 12) =====
     function rebuildGrabHandlesAndGrips() {
-        grabLinesLayer?.clearLayers();
-        gripsLayer?.clearLayers();
-        if (!leafletMap || !grabLinesLayer || !moveState.active || !canCurrentUserEditScada() || !scadaSettings.showLines) {
-            updateMovePanelButtonsUI();
-            return;
-        }
-        if (moveState.selectedRef && !renderedEdgePathsMap.has(`${moveState.selectedRef.fromId}__${moveState.selectedRef.edgeIdx}`)) {
-            moveState.selectedRef = null;
-        }
+        grabLinesLayer?.clearLayers(); gripsLayer?.clearLayers();
+        if (!leafletMap || !grabLinesLayer || !moveState.active || !canCurrentUserEditScada() || !scadaSettings.showLines) { updateMovePanelButtonsUI(); return; }
+        if (moveState.selectedRef && !renderedEdgePathsMap.has(`${moveState.selectedRef.fromId}__${moveState.selectedRef.edgeIdx}`)) moveState.selectedRef = null;
         cachedTopology?.pinMap.forEach(fP => {
             (fP.scadaLines || []).forEach((e, eIdx) => {
-                const ek = `${fP.id}__${eIdx}`;
-                if (!renderedEdgePathsMap.has(ek)) return;
-                const tP = cachedTopology.pinMap.get(e.to);
-                if (!tP) return;
+                const ek = `${fP.id}__${eIdx}`, tP = cachedTopology.pinMap.get(e?.to);
+                if (!renderedEdgePathsMap.has(ek) || !tP) return;
                 const wPts = (e.w || []).map(c => [Number(c[0]), Number(c[1])]);
                 const full = [[Number(fP.lat), Number(fP.lon)], ...wPts, [Number(tP.lat), Number(tP.lon)]];
                 const vis = renderedEdgePathsMap.get(ek) || full;
-                const isSel = moveState.selectedRef?.fromId === fP.id && moveState.selectedRef?.edgeIdx === eIdx;
-                const ref = { fromId: fP.id, edgeIdx: eIdx };
+                const isSel = moveState.selectedRef?.fromId === fP.id && moveState.selectedRef?.edgeIdx === eIdx, ref = { fromId: fP.id, edgeIdx: eIdx };
 
                 if (isSel) L.polyline(vis, { pane: 'scadaWireMovePreviewPane', color: '#38bdf8', weight: 5.5, opacity: 0.55, dashArray: '6, 5', interactive: false }).addTo(grabLinesLayer);
                 const gp = L.polyline(vis, { pane: 'scadaWireGrabPane', color: '#000', weight: 22, opacity: 0.002, className: 'scada-wire-grab-handle' }).addTo(grabLinesLayer);
@@ -3605,28 +3411,15 @@
     function toggleScadaWireMoveMode(forceState, preRef = null) {
         const next = typeof forceState === 'boolean' ? forceState : !moveState.active;
         if (next && !guardRealScadaEdit()) return false;
-        cancelActiveScadaDrag();
-        currentlyOpenEdgePopup = null;
-        if (next) {
-            if (scadaSettings.drawActive) toggleScadaDrawMode(false);
-            if (pinMoveState.active) toggleScadaPinMoveMode(false);
-            resetMapFiltersForScadaAction();
-        }
-        moveState.active = next;
-        moveState.selectedRef = preRef || (next ? moveState.selectedRef : null);
+        cancelActiveScadaDrag(); currentlyOpenEdgePopup = null;
+        if (next) { if (scadaSettings.drawActive) toggleScadaDrawMode(false); if (pinMoveState.active) toggleScadaPinMoveMode(false); resetMapFiltersForScadaAction(); }
+        moveState.active = next; moveState.selectedRef = preRef || (next ? moveState.selectedRef : null);
         document.getElementById('labeledInteractiveMap')?.classList.toggle('scada-move-wire-active', next);
         document.getElementById('scadaMoveWirePanel')?.classList.toggle('hidden', !next);
         const btn = document.getElementById('btnToggleWireMoveMode');
-        if (btn) {
-            btn.innerHTML = next ? '✅ เสร็จสิ้นขยับสาย' : '✋ ขยับสาย';
-            btn.className = `scada-edit-only ${next ? 'bg-cyan-400 text-slate-950' : 'bg-sky-600 text-white'} px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow transition`;
-        }
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
-        updateDrawUndoButtonsUI();
-        updateMovePanelButtonsUI();
-        scheduleRebuildGrabHandles();
-        syncLodAndViewportMarkersNow();
+        if (btn) { btn.innerHTML = next ? '✅ เสร็จสิ้นขยับสาย' : '✋ ขยับสาย'; btn.className = `scada-edit-only ${next ? 'bg-cyan-400 text-slate-950' : 'bg-sky-600 text-white'} px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow transition`; }
+        leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
+        updateDrawUndoButtonsUI(); updateMovePanelButtonsUI(); scheduleRebuildGrabHandles(); syncLodAndViewportMarkersNow();
         setTimeout(() => leafletMap?.invalidateSize(), 60);
     }
     function setScadaWireMoveSubMode(m) { moveState.subMode = m || 'grip'; updateMovePanelButtonsUI(); scheduleRebuildGrabHandles(); }
@@ -3634,41 +3427,32 @@
     function startInteractiveWireMove(fId, idx) { toggleScadaWireMoveMode(true, { fromId: fId, edgeIdx: Number(idx) }); }
     async function undoScadaWireMove() {
         if (!moveState.undoStack.length || !guardRealScadaEdit()) return;
-        const l = moveState.undoStack.pop();
-        let resolvedIdx = l.edgeIdx;
+        const l = moveState.undoStack.pop(); let resolvedIdx = l.edgeIdx;
         await commitPinsUpdate(pins => {
-            const p = pins.find(x => x?.id === l.fromId);
-            if (!p || !Array.isArray(p.scadaLines)) return false;
+            const p = pins.find(x => x?.id === l.fromId); if (!p || !Array.isArray(p.scadaLines)) return false;
             if (l.toId && p.scadaLines[resolvedIdx]?.to !== l.toId) resolvedIdx = p.scadaLines.findIndex(x => x?.to === l.toId);
-            const e = p.scadaLines[resolvedIdx];
-            if (!e) return false;
+            const e = p.scadaLines[resolvedIdx]; if (!e) return false;
             if (l.w?.length) e.w = l.w; else delete e.w;
             if (l.side) e.side = l.side; else delete e.side;
-            p.updatedAt = nextPinUpdatedIso(p);
-            return true;
+            p.updatedAt = nextPinUpdatedIso(p); return true;
         }, '↩️ ย้อนแนวสายไฟแล้ว');
         if (resolvedIdx >= 0) moveState.selectedRef = { fromId: l.fromId, edgeIdx: resolvedIdx };
-        updateMovePanelButtonsUI();
-        scheduleRebuildGrabHandles();
+        updateMovePanelButtonsUI(); scheduleRebuildGrabHandles();
     }
     function straightenSelectedWire() { if (moveState.selectedRef) commitWireWaypoints(moveState.selectedRef.fromId, moveState.selectedRef.edgeIdx, [], true); }
 
     function snapLLToWire(rawLL, movId) {
         if (!pinMoveState.snapToWire || !scadaSettings.showLines || !leafletMap) return { lat: rawLL.lat, lon: rawLL.lng, snapped: false };
-        const pCur = leafletMap.latLngToLayerPoint(rawLL);
-        let bD = 14, bPt = null;
+        const pCur = leafletMap.latLngToLayerPoint(rawLL); let bD = 14, bPt = null;
         cachedTopology?.pinMap.forEach(fP => {
             if (fP.id === movId) return;
             (fP.scadaLines || []).forEach((e, eIdx) => {
-                const ek = `${fP.id}__${eIdx}`;
-                if (!e || e.to === movId || !renderedEdgePathsMap.has(ek)) return;
-                const tP = cachedTopology.pinMap.get(e.to);
-                if (!tP) return;
+                const ek = `${fP.id}__${eIdx}`, tP = cachedTopology.pinMap.get(e?.to);
+                if (!e || e.to === movId || !renderedEdgePathsMap.has(ek) || !tP) return;
                 const pts = renderedEdgePathsMap.get(ek) || [[Number(fP.lat), Number(fP.lon)], ...(e.w || []), [Number(tP.lat), Number(tP.lon)]];
                 for (let i = 0; i < pts.length - 1; i++) {
                     const A = leafletMap.latLngToLayerPoint(pts[i]), B = leafletMap.latLngToLayerPoint(pts[i + 1]);
-                    const dx = B.x - A.x, dy = B.y - A.y, lS = dx * dx + dy * dy;
-                    if (lS < 4) continue;
+                    const dx = B.x - A.x, dy = B.y - A.y, lS = dx * dx + dy * dy; if (lS < 4) continue;
                     const t = Math.max(0.03, Math.min(0.97, ((pCur.x - A.x) * dx + (pCur.y - A.y) * dy) / lS));
                     const d = Math.hypot(pCur.x - (A.x + t * dx), pCur.y - (A.y + t * dy));
                     if (d < bD) { bD = d; bPt = L.point(A.x + t * dx, A.y + t * dy); }
@@ -3676,21 +3460,14 @@
             });
         });
         if (!bPt) return { lat: rawLL.lat, lon: rawLL.lng, snapped: false };
-        const ll = leafletMap.layerPointToLatLng(bPt);
-        return { lat: ll.lat, lon: ll.lng, snapped: true };
+        const ll = leafletMap.layerPointToLatLng(bPt); return { lat: ll.lat, lon: ll.lng, snapped: true };
     }
 
     async function commitPinNewLocation(pinId, newLat, newLon, recUndo = true) {
         return commitPinsUpdate(pins => {
-            const t = pins.find(p => p?.id === pinId);
-            if (!t) return false;
-            if (recUndo) {
-                pinMoveState.undoStack.push({ pinId, name: t.name, lat: Number(t.lat), lon: Number(t.lon) });
-                if (pinMoveState.undoStack.length > 25) pinMoveState.undoStack.shift();
-            }
-            t.lat = Number(Number(newLat).toFixed(6));
-            t.lon = Number(Number(newLon).toFixed(6));
-            t.updatedAt = nextPinUpdatedIso(t);
+            const t = pins.find(p => p?.id === pinId); if (!t) return false;
+            if (recUndo) { pinMoveState.undoStack.push({ pinId, name: t.name, lat: Number(t.lat), lon: Number(t.lon) }); if (pinMoveState.undoStack.length > 25) pinMoveState.undoStack.shift(); }
+            t.lat = Number(Number(newLat).toFixed(6)); t.lon = Number(Number(newLon).toFixed(6)); t.updatedAt = nextPinUpdatedIso(t);
             return true;
         });
     }
@@ -3699,71 +3476,42 @@
         pinSelectionLayer?.clearLayers();
         if (!pinMoveState.active || !pinMoveState.selectedPinId || !pinSelectionLayer) return;
         const t = labeledPlaces.find(p => p?.id === pinMoveState.selectedPinId);
-        if (t) {
-            L.marker([Number(t.lat), Number(t.lon)], {
-                icon: L.divIcon({ className: '', html: '<div class="scada-pin-selected-ring"></div>', iconSize: [38, 38], iconAnchor: [19, 19] }),
-                pane: 'scadaPinMovePreviewPane', interactive: false
-            }).addTo(pinSelectionLayer);
-        }
+        if (t) L.marker([Number(t.lat), Number(t.lon)], { icon: L.divIcon({ className: '', html: '<div class="scada-pin-selected-ring"></div>', iconSize: [38, 38], iconAnchor: [19, 19] }), pane: 'scadaPinMovePreviewPane', interactive: false }).addTo(pinSelectionLayer);
     }
 
     function bindPinDragEventsOnMarker(pinId, mk) {
-        const el = mk?.getElement?.();
-        if (!el || el.__dragId === pinId) return;
+        const el = mk?.getElement?.(); if (!el || el.__dragId === pinId) return;
         el.__dragId = pinId;
         const startDrag = ev => {
-            if (!pinMoveState.active || !guardRealScadaEdit() || (ev.type === 'mousedown' && ev.button !== 0)) return;
-            if (ev.touches && ev.touches.length > 1) return;
+            if (!pinMoveState.active || !guardRealScadaEdit() || (ev.type === 'mousedown' && ev.button !== 0) || (ev.touches && ev.touches.length > 1)) return;
             if (ev.cancelable) ev.preventDefault();
-            ev.stopPropagation();
-            cancelActiveScadaDrag();
-            const pin = labeledPlaces.find(p => p?.id === pinId);
-            if (!pin) return;
-            const origLat = Number(pin.lat), origLon = Number(pin.lon);
-            const xy = getClientXY(ev);
-            leafletMap.closePopup();
-            leafletMap.dragging.disable();
+            ev.stopPropagation(); cancelActiveScadaDrag();
+            const pin = labeledPlaces.find(p => p?.id === pinId); if (!pin) return;
+            const origLat = Number(pin.lat), origLon = Number(pin.lon), xy = getClientXY(ev);
+            leafletMap.closePopup(); leafletMap.dragging.disable();
             document.getElementById('labeledInteractiveMap')?.classList.add('scada-move-pin-dragging');
             let curLa = origLat, curLo = origLon, moved = false;
-
             const detach = () => {
                 ['mousemove', 'touchmove'].forEach(k => window.removeEventListener(k, onMv));
                 ['mouseup', 'touchend', 'touchcancel'].forEach(k => window.removeEventListener(k, onUp));
                 activeDragCleanupFn = null;
                 document.getElementById('labeledInteractiveMap')?.classList.remove('scada-move-pin-dragging');
-                leafletMap?.dragging?.enable();
-                pinMovePreviewLayer?.clearLayers();
+                leafletMap?.dragging?.enable(); pinMovePreviewLayer?.clearLayers();
             };
             const onMv = mEv => {
-                if (mEv.touches && mEv.touches.length > 1) {
-                    mk.setLatLng([origLat, origLon]);
-                    detach();
-                    renderSelectedPinRing();
-                    updatePinMoveToolbarUI();
-                    flushPendingRefreshIfIdle();
-                    return;
-                }
+                if (mEv.touches && mEv.touches.length > 1) { mk.setLatLng([origLat, origLon]); detach(); renderSelectedPinRing(); updatePinMoveToolbarUI(); flushPendingRefreshIfIdle(); return; }
                 if (mEv.cancelable) mEv.preventDefault();
-                const mXY = getClientXY(mEv);
-                if (!moved && Math.hypot(mXY.x - xy.x, mXY.y - xy.y) < 4) return;
+                const mXY = getClientXY(mEv); if (!moved && Math.hypot(mXY.x - xy.x, mXY.y - xy.y) < 4) return;
                 moved = true;
                 const sn = snapLLToWire(xyToLL(mXY.x, mXY.y), pinId);
-                curLa = sn.lat; curLo = sn.lon;
-                mk.setLatLng([curLa, curLo]);
+                curLa = sn.lat; curLo = sn.lon; mk.setLatLng([curLa, curLo]);
                 pinMovePreviewLayer.clearLayers();
                 L.circleMarker([curLa, curLo], { pane: 'scadaPinMovePreviewPane', radius: 16, color: sn.snapped ? '#10b981' : '#22d3ee', weight: 2.5, interactive: false }).addTo(pinMovePreviewLayer);
             };
             const onUp = async () => {
-                detach();
-                lastPinDragEndMs = Date.now();
-                pinMoveState.selectedPinId = pinId;
-                if (moved) {
-                    await commitPinNewLocation(pinId, curLa, curLo, true);
-                    showToast(`📍 ย้ายตำแหน่ง "${pin.name}" แล้ว`);
-                }
-                renderSelectedPinRing();
-                updatePinMoveToolbarUI();
-                flushPendingRefreshIfIdle();
+                detach(); lastPinDragEndMs = Date.now(); pinMoveState.selectedPinId = pinId;
+                if (moved) { await commitPinNewLocation(pinId, curLa, curLo, true); showToast(`📍 ย้ายตำแหน่ง "${pin.name}" แล้ว`); }
+                renderSelectedPinRing(); updatePinMoveToolbarUI(); flushPendingRefreshIfIdle();
             };
             activeDragCleanupFn = detach;
             ['mousemove', 'touchmove'].forEach(k => window.addEventListener(k, onMv, { passive: false }));
@@ -3771,107 +3519,65 @@
         };
         el.addEventListener('mousedown', startDrag);
         el.addEventListener('touchstart', startDrag, { passive: false });
-        el.addEventListener('click', ev => {
-            if (pinMoveState.active || Date.now() - lastPinDragEndMs < 350) {
-                ev.stopImmediatePropagation();
-                ev.stopPropagation();
-                ev.preventDefault();
-            }
-        }, true);
+        el.addEventListener('click', ev => { if (pinMoveState.active || Date.now() - lastPinDragEndMs < 350) { ev.stopImmediatePropagation(); ev.stopPropagation(); ev.preventDefault(); } }, true);
     }
 
     function updatePinMoveToolbarUI() {
         const sB = document.getElementById('btnPinMoveSnapToggle');
-        if (sB) {
-            sB.textContent = pinMoveState.snapToWire ? '🧲 ดูดเข้าสายไฟ: เปิด' : '🧲 ดูดเข้าสายไฟ: ปิด';
-            sB.className = `px-2.5 py-1 rounded-lg text-[10px] font-bold border ${pinMoveState.snapToWire ? 'bg-emerald-600 text-white border-emerald-300' : 'bg-slate-800 text-slate-300 border-slate-600'}`;
-        }
+        if (sB) { sB.textContent = pinMoveState.snapToWire ? '🧲 ดูดเข้าสายไฟ: เปิด' : '🧲 ดูดเข้าสายไฟ: ปิด'; sB.className = `px-2.5 py-1 rounded-lg text-[10px] font-bold border ${pinMoveState.snapToWire ? 'bg-emerald-600 text-white border-emerald-300' : 'bg-slate-800 text-slate-300 border-slate-600'}`; }
         const tB = document.getElementById('btnPinMoveTapPlaceToggle');
-        if (tB) {
-            tB.textContent = pinMoveState.tapToPlace ? '🎯 แตะแมพเพื่อวาง: เปิด' : '🎯 แตะแมพเพื่อวาง: ปิด';
-            tB.className = `px-2.5 py-1 rounded-lg text-[10px] font-bold border ${pinMoveState.tapToPlace ? 'bg-cyan-600 text-white border-cyan-300' : 'bg-slate-800 text-slate-300 border-slate-600'}`;
-        }
+        if (tB) { tB.textContent = pinMoveState.tapToPlace ? '🎯 แตะแมพเพื่อวาง: เปิด' : '🎯 แตะแมพเพื่อวาง: ปิด'; tB.className = `px-2.5 py-1 rounded-lg text-[10px] font-bold border ${pinMoveState.tapToPlace ? 'bg-cyan-600 text-white border-cyan-300' : 'bg-slate-800 text-slate-300 border-slate-600'}`; }
         const uB = document.getElementById('btnPinMoveUndo');
         if (uB) { uB.textContent = `↩️ ย้อนกลับ (${pinMoveState.undoStack.length})`; uB.disabled = !pinMoveState.undoStack.length; }
         document.getElementById('labeledInteractiveMap')?.classList.toggle('scada-move-pin-selected', Boolean(pinMoveState.active && pinMoveState.tapToPlace && pinMoveState.selectedPinId));
-        const h = document.getElementById('scadaMovePinHintText');
-        const sel = pinMoveState.selectedPinId ? labeledPlaces.find(p => p?.id === pinMoveState.selectedPinId) : null;
+        const h = document.getElementById('scadaMovePinHintText'), sel = pinMoveState.selectedPinId ? labeledPlaces.find(p => p?.id === pinMoveState.selectedPinId) : null;
         if (h) h.textContent = sel ? `🎯 เลือก "${sel.name}" • ลากหมุดนี้ได้เลย${pinMoveState.tapToPlace ? ' หรือจิ้มจุดใหม่บนแผนที่เพื่อวาง' : ''}` : '👆 แตะค้างที่หมุดแล้วลากย้ายได้ทันที (สายไฟจะดึงตามอัตโนมัติ)';
     }
 
     function toggleScadaPinMoveMode(forceState, prePinId = null) {
         const next = typeof forceState === 'boolean' ? forceState : !pinMoveState.active;
         if (next && !guardRealScadaEdit()) return false;
-        cancelActiveScadaDrag();
-        currentlyOpenEdgePopup = null;
-        if (next) {
-            if (scadaSettings.drawActive) toggleScadaDrawMode(false);
-            if (moveState.active) toggleScadaWireMoveMode(false);
-            resetMapFiltersForScadaAction();
-        }
-        pinMoveState.active = next;
-        pinMoveState.selectedPinId = next ? (prePinId || pinMoveState.selectedPinId) : null;
+        cancelActiveScadaDrag(); currentlyOpenEdgePopup = null;
+        if (next) { if (scadaSettings.drawActive) toggleScadaDrawMode(false); if (moveState.active) toggleScadaWireMoveMode(false); resetMapFiltersForScadaAction(); }
+        pinMoveState.active = next; pinMoveState.selectedPinId = next ? (prePinId || pinMoveState.selectedPinId) : null;
         if (!next) pinMoveState.tapToPlace = false;
         document.getElementById('labeledInteractiveMap')?.classList.toggle('scada-move-pin-active', next);
         document.getElementById('scadaMovePinPanel')?.classList.toggle('hidden', !next);
         const btn = document.getElementById('btnTogglePinMoveMode');
-        if (btn) {
-            btn.innerHTML = next ? '✅ เสร็จสิ้นย้ายหมุด' : '📍 ขยับหมุด';
-            btn.className = `scada-edit-only ${next ? 'bg-teal-400 text-slate-950' : 'bg-teal-700 text-white border border-teal-400/50'} px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow transition`;
-        }
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
-        updateDrawUndoButtonsUI();
-        renderSelectedPinRing();
-        updatePinMoveToolbarUI();
-        syncLodAndViewportMarkersNow();
+        if (btn) { btn.innerHTML = next ? '✅ เสร็จสิ้นย้ายหมุด' : '📍 ขยับหมุด'; btn.className = `scada-edit-only ${next ? 'bg-teal-400 text-slate-950' : 'bg-teal-700 text-white border border-teal-400/50'} px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow transition`; }
+        leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
+        updateDrawUndoButtonsUI(); renderSelectedPinRing(); updatePinMoveToolbarUI(); syncLodAndViewportMarkersNow();
         setTimeout(() => leafletMap?.invalidateSize(), 60);
     }
     function startSinglePinMoveFromPopup(id) { toggleScadaPinMoveMode(true, id); }
     function togglePinMoveWireSnap() { pinMoveState.snapToWire = !pinMoveState.snapToWire; updatePinMoveToolbarUI(); }
     function togglePinMoveTapToPlace() { pinMoveState.tapToPlace = !pinMoveState.tapToPlace; updatePinMoveToolbarUI(); }
-    function openSelectedPinModalFromMoveBar() {
-        if (!pinMoveState.selectedPinId) return showToast('👆 กรุณาแตะเลือกหมุดก่อนครับ');
-        const id = pinMoveState.selectedPinId;
-        toggleScadaPinMoveMode(false);
-        openEquipPinModal(id);
-    }
+    function openSelectedPinModalFromMoveBar() { if (!pinMoveState.selectedPinId) return showToast('👆 กรุณาแตะเลือกหมุดก่อนครับ'); const id = pinMoveState.selectedPinId; toggleScadaPinMoveMode(false); openEquipPinModal(id); }
     async function undoScadaPinMove() {
         if (!pinMoveState.undoStack.length || !guardRealScadaEdit()) return;
-        const l = pinMoveState.undoStack.pop();
-        pinMoveState.selectedPinId = l.pinId;
+        const l = pinMoveState.undoStack.pop(); pinMoveState.selectedPinId = l.pinId;
         await commitPinNewLocation(l.pinId, l.lat, l.lon, false);
-        renderSelectedPinRing();
-        updatePinMoveToolbarUI();
-        showToast(`↩️ ย้อนหมุด "${l.name}" กลับที่เดิมแล้ว`);
+        renderSelectedPinRing(); updatePinMoveToolbarUI(); showToast(`↩️ ย้อนหมุด "${l.name}" กลับที่เดิมแล้ว`);
     }
 
     async function handleMapClickForScada(e) {
         if (scadaSettings.drawActive && scadaSettings.fromPinId && scadaSettings.routeMode === 'cad' && Date.now() - lastMarkerClickTs >= 250 && e.latlng) {
             if (scadaSettings.tempWaypoints.length >= MAX_WIRE_WAYPOINTS) return showToast(`⚠️ ดัดมุมครบสูงสุด ${MAX_WIRE_WAYPOINTS} จุดแล้ว กรุณาจิ้มหมุดปลายทาง`);
             const wp = [Number(e.latlng.lat.toFixed(5)), Number(e.latlng.lng.toFixed(5))];
-            scadaSettings.tempWaypoints.push(wp);
-            drawTracker.undoStack.push({ type: 'add_waypoint', pinId: scadaSettings.fromPinId, wp: [...wp] });
-            drawTracker.redoStack = [];
-            updateDrawHintText();
-            updateDrawUndoButtonsUI();
-            renderScadaDrawPreview();
-            return;
+            scadaSettings.tempWaypoints.push(wp); drawTracker.undoStack.push({ type: 'add_waypoint', pinId: scadaSettings.fromPinId, wp: [...wp] }); drawTracker.redoStack = [];
+            updateDrawHintText(); updateDrawUndoButtonsUI(); renderScadaDrawPreview(); return;
         }
         if (pinMoveState.active && pinMoveState.tapToPlace && pinMoveState.selectedPinId && Date.now() - lastPinDragEndMs >= 280 && e.latlng) {
             const targetId = pinMoveState.selectedPinId, pinName = labeledPlaces.find(p => p?.id === targetId)?.name || 'หมุด';
             const sn = snapLLToWire(e.latlng, targetId);
             await commitPinNewLocation(targetId, sn.lat, sn.lon, true);
-            pinMoveState.tapToPlace = false;
-            pinMoveState.selectedPinId = null;
-            renderSelectedPinRing();
-            updatePinMoveToolbarUI();
-            showToast(`📍 วาง "${pinName}" เรียบร้อยแล้ว`);
+            pinMoveState.tapToPlace = false; pinMoveState.selectedPinId = null;
+            renderSelectedPinRing(); updatePinMoveToolbarUI(); showToast(`📍 วาง "${pinName}" เรียบร้อยแล้ว`);
         }
     }
 
     // ========================================================================
-    // 12. บอลลูน SCADA เตือนไฟย้อนขั้วเบรกเกอร์, ตั้งค่าโหนด, จานสี & โหมดซ้อมสับ-ปลด
+    // 12. บอลลูน SCADA, ตั้งค่าโหนด, จานสีแยกหมุด/สายไฟ & โหมดซ้อมสับ-ปลด
     // ========================================================================
     function enhanceOpenedPopup(popup) {
         const el = popup?.getElement?.(), html = popup?.getContent?.();
@@ -3881,32 +3587,17 @@
             const pinId = pinM[1].replace(/\\'/g, "'"), sPinId = escScadaJsAttr(pinId), pin = labeledPlaces.find(p => p?.id === pinId);
             if (!pin) return;
             const nd = pin.scadaNode || {};
-            const nState = cachedTopology?.nodeStates?.get(pinId) || { eqType: nd.t || 'PIN', st: nd.st || 'C', energized: false, isStandalonePin: !nd.t, conductingSources: [], terminalSources: [] };
+            const nState = cachedTopology?.nodeStates?.get(pinId) || { eqType: nd.t || 'PIN', st: nd.st || 'C', energized: false, isStandalonePin: !nd.t, isUnmonitored: true, conductingSources: [], terminalSources: [] };
             const eqT = nState.eqType, st = nState.st, isBrk = isBreakerType(eqT), isDf = eqT === 'DF', isSw = isSwitchableScadaType(eqT);
-            const stBdg = !isSw
-                ? '<span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-bold text-[10px]">📍 จุดต่อ/หมุด</span>'
-                : (st === 'C'
-                    ? `<span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold text-[10px]">🟢 ${isDf ? 'สับฟิวส์' : 'สับ (NC)'}</span>`
-                    : (st === 'O'
-                        ? `<span class="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold text-[10px]">⚪ ${isDf ? 'ปลดดร็อป' : 'ปลด (N.O.)'}</span>`
-                        : `<span class="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-bold text-[10px]">🔴 ${isDf ? 'ฟิวส์ขาด' : 'ทริป/ชำรุด'}</span>`));
-            const flowTxt = nState.isStandalonePin
-                ? '📍 <b>หมุดอุปกรณ์ทั่วไป</b> (ยังไม่ได้เชื่อมเส้นสายไฟ SCADA)'
-                : (isBrk
-                    ? (st === 'C'
-                        ? (nState.isParallel ? `⚡ <b>ต้นทางจ่ายไฟขนาน (CB):</b> ${escapeHtmlStr(nState.conductingSources.map(s => s.fullTitle).join(' + '))}` : '■ <b>ต้นทางจ่ายไฟหลัก (CB):</b> กำลังจ่ายไฟเข้าสู่ระบบ')
-                        : (nState.terminalSources?.length ? `🚨 <b class="text-rose-700">เบรกเกอร์ปลดอยู่ แต่มีไฟย้อนมารอที่ขั้วจาก:</b> ${escapeHtmlStr(nState.terminalSources.map(s => s.fullTitle).join(' ↔ '))}` : '⚪ <b>เบรกเกอร์ปลดอยู่</b>'))
-                    : (nState.energized
-                        ? (nState.isParallel ? `⚡ <b>ขนานไฟ:</b> ${escapeHtmlStr(nState.conductingSources.map(s => s.fullTitle).join(' + '))}` : `🟢 <b>${nState.isBackfeed ? 'รับไฟย้อนจาก' : 'รับไฟจาก'}:</b> ${escapeHtmlStr(nState.primarySource.fullTitle)}`)
-                        : (nState.hasStandbyPower ? `🟡 <b>ไฟมารอหัวสวิตช์จาก:</b> ${escapeHtmlStr(nState.terminalSources.map(s => s.fullTitle).join(' ↔ '))}` : '⚪ <b>ไม่มีไฟ</b>')));
-            const simHtml = simState.active
-                ? (isSw
-                    ? `<div class="p-2 rounded-xl bg-purple-950 text-white border border-purple-400 space-y-1.5"><div class="text-[10px] font-extrabold text-purple-200 flex justify-between"><span>🧪 โหมดซ้อมสับ-ปลด</span><span>ขั้นที่ ${simState.steps.length + 1}</span></div><div class="grid grid-cols-3 gap-1"><button type="button" onclick="simulateSwitchStateChange('${sPinId}','C')" class="bg-emerald-500 text-slate-950 py-1.5 rounded-lg font-extrabold text-[10px]">🟢 ซ้อมสับ</button><button type="button" onclick="simulateSwitchStateChange('${sPinId}','O')" class="bg-amber-400 text-slate-950 py-1.5 rounded-lg font-extrabold text-[10px]">⚪ ซ้อมปลด</button><button type="button" onclick="simulateSwitchStateChange('${sPinId}','F')" class="bg-rose-500 text-white py-1.5 rounded-lg font-extrabold text-[10px]">🔴 ซ้อมทริป</button></div></div>`
-                    : '<div class="p-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-[10px] font-bold">🧪 จุดนี้เป็นหมุดทั่วไป/T-Tap (แตะที่เส้นไฟหากต้องการซ้อมปลดสาย)</div>')
-                : '';
+            const stBdg = !isSw ? '<span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-bold text-[10px]">📍 จุดต่อ/หมุด</span>' : (st === 'C' ? `<span class="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold text-[10px]">🟢 ${isDf ? 'สับฟิวส์' : 'สับ (NC)'}</span>` : (st === 'O' ? `<span class="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold text-[10px]">⚪ ${isDf ? 'ปลดดร็อป' : 'ปลด (N.O.)'}</span>` : `<span class="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-bold text-[10px]">🔴 ${isDf ? 'ฟิวส์ขาด' : 'ทริป/ชำรุด'}</span>`));
+            const flowTxt = nState.isStandalonePin ? '📍 <b>หมุดอุปกรณ์ทั่วไป</b> (ยังไม่ได้เชื่อมเส้นสายไฟ SCADA)'
+                : (nState.isUnmonitored ? ((cachedTopology?.stats?.totalBreakers || 0) === 0 ? '⚡ <b>อุปกรณ์ในผัง</b> (ยังไม่ได้ตั้งหมุด ■ CB ต้นทาง)' : '📍 <b>อุปกรณ์เดี่ยว</b> (ยังไม่ได้เชื่อมเส้นสายไฟเข้าผัง)')
+                : (isBrk ? (st === 'C' ? (nState.isParallel ? `⚡ <b>ต้นทางจ่ายไฟขนาน (CB):</b> ${escapeHtmlStr(nState.conductingSources.map(s => s.fullTitle).join(' + '))}` : '■ <b>ต้นทางจ่ายไฟหลัก (CB):</b> กำลังจ่ายไฟเข้าสู่ระบบ') : (nState.terminalSources?.length ? `🚨 <b class="text-rose-700">เบรกเกอร์ปลดอยู่ แต่มีไฟย้อนมารอที่ขั้วจาก:</b> ${escapeHtmlStr(nState.terminalSources.map(s => s.fullTitle).join(' ↔ '))}` : '⚪ <b>เบรกเกอร์ปลดอยู่</b>'))
+                : (nState.energized ? (nState.isParallel ? `⚡ <b>ขนานไฟ:</b> ${escapeHtmlStr(nState.conductingSources.map(s => s.fullTitle).join(' + '))}` : `🟢 <b>${nState.isBackfeed ? 'รับไฟย้อนจาก' : 'รับไฟจาก'}:</b> ${escapeHtmlStr(nState.primarySource?.fullTitle || '-')}`)
+                : (nState.hasStandbyPower ? `🟡 <b>ไฟมารอหัวสวิตช์จาก:</b> ${escapeHtmlStr(nState.terminalSources.map(s => s.fullTitle).join(' ↔ '))}` : '⚪ <b>ไม่มีไฟ</b>'))));
+            const simHtml = simState.active ? (isSw ? `<div class="p-2 rounded-xl bg-purple-950 text-white border border-purple-400 space-y-1.5"><div class="text-[10px] font-extrabold text-purple-200 flex justify-between"><span>🧪 โหมดซ้อมสับ-ปลด</span><span>ขั้นที่ ${simState.steps.length + 1}</span></div><div class="grid grid-cols-3 gap-1"><button type="button" onclick="simulateSwitchStateChange('${sPinId}','C')" class="bg-emerald-500 text-slate-950 py-1.5 rounded-lg font-extrabold text-[10px]">🟢 ซ้อมสับ</button><button type="button" onclick="simulateSwitchStateChange('${sPinId}','O')" class="bg-amber-400 text-slate-950 py-1.5 rounded-lg font-extrabold text-[10px]">⚪ ซ้อมปลด</button><button type="button" onclick="simulateSwitchStateChange('${sPinId}','F')" class="bg-rose-500 text-white py-1.5 rounded-lg font-extrabold text-[10px]">🔴 ซ้อมทริป</button></div></div>` : '<div class="p-1.5 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-[10px] font-bold">🧪 จุดนี้เป็นหมุดทั่วไป/T-Tap (แตะที่เส้นไฟหากต้องการซ้อมปลดสาย)</div>') : '';
             const swRealBtns = isSw ? `<div class="scada-edit-only grid grid-cols-3 gap-1"><button type="button" onclick="quickSwitchScadaState('${sPinId}','C')" class="bg-emerald-600 text-white py-1 rounded font-bold text-[10px]">🟢 สับ</button><button type="button" onclick="quickSwitchScadaState('${sPinId}','O')" class="bg-amber-500 text-white py-1 rounded font-bold text-[10px]">⚪ ปลด</button><button type="button" onclick="quickSwitchScadaState('${sPinId}','F')" class="bg-rose-600 text-white py-1 rounded font-bold text-[10px]">🔴 ทริป</button></div>` : '';
-            const pnl = document.createElement('div');
-            pnl.className = 'scada-popup-panel mt-2 pt-2 border-t border-slate-200 space-y-1.5 text-[11px]';
+            const pnl = document.createElement('div'); pnl.className = 'scada-popup-panel mt-2 pt-2 border-t border-slate-200 space-y-1.5 text-[11px]';
             pnl.innerHTML = `${simHtml}<button type="button" onclick="startSinglePinMoveFromPopup('${sPinId}')" class="scada-edit-only w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white py-1.5 px-2.5 rounded-lg font-extrabold text-[10px]">📍 ขยับ / ย้ายตำแหน่งหมุดนี้บนแผนที่</button><div class="flex justify-between gap-1 bg-slate-900 text-white px-2 py-1 rounded-lg"><span class="font-bold truncate">⚡ ${escapeHtmlStr(eqT)} ${nd.id ? `• ID ${escapeHtmlStr(nd.id)}` : ''} ${nd.fd ? `(${escapeHtmlStr(nd.fd)})` : ''}</span>${stBdg}</div><div class="p-2 rounded-lg border bg-slate-50 border-slate-300 text-slate-800 text-[10px]">${flowTxt}</div>${nd.lk ? `<div class="p-1.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-lg font-bold text-[10px]">⚠️ ${escapeHtmlStr(nd.lk)}</div>` : ''}${swRealBtns}<div class="scada-edit-only grid grid-cols-2 gap-1"><button type="button" onclick="openScadaNodeModal('${sPinId}')" class="bg-slate-100 text-slate-800 border border-slate-300 py-1 px-1.5 rounded font-bold text-[10px]">⚙️ ตั้งค่า SCADA</button><button type="button" onclick="startDrawFromPopupPin('${sPinId}')" class="bg-amber-100 text-amber-900 border border-amber-300 py-1 px-1.5 rounded font-bold text-[10px]">✏️ ลากสายต่อ</button></div>${canCurrentUserEditScada() ? `<div class="grid grid-cols-3 gap-1"><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','device')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">📟 เห็นฟอลต์</button><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','disconnect')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">🔌 ปลดจุดนี้</button><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','powerup')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">⚡ ชนจุดนี้</button></div>` : ''}${isPinTTap(pin, labeledPlaces) ? `<button type="button" onclick="quickDeleteTTapFromPopup('${sPinId}')" class="scada-edit-only w-full bg-rose-50 text-rose-700 border border-rose-300 py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🗑️ ลบจุด T-Tap (สมานสายหลักคืนอัตโนมัติ)</button>` : ''}`;
             (el.querySelector('.leaflet-popup-content > div') || el.querySelector('.leaflet-popup-content'))?.appendChild(pnl);
             return;
@@ -3916,8 +3607,7 @@
             const fId = edgeM[1].replace(/\\'/g, "'"), sFId = escScadaJsAttr(fId), eIdx = parseInt(edgeM[2], 10);
             const edge = simState.workingPins.find(p => p?.id === fId)?.scadaLines?.[eIdx];
             if (edge) {
-                const d = document.createElement('div');
-                d.className = 'scada-sim-edge-btn mt-2 p-2 rounded-xl bg-purple-950 border border-purple-400';
+                const d = document.createElement('div'); d.className = 'scada-sim-edge-btn mt-2 p-2 rounded-xl bg-purple-950 border border-purple-400';
                 d.innerHTML = `<button type="button" onclick="simulateEdgePowerToggle('${sFId}',${eIdx})" class="w-full py-1.5 px-2.5 rounded-lg font-extrabold text-[11px] ${edge.off ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}">🧪 ${edge.off ? 'ซ้อมต่อสายไฟช่วงนี้คืน' : 'ซ้อมปลดสายไฟช่วงนี้'}</button>`;
                 (el.querySelector('.leaflet-popup-content > div') || el.querySelector('.leaflet-popup-content'))?.appendChild(d);
             }
@@ -3929,41 +3619,33 @@
         if (warn) parts.push(`⚠️ คำเตือน Interlock (${pinName}):\n"${warn}"`);
         if (nextState === 'C' && nState?.isTieTwoSources) {
             const srcList = (nState.terminalSources || []).map((s, i) => `${i + 1}) ${s.fullTitle}`).join('\n');
-            parts.push(isBreakerType(eqType)
-                ? `🚨 เบรกเกอร์ (${pinName}) มีไฟย้อนมารอที่ขั้วจาก:\n${srcList}`
-                : `⚡ จุดสับขนาน (${pinName}) มีไฟมารอจาก 2 เบรกเกอร์:\n${srcList}`);
+            parts.push(isBreakerType(eqType) ? `🚨 เบรกเกอร์ (${pinName}) มีไฟย้อนมารอที่ขั้วจาก:\n${srcList}` : `⚡ จุดสับขนาน (${pinName}) มีไฟมารอจาก 2 เบรกเกอร์:\n${srcList}`);
         }
         return parts.length ? `${parts.join('\n\n')}\n\nยืนยันดำเนินการต่อหรือไม่?` : '';
     }
 
+    // สับ-ปลดสวิตช์เปลี่ยนเฉพาะสถานะไฟฟ้า (st) ไม่ไปยุ่งหรือเขียนทับสีหมุด (pinColor)
     function quickSwitchScadaState(pinId, nextState) {
         if (simState.active) return simulateSwitchStateChange(pinId, nextState);
         if (!guardRealScadaEdit()) return;
-        const pin = labeledPlaces.find(p => p?.id === pinId);
-        if (!pin) return;
+        const pin = labeledPlaces.find(p => p?.id === pinId); if (!pin) return;
         if (!isSwitchableScadaType(pin.scadaNode?.t)) return showToast('⚠️ กรุณากด ⚙️ ตั้งค่า SCADA เพื่อเลือกประเภทสวิตช์/ฟิวส์ก่อนสั่งสับ-ปลด');
         const nState = cachedTopology?.nodeStates?.get(pinId), warn = pin.scadaNode?.lk || '';
         const run = () => {
-            leafletMap?.closePopup();
-            restoreMapFloatingUiIfNoPopup();
+            leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
             commitPinsUpdate(pins => {
-                const t = pins.find(i => i?.id === pinId);
-                if (!t || !t.scadaNode) return false;
-                t.scadaNode.st = nextState;
-                if (!isBreakerType(t.scadaNode.t)) t.pinColor = nextState === 'C' ? safeHexToPinKey(t.scadaNode.col || '#10b981') : (nextState === 'O' ? 'yellow' : 'red');
-                t.updatedAt = nextPinUpdatedIso(t);
+                const t = pins.find(i => i?.id === pinId); if (!t || !t.scadaNode) return false;
+                t.scadaNode.st = nextState; t.updatedAt = nextPinUpdatedIso(t);
                 return true;
             }, `⚡ ${pin.name}: อัปเดตสถานะแล้ว`);
         };
         const promptMsg = buildSwitchWarningPrompt(pin.name, pin.scadaNode.t, warn, nextState, nState);
-        if (promptMsg) showCustomConfirm(promptMsg, run, '⚡ ตรวจสอบความปลอดภัยก่อนสับ-ปลด');
-        else run();
+        if (promptMsg) showCustomConfirm(promptMsg, run, '⚡ ตรวจสอบความปลอดภัยก่อนสับ-ปลด'); else run();
     }
 
     function sendEquipToMainFaultForm(pinId, fieldRole) {
         if (!canCurrentUserEditScada()) return showToast(SCADA_LOCK_MSG);
-        const pin = labeledPlaces.find(p => p?.id === pinId);
-        if (!pin) return;
+        const pin = labeledPlaces.find(p => p?.id === pinId); if (!pin) return;
         const code = `${pin.name}${pin.scadaNode?.id ? ` (ID ${pin.scadaNode.id})` : ''}`;
         const pkt = { type: 'SCADA_FILL_FAULT_FORM', fieldRole, code, feeder: pin.scadaNode?.fd || '', gps: `https://www.google.com/maps?q=${Number(pin.lat).toFixed(6)},${Number(pin.lon).toFixed(6)}`, ts: Date.now() };
         try {
@@ -3974,19 +3656,18 @@
         } catch (e) {}
         showToast(`⚡ ส่งรหัส "${code}" เข้าฟอร์มรายงานเหตุ TR/TL แล้ว!`);
     }
-
+    // ===== จบพาทที่ 11 / 12 ของไฟล์ scada-engine.js =====
+        // ===== เริ่มพาทที่ 12 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 11 / 12 จนจบไฟล์) =====
     function selectScadaModalSwatch(hex) {
         const cl = (normHex(hex) || '#10b981').toLowerCase();
         document.getElementById('scadaModalColorInput').value = cl;
-        const w = document.getElementById('scadaModalColorSwatches');
-        if (!w) return;
+        const w = document.getElementById('scadaModalColorSwatches'); if (!w) return;
         w.innerHTML = QUICK_BAR_COLORS.map(h => `<button type="button" onclick="selectScadaModalSwatch('${h}')" class="w-6 h-6 rounded-full border-2 text-white text-[10px] font-bold" style="background:${h};border-color:${h.toLowerCase() === cl ? '#0f172a' : 'transparent'};">${h.toLowerCase() === cl ? '✓' : ''}</button>`).join('') +
             `<button type="button" onclick="openScadaColorPaletteModal('nodeModal')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-bold">🎨 เลือกเฉดสีเพิ่ม</button>`;
     }
 
     function autoDetectScadaFieldsFromTitle() {
-        const p = labeledPlaces.find(x => x?.id === document.getElementById('scadaModalPinId')?.value);
-        if (!p) return;
+        const p = labeledPlaces.find(x => x?.id === document.getElementById('scadaModalPinId')?.value); if (!p) return;
         const txt = `${p.name || ''} ${p.note || ''}`;
         document.getElementById('scadaModalEquipType').value = isPinTTap(p, labeledPlaces) ? 'TAP' : (/(?:\bCB\b|BREAKER|\bRC\b)/i.test(txt) ? 'RC' : (/(?:\bVB\b|\bYB\b|RECLOSER)/i.test(txt) ? 'VB' : (/(?:\bDF|\bFCO|ดร็อป|ดรอป|ฟิวส์|&)/i.test(txt) ? 'DF' : (/VS\s*-?\s*\d+/i.test(txt) ? 'VS' : (/\bG\b|SPP|VSPP/i.test(txt) ? 'GEN' : (/S\s*-?\s*\d+/i.test(txt) ? 'S' : 'VS'))))));
         const idM = txt.match(/ID\s*[:=]?\s*(\d{3,6})/i), fdM = String(p.name || '').match(/^([A-Z]{3}\s*0?\d{1,2})/i);
@@ -3996,10 +3677,8 @@
 
     function openScadaNodeModal(pinId) {
         if (!guardRealScadaEdit()) return;
-        const pin = labeledPlaces.find(p => p?.id === pinId);
-        if (!pin) return;
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
+        const pin = labeledPlaces.find(p => p?.id === pinId); if (!pin) return;
+        leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
         const nd = pin.scadaNode || {}, normType = nd.t === 'CB' ? 'RC' : (nd.t || (isPinTTap(pin, labeledPlaces) ? 'TAP' : 'VS'));
         document.getElementById('scadaModalPinId').value = pin.id;
         document.getElementById('scadaModalPinTitle').textContent = `⚡ ${pin.name}`;
@@ -4014,28 +3693,20 @@
     }
     function closeScadaNodeModal() { document.getElementById('scadaNodeConfigModal')?.classList.add('hidden'); }
 
+    // บันทึกเฉพาะสีและข้อมูลของโหนด/หมุด ไม่ไหลไปเปลี่ยนสีสายไฟ และคงสีหมุดตามที่เลือกเสมอไม่บังคับเป็นสีเหลือง/แดง
     async function saveScadaNodeModal() {
-        const pinId = document.getElementById('scadaModalPinId')?.value;
-        if (!pinId) return;
+        const pinId = document.getElementById('scadaModalPinId')?.value; if (!pinId) return;
         const rawT = document.getElementById('scadaModalEquipType').value, t = rawT === 'CB' ? 'RC' : (rawT || 'VS');
         const id = document.getElementById('scadaModalIdInput').value.trim();
-        const rawSt = document.getElementById('scadaModalStateSelect').value;
-        const st = isSwitchableScadaType(t) ? rawSt : 'C';
+        const st = isSwitchableScadaType(t) ? document.getElementById('scadaModalStateSelect').value : 'C';
         const fd = document.getElementById('scadaModalFeederInput').value.trim().toUpperCase();
         const col = normHex(document.getElementById('scadaModalColorInput').value) || '#10b981';
         const lk = document.getElementById('scadaModalWarnInput').value.trim();
 
         await commitPinsUpdate(pins => {
-            const tg = pins.find(p => p?.id === pinId);
-            if (!tg) return false;
-            const oldH = getPinSavedColorHex(tg);
-            if (t === 'PIN' && !id && !lk && !fd) {
-                delete tg.scadaNode;
-                delete tg.isTTap;
-            } else {
-                tg.scadaNode = { t, st, col, ...(id ? { id } : {}), ...(fd ? { fd } : {}), ...(lk ? { lk } : {}) };
-                if (t === 'TAP') tg.isTTap = true;
-            }
+            const tg = pins.find(p => p?.id === pinId); if (!tg) return false;
+            if (t === 'PIN' && !id && !lk && !fd && col === PIN_KEY_TO_HEX[safeHexToPinKey(col)]) { delete tg.scadaNode; delete tg.isTTap; }
+            else { tg.scadaNode = { t, st, col, ...(id ? { id } : {}), ...(fd ? { fd } : {}), ...(lk ? { lk } : {}) }; if (t === 'TAP') tg.isTTap = true; }
             if (t !== 'TAP') {
                 delete tg.isTTap;
                 if (tg.note === 'จุดแทปกลางสาย') tg.note = '';
@@ -4043,11 +3714,10 @@
                 (tg.scadaLines || []).forEach(l => { if (l) { delete l._ttapTrunk; delete l._ttapFromId; } });
                 pins.forEach(p => (p?.scadaLines || []).forEach(l => { if (l?.to === pinId) delete l._ttapId; }));
             }
-            tg.pinColor = (!isBreakerType(t) && isSwitchableScadaType(t) && st !== 'C') ? (st === 'O' ? 'yellow' : 'red') : safeHexToPinKey(col);
-            if (col !== oldH || isBreakerType(t)) propagateColorToConnectedSystem(pins, [pinId], col, { crossOpenSwitches: false });
+            tg.pinColor = safeHexToPinKey(col);
             tg.updatedAt = nextPinUpdatedIso(tg);
             return true;
-        }, '✅ บันทึกข้อมูลสวิตช์ SCADA เรียบร้อยแล้ว');
+        }, '✅ บันทึกข้อมูลสวิตช์ SCADA เรียบร้อยแล้ว (ไม่กระทบสีสายไฟ)');
         closeScadaNodeModal();
     }
 
@@ -4055,16 +3725,13 @@
         const id = document.getElementById('scadaModalPinId')?.value;
         if (id) {
             await commitPinsUpdate(pins => {
-                const t = pins.find(p => p?.id === id);
-                if (!t) return false;
-                delete t.scadaNode;
-                delete t.isTTap;
+                const t = pins.find(p => p?.id === id); if (!t) return false;
+                delete t.scadaNode; delete t.isTTap;
                 if (t.note === 'จุดแทปกลางสาย') t.note = '';
                 if (/^T-Tap\s*\(/i.test(t.name || '')) t.name = t.name.replace(/^T-Tap/i, 'PIN');
                 (t.scadaLines || []).forEach(l => { if (l) { delete l._ttapTrunk; delete l._ttapFromId; } });
                 pins.forEach(p => (p?.scadaLines || []).forEach(l => { if (l?.to === id) delete l._ttapId; }));
-                t.updatedAt = nextPinUpdatedIso(t);
-                return true;
+                t.updatedAt = nextPinUpdatedIso(t); return true;
             }, '🔄 รีเซ็ตเป็นหมุดปกติแล้ว');
         }
         closeScadaNodeModal();
@@ -4085,14 +3752,13 @@
     }
     function setScadaEdgeRecolorScopeV3(sc) {
         paletteCtx.scope = sc || 'connected';
-        ['connected', 'all_thru', 'single'].forEach(k => {
-            const b = document.getElementById('scadaV3ScopeBtn-' + k);
-            if (b) b.className = k === paletteCtx.scope ? 'py-1.5 px-2 rounded-xl text-[10px] font-extrabold border-2 border-teal-400 bg-teal-500/25 text-teal-200' : 'py-1.5 px-2 rounded-xl text-[10px] font-bold border border-slate-600 bg-slate-900 text-slate-400';
-        });
+        ['connected', 'all_thru', 'single'].forEach(k => { const b = document.getElementById('scadaV3ScopeBtn-' + k); if (b) b.className = k === paletteCtx.scope ? 'py-1.5 px-2 rounded-xl text-[10px] font-extrabold border-2 border-teal-400 bg-teal-500/25 text-teal-200' : 'py-1.5 px-2 rounded-xl text-[10px] font-bold border border-slate-600 bg-slate-900 text-slate-400'; });
     }
     function openScadaColorPaletteModal(mode, fromId = null, eIdx = null) {
         if (!guardRealScadaEdit()) return;
         paletteCtx = { mode: mode || 'toolbar', fromPinId: fromId, edgeIdx: eIdx, scope: 'connected' };
+        const titleEl = document.getElementById('scadaColorPaletteModalTitle');
+        if (titleEl) titleEl.textContent = mode === 'nodeModal' ? '🎨 เลือกสีหมุด / สัญลักษณ์ (ไม่กระทบสีสายไฟ)' : (mode === 'edge' ? '🎨 เปลี่ยนสีเส้นสายไฟ (ไม่กระทบสีหมุด)' : '🎨 เลือกสีเส้นสายไฟสำหรับวาดใหม่');
         document.getElementById('scadaV3ScopeSelectorBox')?.classList.toggle('hidden', mode !== 'edge');
         if (mode === 'edge') setScadaEdgeRecolorScopeV3('connected');
         syncPaletteUI(mode === 'nodeModal' ? document.getElementById('scadaModalColorInput')?.value : (mode === 'edge' ? labeledPlaces.find(i => i?.id === fromId)?.scadaLines?.[eIdx]?.col : scadaSettings.activeColor));
@@ -4112,22 +3778,13 @@
         closeScadaColorPaletteModal();
         if (paletteCtx.mode === 'nodeModal') selectScadaModalSwatch(h);
         else if (paletteCtx.mode === 'edge' && paletteCtx.fromPinId) {
-            currentlyOpenEdgePopup = null;
-            leafletMap?.closePopup();
-            restoreMapFloatingUiIfNoPopup();
+            currentlyOpenEdgePopup = null; leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
             await commitPinsUpdate(pins => {
-                const pF = pins.find(p => p?.id === paletteCtx.fromPinId), eg = pF?.scadaLines?.[paletteCtx.edgeIdx];
-                if (!eg) return false;
-                if (paletteCtx.scope === 'single') {
-                    eg.col = h; eg.customSingleCol = 1;
-                    eg.customOwnerBrk = cachedTopology?.edgeStates?.get(`${paletteCtx.fromPinId}__${paletteCtx.edgeIdx}`)?.primarySource?.breakerId || '';
-                    pF.updatedAt = nextPinUpdatedIso(pF);
-                } else {
-                    propagateColorToConnectedSystem(pins, [paletteCtx.fromPinId, eg.to], h, { crossOpenSwitches: paletteCtx.scope === 'all_thru', directFromPinId: paletteCtx.fromPinId, directEdgeIdx: paletteCtx.edgeIdx });
-                    setScadaDrawColor(h);
-                }
+                const pF = pins.find(p => p?.id === paletteCtx.fromPinId), eg = pF?.scadaLines?.[paletteCtx.edgeIdx]; if (!eg) return false;
+                if (paletteCtx.scope === 'single') { eg.col = h; eg.customSingleCol = 1; eg.customOwnerBrk = cachedTopology?.edgeStates?.get(`${paletteCtx.fromPinId}__${paletteCtx.edgeIdx}`)?.primarySource?.breakerId || ''; pF.updatedAt = nextPinUpdatedIso(pF); }
+                else { propagateColorToConnectedSystem(pins, [paletteCtx.fromPinId, eg.to], h, { crossOpenSwitches: paletteCtx.scope === 'all_thru', directFromPinId: paletteCtx.fromPinId, directEdgeIdx: paletteCtx.edgeIdx }); setScadaDrawColor(h); }
                 return true;
-            }, '🎨 เปลี่ยนสีสายไฟเรียบร้อยแล้ว');
+            }, '🎨 เปลี่ยนสีสายไฟเรียบร้อยแล้ว (ไม่กระทบสีหมุด)');
         } else setScadaDrawColor(h);
     }
 
@@ -4137,14 +3794,12 @@
         const out = [], res = [], bf = [], par = [];
         simState.curTopo.nodeStates.forEach((cur, id) => {
             const base = simState.baseTopo.nodeStates.get(id), pin = simState.curTopo.pinMap.get(id);
-            if (!base || !pin || cur.isStandalonePin) return;
+            if (!base || !pin || cur.isStandalonePin || (base.isUnmonitored && cur.isUnmonitored)) return;
             const isTap = isPinTTap(pin, simState.workingPins);
             if (cur.isParallel) par.push({ id, name: pin.name, detail: cur.conductingSources.map(s => s.name).join(' + ') });
             if (base.energized && !cur.energized) out.push({ id, name: pin.name, isTTap: isTap, detail: base.primarySource?.name || 'ไฟดับ' });
             else if (!base.energized && cur.energized) res.push({ id, name: pin.name, isTTap: isTap, detail: cur.primarySource?.fullTitle || 'มีไฟ' });
-            else if (base.energized && cur.energized && ((base.primarySource?.breakerId !== cur.primarySource?.breakerId) || (!base.isBackfeed && cur.isBackfeed))) {
-                bf.push({ id, name: pin.name, isTTap: isTap, detail: `${base.primarySource?.name || '-'} ➔ ${cur.primarySource?.fullTitle || '-'}` });
-            }
+            else if (base.energized && cur.energized && ((base.primarySource?.breakerId !== cur.primarySource?.breakerId) || (!base.isBackfeed && cur.isBackfeed))) bf.push({ id, name: pin.name, isTTap: isTap, detail: `${base.primarySource?.name || '-'} ➔ ${cur.primarySource?.fullTitle || '-'}` });
         });
         simState.lastDiff = { newlyOutage: out, newlyRestored: res, transferredOrBackfeed: bf, parallelNodes: par };
         return simState.lastDiff;
@@ -4156,25 +3811,18 @@
         if (mapEl) {
             mapEl.classList.toggle('scada-sim-mode-map', simState.active);
             let bdg = document.getElementById('scadaSimFloatingMapBadge');
-            if (simState.active && !bdg && mapEl.parentElement) {
-                bdg = document.createElement('div'); bdg.id = 'scadaSimFloatingMapBadge';
-                bdg.className = 'scada-sim-float-badge scada-sim-live-pill';
-                bdg.textContent = '🧪 โหมดซ้อมสับ-ปลด (ไม่กระทบผังจริง)';
-                mapEl.parentElement.appendChild(bdg);
-            } else if (!simState.active && bdg) bdg.remove();
+            if (simState.active && !bdg && mapEl.parentElement) { bdg = document.createElement('div'); bdg.id = 'scadaSimFloatingMapBadge'; bdg.className = 'scada-sim-float-badge scada-sim-live-pill'; bdg.textContent = '🧪 โหมดซ้อมสับ-ปลด (ไม่กระทบผังจริง)'; mapEl.parentElement.appendChild(bdg); }
+            else if (!simState.active && bdg) bdg.remove();
         }
         if (btn) {
             btn.style.display = (!isViewerRole() && localStorage.getItem('elec_app_logged_in') === 'true') ? '' : 'none';
             btn.innerHTML = simState.active ? '🟣 ปิดโหมดซ้อม' : '🧪 ซ้อมสับ-ปลด';
-            btn.className = simState.active
-                ? 'scada-sim-live-pill bg-purple-500 text-white border border-purple-200 px-3 py-1 rounded-xl text-[11px] font-extrabold shadow-md'
-                : 'bg-purple-800/90 hover:bg-purple-700 text-purple-100 border border-purple-400/50 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow';
+            btn.className = simState.active ? 'scada-sim-live-pill bg-purple-500 text-white border border-purple-200 px-3 py-1 rounded-xl text-[11px] font-extrabold shadow-md' : 'bg-purple-800/90 hover:bg-purple-700 text-purple-100 border border-purple-400/50 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow';
         }
     }
 
     function renderSimToolbarPanel() {
-        const tb = document.getElementById('scadaControlToolbar');
-        if (!tb) return;
+        const tb = document.getElementById('scadaControlToolbar'); if (!tb) return;
         let pnl = document.getElementById('scadaSimDashboardPanel');
         if (!simState.active) { pnl?.remove(); return; }
         if (!pnl) { pnl = document.createElement('div'); pnl.id = 'scadaSimDashboardPanel'; pnl.className = 'pt-2.5 border-t border-purple-500/50 space-y-2 text-xs'; tb.appendChild(pnl); }
@@ -4190,107 +3838,68 @@
         const next = typeof forceState === 'boolean' ? forceState : !simState.active;
         if (next && (isViewerRole() || localStorage.getItem('elec_app_logged_in') !== 'true')) return !silent && showToast(VIEWER_LOCK_MSG);
         if (next === simState.active) return;
-        cancelActiveScadaDrag();
-        currentlyOpenEdgePopup = null;
+        cancelActiveScadaDrag(); currentlyOpenEdgePopup = null;
         if (next) {
             if (scadaSettings.drawActive) toggleScadaDrawMode(false);
             if (moveState.active) toggleScadaWireMoveMode(false);
             if (pinMoveState.active) toggleScadaPinMoveMode(false);
             deletedLabeledMap = pruneDeletedLabeledMap(safeJsonParse(localStorage.getItem(STORAGE_KEY_DELETED_LABELS), {}));
-            const rawReal = safeJsonParse(Core.rawStorageGet(STORAGE_KEY_LABELS), []);
+            const rawReal = safeJsonParse(typeof Core?.rawStorageGet === 'function' ? Core.rawStorageGet(STORAGE_KEY_LABELS) : localStorage.getItem(STORAGE_KEY_LABELS), []);
             simState.basePins = deduplicateEquipPins(Array.isArray(rawReal) ? rawReal : []);
             simState.workingPins = JSON.parse(JSON.stringify(simState.basePins));
             simState.steps = []; simState.baseTopo = null; simState.expandedImpactTab = null; simState.active = true;
-            Core.enterSimSandbox(simState.workingPins);
-            resetMapFiltersForScadaAction();
-            computeSimDiff();
+            Core?.enterSimSandbox?.(simState.workingPins); resetMapFiltersForScadaAction(); computeSimDiff();
             if (!silent) showToast('🧪 เปิดโหมดซ้อมสับ-ปลดแล้ว (ไม่กระทบผังจริงบน Cloud)');
         } else {
-            simState.active = false; simState.steps = [];
-            Core.exitSimSandbox(null);
-            closeScadaSimPlanModal();
+            simState.active = false; simState.steps = []; Core?.exitSimSandbox?.(null); closeScadaSimPlanModal();
             if (!silent) showToast('🔄 ปิดโหมดซ้อมและคืนค่าผังวงจรจริงแล้ว');
         }
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
-        updateSimVisualChrome();
-        renderSimToolbarPanel();
-        renderLabeledPlacesList(true);
-        scheduleUnifiedScadaRefresh();
+        leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
+        updateSimVisualChrome(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
     }
 
     function simulateSwitchStateChange(pinId, nextSt) {
         if (!simState.active) return;
-        const tg = simState.workingPins.find(p => p?.id === pinId);
-        if (!tg) return;
+        const tg = simState.workingPins.find(p => p?.id === pinId); if (!tg) return;
         if (!isSwitchableScadaType(tg.scadaNode?.t)) return showToast('⚠️ หมุดทั่วไป/T-Tap ไม่ใช่สวิตช์สับ-ปลด');
         const eqT = tg.scadaNode.t, prev = tg.scadaNode.st || 'C', warn = tg.scadaNode.lk || '';
         if (prev === nextSt) return leafletMap?.closePopup();
         const preN = (simState.curTopo || computeSimDiff(), simState.curTopo?.nodeStates?.get(pinId));
         const actLbl = nextSt === 'C' ? '🟢 สับจ่ายไฟ (CLOSE)' : (nextSt === 'O' ? '⚪ ปลดสวิตช์ (OPEN)' : '🔴 จำลองทริป (TRIP)');
         const applyStep = () => {
-            leafletMap?.closePopup();
-            restoreMapFloatingUiIfNoPopup();
+            leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
             const snap = JSON.stringify(simState.workingPins);
-            tg.scadaNode.st = nextSt;
-            if (!isBreakerType(eqT)) tg.pinColor = nextSt === 'C' ? safeHexToPinKey(tg.scadaNode.col || '#10b981') : (nextSt === 'O' ? 'yellow' : 'red');
-            syncSimWorkingPinsToSandbox();
+            tg.scadaNode.st = nextSt; syncSimWorkingPinsToSandbox();
             simState.steps.push({ pinId: tg.id, codeName: tg.name, scadaId: tg.scadaNode.id || '', feeder: tg.scadaNode.fd || '', eqType: eqT, actionLabel: actLbl, interlockNote: warn, tieNote: (nextSt === 'C' && preN?.isTieTwoSources) ? `สับขนาน ${preN.terminalSources.map(s => s.name).join(' ↔ ')}` : '', lat: tg.lat, lon: tg.lon, snapshotBefore: snap });
-            computeSimDiff();
-            renderSimToolbarPanel();
-            renderLabeledPlacesList(true);
-            scheduleUnifiedScadaRefresh();
+            computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
         };
         const promptMsg = buildSwitchWarningPrompt(tg.name, eqT, warn, nextSt, preN);
-        if (promptMsg) showCustomConfirm(promptMsg, applyStep, '🧪 ตรวจสอบเงื่อนไขก่อนซ้อมสับ-ปลด');
-        else applyStep();
+        if (promptMsg) showCustomConfirm(promptMsg, applyStep, '🧪 ตรวจสอบเงื่อนไขก่อนซ้อมสับ-ปลด'); else applyStep();
     }
 
     function simulateEdgePowerToggle(fId, eIdx) {
         if (!simState.active) return;
-        const fP = simState.workingPins.find(p => p?.id === fId), eg = fP?.scadaLines?.[eIdx];
-        if (!eg) return;
+        const fP = simState.workingPins.find(p => p?.id === fId), eg = fP?.scadaLines?.[eIdx]; if (!eg) return;
         const tP = simState.workingPins.find(p => p?.id === eg.to), snap = JSON.stringify(simState.workingPins);
-        currentlyOpenEdgePopup = null;
-        leafletMap?.closePopup();
-        restoreMapFloatingUiIfNoPopup();
-        eg.off = eg.off ? 0 : 1;
-        syncSimWorkingPinsToSandbox();
+        currentlyOpenEdgePopup = null; leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
+        eg.off = eg.off ? 0 : 1; syncSimWorkingPinsToSandbox();
         simState.steps.push({ pinId: fP.id, codeName: `สายช่วง ${fP.name} ➔ ${tP ? tP.name : ''}`, scadaId: '', feeder: eg.fd || '', eqType: 'LINE', actionLabel: eg.off ? '🔌 จำลองปลดสายไฟ' : '⚡ จำลองต่อสายคืน', interlockNote: '', tieNote: '', lat: fP.lat, lon: fP.lon, snapshotBefore: snap });
-        computeSimDiff();
-        renderSimToolbarPanel();
-        renderLabeledPlacesList(true);
-        scheduleUnifiedScadaRefresh();
-    }
-
-    function undoScadaSimStep() {
-        if (!simState.active || !simState.steps.length) return;
-        const l = simState.steps.pop();
-        simState.workingPins = JSON.parse(l.snapshotBefore);
-        syncSimWorkingPinsToSandbox();
         computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
     }
-    function resetScadaSimAll() {
-        if (!simState.active) return;
-        simState.workingPins = JSON.parse(JSON.stringify(simState.basePins));
-        simState.steps = [];
-        syncSimWorkingPinsToSandbox();
-        computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
-    }
+    function undoScadaSimStep() { if (!simState.active || !simState.steps.length) return; simState.workingPins = JSON.parse(simState.steps.pop().snapshotBefore); syncSimWorkingPinsToSandbox(); computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+    function resetScadaSimAll() { if (!simState.active) return; simState.workingPins = JSON.parse(JSON.stringify(simState.basePins)); simState.steps = []; syncSimWorkingPinsToSandbox(); computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
     function toggleSimImpactDetailTab(k) { simState.expandedImpactTab = simState.expandedImpactTab === k ? null : k; renderSimToolbarPanel(); }
 
     function applySimulatedStateToRealGrid() {
         if (!simState.active || !canCurrentUserEditScada() || !simState.steps.length) return;
         showCustomConfirm(`ยืนยันนำสถานะที่ซ้อมไว้ (${simState.steps.length} ขั้นตอน) ไปอัปเดตลง "ผังวงจรจริง" และซิงค์ Cloud ทันทีหรือไม่?`, async () => {
             deletedLabeledMap = pruneDeletedLabeledMap(safeJsonParse(localStorage.getItem(STORAGE_KEY_DELETED_LABELS), {}));
-            const touchedIds = new Set(simState.steps.map(s => s.pinId));
-            const simById = new Map(simState.workingPins.filter(Boolean).map(p => [p.id, p]));
-            const latestRaw = safeJsonParse(Core.rawStorageGet(STORAGE_KEY_LABELS), []);
+            const touchedIds = new Set(simState.steps.map(s => s.pinId)), simById = new Map(simState.workingPins.filter(Boolean).map(p => [p.id, p]));
+            const latestRaw = safeJsonParse(typeof Core?.rawStorageGet === 'function' ? Core.rawStorageGet(STORAGE_KEY_LABELS) : localStorage.getItem(STORAGE_KEY_LABELS), []);
             const baseRealList = Array.isArray(latestRaw) && latestRaw.length ? latestRaw : simState.workingPins;
             const mergedPins = deduplicateEquipPins(baseRealList.map(realPin => {
                 if (!realPin || !touchedIds.has(realPin.id)) return compactEquipPinForStorage(realPin);
-                const simPin = simById.get(realPin.id);
-                if (!simPin) return compactEquipPinForStorage(realPin);
+                const simPin = simById.get(realPin.id); if (!simPin) return compactEquipPinForStorage(realPin);
                 const copy = JSON.parse(JSON.stringify(realPin));
                 copy.pinColor = simPin.pinColor;
                 if (simPin.scadaNode) copy.scadaNode = JSON.parse(JSON.stringify(simPin.scadaNode));
@@ -4298,12 +3907,12 @@
                 copy.updatedAt = nextPinUpdatedIso(copy, 2000);
                 return compactEquipPinForStorage(copy);
             }).filter(Boolean));
-            Core.unlockCloudWrite(25000);
+            Core?.unlockCloudWrite?.(25000);
             simState.active = false; simState.steps = [];
-            Core.exitSimSandbox(mergedPins);
+            Core?.exitSimSandbox?.(mergedPins);
+            localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(mergedPins));
             markEquipCloudPushPending();
-            updateSimVisualChrome(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
-            restoreMapFloatingUiIfNoPopup();
+            updateSimVisualChrome(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); restoreMapFloatingUiIfNoPopup();
             if (typeof window.pushAllJobsToCloud === 'function') await window.pushAllJobsToCloud(false);
             showToast('✅ อัปเดตผลซ้อมลงผังวงจรจริงเรียบร้อยแล้ว!');
         }, '⚡ ยืนยันนำผลซ้อมไปใช้จริง');
@@ -4333,8 +3942,7 @@
     function shareScadaSimPlanToLine() { const t = document.getElementById('scadaSimPlanPreviewText')?.value || buildSimPlanText(); copyTechText(t, '💬 กำลังเปิดแอป LINE...'); openScadaLineShareSafe(t); }
 
     window.__onScadaRoleUpdated = () => {
-        const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
-        if (!isLogged) {
+        if (localStorage.getItem('elec_app_logged_in') !== 'true') {
             cancelActiveScadaDrag();
             if (simState.active) toggleScadaSimMode(false, true);
             if (scadaSettings.drawActive) toggleScadaDrawMode(false);
@@ -4350,10 +3958,7 @@
             if (moveState.active) toggleScadaWireMoveMode(false);
             if (pinMoveState.active) toggleScadaPinMoveMode(false);
         }
-        updateToolbarToggleButtonsUI();
-        renderLabeledPlacesList(true);
-        scheduleUnifiedScadaRefresh();
-        resumeActiveEquipMapNavIfNeeded(false);
+        updateToolbarToggleButtonsUI(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); resumeActiveEquipMapNavIfNeeded(false);
     };
 
     window.__onTechGpsUpdated = () => {
@@ -4363,23 +3968,17 @@
             routeLineLayer?.clearLayers();
         } else if (activeMapNav) {
             startMapNavRealtimeWatch();
-            if (window.lastKnownTechCoords && routeLineLayer && routeLineLayer.getLayers().length === 0) {
-                drawAndRefreshRouteToLabeledPin(window.lastKnownTechCoords, { lat: activeMapNav.destLat, lon: activeMapNav.destLon }, false);
-            }
+            if (window.lastKnownTechCoords && routeLineLayer && routeLineLayer.getLayers().length === 0) drawAndRefreshRouteToLabeledPin(window.lastKnownTechCoords, { lat: activeMapNav.destLat, lon: activeMapNav.destLon }, false);
         }
     };
 
-    Core.onRealtimeChange(keys => {
-        if (!simState.active && keys.some(k => k.includes('labeled') || k.includes('audit'))) {
+    Core?.onRealtimeChange?.(keys => {
+        if (!simState.active && Array.isArray(keys) && keys.some(k => k.includes('labeled') || k.includes('audit'))) {
             if (activeDragCleanupFn) pendingRefreshAfterDrag = true;
             else { renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
         }
     });
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
-            resumeActiveEquipMapNavIfNeeded(false);
-        }
-    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') resumeActiveEquipMapNavIfNeeded(false); });
     document.addEventListener('click', e => { const b = document.getElementById('searchEquipAutocompleteBox'); if (b && !b.contains(e.target)) hideSearchEquipDropdown(); });
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') {
@@ -4395,14 +3994,8 @@
         if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target?.tagName || '').toUpperCase())) return;
         if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
             e.preventDefault();
-            if (simState.active) undoScadaSimStep();
-            else if (scadaSettings.drawActive) undoScadaDrawOnePoint();
-            else if (moveState.active) undoScadaWireMove();
-            else if (pinMoveState.active) undoScadaPinMove();
-        } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && scadaSettings.drawActive) {
-            e.preventDefault();
-            redoScadaDrawOnePoint();
-        }
+            if (simState.active) undoScadaSimStep(); else if (scadaSettings.drawActive) undoScadaDrawOnePoint(); else if (moveState.active) undoScadaWireMove(); else if (pinMoveState.active) undoScadaPinMove();
+        } else if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z')) && scadaSettings.drawActive) { e.preventDefault(); redoScadaDrawOnePoint(); }
     });
 
     Object.assign(window, {
@@ -4428,9 +4021,7 @@
     function bootstrapScadaEngineModule() {
         if (hasBootstrappedScadaEngine) return;
         hasBootstrappedScadaEngine = true;
-        injectScadaMasterStyles();
-        injectScadaModalsAndTabUI();
-        loadStoredLabeledPlaces();
+        injectScadaMasterStyles(); injectScadaModalsAndTabUI(); loadStoredLabeledPlaces();
         lastCheckedDateIsoForSchedule = getTodayLocalIso();
         renderLabeledPlacesList(false);
         setTimeout(() => resumeActiveEquipMapNavIfNeeded(false), 350);
@@ -4438,8 +4029,7 @@
         setInterval(() => {
             if (!document.hidden && currentActiveMainTab === 'map' && getTodayLocalIso() !== lastCheckedDateIsoForSchedule) {
                 lastCheckedDateIsoForSchedule = getTodayLocalIso();
-                renderLabeledPlacesList(true);
-                scheduleUnifiedScadaRefresh();
+                renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
             }
         }, 60000);
     }
@@ -4447,4 +4037,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapScadaEngineModule);
     else bootstrapScadaEngineModule();
 })();
-// ==================== จบไฟล์ scada-engine.js ====================
+// ==================== จบไฟล์ scada-engine.js (v6.5) ====================
