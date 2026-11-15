@@ -1,6 +1,6 @@
 // ============================================================================
-// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v1.7 (pea-idb-store.js)
-// คิวเขียน-ลบเรียงลำดับเดียวกัน + กันข้อมูลที่ลบคืนชีพ + Safety Timeout กัน IndexedDB ค้าง
+// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v1.8 (pea-idb-store.js)
+// ป้องกัน Iframe บูตทับข้อมูลหน้าหลัก + เขียนลง DB เฉพาะเมื่อค่าเปลี่ยนจริง + ครอบ Fetch ทั้งชั้นในและชั้นนอก
 // ============================================================================
 (function () {
     'use strict';
@@ -101,7 +101,6 @@
         return null;
     }
 
-    // 1) อ่านสถานะเริ่มต้นจาก localStorage ทันทีที่โหลดสคริปต์ (0ms)
     MANAGED_KEYS.forEach((key) => {
         try {
             const physVal = rawGet.call(window.localStorage, key);
@@ -307,7 +306,6 @@
         }
     }
 
-    // 2) ซิงค์ข้ามหน้าจอแยก (index.html <-> page2.html)
     window.addEventListener('storage', function (e) {
         if (!e || e.isTrusted === false) return;
         if (e.key === null) {
@@ -347,6 +345,7 @@
             return;
         }
         bumpKeyVersion(e.key);
+        pendingPreReadyOps.delete(e.key);
         hydratingOffloadedKeys.delete(e.key);
         ramCache.set(e.key, e.newValue);
     }, true);
@@ -359,6 +358,7 @@
                 const curTs = Number(physTsMap[msg.key]) || 0;
                 if (msg.ts && curTs > msg.ts) return;
                 bumpKeyVersion(msg.key);
+                pendingPreReadyOps.delete(msg.key);
                 if (msg.ts) physTsMap[msg.key] = msg.ts;
                 hydratingOffloadedKeys.delete(msg.key);
                 if (ramCache.get(msg.key) === msg.valStr) return;
@@ -370,6 +370,7 @@
                 reloadSingleKeyFromIdb(msg.key, msg.ts || 0);
             } else if (msg.type === 'IDB_KV_REM') {
                 bumpKeyVersion(msg.key);
+                pendingPreReadyOps.delete(msg.key);
                 hydratingOffloadedKeys.delete(msg.key);
                 if (!ramCache.has(msg.key)) return;
                 ramCache.delete(msg.key);
@@ -378,7 +379,6 @@
         };
     }
 
-    // คิวเขียนและลบลงท่อเดียวกันรายคีย์ ป้องกันคำสั่งลบกับคำสั่งเขียนแซงคิวกันเด็ดขาด
     async function flushKeyWriteQueue(key) {
         if (inFlightKeys.has(key)) return;
         inFlightKeys.add(key);
@@ -422,14 +422,16 @@
         }
     }
 
-    function persistManagedKeyPhysical(key, valStr, ts, ver) {
+    function persistManagedKeyPhysical(key, valStr, ts, ver, broadcast = true) {
         const writeTs = ts || nextWriteTs();
         const writeVer = ver || (keyVersionMap.get(key) || bumpKeyVersion(key));
         let offload = shouldOffloadKey(key, valStr);
 
         if (!offload) {
             try {
-                rawSet.call(window.localStorage, key, valStr);
+                if (rawGet.call(window.localStorage, key) !== valStr) {
+                    rawSet.call(window.localStorage, key, valStr);
+                }
                 savePhysTs(key, writeTs);
             } catch (quotaErr) {
                 offload = true;
@@ -442,7 +444,7 @@
             }
         }
 
-        if (bc && valStr.length <= BC_INLINE_MAX_CHARS) {
+        if (broadcast && bc && valStr.length <= BC_INLINE_MAX_CHARS) {
             try { bc.postMessage({ type: 'IDB_KV_SET', key, valStr, ts: writeTs, senderId }); } catch (e) {}
         }
 
@@ -455,7 +457,6 @@
         flushKeyWriteQueue(key);
     }
 
-    // 3) Override Storage.prototype อย่างปลอดภัย
     const idbSetItemFn = function (key, value) {
         if (this !== window.localStorage || !MANAGED_KEYS.has(key)) {
             return rawSet.call(this, key, value);
@@ -485,7 +486,7 @@
         }
 
         hydratingOffloadedKeys.delete(key);
-        persistManagedKeyPhysical(key, valStr, ts, ver);
+        persistManagedKeyPhysical(key, valStr, ts, ver, true);
     };
 
     Storage.prototype.getItem = function (key) {
@@ -533,7 +534,6 @@
         return rawClr.call(this);
     };
 
-    // 4) เปิด IndexedDB โดยเรียงโหลดตารางรายการที่ถูกลบก่อน เพื่อไม่ให้หมุดที่เพิ่งถูกลบฟื้นคืนชีพ
     async function hydrateAllManagedKeys() {
         const db = await ensureDbOpen();
         if (!db) {
@@ -555,9 +555,13 @@
             const env = envMap.get(key);
             const bootPhys = bootPhysicalState.get(key);
             const latestPreOp = pendingPreReadyOps.get(key);
+            const receivedLiveExternalSync = (keyVersionMap.get(key) || 0) > 0 && !latestPreOp;
             pendingPreReadyOps.delete(key);
             hydratedKeys.add(key);
             hydratingOffloadedKeys.delete(key);
+
+            // หากได้รับข้อมูลสดจากหน้าต่างอื่น (BroadcastChannel / storage) ระหว่างกำลังรอเปิด DB ให้คงข้อมูลสดนั้นไว้ห้ามเอาค่าเก่าทับเด็ดขาด
+            if (receivedLiveExternalSync) return;
 
             if (latestPreOp?.op === 'del') {
                 enqueueKeyDelete(key, latestPreOp.ver);
@@ -572,17 +576,17 @@
                     }
                     const ver = bumpKeyVersion(key);
                     ramCache.set(key, merged);
-                    if (merged !== env.val || shouldOffloadKey(key, merged)) {
-                        persistManagedKeyPhysical(key, merged, nextWriteTs(), ver);
+                    const needSyncDisk = merged !== env.val || (shouldOffloadKey(key, merged) !== isOffloadMarker(bootPhys));
+                    if (needSyncDisk) {
+                        persistManagedKeyPhysical(key, merged, nextWriteTs(), ver, Boolean(latestPreOp));
                     }
                     updatedKeys.add(key);
                 } else if (latestPreOp?.op === 'set') {
-                    persistManagedKeyPhysical(key, latestPreOp.valStr, latestPreOp.ts, latestPreOp.ver);
+                    persistManagedKeyPhysical(key, latestPreOp.valStr, latestPreOp.ts, latestPreOp.ver, true);
                 } else if (isOffloadMarker(bootPhys)) {
                     try { rawSet.call(window.localStorage, key, EMPTY_FALLBACK[key] ?? '[]'); } catch (e) {}
                 }
             } else if (typeof bootPhys === 'string') {
-                // เมื่อไม่ได้ Offload ข้อมูลเต็มอยู่ใน RAM ตั้งแต่ 0ms แล้ว ใช้ค่าล่าสุดโดยตรง (ห้าม Union เพื่อกันรายการที่ถูกลบฟื้นคืนชีพ)
                 const physTs = Number(physTsMap[key]) || 0;
                 const finalVal = latestPreOp?.op === 'set'
                     ? latestPreOp.valStr
@@ -590,7 +594,11 @@
                 const ver = bumpKeyVersion(key);
                 ramCache.set(key, finalVal);
                 if (finalVal !== bootPhys) updatedKeys.add(key);
-                persistManagedKeyPhysical(key, finalVal, latestPreOp?.ts || Math.max(physTs, env?.ts || 0) || nextWriteTs(), ver);
+
+                // เขียนลงดิสก์เฉพาะเมื่อข้อมูลเปลี่ยนจริง หรือยังไม่มีสำเนาใน IndexedDB (ไม่เขียนซ้ำพร่ำเพรื่อทุกครั้งที่เปิดหน้าเว็บ)
+                if (!env || env.val !== finalVal || shouldOffloadKey(key, finalVal)) {
+                    persistManagedKeyPhysical(key, finalVal, latestPreOp?.ts || Math.max(physTs, env?.ts || 0) || nextWriteTs(), ver, Boolean(latestPreOp));
+                }
             }
         });
 
@@ -606,18 +614,24 @@
 
     const readyPromise = hydrateAllManagedKeys();
 
-    // ชะลอผลลัพธ์ Cloud ช่วงเสี้ยววินาทีเปิดหน้าเว็บจนกว่า IndexedDB จะ Hydrate เสร็จ เพื่อป้องกัน Cloud ผสานกับค่าว่าง
-    if (typeof window.fetch === 'function' && !window.fetch.__peaIdbBootGuarded) {
-        const origFetch = window.fetch;
-        const bootSafeFetch = async function () {
-            if (!isDbReady || hydratingOffloadedKeys.size > 0) await readyPromise;
-            return origFetch.apply(this, arguments);
+    // ครอบ window.fetch ทั้งก่อนและหลัง shared-core.js โหลด เพื่อให้ทั้ง GET และ POST รอ IndexedDB พร้อมก่อนทำงาน
+    function ensureFetchBootGuarded() {
+        if (typeof window.fetch !== 'function' || window.fetch.__peaIdbOuterGuarded) return;
+        const prevFetch = window.fetch;
+        const bootSafeFetch = function () {
+            if (!isDbReady || hydratingOffloadedKeys.size > 0) {
+                const args = arguments;
+                return readyPromise.then(() => prevFetch.apply(window, args));
+            }
+            return prevFetch.apply(window, arguments);
         };
-        bootSafeFetch.__peaIdbBootGuarded = true;
+        bootSafeFetch.__peaIdbOuterGuarded = true;
         window.fetch = bootSafeFetch;
     }
+    ensureFetchBootGuarded();
 
-    function guardCloudPushUntilHydrated() {
+    function attachPostCoreGuards() {
+        ensureFetchBootGuarded();
         if (typeof window.pushAllJobsToCloud === 'function' && !window.pushAllJobsToCloud.__idbGuarded) {
             const origPush = window.pushAllJobsToCloud;
             const guardedPush = async function () {
@@ -628,8 +642,9 @@
             window.pushAllJobsToCloud = guardedPush;
         }
     }
-    if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', guardCloudPushUntilHydrated);
-    else guardCloudPushUntilHydrated();
+    setTimeout(attachPostCoreGuards, 0);
+    if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', attachPostCoreGuards);
+    else attachPostCoreGuards();
 
     window.PeaIdbStore = {
         ready: readyPromise,
