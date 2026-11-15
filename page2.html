@@ -15,25 +15,71 @@
     <meta name="application-name" content="ช่างไฟฟ้า">
     <meta name="theme-color" content="#0f766e">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="512x512" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+    <link id="favIconPng" rel="icon" sizes="any" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
     <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%230f766e'/%3E%3Ctext x='256' y='285' font-size='300' text-anchor='middle' dominant-baseline='middle'%3E%F0%9F%9B%A0%EF%B8%8F%3C/text%3E%3Ctext x='266' y='265' font-size='200' text-anchor='middle' dominant-baseline='middle'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
     <link id="webManifestLink" rel="manifest" href="manifest.json">
 
+    <script>
+        if (window.self !== window.top) document.documentElement.classList.add('is-embedded-frame');
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 
     <style>
-        body { font-family: 'Prompt', sans-serif; background: #f1f5f9; color: #1e293b; }
-        input, select, textarea { background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 0.75rem; }
-        input:focus, select:focus, textarea:focus { background-color: #fff; border-color: #2563eb !important; outline: none; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+        html { overflow-x: clip; }
+        body {
+            overflow-x: clip;
+            min-height: 100vh;
+            touch-action: pan-y pinch-zoom;
+            font-family: 'Prompt', sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        @supports not (overflow-x: clip) {
+            body { overflow-x: hidden; }
+        }
+
+        /* กำหนดสไตล์พื้นฐานด้วย :where() เพื่อไม่ให้ทับคลาสสีพื้นหลังของ Tailwind */
+        :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]), select, textarea) {
+            background-color: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 0.75rem;
+            transition: all 0.2s ease;
+        }
+        :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]), select, textarea):focus {
+            background-color: #ffffff;
+            border-color: #2563eb !important;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+        }
+
+        /* รักษาพื้นหลังโทนมืดและสีตัวอักษรในแถบเครื่องมือ SCADA & จานสีเมื่อคลิกโฟกัส */
+        #scadaControlToolbar :is(input, select):focus,
+        #scadaColorPaletteModal :is(input:not([type="color"]), select):focus {
+            background-color: #0f172a !important;
+            border-color: #38bdf8 !important;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(56,189,248,0.22);
+        }
+
+        /* ขยายเต็มกรอบอัตโนมัติเมื่อเปิดผัง SCADA ในหน้าจอแยกฝั่งซ้ายของ index.html */
+        html.is-embedded-frame body { padding: 0.35rem !important; }
+        html.is-embedded-frame #techMainApp { max-width: 100% !important; width: 100% !important; }
+
+        #techLoginScreen { z-index: 1100 !important; }
+        #inspectModal { z-index: 1200 !important; }
+        #customAlertModal, #customConfirmModal { z-index: 1450 !important; }
+        #toast { z-index: 1500 !important; }
+
+        body.role-viewer-readonly #inspectModal button[onclick^="submitTechReport"] { display: none !important; }
     </style>
 </head>
 
 <body class="min-h-screen py-4 px-3 sm:py-8 flex justify-center items-start">
 
     <!-- 🔐 หน้าจอล็อกอิน Smart Grid -->
-    <div id="techLoginScreen" class="hidden fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
+    <div id="techLoginScreen" class="hidden fixed inset-0 z-[1100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
         <svg class="absolute inset-0 w-full h-full object-cover pointer-events-none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
             <defs>
                 <linearGradient id="gridSky" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -91,8 +137,8 @@
             <div class="bg-white/95 backdrop-blur-md p-7 rounded-2xl shadow-2xl w-full max-w-sm space-y-5 border border-white/40">
                 <h3 class="text-2xl font-normal text-slate-600">เข้าสู่ระบบ</h3>
                 <div class="space-y-3">
-                    <input type="text" id="techUsername" placeholder="ชื่อผู้ใช้งาน หรือ รหัสพนักงาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key==='Enter') document.getElementById('techPassword').focus()">
-                    <input type="password" id="techPassword" placeholder="รหัสผ่านเข้าใช้งาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeypress="if(event.key==='Enter') handleTechLogin()">
+                    <input type="text" id="techUsername" placeholder="ชื่อผู้ใช้งาน หรือ รหัสพนักงาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); document.getElementById('techPassword').focus(); }">
+                    <input type="password" id="techPassword" placeholder="รหัสผ่านเข้าใช้งาน" class="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-none" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); handleTechLogin(); }">
                     <button type="button" id="techLoginBtn" onclick="handleTechLogin()" class="w-full bg-[#9b4dca] hover:bg-[#833ab4] text-white font-semibold py-2.5 rounded-xl shadow-md transition duration-200 text-sm">เข้าสู่ระบบ</button>
                 </div>
                 <div class="pt-3 border-t border-slate-200 text-[11px] text-slate-500 space-y-1">
@@ -109,7 +155,7 @@
     </div>
 
     <!-- 🛠️⚡ หน้าต่างหลักสำหรับช่างตรวจสอบหน้างาน & ผังวงจร SCADA -->
-    <div id="techMainApp" class="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+    <div id="techMainApp" class="w-full max-w-xl md:max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
 
         <!-- Header -->
         <div class="bg-gradient-to-r from-teal-700 to-emerald-600 px-4 py-4 text-white">
@@ -124,7 +170,7 @@
                     </h1>
                     <p id="cloudStatusText" class="text-[11px] text-emerald-100 mt-0.5">🟢 พร้อมรับ-ส่งข้อมูลใบงาน</p>
                 </div>
-                              <div class="flex flex-wrap items-center gap-1.5 w-full max-w-full pt-1 sm:justify-end">
+                <div class="flex flex-wrap items-center gap-1.5 w-full max-w-full pt-1 sm:justify-end">
                     <button type="button" id="backToMainBtn" onclick="goBackToMainPage()" class="hidden bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition items-center gap-1 shadow-sm">⬅️ <span>หน้าหลัก</span></button>
                     <button type="button" id="gpsToggleBtn" onclick="toggleGpsTracking()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm">📍 GPS: เปิด</button>
                     <button type="button" id="soundAlertToggleBtn" onclick="toggleSoundAlert()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm">🔔 เสียง: เปิด</button>
@@ -239,7 +285,7 @@
 
                 <div>
                     <label class="block font-bold text-slate-700 mb-1">🔍 สาเหตุที่ตรวจพบจริง (เลือกหรือพิมพ์เพิ่ม)</label>
-                    <select onchange="if(this.value) document.getElementById('techCauseInput').value = this.value; this.selectedIndex=0;" class="w-full px-3 py-1.5 mb-1.5 text-xs text-blue-700 font-semibold bg-blue-50 border-blue-200">
+                    <select onchange="if(this.value){ const inp = document.getElementById('techCauseInput'); if(inp){ inp.value = this.value; inp.dispatchEvent(new Event('input')); } } this.selectedIndex=0;" class="w-full px-3 py-1.5 mb-1.5 text-xs text-blue-700 font-semibold bg-blue-50 border-blue-200">
                         <option value="">-- จิ้มเลือกสาเหตุยอดฮิตด่วน --</option>
                         <option value="ฟิวส์แรงต่ำขาด">ฟิวส์แรงต่ำขาด</option>
                         <option value="ฟิวส์แรงสูงขาด (Drop Out Fuse)">ฟิวส์แรงสูงขาด (Drop Out Fuse)</option>
@@ -291,15 +337,16 @@
         </div>
     </div>
 
-     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
+    <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
 
-    <!-- 📦 โหลดไลบรารีแผนที่, MQTT และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="shared-core.js?v=106"></script>
-    <script src="tech-jobs.js?v=106"></script>
-    <script src="scada-engine.js?v=106"></script>
-    <script src="pm-calendar.js?v=106"></script>
-    <script src="pm-push.js?v=106"></script>
+    <!-- 📦 โหลดไลบรารีแผนที่, MQTT และโมดูลระบบครบทุกไฟล์ตามลำดับ (ไม่ซ้ำซ้อน) -->
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
+    <script src="shared-core.js?v=121"></script>
+    <script src="tech-jobs.js?v=121"></script>
+    <script src="scada-engine.js?v=121"></script>
+    <script src="pm-calendar.js?v=121"></script>
+    <script src="pm-push.js?v=121"></script>
+
 </body>
 </html>
