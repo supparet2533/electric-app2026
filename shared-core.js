@@ -1,7 +1,7 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SHARED CORE ENGINE v6.3 (shared-core.js)
-// ระบบแกนกลางร่วมสำหรับ index.html และ page2.html (แก้ครบ 16 จุด เชื่อม PM v7.3 & SW v116)
-// พาทที่ 1 / 4 : Config, Group Normalization, RBAC, UI Modals & Export Helpers
+// ⚡ PEA SMART GRID — SHARED CORE ENGINE v6.7 (shared-core.js)
+// ระบบแกนกลางร่วมสำหรับ index.html และ page2.html (เชื่อม IndexedDB v2.0, SCADA v6.5 & PM v7.3 ครบ 100%)
+// พาทที่ 1 / 4 : Config, Group Normalization, RBAC, UI Modals & Z-Index Safeguards
 // ============================================================================
 (function () {
     'use strict';
@@ -16,6 +16,7 @@
     const SHORT_URL_REGEX = /(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/[A-Za-z0-9_-]+(?:\?[^\s"'<>]*)?/i;
     const LAST_GROUP_SESSION_KEY = 'elec_last_logged_group_name';
     const SHEET_CACHE_STORAGE_KEY = 'elec_sheet_cache_by_group_v3';
+    const SHEET_DISK_CACHE_MAX_CHARS = 180000;
     const REGISTRY_LOC_KEY = '__NAV_CANCEL_REGISTRY__';
     const PM_LOC_PREFIX = '__PM_SCHEDULE__';
 
@@ -57,6 +58,20 @@
     let forceManualGet = false;
     const sheetMemoryCacheMap = new Map();
 
+    // ป้องกันป๊อปอัปแก้ไขบัญชี/ตำบลจมหลังหน้าต่างหลักใน index.html และ page2.html
+    function injectCoreModalZIndexFixes() {
+        if (document.getElementById('peaCoreZIndexFixCss') || !document.head) return;
+        const st = document.createElement('style');
+        st.id = 'peaCoreZIndexFixCss';
+        st.textContent = `
+            #onlineUsersModal, #techOnlineModal { z-index: 1280 !important; }
+            #customUserEditModal, #customTambonEditModal { z-index: 1470 !important; }
+            #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
+        `;
+        document.head.appendChild(st);
+    }
+    injectCoreModalZIndexFixes();
+
     function rawStorageGet(key) {
         return nativeGetItem.call(localStorage, key);
     }
@@ -67,14 +82,14 @@
         } catch (err) {
             try {
                 nativeRemoveItem.call(localStorage, 'elec_closed_reports_map');
-                nativeRemoveItem.call(localStorage, 'elec_app_auto_backup_snapshot');
                 nativeRemoveItem.call(localStorage, 'elec_sheet_cache_2k');
                 nativeRemoveItem.call(localStorage, SHEET_CACHE_STORAGE_KEY);
+                nativeRemoveItem.call(localStorage, SHORT_LINK_CACHE_KEY);
                 const reg = JSON.parse(rawStorageGet('elec_closed_jobs_registry') || '{}');
                 nativeSetItem.call(localStorage, 'elec_closed_jobs_registry', JSON.stringify(pruneClosedRegistryMap(reg)));
                 nativeSetItem.call(localStorage, key, val);
             } catch (e) {
-                if (typeof showToast === 'function') {
+                if (key !== SHEET_CACHE_STORAGE_KEY && typeof showToast === 'function') {
                     showToast('⚠️ ความจำเบราว์เซอร์เต็ม กรุณาสำรองข้อมูลออกเป็นไฟล์');
                 }
             }
@@ -96,25 +111,29 @@
     }
 
     function normalizePeaGroupName(rawGrp) {
-        let g = String(rawGrp || '').trim().replace(/\s+/g, ' ');
-        if (!g) return '';
-        g = g.replace(/^(กฟ[สฟจตอ])\.?\s+/, '$1.');
-        g = g.replace(/^(กฟ[สฟจตอ])(?![.\s])/, '$1.');
-        return g.trim();
+        let g = String(rawGrp || '').replace(/[\r\n\t]+/g, ' ').trim().replace(/\s+/g, ' ');
+        if (!g || g.toLowerCase() === 'admin' || g.toUpperCase() === 'ALL' || g === '__ADMIN_ALL__') return '';
+        if (/[()[\]{}<>\\\/]/.test(g) || /^\d+$/.test(g)) return '';
+        g = g.replace(/^(กฟ[ก-ฮ]{1,2})\.\s+/, '$1.');
+        g = g.replace(/^(กฟ[สฟจตอยภผกนฉ])\s+/, '$1.');
+        g = g.replace(/^(กฟ[สฟจตอยภผกนฉ])(?![.\s]|[ก-ฮ]\.|$)/, '$1.');
+        return g.length > 60 ? g.substring(0, 60).trim() : g.trim();
     }
 
     function stripPeaGroupSuffix(rawUsername) {
-        return String(rawUsername || '').trim().replace(/\s+/g, ' ').replace(/\s*(กฟ[สฟจตอ]\.?.*)$/i, '').trim();
+        return String(rawUsername || '').trim().replace(/\s+/g, ' ').replace(/\s*(กฟ(?:[ก-ฮ]{1,2}\.|[สฟจตอยภผกนฉ]\.?).*)$/i, '').trim();
     }
 
     function getUserGroupName(username) {
         if (!username) return '';
-        const s = String(username).trim().replace(/\s+/g, ' ');
-        if (s.toLowerCase() === 'admin') return '';
-        const peaMatch = s.match(/(กฟ[สฟจตอ]\.?.*)$/);
+        const s = String(username).replace(/\([^)]*\)/g, ' ').trim().replace(/\s+/g, ' ');
+        if (!s || s.toLowerCase() === 'admin') return '';
+        const peaMatch = s.match(/(กฟ(?:[ก-ฮ]{1,2}\.|[สฟจตอยภผกนฉ]\.?).*)$/);
         if (peaMatch) return normalizePeaGroupName(peaMatch[1]);
-        const numGroupMatch = s.match(/^(\d{4,10})\s*([ก-๙a-zA-Z].*)$/);
-        if (numGroupMatch) return normalizePeaGroupName(numGroupMatch[2]);
+        const numGroupMatch = s.match(/^(\d{3,12})\s*([ก-๙a-zA-Z].*)$/);
+        if (numGroupMatch && !/^(?:นาย|นาง|น\.ส\.|นางสาว|คุณ|ช่าง)/.test(numGroupMatch[2])) {
+            return normalizePeaGroupName(numGroupMatch[2]);
+        }
         const parts = s.split(/\s+/);
         if (parts.length > 1 && /^กฟ/.test(parts[parts.length - 1])) return normalizePeaGroupName(parts[parts.length - 1]);
         return '';
@@ -122,13 +141,13 @@
 
     function getUserBaseId(username) {
         if (!username) return '';
-        const s = String(username).trim().replace(/\s+/g, ' ');
+        const s = String(username).replace(/\([^)]*\)/g, ' ').trim().replace(/\s+/g, ' ');
         if (s.toLowerCase() === 'admin') return 'admin';
         const withoutPea = stripPeaGroupSuffix(s);
         if (!withoutPea) return s.toLowerCase();
-        const numMatch = withoutPea.match(/^(\d{4,10})(?:\b|$)/);
+        const numMatch = withoutPea.match(/^(\d{3,12})(?:\b|$)/);
         if (numMatch) return numMatch[1].toLowerCase();
-        const stuckNumMatch = s.match(/^(\d{4,10})(?=[ก-๙a-zA-Z])/);
+        const stuckNumMatch = s.match(/^(\d{3,12})(?=[ก-๙a-zA-Z])/);
         if (stuckNumMatch) return stuckNumMatch[1].toLowerCase();
         return withoutPea.toLowerCase();
     }
@@ -137,18 +156,22 @@
         const s = String(rawUsername || '').trim().replace(/\s+/g, ' ');
         if (!s) return '';
         if (s.toLowerCase() === 'admin') return 'admin';
-        const groupName = getUserGroupName(s);
-        let frontPart = stripPeaGroupSuffix(s);
-        if (!frontPart && groupName) return s;
-        if (!groupName) {
-            const stuckNum = s.match(/^(\d{4,10})([ก-๙a-zA-Z].*)$/);
-            if (stuckNum) return `${stuckNum[1]} ${normalizePeaGroupName(stuckNum[2])}`;
-            return s;
+        const peaMatch = s.match(/^(.*?)\s*(กฟ(?:[ก-ฮ]{1,2}\.|[สฟจตอยภผกนฉ]\.?).*)$/);
+        if (peaMatch) {
+            const front = peaMatch[1].trim(), grp = normalizePeaGroupName(peaMatch[2]);
+            return (front && grp && front.toLowerCase() !== grp.toLowerCase()) ? `${front} ${grp}` : (front || grp || s);
         }
-        if (frontPart.toLowerCase() === groupName.toLowerCase()) return s;
-        return `${frontPart} ${groupName}`;
+        const numMatch = s.match(/^(\d{3,12})\s*([ก-๙a-zA-Z].*)$/);
+        if (numGroupMatchCheck(numMatch)) {
+            const grp = normalizePeaGroupName(numMatch[2]);
+            return grp ? `${numMatch[1]} ${grp}` : s;
+        }
+        return s;
     }
 
+    function numGroupMatchCheck(m) {
+        return Boolean(m && !/^(?:นาย|นาง|น\.ส\.|นางสาว|คุณ|ช่าง)/.test(m[2]));
+    }
     function isUsernameMatchingAccount(inputUser, accountUser) {
         if (!inputUser || !accountUser) return false;
         const inTrim = String(inputUser).trim().replace(/\s+/g, ' ').toLowerCase();
@@ -234,7 +257,7 @@
         if (fromAcc) return fromAcc;
         if (role !== 'admin') {
             const lastGrp = normalizePeaGroupName(rawStorageGet(LAST_GROUP_SESSION_KEY) || '');
-            if (lastGrp) return lastGrp;
+            if (lastGrp && lastGrp !== '__ADMIN_ALL__') return lastGrp;
             const validGroups = Array.from(getValidSystemGroupsSet());
             return validGroups.length === 1 ? validGroups[0] : 'กฟส.บึง';
         }
@@ -334,7 +357,7 @@
         if (!modal) {
             modal = document.createElement('div'); modal.id = 'customPromptModal';
             modal.className = 'fixed inset-0 z-[1480] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4 transition-opacity';
-            modal.innerHTML = `<div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700"><h3 id="customPromptTitle" class="text-lg font-bold text-amber-400"></h3><p id="customPromptMessage" class="text-sm text-slate-200 leading-relaxed"></p><input type="text" id="customPromptInput" class="w-full px-3.5 py-2 text-slate-800 font-medium rounded-xl text-sm focus:outline-none"><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="document.getElementById('customPromptModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">ยกเลิก</button><button type="button" id="customPromptOkBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">บันทึก</button></div></div>`;
+            modal.innerHTML = `<div class="bg-slate-800 text-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4 border border-slate-700"><h3 id="customPromptTitle" class="text-lg font-bold text-amber-400"></h3><p id="customPromptMessage" class="text-sm text-slate-200 leading-relaxed"></p><input type="text" id="customPromptInput" class="w-full px-3.5 py-2 text-slate-800 font-medium rounded-xl text-sm bg-white focus:outline-none"><div class="flex justify-end gap-2 pt-2"><button type="button" onclick="document.getElementById('customPromptModal').classList.add('hidden')" class="text-slate-300 hover:text-white font-semibold text-sm px-4 py-2 rounded-xl hover:bg-slate-700/50 transition">ยกเลิก</button><button type="button" id="customPromptOkBtn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm px-5 py-2 rounded-xl shadow transition">บันทึก</button></div></div>`;
             document.body.appendChild(modal);
         }
         document.getElementById('customPromptTitle').textContent = title;
@@ -342,7 +365,7 @@
         const inp = document.getElementById('customPromptInput'); inp.value = defaultValue;
         const submit = () => { modal.classList.add('hidden'); unlockCloudWrite(20000); if (typeof onConfirm === 'function') onConfirm(inp.value); };
         document.getElementById('customPromptOkBtn').onclick = submit;
-        inp.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+        inp.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } };
         modal.classList.remove('hidden'); setTimeout(() => inp.focus(), 50);
     }
 
@@ -375,7 +398,7 @@
     // ===== จบพาทที่ 1 / 4 ของไฟล์ shared-core.js =====
         // ===== เริ่มพาทที่ 2 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 1 / 4) =====
     // ========================================================================
-    // 3. ระบบ Storage Bus รวมศูนย์, RAM Index, Quota Guard & Simulation Sandbox
+    // 3. ระบบ Storage Bus รวมศูนย์, Single-Pass RAM Index, IndexedDB Stats & Sandbox
     // ========================================================================
     const simSandbox = {
         active: false, committing: false, bypassRead: false,
@@ -383,35 +406,54 @@
     };
 
     const ramIndex = {
-        pinsRaw: null, pinsById: new Map(), hasBackboneSwitches: false,
+        pinsRaw: null, pinsList: [], pinsById: new Map(), hasBackboneSwitches: false,
         delPinsRaw: null, delPinsObj: {}, knownPinUpdatedMs: new Map(),
         pendingJsonImportMap: new Map(), topoEpoch: 1
     };
 
-    function refreshRamPinsIndex() {
-        const raw = (simSandbox.active && !simSandbox.bypassRead)
-            ? simSandbox.workingJson
-            : (rawStorageGet('elec_labeled_places_list') || '[]');
-        if (raw === ramIndex.pinsRaw) return;
-        ramIndex.pinsRaw = raw;
+    const mqttSentPinMetaMap = new Map();
+
+    function seedMqttPinBaseline(pinsArr) {
+        if (!Array.isArray(pinsArr) || simSandbox.active) return;
+        mqttSentPinMetaMap.clear();
+        pinsArr.forEach(p => {
+            if (!p?.id) return;
+            mqttSentPinMetaMap.set(p.id, {
+                sig: JSON.stringify(p),
+                grp: normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง'
+            });
+        });
+    }
+
+    function updateRamPinsFromList(list, jsonStr) {
+        ramIndex.pinsRaw = jsonStr;
+        ramIndex.pinsList = Array.isArray(list) ? list : [];
         ramIndex.topoEpoch++;
         ramIndex.pinsById.clear();
         ramIndex.hasBackboneSwitches = false;
-        try {
-            const arr = JSON.parse(raw);
-            if (Array.isArray(arr)) {
-                arr.forEach(p => {
-                    if (!p || !p.id) return;
-                    ramIndex.pinsById.set(p.id, p);
-                    const ms = new Date(p.updatedAt || 0).getTime() || 0;
-                    if (ms > (ramIndex.knownPinUpdatedMs.get(p.id) || 0)) ramIndex.knownPinUpdatedMs.set(p.id, ms);
-                    const t = p.scadaNode?.t;
-                    if (t === 'RC' || t === 'CB' || t === 'VB' || t === 'VS' || t === 'VSC' || t === 'S' || t === 'GEN') {
-                        ramIndex.hasBackboneSwitches = true;
-                    }
-                });
+        ramIndex.pinsList.forEach(p => {
+            if (!p || !p.id) return;
+            ramIndex.pinsById.set(p.id, p);
+            const ms = new Date(p.updatedAt || 0).getTime() || 0;
+            if (ms > (ramIndex.knownPinUpdatedMs.get(p.id) || 0)) ramIndex.knownPinUpdatedMs.set(p.id, ms);
+            const t = p.scadaNode?.t;
+            if (t === 'RC' || t === 'CB' || t === 'VB' || t === 'VS' || t === 'VSC' || t === 'S' || t === 'GEN') {
+                ramIndex.hasBackboneSwitches = true;
             }
-        } catch (e) {}
+        });
+    }
+
+    function refreshRamPinsIndex(preParsedList = null) {
+        const raw = (simSandbox.active && !simSandbox.bypassRead)
+            ? simSandbox.workingJson
+            : (rawStorageGet('elec_labeled_places_list') || '[]');
+        if (raw === ramIndex.pinsRaw && !Array.isArray(preParsedList)) return;
+        try {
+            const arr = Array.isArray(preParsedList) ? preParsedList : JSON.parse(raw);
+            updateRamPinsFromList(Array.isArray(arr) ? arr : [], raw);
+        } catch (e) {
+            updateRamPinsFromList([], raw);
+        }
     }
 
     function refreshRamDelPinsIndex() {
@@ -454,12 +496,16 @@
         return trimmed;
     }
 
-    function pruneDeletedJobsMap(rawMap) {
+        function pruneDeletedJobsMap(rawMap) {
         if (!rawMap || typeof rawMap !== 'object') return {};
         const now = Date.now();
         const entries = Object.entries(rawMap)
-            .filter(([jk, ts]) => Boolean(jk) && !isNaN(Number(ts)) && (now - Number(ts) < MAX_REGISTRY_AGE_MS))
-            .sort((a, b) => Number(b[1]) - Number(a[1]))
+            .map(([jk, v]) => {
+                const ts = typeof v === 'number' ? v : (/^\d+$/.test(String(v || '')) ? Number(v) : (v === true ? now : (new Date(v || 0).getTime() || 0)));
+                return [jk, ts];
+            })
+            .filter(([jk, ts]) => Boolean(jk) && ts > 0 && (now - ts < MAX_REGISTRY_AGE_MS))
+            .sort((a, b) => b[1] - a[1])
             .slice(0, 300);
         return Object.fromEntries(entries);
     }
@@ -500,24 +546,30 @@
         return 0;
     }
 
-    function sanitizePinsBeforeWrite(rawValStr) {
+    // คัดกรองหมุดตามสาขาอัตโนมัติ + ไม่เขียนทับสีหมุดอิสระ + ตัดลูปสะท้อนจาก main-app.js
+    function sanitizePinsBeforeWrite(rawValStr, updateRamNow = false) {
         try {
             const parsed = JSON.parse(rawValStr);
             if (!Array.isArray(parsed)) return rawValStr;
-            let delMap = {};
-            try { delMap = JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}') || {}; } catch (e) {}
+            refreshRamDelPinsIndex();
+            const delMap = { ...(ramIndex.delPinsObj || {}) };
+            const isLogged = rawStorageGet('elec_app_logged_in') === 'true';
+            const isAdmin = isLogged && (rawStorageGet('elec_app_current_role') || 'user') === 'admin';
+            const activeMyGrp = (isLogged && !isAdmin) ? (normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง') : '';
             let delMapChanged = false;
 
             const byId = new Map();
             parsed.forEach(p => {
                 if (!p || !p.id) return;
+                p.ownerGroup = normalizePeaGroupName(p.ownerGroup || (p.ownerUser ? getUserGroupName(p.ownerUser) : '') || 'กฟส.บึง') || 'กฟส.บึง';
+                if (activeMyGrp && p.ownerGroup !== activeMyGrp) return;
+
                 const pMs = new Date(p.updatedAt || 0).getTime() || 0;
                 if (!simSandbox.active && delMap[p.id]) {
                     const dMs = new Date(delMap[p.id]).getTime() || 0;
                     if (pMs > dMs) { delete delMap[p.id]; delMapChanged = true; }
                     else return;
                 }
-                p.ownerGroup = normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง';
                 if (ramIndex.pendingJsonImportMap.size > 0) {
                     const locK = `LOC:${String(p.name || '').trim().toLowerCase()}__${Number(p.lat || 0).toFixed(5)}__${Number(p.lon || 0).toFixed(5)}`;
                     const ov = ramIndex.pendingJsonImportMap.get('ID:' + p.id) || ramIndex.pendingJsonImportMap.get(locK);
@@ -527,22 +579,24 @@
                         if (ov.isTTap !== undefined) p.isTTap = ov.isTTap;
                     }
                 }
-                if (p.scadaNode && p.scadaNode.t !== 'PIN' && (p.scadaNode.st || 'C') === 'C' && p.scadaNode.col) {
-                    p.pinColor = hexToClosestPinColorKey(p.scadaNode.col);
+                if (!p.pinColor) {
+                    p.pinColor = p.scadaNode?.col ? hexToClosestPinColorKey(p.scadaNode.col) : 'green';
                 }
                 const ex = byId.get(p.id);
                 if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) byId.set(p.id, p);
             });
 
             if (delMapChanged && !simSandbox.active) {
-                rawStorageSet('elec_deleted_labeled_places_map', JSON.stringify(delMap));
-                refreshRamDelPinsIndex();
+                const delStr = JSON.stringify(delMap);
+                rawStorageSet('elec_deleted_labeled_places_map', delStr);
+                ramIndex.delPinsRaw = delStr;
+                ramIndex.delPinsObj = delMap;
             }
 
             const list = Array.from(byId.values());
             const seenLocKeys = new Map();
             list.forEach(p => {
-                const grp = normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง';
+                const grp = p.ownerGroup || 'กฟส.บึง';
                 const lat5 = Number(p.lat || 0).toFixed(5), lon5 = Number(p.lon || 0).toFixed(5);
                 let locK = `${grp}__${String(p.name || '').trim().toLowerCase()}__${lat5}__${lon5}`;
                 if (seenLocKeys.has(locK) && seenLocKeys.get(locK) !== p.id) {
@@ -556,7 +610,9 @@
             });
 
             if (typeof window.__scadaSanitizePinsHook === 'function') window.__scadaSanitizePinsHook(list);
-            return JSON.stringify(list);
+            const finalStr = JSON.stringify(list);
+            if (updateRamNow && !simSandbox.bypassRead) updateRamPinsFromList(list, finalStr);
+            return finalStr;
         } catch (e) { return rawValStr; }
     }
 
@@ -577,16 +633,17 @@
 
         if (simSandbox.active && !simSandbox.committing && key === 'elec_labeled_places_list') {
             if (inFlightCloudGetCount > 0) return;
-            simSandbox.workingJson = sanitizePinsBeforeWrite(value);
-            refreshRamPinsIndex();
+            simSandbox.workingJson = sanitizePinsBeforeWrite(value, true);
             return;
         }
+
+        const prevVal = LOCAL_WATCHED_KEYS.has(key) ? rawStorageGet(key) : null;
 
         if (!isInternalSanitizing) {
             isInternalSanitizing = true;
             try {
                 if (key === 'elec_labeled_places_list') {
-                    value = sanitizePinsBeforeWrite(value);
+                    value = sanitizePinsBeforeWrite(value, true);
                 } else if (key === 'elec_deleted_labeled_places_map') {
                     const prevDel = JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}');
                     const nextDel = JSON.parse(value || '{}');
@@ -605,9 +662,13 @@
                     const cleanDelObj = Object.fromEntries(entries);
                     value = JSON.stringify(cleanDelObj);
                     if (!simSandbox.active) {
-                        const curPins = JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]');
+                        const curPins = ramIndex.pinsRaw ? ramIndex.pinsList : JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]');
                         const surviving = curPins.filter(p => p?.id && (!cleanDelObj[p.id] || (new Date(p.updatedAt || 0).getTime() || 0) > (new Date(cleanDelObj[p.id]).getTime() || 0)));
-                        if (surviving.length !== curPins.length) { rawStorageSet('elec_labeled_places_list', JSON.stringify(surviving)); refreshRamPinsIndex(); }
+                        if (surviving.length !== curPins.length) {
+                            const sStr = JSON.stringify(surviving);
+                            rawStorageSet('elec_labeled_places_list', sStr);
+                            updateRamPinsFromList(surviving, sStr);
+                        }
                     }
                 } else if (key === 'elec_deleted_equip_audit_logs') {
                     value = JSON.stringify(trimAuditLogsForSheetQuota(JSON.parse(value || '[]')));
@@ -649,7 +710,6 @@
             } catch (e) {} finally { isInternalSanitizing = false; }
         }
 
-        const prevVal = LOCAL_WATCHED_KEYS.has(key) ? rawStorageGet(key) : null;
         rawStorageSet(key, value);
         if (key === 'elec_labeled_places_list') refreshRamPinsIndex();
         else if (key === 'elec_deleted_labeled_places_map') refreshRamDelPinsIndex();
@@ -662,8 +722,8 @@
 
     Storage.prototype.removeItem = function (key) {
         const res = nativeRemoveItem.apply(this, arguments);
-        if (key === 'elec_labeled_places_list') refreshRamPinsIndex();
-        else if (key === 'elec_deleted_labeled_places_map') refreshRamDelPinsIndex();
+        if (key === 'elec_labeled_places_list') { ramIndex.pinsRaw = null; refreshRamPinsIndex(); }
+        else if (key === 'elec_deleted_labeled_places_map') { ramIndex.delPinsRaw = null; refreshRamDelPinsIndex(); }
         return res;
     };
 
@@ -692,12 +752,25 @@
     }, true);
 
     function getStorageUsageStats() {
-        let totalBytes = 0;
+        let physBytes = 0, idbBytes = 0;
+        const idbStats = typeof window.PeaIdbStore?.getStats === 'function' ? window.PeaIdbStore.getStats() : null;
         for (let i = 0; i < localStorage.length; i++) {
-            const k = localStorage.key(i) || '', v = rawStorageGet(k) || '';
-            totalBytes += (k.length + v.length) * 2;
+            const k = localStorage.key(i) || '';
+            const isOffloaded = Boolean(idbStats?.[k]?.mode && String(idbStats[k].mode).includes('Offloaded'));
+            const v = rawStorageGet(k) || '';
+            if (isOffloaded) {
+                physBytes += (k.length + 22) * 2;
+                idbBytes += v.length * 2;
+            } else {
+                physBytes += (k.length + v.length) * 2;
+            }
         }
-        return { usedMb: (totalBytes / (1024 * 1024)).toFixed(2), maxMb: '5.00', pct: Math.min(100, Math.round((totalBytes / (5 * 1024 * 1024)) * 100)) };
+        return {
+            usedMb: (physBytes / (1024 * 1024)).toFixed(2),
+            idbMb: (idbBytes / (1024 * 1024)).toFixed(2),
+            maxMb: '5.00',
+            pct: Math.min(100, Math.round((physBytes / (5 * 1024 * 1024)) * 100))
+        };
     }
 
     function cleanTemporaryCacheSafe() {
@@ -709,9 +782,10 @@
             localStorage.setItem(k, JSON.stringify(arr));
         });
         syncClosedRegistryObject(closedReg);
-        showToast('🧹 ล้างแคชซ้ำซ้อนเรียบร้อย (ประวัติใบงานอยู่ครบ 100%)');
+        showToast('🧹 ล้างแคชซ้ำซ้อนเรียบร้อย (ประวัติใบงานและหมุดอยู่ครบ 100%)');
     }
-
+    // ===== จบพาทที่ 2 / 4 ของไฟล์ shared-core.js =====
+        // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 2 / 4) =====
     // ========================================================================
     // 4. ทะเบียนงานที่ปิด/ลบแล้ว, พิกัดช่าง & ซิงค์แผนงาน PM แบบรักษา Priority
     // ========================================================================
@@ -817,17 +891,21 @@
                 localMap[uKey] = { ...(lItem || {}), ...cItem, pmPlansMap: Object.fromEntries([...recentTrans, ...restEntries].slice(0, 60)), lastSeenAt: bestIso, updatedAt: bestIso };
                 return;
             }
-            if (gpsDisabledLocal && curUser && !isSystemLocRegistryKey(uKey, cItem) && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) return;
+                        if (gpsDisabledLocal && curUser && !isSystemLocRegistryKey(uKey, cItem) && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) return;
             const lItem = localMap[uKey];
-            const cTime = new Date(cItem.lastSeenAt || cItem.updatedAt || 0).getTime() || 0, lTime = new Date(lItem?.lastSeenAt || lItem?.updatedAt || 0).getTime() || 0;
+            const cTime = Math.max(new Date(cItem.lastSeenAt || 0).getTime() || 0, new Date(cItem.updatedAt || 0).getTime() || 0);
+            const lTime = Math.max(new Date(lItem?.lastSeenAt || 0).getTime() || 0, new Date(lItem?.updatedAt || 0).getTime() || 0);
+            const getEqNavMs = (nav) => !nav ? 0 : Math.max(Number(nav.departTimestamp || 0) || 0, new Date(nav.updatedAt || 0).getTime() || 0, Number(nav.cancelledAtMs || 0) || 0);
+            const exNavT = getEqNavMs(lItem?.activeEquipNav),
+                inNavT = getEqNavMs(cItem?.activeEquipNav);
             if (!lItem || cTime >= lTime) {
-                const exNavT = Number(lItem?.activeEquipNav?.departTimestamp || 0), inNavT = Number(cItem?.activeEquipNav?.departTimestamp || 0);
                 localMap[uKey] = (exNavT > inNavT && lItem?.activeEquipNav) ? { ...cItem, activeEquipNav: lItem.activeEquipNav } : cItem;
+            } else if (inNavT > exNavT && cItem?.activeEquipNav) {
+                localMap[uKey] = { ...lItem, activeEquipNav: cItem.activeEquipNav, updatedAt: cItem.updatedAt || lItem.updatedAt };
             }
-        });
-        localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
-    }
-
+            });
+            localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
+            }
     function cleanReopenedAndCancelledJobsInStorage() {
         try {
             const closedReg = getClosedJobsRegistry(), cancelJobMap = JSON.parse(rawStorageGet('elec_cancelled_job_nav_map') || '{}');
@@ -852,10 +930,9 @@
             if (regChanged) syncClosedRegistryObject(closedReg);
         } catch (e) {}
     }
-    // ===== จบพาทที่ 2 / 4 ของไฟล์ shared-core.js =====
-        // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 2 / 4) =====
+
     // ========================================================================
-    // 5. ท่อซิงค์เรียลไทม์ (MQTT Failover + Multi-Shard Admin + RAM Sync) & แยกแคชรายกลุ่ม
+    // 5. ท่อซิงค์เรียลไทม์ (MQTT Pin-Level Delta ปลอดลูปสะท้อนกลับ) & ปกป้องผัง Cloud
     // ========================================================================
     const WS_BROKERS = [
         'wss://broker.emqx.io:8084/mqtt',
@@ -874,18 +951,31 @@
     const pendingRefreshKeys = new Set();
 
     const syncedJobHashes = new Map();
+    let lastCloudTechLocSnapshot = null;
+    let hasLocalEquipMutation = false;
     let lastBackupsHash = '';
     let lastPinsHash = '';
     let lastDelPinsHash = '';
     let lastAuditLogsHash = '';
+    let lastSyncedLocalPinsStr = null;
+    let lastSyncedLocalDelPinsStr = null;
+    let lastSyncedLocalAuditStr = null;
+    let lastSyncedLocalBackupsStr = null;
     let hasFirstBaseline = false;
     let pendingPostTask = null;
     let pendingPostWaiters = [];
     let isPostWorkerRunning = false;
 
+    function snapshotCleanLocalEquipStrings() {
+        if (rawStorageGet('elec_tech_has_pending_push') === 'true' || simSandbox.active) return;
+        lastSyncedLocalPinsStr = rawStorageGet('elec_labeled_places_list') || '[]';
+        lastSyncedLocalDelPinsStr = rawStorageGet('elec_deleted_labeled_places_map') || '{}';
+        lastSyncedLocalAuditStr = rawStorageGet('elec_deleted_equip_audit_logs') || '[]';
+        lastSyncedLocalBackupsStr = rawStorageGet('elec_cloud_group_backups_map') || '{}';
+    }
+
     function hashString(str) {
-        let h = 0;
-        const s = String(str || 'default');
+        let h = 0; const s = String(str || 'default');
         for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
         return Math.abs(h);
     }
@@ -899,8 +989,7 @@
         let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
         for (let i = 0; i < str.length; i++) {
             const ch = str.charCodeAt(i);
-            h1 = Math.imul(h1 ^ ch, 2654435761);
-            h2 = Math.imul(h2 ^ ch, 1597334677);
+            h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
         }
         h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
         h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
@@ -909,9 +998,7 @@
 
     function xorCipherTransform(text, keyStr) {
         let out = '';
-        for (let i = 0; i < text.length; i++) {
-            out += String.fromCharCode(text.charCodeAt(i) ^ keyStr.charCodeAt(i % keyStr.length) ^ ((i * 31) & 0xff));
-        }
+        for (let i = 0; i < text.length; i++) out += String.fromCharCode(text.charCodeAt(i) ^ keyStr.charCodeAt(i % keyStr.length) ^ ((i * 31) & 0xff));
         return out;
     }
 
@@ -929,16 +1016,13 @@
 
     function ensureMySessionTokenSyncedInUsers(usersArr) {
         if (!Array.isArray(usersArr) || rawStorageGet('elec_app_logged_in') !== 'true') return usersArr;
-        const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
-        if (!curUser) return usersArr;
+        const curUser = (rawStorageGet('elec_app_current_user') || '').trim(); if (!curUser) return usersArr;
         let localToken = rawStorageGet('elec_app_session_token') || '';
         if (!localToken) { localToken = 'sess_' + Date.now(); rawStorageSet('elec_app_session_token', localToken); }
         usersArr.forEach(u => {
             if (!u?.username || !isUsernameMatchingAccount(curUser, u.username)) return;
             u.sessionToken = localToken;
-            if (typeof u.role === 'string' && u.role.includes('::')) {
-                const parts = u.role.split('::'); parts[1] = localToken; u.role = parts.join('::');
-            }
+            if (typeof u.role === 'string' && u.role.includes('::')) { const parts = u.role.split('::'); parts[1] = localToken; u.role = parts.join('::'); }
         });
         return usersArr;
     }
@@ -950,7 +1034,7 @@
             uiRefreshRaf = null;
             const keys = Array.from(pendingRefreshKeys);
             pendingRefreshKeys.clear();
-            if (keys.includes('elec_labeled_places_list')) refreshRamPinsIndex();
+            if (keys.includes('elec_labeled_places_list')) { refreshRamPinsIndex(); seedMqttPinBaseline(ramIndex.pinsList); }
             if (keys.includes('elec_deleted_labeled_places_map')) refreshRamDelPinsIndex();
             if (keys.includes('elec_user_accounts')) cachedAccountsStr = '';
             realtimeSubscribers.forEach(fn => { try { fn(keys); } catch (e) {} });
@@ -958,6 +1042,72 @@
                 try { window.dispatchEvent(new StorageEvent('storage', { key: k, newValue: rawStorageGet(k) })); } catch (e) {}
             });
         });
+    }
+
+    function isPinIncomingStrictlyNewer(inPin, exPin) {
+        if (!exPin) return true;
+        const inMs = new Date(inPin.updatedAt || 0).getTime() || 0;
+        const exMs = new Date(exPin.updatedAt || 0).getTime() || 0;
+        if (inMs > exMs) return true;
+        if (inMs === exMs && JSON.stringify(inPin) !== JSON.stringify(exPin)) return true;
+        return false;
+    }
+
+    function applyIncomingPinDeltaPacket(deltaJsonStr) {
+        if (!deltaJsonStr || simSandbox.active) return;
+        isApplyingRemotePacket = true;
+        try {
+            const d = JSON.parse(deltaJsonStr);
+            const isAdmin = (rawStorageGet('elec_app_current_role') || 'user') === 'admin';
+            const myGrp = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+            refreshRamDelPinsIndex();
+            const curDel = { ...(ramIndex.delPinsObj || {}) };
+            let delChanged = false;
+
+            if (d?.deletedMap && typeof d.deletedMap === 'object') {
+                Object.entries(d.deletedMap).forEach(([pid, iso]) => {
+                    if (!pid || !iso) return;
+                    if (!curDel[pid] || String(iso) > String(curDel[pid])) { curDel[pid] = iso; delChanged = true; }
+                });
+            }
+            if (delChanged) localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(curDel));
+
+            const curPins = ramIndex.pinsRaw ? ramIndex.pinsList : JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]');
+            const pinMap = new Map();
+            curPins.forEach(p => {
+                if (!p?.id) return;
+                const pMs = new Date(p.updatedAt || 0).getTime() || 0;
+                if (curDel[p.id] && pMs <= (new Date(curDel[p.id]).getTime() || 0)) return;
+                pinMap.set(p.id, p);
+            });
+
+            let pinsChanged = pinMap.size !== curPins.length;
+            if (Array.isArray(d?.upserted)) {
+                d.upserted.forEach(p => {
+                    if (!p?.id) return;
+                    const pGrp = normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง';
+                    if (!isAdmin && pGrp !== myGrp) return;
+                    const pMs = new Date(p.updatedAt || 0).getTime() || 0;
+                    if (curDel[p.id] && pMs <= (new Date(curDel[p.id]).getTime() || 0)) return;
+                    if (isPinIncomingStrictlyNewer(p, pinMap.get(p.id))) {
+                        pinMap.set(p.id, p);
+                        pinsChanged = true;
+                    }
+                });
+            }
+
+            if (pinsChanged) {
+                localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
+                seedMqttPinBaseline(ramIndex.pinsList);
+                snapshotCleanLocalEquipStrings();
+                invalidateSheetCaches();
+                scheduleRealtimeRefresh('elec_labeled_places_list');
+            } else if (delChanged) {
+                snapshotCleanLocalEquipStrings();
+                invalidateSheetCaches();
+                scheduleRealtimeRefresh('elec_deleted_labeled_places_map');
+            }
+        } catch (e) {} finally { isApplyingRemotePacket = false; }
     }
 
     function applyIncomingLivePacket(key, incomingValStr) {
@@ -977,9 +1127,7 @@
                 let closedChanged = false;
                 const map = new Map();
 
-                JSON.parse(curStr || '[]').forEach(it => {
-                    if (it?.[kField] && !delReg[it[kField]] && canCurrentUserSeeJob(it)) map.set(it[kField], it);
-                });
+                JSON.parse(curStr || '[]').forEach(it => { if (it?.[kField] && !delReg[it[kField]] && canCurrentUserSeeJob(it)) map.set(it[kField], it); });
                 JSON.parse(incomingValStr || '[]').forEach(inItem => {
                     if (!inItem?.[kField] || delReg[inItem[kField]]) return;
                     if (inItem.techReport && isAutoGeneratedFakeClosure(inItem.techReport)) delete inItem.techReport;
@@ -1011,26 +1159,38 @@
                 if (closedChanged) { syncClosedRegistryObject(closedReg); scheduleRealtimeRefresh('elec_closed_jobs_registry'); }
             } else if (key === 'elec_deleted_labeled_places_map') {
                 localStorage.setItem(key, JSON.stringify({ ...JSON.parse(curStr || '{}'), ...JSON.parse(incomingValStr || '{}') }));
+                snapshotCleanLocalEquipStrings();
                 scheduleRealtimeRefresh('elec_labeled_places_list');
             } else if (key === 'elec_labeled_places_list') {
                 const delEquip = JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}');
+                const curArr = JSON.parse(curStr || '[]');
                 const pinMap = new Map();
-                [...JSON.parse(curStr || '[]'), ...JSON.parse(incomingValStr || '[]')].forEach(p => {
+                curArr.forEach(p => {
+                    if (!p?.id) return;
+                    const pMs = new Date(p.updatedAt || 0).getTime() || 0;
+                    if (delEquip[p.id] && pMs <= (new Date(delEquip[p.id]).getTime() || 0)) return;
+                    pinMap.set(p.id, p);
+                });
+                let changed = pinMap.size !== curArr.length;
+                JSON.parse(incomingValStr || '[]').forEach(p => {
                     if (!p?.id) return;
                     const pGrp = normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง';
                     if (!isAdmin && pGrp !== myGrp) return;
                     const pMs = new Date(p.updatedAt || 0).getTime() || 0;
                     if (delEquip[p.id] && pMs <= (new Date(delEquip[p.id]).getTime() || 0)) return;
-                    const ex = pinMap.get(p.id);
-                    if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) pinMap.set(p.id, p);
+                    if (isPinIncomingStrictlyNewer(p, pinMap.get(p.id))) { pinMap.set(p.id, p); changed = true; }
                 });
+                if (!changed) return;
                 localStorage.setItem(key, JSON.stringify(Array.from(pinMap.values())));
+                seedMqttPinBaseline(ramIndex.pinsList);
+                snapshotCleanLocalEquipStrings();
             } else if (key === 'elec_deleted_equip_audit_logs') {
                 const logMap = new Map();
                 [...JSON.parse(curStr || '[]'), ...JSON.parse(incomingValStr || '[]')].forEach(l => {
                     if (l?.logId && (isAdmin || normalizePeaGroupName(l.ownerGroup || 'กฟส.บึง') === myGrp)) logMap.set(l.logId, l);
                 });
                 localStorage.setItem(key, JSON.stringify(Array.from(logMap.values())));
+                snapshotCleanLocalEquipStrings();
             } else if (key === 'elec_tech_locations_map') {
                 mergeTechLocationsMap(JSON.parse(incomingValStr || '{}'));
             } else if (key === 'elec_user_accounts') {
@@ -1050,712 +1210,696 @@
             }
         } catch (e) {} finally { isApplyingRemotePacket = false; }
     }
+    // ===== จบพาทที่ 3 / 4 ของไฟล์ shared-core.js =====
+    // ===== เริ่มพาทที่ 4 / 5 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 3) =====
+    // ========================================================================
+    // 6. Write Gate, Sandbox, Same-Device Bus & MQTT Pin-Delta Engine
+    // ========================================================================
+    let localBroadcastCh = null;
+    try { if ('BroadcastChannel' in window) localBroadcastCh = new BroadcastChannel(CHANNEL_NAME); } catch (e) {}
 
-    function getMqttTopicBase() { return 'pea_hyper_v4_' + hashString(getActiveCloudApiUrl()); }
-    function getMyGroupShard() { return encodeURIComponent(normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'DEFAULT'); }
-
-    function refreshMqttSubscriptions() {
-        if (!mqttClient || !mqttClient.connected) return;
-        const isLogged = rawStorageGet('elec_app_logged_in') === 'true';
-        const role = isLogged ? (rawStorageGet('elec_app_current_role') || 'user') : 'guest';
-        const shard = getMyGroupShard(), base = getMqttTopicBase(), sig = `${role}::${shard}::${base}`;
-        if (sig === lastMqttAuthSig) return;
-        lastMqttAuthSig = sig;
-
-        const desired = new Set();
-        if (isLogged) {
-            desired.add(`${base}/global/+`);
-            desired.add(role === 'admin' ? `${base}/grp/+/+` : `${base}/grp/${shard}/+`);
-        }
-        const toUnsub = Array.from(activeSubscribedTopics).filter(t => !desired.has(t));
-        const toSub = Array.from(desired).filter(t => !activeSubscribedTopics.has(t));
-        try {
-            if (toUnsub.length > 0) mqttClient.unsubscribe(toUnsub, () => toUnsub.forEach(t => activeSubscribedTopics.delete(t)));
-            if (toSub.length > 0) mqttClient.subscribe(toSub, { qos: 0 }, (err) => { if (!err) toSub.forEach(t => activeSubscribedTopics.add(t)); });
-        } catch (e) {}
+    function unlockCloudWrite(durationMs = 20000) {
+        allowWriteUntilMs = Math.max(allowWriteUntilMs, Date.now() + (Number(durationMs) || 20000));
     }
 
-    function triggerMqttBrokerFailover() {
-        if (mqttFailoverTimer) return;
-        brokerFallbackIdx++;
-        consecutiveMqttErrors = 0;
-        mqttFailoverTimer = setTimeout(() => { mqttFailoverTimer = null; initMqttTransport(); }, 1800);
-    }
-
-    function initMqttTransport() {
-        if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') {
-            if (!document.getElementById('peaMqttCdnLoader')) {
-                const s = document.createElement('script');
-                s.id = 'peaMqttCdnLoader'; s.src = 'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js';
-                s.onload = () => initMqttTransport(); document.head.appendChild(s);
-            }
-            return;
-        }
-        if (mqttClient) { try { mqttClient.removeAllListeners(); mqttClient.end(true); } catch (e) {} mqttClient = null; }
-        activeSubscribedTopics.clear(); lastMqttAuthSig = '';
-        const brokerUrl = WS_BROKERS[(hashString(getMyGroupShard()) + brokerFallbackIdx) % WS_BROKERS.length];
-        const opts = { clientId: MY_PEER_ID + '_' + (brokerFallbackIdx % 99), clean: true, connectTimeout: 5000, reconnectPeriod: 3500 };
-        const mUser = rawStorageGet('elec_mqtt_username'), mPass = rawStorageGet('elec_mqtt_password');
-        if (mUser && mPass) { opts.username = mUser; opts.password = mPass; }
-
-        try {
-            mqttClient = mqtt.connect(brokerUrl, opts);
-            mqttClient.on('connect', () => { consecutiveMqttErrors = 0; lastMqttAuthSig = ''; refreshMqttSubscriptions(); });
-            mqttClient.on('error', () => { if (++consecutiveMqttErrors >= 2) triggerMqttBrokerFailover(); });
-            mqttClient.on('close', () => { if (!navigator.onLine) return; if (++consecutiveMqttErrors >= 3) triggerMqttBrokerFailover(); });
-            mqttClient.on('message', (topic, buf) => {
-                try {
-                    const pkt = JSON.parse((buf && typeof buf.toString === 'function') ? buf.toString() : String(buf || ''));
-                    if (!pkt || pkt.sender === MY_PEER_ID || pkt.type !== 'DELTA_KEY') return;
-                    if (!pkt.ts || Math.abs(Date.now() - Number(pkt.ts)) > 3600000) return;
-                    const decVal = decryptMqttPayload(pkt.val, pkt.ts);
-                    if (!decVal || pkt.sig !== computePacketSignature(decVal, pkt.ts, getOrgSecretKey())) return;
-                    applyIncomingLivePacket(pkt.key, decVal);
-                } catch (e) {}
-            });
-        } catch (e) {}
-    }
-    setInterval(() => { if (mqttClient && mqttClient.connected) refreshMqttSubscriptions(); }, 6000);
-
-    function publishSingleShardDelta(shardEnc, key, payloadStr) {
-        const maxLen = (key === 'elec_labeled_places_list' || key === 'elec_tech_locations_map') ? 240000 : 95000;
-        if (!payloadStr || payloadStr.length >= maxLen) return;
-        const ts = Date.now(), sig = computePacketSignature(payloadStr, ts, getOrgSecretKey());
-        mqttClient.publish(`${getMqttTopicBase()}/grp/${shardEnc}/${key}`, JSON.stringify({ type: 'DELTA_KEY', sender: MY_PEER_ID, key, val: encryptMqttPayload(payloadStr, ts), ts, sig }), { qos: 0, retain: false });
-    }
-
-    function broadcastDeltaOverMqtt(key, valStr) {
-        if (!SYNC_KEYS.has(key) || simSandbox.active) return;
-        clearTimeout(debounceMqttTimers[key]);
-        debounceMqttTimers[key] = setTimeout(() => {
-            try {
-                if (!mqttClient || !mqttClient.connected) return;
-                const isAdmin = (rawStorageGet('elec_app_current_role') || 'user') === 'admin';
-                const defaultShard = getMyGroupShard(), myGrp = normalizePeaGroupName(decodeURIComponent(defaultShard)) || 'กฟส.บึง';
-
-                if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                    const arr = JSON.parse(valStr || '[]');
-                    const groups = isAdmin ? Array.from(new Set(arr.map(i => normalizePeaGroupName(getJobGroupName(i))).filter(Boolean))) : [myGrp];
-                    groups.forEach(g => publishSingleShardDelta(encodeURIComponent(g), key, JSON.stringify(arr.filter(i => normalizePeaGroupName(getJobGroupName(i)) === g).slice(0, 35))));
-                } else if (key === 'elec_labeled_places_list') {
-                    const arr = JSON.parse(valStr || '[]');
-                    const groups = isAdmin ? Array.from(new Set(arr.map(p => normalizePeaGroupName(p?.ownerGroup || 'กฟส.บึง')).filter(Boolean))) : [myGrp];
-                    groups.forEach(g => publishSingleShardDelta(encodeURIComponent(g), key, JSON.stringify(arr.filter(p => normalizePeaGroupName(p?.ownerGroup || 'กฟส.บึง') === g))));
-                } else if (key === 'elec_tech_locations_map') {
-                    const locObj = JSON.parse(valStr || '{}');
-                    const groups = isAdmin
-                        ? Array.from(new Set([myGrp, ...Object.keys(locObj).map(k => k.startsWith(PM_LOC_PREFIX) ? normalizePeaGroupName(k.slice(PM_LOC_PREFIX.length)) : normalizePeaGroupName(locObj[k]?.group || '')).filter(Boolean)]))
-                        : [myGrp];
-                    groups.forEach(g => {
-                        const sub = {};
-                        Object.entries(locObj).forEach(([k, v]) => {
-                            if (k === REGISTRY_LOC_KEY || k === PM_LOC_PREFIX + g || (!isSystemLocRegistryKey(k, v) && normalizePeaGroupName(v?.group || getUserGroupName(k) || g) === g)) sub[k] = v;
-                        });
-                        publishSingleShardDelta(encodeURIComponent(g), key, JSON.stringify(sub));
-                    });
-                } else {
-                    publishSingleShardDelta(defaultShard, key, valStr);
-                }
-            } catch (e) {}
-        }, 30);
-    }
-
-    let localChannel = null;
-    try { if ('BroadcastChannel' in window) { localChannel = new BroadcastChannel(CHANNEL_NAME); localChannel.onmessage = (e) => { if (e.data?.type === 'LOCAL_TURBO') scheduleRealtimeRefresh(e.data.key); }; } } catch (e) {}
-    window.addEventListener('message', (e) => { if (e.data?.type === 'LOCAL_TURBO') scheduleRealtimeRefresh(e.data.key); });
-
-    function broadcastSameDevice(key) {
-        const msg = { type: 'LOCAL_TURBO', key, ts: Date.now() };
-        try { if (localChannel) localChannel.postMessage(msg); } catch (e) {}
-        try {
-            if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*');
-            const leftIf = document.getElementById('leftBrowserIframe');
-            if (leftIf?.contentWindow) leftIf.contentWindow.postMessage(msg, '*');
-        } catch (e) {}
-    }
-
-    function getSheetCacheBucketKey(urlStr) {
-        const cleanBase = String(urlStr || '').split('?')[0], activeApi = getActiveCloudApiUrl().split('?')[0];
-        if (cleanBase === CLOUD_USER_API_URL.split('?')[0] && activeApi !== cleanBase) return `USERS_MASTER::${cleanBase}`;
-        const role = rawStorageGet('elec_app_current_role') || 'user';
-        const grp = role === 'admin' ? 'ADMIN_ALL' : (normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง');
-        return `SHEET::${grp}::${role}::${cleanBase}`;
-    }
-    function readSheetCacheBucket(bucketKey) {
-        const mem = sheetMemoryCacheMap.get(bucketKey);
-        if (mem?.text) return mem;
-        try {
-            const all = JSON.parse(rawStorageGet(SHEET_CACHE_STORAGE_KEY) || '{}');
-            if (all[bucketKey]?.text) { sheetMemoryCacheMap.set(bucketKey, all[bucketKey]); return all[bucketKey]; }
-        } catch (e) {}
-        return null;
-    }
-    function writeSheetCacheBucket(bucketKey, text) {
-        const entry = { ts: Date.now(), text };
-        sheetMemoryCacheMap.set(bucketKey, entry);
-        try {
-            const all = JSON.parse(rawStorageGet(SHEET_CACHE_STORAGE_KEY) || '{}');
-            all[bucketKey] = entry;
-            rawStorageSet(SHEET_CACHE_STORAGE_KEY, JSON.stringify(Object.fromEntries(Object.entries(all).sort((a, b) => (b[1]?.ts || 0) - (a[1]?.ts || 0)).slice(0, 3))));
-        } catch (e) {}
-    }
     function invalidateSheetCaches() {
         sheetMemoryCacheMap.clear();
-        nativeRemoveItem.call(localStorage, 'elec_sheet_cache_2k');
-        nativeRemoveItem.call(localStorage, SHEET_CACHE_STORAGE_KEY);
+        try { nativeRemoveItem.call(localStorage, SHEET_CACHE_STORAGE_KEY); } catch (e) {}
     }
 
-    function unlockCloudWrite(durationMs = 20000) { if (!isViewerRole()) allowWriteUntilMs = Math.max(allowWriteUntilMs, Date.now() + durationMs); }
-    function forceCloudRead() { forceManualGet = true; invalidateSheetCaches(); }
+    function forceCloudRead() {
+        forceManualGet = true;
+        invalidateSheetCaches();
+    }
+
+    function onRealtimeChange(fn) {
+        if (typeof fn === 'function') realtimeSubscribers.add(fn);
+        return () => realtimeSubscribers.delete(fn);
+    }
+
+    function notifyStorageUpdated(keysArr) {
+        (Array.isArray(keysArr) ? keysArr : [keysArr]).forEach(k => {
+            if (k) scheduleRealtimeRefresh(k);
+        });
+    }
 
     function createTrailingAsyncQueue(asyncFn) {
-        let activePromise = null, hasTrailing = false, queuedSilent = true;
-        return async function (silent = false) {
-            if (!silent) queuedSilent = false;
-            if (activePromise) { hasTrailing = true; return await activePromise; }
-            activePromise = (async () => {
-                let res = false;
-                try {
-                    res = await asyncFn(silent);
-                    while (hasTrailing) { const nextS = queuedSilent; hasTrailing = false; queuedSilent = true; unlockCloudWrite(20000); res = await asyncFn(nextS); }
-                } finally { activePromise = null; }
-                return res;
-            })();
-            return await activePromise;
+        let running = false, queuedArgs = null, waiters = [];
+        const drain = async () => {
+            if (running || !queuedArgs) return;
+            running = true;
+            const args = queuedArgs, batch = waiters;
+            queuedArgs = null; waiters = [];
+            try {
+                const res = await asyncFn.apply(null, args);
+                batch.forEach(w => w.resolve(res));
+            } catch (err) {
+                batch.forEach(w => w.reject(err));
+            } finally {
+                running = false;
+                if (queuedArgs) drain();
+            }
+        };
+        return function (...args) {
+            return new Promise((resolve, reject) => {
+                queuedArgs = args;
+                waiters.push({ resolve, reject });
+                drain();
+            });
         };
     }
 
-    function getJobDiffKey(j) {
-        if (!j || typeof j !== 'object') return '';
-        if (j.jobType === 'tech_loc') return 'TECH_LOC_REGISTRY';
-        const isF = j.jobType === 'fault';
-        return (isF ? 'F_' : 'O_') + String(isF ? (j.timestamp || '') : (j.dateTimeSaved || j.timestamp || ''));
+    function enterSimSandbox(workingPins) {
+        simSandbox.active = true;
+        simSandbox.committing = false;
+        simSandbox.deferredCloudLocReg = null;
+        simSandbox.workingJson = JSON.stringify(Array.isArray(workingPins) ? workingPins : []);
+        refreshRamPinsIndex(workingPins);
     }
 
-    function recordCloudBaseline(jobsArr) {
-        if (!Array.isArray(jobsArr)) return;
-        const seen = new Set();
-        jobsArr.forEach(j => {
-            if (!j || typeof j !== 'object') return;
-            if (j.jobType === 'tech_loc') {
-                lastBackupsHash = JSON.stringify(j.cloudGroupBackups || {});
-                lastPinsHash = JSON.stringify(j.electricEquipmentPins || []);
-                lastDelPinsHash = JSON.stringify(j.deletedElectricEquipmentMap || {});
-                lastAuditLogsHash = JSON.stringify(j.deletedEquipAuditLogs || []);
-            } else {
-                const k = getJobDiffKey(j);
-                if (k) { seen.add(k); syncedJobHashes.set(k, JSON.stringify(j)); }
+    function exitSimSandbox(commitPinsOrNull = null) {
+        const deferred = simSandbox.deferredCloudLocReg;
+        simSandbox.deferredCloudLocReg = null;
+        if (Array.isArray(commitPinsOrNull)) {
+            simSandbox.committing = true;
+            simSandbox.active = false;
+            localStorage.setItem('elec_labeled_places_list', JSON.stringify(commitPinsOrNull));
+            simSandbox.committing = false;
+        } else {
+            simSandbox.active = false;
+            simSandbox.committing = false;
+            ramIndex.pinsRaw = null;
+            refreshRamPinsIndex();
+            if (deferred && typeof window.__mergeCloudEquipRegistry === 'function') {
+                window.__mergeCloudEquipRegistry(deferred);
             }
-        });
-        Array.from(syncedJobHashes.keys()).forEach(k => { if (!seen.has(k)) syncedJobHashes.delete(k); });
-        if (jobsArr.length > 0) hasFirstBaseline = true;
+        }
     }
 
-    function prepareJobsArrayForCloud(jobsArr) {
-        if (!Array.isArray(jobsArr)) return [];
-        cleanReopenedAndCancelledJobsInStorage();
-        const role = rawStorageGet('elec_app_current_role') || 'user';
-        const myGrp = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง');
-        const delJobs = getDeletedJobsRegistry();
-        const backups = JSON.parse(rawStorageGet('elec_cloud_group_backups_map') || '{}');
-        let localPins = JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]');
-        const localDelPins = JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}');
-        let auditLogs = trimAuditLogsForSheetQuota(JSON.parse(rawStorageGet('elec_deleted_equip_audit_logs') || '[]'));
-        const clearedTs = parseInt(rawStorageGet('elec_cleared_audit_logs_ts') || '0', 10);
-        const overrides = window.cloudEditedJobsOverrideMap || {};
-        const latestLocalLocs = getTechLocationsMap();
+    function broadcastSameDevice(key) {
+        const msg = { type: 'PEA_SAME_DEVICE_KV', sender: MY_PEER_ID, key, ts: Date.now() };
+        try { localBroadcastCh?.postMessage(msg); } catch (e) {}
+        try {
+            if (window.parent && window.parent !== window) window.parent.postMessage(msg, '*');
+            document.getElementById('leftBrowserIframe')?.contentWindow?.postMessage(msg, '*');
+        } catch (e) {}
+    }
 
-        if (role !== 'admin' && myGrp) {
-            localPins = localPins.filter(p => p && normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') === myGrp);
-            auditLogs = auditLogs.filter(l => l && normalizePeaGroupName(l.ownerGroup || 'กฟส.บึง') === myGrp);
+    function handleSameDeviceMsg(msg) {
+        if (!msg || msg.type !== 'PEA_SAME_DEVICE_KV' || msg.sender === MY_PEER_ID || !msg.key) return;
+        scheduleRealtimeRefresh(msg.key);
+    }
+    if (localBroadcastCh) localBroadcastCh.onmessage = (e) => handleSameDeviceMsg(e.data);
+    window.addEventListener('message', (e) => handleSameDeviceMsg(e.data));
+
+    function getMqttTopicPair() {
+        const orgHash = hashString(getOrgSecretKey());
+        const grp = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        return {
+            globalTopic: `pea_sg_v6/${orgHash}/ALL`,
+            groupTopic: `pea_sg_v6/${orgHash}/G_${hashString(grp)}`
+        };
+    }
+
+    function connectMqttLiveBus(forceResubscribe = false) {
+        if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') return;
+        const topics = getMqttTopicPair();
+        const authSig = `${brokerFallbackIdx}::${topics.globalTopic}::${topics.groupTopic}`;
+        if (mqttClient && lastMqttAuthSig === authSig && !forceResubscribe) return;
+        lastMqttAuthSig = authSig;
+
+        if (mqttClient) {
+            try { activeSubscribedTopics.forEach(t => mqttClient.unsubscribe(t)); mqttClient.end(true); } catch (e) {}
+            mqttClient = null;
+            activeSubscribedTopics.clear();
         }
 
-        const list = [...jobsArr];
-        if (!list.some(j => j && j.jobType === 'tech_loc')) {
-            list.push({ id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: latestLocalLocs, updatedAt: new Date().toISOString() });
-        }
+        const brokerUrl = WS_BROKERS[brokerFallbackIdx % WS_BROKERS.length];
+        try {
+            mqttClient = mqtt.connect(brokerUrl, {
+                clientId: `${MY_PEER_ID}_${Math.random().toString(36).slice(2, 6)}`,
+                clean: true, connectTimeout: 6000, reconnectPeriod: 4000
+            });
+            mqttClient.on('connect', () => {
+                consecutiveMqttErrors = 0;
+                [topics.globalTopic, topics.groupTopic].forEach(tp => {
+                    mqttClient.subscribe(tp, { qos: 0 }, (err) => { if (!err) activeSubscribedTopics.add(tp); });
+                });
+            });
+            mqttClient.on('message', (_topic, payloadBuf) => {
+                try {
+                    const pkt = JSON.parse(payloadBuf.toString());
+                    if (!pkt || pkt.p === MY_PEER_ID || !pkt.d || !pkt.t) return;
+                    if (computePacketSignature(pkt.d, pkt.t, getOrgSecretKey()) !== pkt.s) return;
+                    const plain = decryptMqttPayload(pkt.d, pkt.t);
+                    if (plain === null) return;
+                    if (pkt.k === '__PIN_DELTA__') applyIncomingPinDeltaPacket(plain);
+                    else if (LOCAL_WATCHED_KEYS.has(pkt.k)) applyIncomingLivePacket(pkt.k, plain);
+                } catch (e) {}
+            });
+            mqttClient.on('error', () => {
+                consecutiveMqttErrors++;
+                if (consecutiveMqttErrors >= 3 && !mqttFailoverTimer) {
+                    mqttFailoverTimer = setTimeout(() => {
+                        mqttFailoverTimer = null;
+                        brokerFallbackIdx = (brokerFallbackIdx + 1) % WS_BROKERS.length;
+                        connectMqttLiveBus(true);
+                    }, 2500);
+                }
+            });
+        } catch (e) {}
+    }
 
-        return list.filter(j => {
-            if (!j) return false;
-            if (j.jobType === 'tech_loc') return true;
-            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
-            return !(rk && delJobs[rk]);
-        }).map(j => {
-            if (j.jobType === 'tech_loc') {
-                const mergedLocMap = pruneTechLocationsForSheetQuota({ ...(j.techLocations || {}), ...latestLocalLocs });
-                const mergedDelPins = { ...(j.deletedElectricEquipmentMap || {}), ...localDelPins };
-                const prevCloudPins = Array.isArray(j.electricEquipmentPins) ? j.electricEquipmentPins : [];
-                const pinMap = new Map();
-                [...prevCloudPins, ...localPins].forEach(p => {
+    function broadcastDeltaOverMqtt(key, value) {
+        if (key === 'elec_labeled_places_list' || key === 'elec_deleted_labeled_places_map' || key === 'elec_deleted_equip_audit_logs') {
+            hasLocalEquipMutation = true;
+            unlockCloudWrite(25000);
+        }
+        if (!SYNC_KEYS.has(key) || simSandbox.active || isViewerRole()) return;
+        clearTimeout(debounceMqttTimers[key]);
+        debounceMqttTimers[key] = setTimeout(() => {
+            if (!mqttClient || !mqttClient.connected || simSandbox.active) return;
+            const ts = Date.now(), topics = getMqttTopicPair();
+            const targetTopic = key === 'elec_user_accounts' ? topics.globalTopic : topics.groupTopic;
+
+            if (key === 'elec_labeled_places_list' || key === 'elec_deleted_labeled_places_map') {
+                refreshRamPinsIndex(); refreshRamDelPinsIndex();
+                const upserted = [], deletedMap = {};
+                ramIndex.pinsList.forEach(p => {
                     if (!p?.id) return;
-                    const pMs = new Date(p.updatedAt || 0).getTime() || 0;
-                    if (mergedDelPins[p.id]) {
-                        if (pMs > (new Date(mergedDelPins[p.id]).getTime() || 0)) delete mergedDelPins[p.id];
-                        else return;
+                    const sig = JSON.stringify(p);
+                    if (mqttSentPinMetaMap.get(p.id)?.sig !== sig) {
+                        upserted.push(p);
+                        mqttSentPinMetaMap.set(p.id, { sig, grp: normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง' });
                     }
-                    const ex = pinMap.get(p.id);
-                    if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) pinMap.set(p.id, p);
                 });
-                const effClearedTs = Math.max(clearedTs, Number(j.clearedAuditLogsTimestamp || 0));
-                const restoredIds = new Set(JSON.parse(rawStorageGet('elec_restored_audit_log_ids') || '[]'));
-                const auditMap = new Map();
-                [...(Array.isArray(j.deletedEquipAuditLogs) ? j.deletedEquipAuditLogs : []), ...auditLogs].forEach(l => {
-                    if (!l?.logId || restoredIds.has(l.logId)) return;
-                    if (effClearedTs > 0 && (new Date(l.deletedAt || 0).getTime() || 0) <= effClearedTs) return;
-                    auditMap.set(l.logId, l);
+                Object.entries(ramIndex.delPinsObj || {}).forEach(([pid, iso]) => {
+                    if (mqttSentPinMetaMap.has(pid) || key === 'elec_deleted_labeled_places_map') {
+                        deletedMap[pid] = iso;
+                        mqttSentPinMetaMap.delete(pid);
+                    }
                 });
-                const mergedAuditLogs = trimAuditLogsForSheetQuota(Array.from(auditMap.values()).sort((a, b) => (new Date(b.deletedAt || 0).getTime() || 0) - (new Date(a.deletedAt || 0).getTime() || 0)));
-                const cleanLoc = { ...j }; delete cleanLoc.closedReports;
-                return {
-                    ...cleanLoc, dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: mergedLocMap,
-                    closedJobsMap: getClosedJobsRegistry(), deletedJobsMap: delJobs,
-                    electricEquipmentPins: Array.from(pinMap.values()), deletedElectricEquipmentMap: mergedDelPins,
-                    deletedEquipAuditLogs: mergedAuditLogs, clearedAuditLogsTimestamp: effClearedTs,
-                    ...(Object.keys(backups).length > 0 ? { cloudGroupBackups: backups } : {})
-                };
+                if (!upserted.length && !Object.keys(deletedMap).length) return;
+                const deltaStr = JSON.stringify({ upserted, deletedMap });
+                if (deltaStr.length > 130000) return;
+                const enc = encryptMqttPayload(deltaStr, ts);
+                mqttClient.publish(targetTopic, JSON.stringify({ p: MY_PEER_ID, t: ts, k: '__PIN_DELTA__', d: enc, s: computePacketSignature(enc, ts, getOrgSecretKey()) }));
+                return;
             }
-            const uKey = getJobDiffKey(j);
-            const normGrp = normalizePeaGroupName(getJobGroupName(j) || myGrp || 'กฟส.บึง') || 'กฟส.บึง';
-            return overrides[uKey] ? { ...j, ...overrides[uKey], ownerGroup: normGrp } : { ...j, ownerGroup: normGrp };
+            const curVal = value ?? rawStorageGet(key) ?? '';
+            if (!curVal || curVal.length > 130000) return;
+            const enc = encryptMqttPayload(curVal, ts);
+            mqttClient.publish(targetTopic, JSON.stringify({ p: MY_PEER_ID, t: ts, k: key, d: enc, s: computePacketSignature(enc, ts, getOrgSecretKey()) }));
+        }, 180);
+    }
+
+    // ========================================================================
+    // 7. Smart Fetch Interceptor — ตัวสร้าง patchDelta และคิวส่งข้อมูลขึ้นชีต
+    // ========================================================================
+    let activeSyncScopeSig = '';
+    const syncedDeletedJobKeys = new Map();
+
+    function canonicalizeForJobHash(val) {
+        if (val === null || typeof val !== 'object') return val;
+        if (Array.isArray(val)) return val.map(canonicalizeForJobHash);
+        const sorted = {};
+        Object.keys(val).sort().forEach(k => {
+            if (k === 'pendingInitialUpload' || k === 'restoredAtMs' || k === 'needsMainSync' || k === 'recommendedTech') return;
+            const v = val[k];
+            if (v === undefined || v === '') return;
+            sorted[k] = canonicalizeForJobHash(v);
         });
-    }
-    // ===== จบพาทที่ 3 / 4 ของไฟล์ shared-core.js =====
-        // ===== เริ่มพาทที่ 4 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 3 / 4 จนจบไฟล์) =====
-    function sanitizeDirectPatchDeltaPayload(deltaObj) {
-        const out = { ...deltaObj, action: 'patchDelta', ramOnly: Boolean(deltaObj.ramOnly) };
-        if (!Array.isArray(out.upsertedJobs)) out.upsertedJobs = [];
-        if (!Array.isArray(out.removedJobKeys)) out.removedJobKeys = [];
-        if (out.techLocDelta && typeof out.techLocDelta === 'object') {
-            const td = { ...out.techLocDelta };
-            td.jobType = 'tech_loc';
-            td.dateTimeSaved = 'TECH_LOC_REGISTRY';
-            td.techLocations = pruneTechLocationsForSheetQuota({ ...getTechLocationsMap(), ...(td.techLocations || {}) });
-            if (!td.closedJobsMap) td.closedJobsMap = getClosedJobsRegistry();
-            if (!td.deletedJobsMap) td.deletedJobsMap = getDeletedJobsRegistry();
-            if (td._keepBackups === undefined) td._keepBackups = td.cloudGroupBackups === undefined;
-            if (td._keepPins === undefined) td._keepPins = td.electricEquipmentPins === undefined;
-            if (td._keepDelPins === undefined) td._keepDelPins = td.deletedElectricEquipmentMap === undefined;
-            if (td._keepAuditLogs === undefined) td._keepAuditLogs = td.deletedEquipAuditLogs === undefined;
-            td.updatedAt = td.updatedAt || new Date().toISOString();
-            out.techLocDelta = td;
-        }
-        return out;
+        return sorted;
     }
 
-    function buildFullSavePayloadFromLocalStorage() {
-        const outages = JSON.parse(rawStorageGet('elecReportsComplete_all') || '[]').map(o => ({ ...o, jobType: 'outage' }));
-        const faults = JSON.parse(rawStorageGet('fault_reports_all') || '[]').map(f => ({ ...f, jobType: 'fault' }));
-        const locReg = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: getTechLocationsMap(), updatedAt: new Date().toISOString() };
-        simSandbox.bypassRead = true;
-        try { return { action: 'saveJobs', jobs: prepareJobsArrayForCloud([...outages, ...faults, locReg]) }; }
-        finally { simSandbox.bypassRead = false; }
+    function computeCanonicalJobHash(job) {
+        if (!job || typeof job !== 'object') return 0;
+        const norm = { ...job, ownerGroup: normalizePeaGroupName(getJobGroupName(job) || 'กฟส.บึง') || 'กฟส.บึง' };
+        if (!norm.jobType) norm.jobType = (norm.circuit || norm.system) && !norm.jobNo ? 'fault' : 'outage';
+        return hashString(JSON.stringify(canonicalizeForJobHash(norm)));
     }
 
-    function buildDeltaFromSaveJobs(fullJobs) {
-        if (!hasFirstBaseline || !Array.isArray(fullJobs)) return null;
-        const upsertedJobs = [], currentKeys = new Set(); let techLoc = null;
-        fullJobs.forEach(j => {
-            if (!j || typeof j !== 'object') return;
-            if (j.jobType === 'tech_loc') { techLoc = j; return; }
-            const k = getJobDiffKey(j); if (!k) return;
-            currentKeys.add(k);
-            if (syncedJobHashes.get(k) !== JSON.stringify(j)) upsertedJobs.push(j);
+    function ensureSyncScopeFresh() {
+        const logged = rawStorageGet('elec_app_logged_in') === 'true';
+        const sig = logged ? `${rawStorageGet('elec_app_current_user') || ''}::${rawStorageGet('elec_app_current_role') || ''}::${getCurrentUserGroup()}` : '__LOGGED_OUT__';
+        if (sig === activeSyncScopeSig) return;
+        activeSyncScopeSig = sig;
+        syncedJobHashes.clear();
+        syncedDeletedJobKeys.clear();
+        lastCloudTechLocSnapshot = null;
+        hasFirstBaseline = false;
+        lastPinsHash = ''; lastDelPinsHash = ''; lastAuditLogsHash = ''; lastBackupsHash = '';
+        lastSyncedLocalPinsStr = null; lastSyncedLocalDelPinsStr = null; lastSyncedLocalAuditStr = null; lastSyncedLocalBackupsStr = null;
+    }
+
+    function buildScopedSheetUrl(rawUrl) {
+        ensureSyncScopeFresh();
+        const u = String(rawUrl || '');
+        const role = (rawStorageGet('elec_app_current_role') || 'user').trim();
+        const grp = getCurrentUserGroup();
+        const sep = u.includes('?') ? '&' : '?';
+        const extras = [];
+        if (!/[?&]group=/.test(u)) extras.push(`group=${encodeURIComponent(grp)}`);
+        if (!/[?&]role=/.test(u)) extras.push(`role=${encodeURIComponent(role)}`);
+        return extras.length ? `${u}${sep}${extras.join('&')}` : u;
+    }
+
+    function buildPatchDeltaFromSaveJobs(bodyObj) {
+        ensureSyncScopeFresh();
+        const role = (rawStorageGet('elec_app_current_role') || 'user').trim();
+        const rawGrp = bodyObj.group !== undefined ? bodyObj.group : getCurrentUserGroup();
+        const grp = normalizePeaGroupName(rawGrp) || (role === 'admin' ? '' : 'กฟส.บึง');
+        const rawJobs = Array.isArray(bodyObj.jobs) ? bodyObj.jobs : [];
+        const locIn = rawJobs.find(j => j && j.jobType === 'tech_loc') || {};
+        const upsertedJobs = [], nextJobHashes = new Map(), restoredMap = new Map();
+
+        ['elecReportsComplete_all', 'fault_reports_all'].forEach(sk => {
+            const isF = (sk === 'fault_reports_all');
+            try {
+                JSON.parse(rawStorageGet(sk) || '[]').forEach(it => {
+                    const rk = isF ? it?.timestamp : it?.dateTimeSaved;
+                    if (rk && it?.restoredAtMs) restoredMap.set((isF ? 'F_' : 'O_') + rk, Number(it.restoredAtMs));
+                });
+            } catch (e) {}
         });
-        if (upsertedJobs.length > 40) return null;
-        const removedJobKeys = [];
-        syncedJobHashes.forEach((_, oldK) => { if (!currentKeys.has(oldK)) removedJobKeys.push(oldK); });
-        let techLocDelta = null;
-        if (techLoc) {
-            const canEdit = canCurrentUserEditScada(), bStr = JSON.stringify(techLoc.cloudGroupBackups || {}), pStr = JSON.stringify(techLoc.electricEquipmentPins || []);
-            const dpStr = JSON.stringify(techLoc.deletedElectricEquipmentMap || {}), aStr = JSON.stringify(techLoc.deletedEquipAuditLogs || []);
-            const keepBackups = !canEdit || (bStr === lastBackupsHash || !techLoc.cloudGroupBackups);
-            const keepPins = !canEdit || simSandbox.active || (pStr === lastPinsHash && (techLoc.electricEquipmentPins?.length > 0 || lastPinsHash === '[]'));
-            const keepDelPins = !canEdit || simSandbox.active || (dpStr === lastDelPinsHash);
-            const keepAuditLogs = !canEdit || simSandbox.active || (aStr === lastAuditLogsHash && (techLoc.deletedEquipAuditLogs?.length > 0 || lastAuditLogsHash === '[]'));
-            techLocDelta = {
-                jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: techLoc.techLocations || {},
-                closedJobsMap: techLoc.closedJobsMap || {}, deletedJobsMap: techLoc.deletedJobsMap || {}, clearedAuditLogsTimestamp: techLoc.clearedAuditLogsTimestamp || 0,
-                _keepBackups: keepBackups, _keepPins: keepPins, _keepDelPins: keepDelPins, _keepAuditLogs: keepAuditLogs,
-                ...(keepBackups ? {} : { cloudGroupBackups: techLoc.cloudGroupBackups }), ...(keepPins ? {} : { electricEquipmentPins: techLoc.electricEquipmentPins }),
-                ...(keepDelPins ? {} : { deletedElectricEquipmentMap: techLoc.deletedElectricEquipmentMap }), ...(keepAuditLogs ? {} : { deletedEquipAuditLogs: techLoc.deletedEquipAuditLogs }),
-                updatedAt: new Date().toISOString()
-            };
-        }
-        return { action: 'patchDelta', ramOnly: false, upsertedJobs, removedJobKeys, techLocDelta };
+
+        rawJobs.forEach(j => {
+            if (!j || j.jobType === 'tech_loc') return;
+            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+            if (!rk) return;
+            const uk = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
+            const restMs = j.restoredAtMs || restoredMap.get(uk) || 0;
+            const jobOut = restMs ? { ...j, restoredAtMs: restMs } : j;
+            const h = computeCanonicalJobHash(j);
+            nextJobHashes.set(uk, h);
+            if (restMs || !hasFirstBaseline || syncedJobHashes.get(uk) !== h) upsertedJobs.push(jobOut);
+        });
+
+        const delReg = { ...getDeletedJobsRegistry(), ...(locIn.deletedJobsMap || {}) };
+        const cloudDelMap = lastCloudTechLocSnapshot?.deletedJobsMap || {};
+        const removedJobKeys = Object.keys(delReg).filter(rk => {
+            const ts = Number(delReg[rk] || 0);
+            if (syncedJobHashes.has('O_' + rk) || syncedJobHashes.has('F_' + rk)) return true;
+            const knownTs = Math.max(Number(cloudDelMap[rk] || 0), Number(syncedDeletedJobKeys.get(rk) || 0));
+            return !hasFirstBaseline || knownTs <= 0 || ts > knownTs;
+        });
+
+        const pinsStr = simSandbox.active ? (lastSyncedLocalPinsStr || '[]') : (rawStorageGet('elec_labeled_places_list') || '[]');
+        const delPinsStr = rawStorageGet('elec_deleted_labeled_places_map') || '{}';
+        const auditStr = rawStorageGet('elec_deleted_equip_audit_logs') || '[]';
+        const bkStr = slimGroupBackupsJson(rawStorageGet('elec_cloud_group_backups_map') || '{}');
+
+        const pHash = `${hashString(pinsStr)}_${pinsStr.length}`;
+        const dpHash = `${hashString(delPinsStr)}_${delPinsStr.length}`;
+        const auHash = `${hashString(auditStr)}_${auditStr.length}`;
+        const bkHash = `${hashString(bkStr)}_${bkStr.length}`;
+        const emptyBkHash = `${hashString('{}')}_2`;
+
+        const keepPins = Boolean((hasFirstBaseline && pHash === lastPinsHash && pinsStr === lastSyncedLocalPinsStr) || (!hasFirstBaseline && !hasLocalEquipMutation && pinsStr === '[]'));
+        const keepDelPins = Boolean((hasFirstBaseline && dpHash === lastDelPinsHash && delPinsStr === lastSyncedLocalDelPinsStr) || (!hasFirstBaseline && !hasLocalEquipMutation && delPinsStr === '{}'));
+        const keepAudit = Boolean((hasFirstBaseline && auHash === lastAuditLogsHash && auditStr === lastSyncedLocalAuditStr) || (!hasFirstBaseline && !hasLocalEquipMutation && auditStr === '[]'));
+        const parsedBk = JSON.parse(bkStr || '{}');
+        const hadNonEmptyBk = Boolean((lastSyncedLocalBackupsStr && lastSyncedLocalBackupsStr !== '{}') || (lastBackupsHash && lastBackupsHash !== emptyBkHash));
+        const keepBk = Boolean((hasFirstBaseline && bkHash === lastBackupsHash && bkStr === lastSyncedLocalBackupsStr) || (Object.keys(parsedBk).length === 0 && !(hasFirstBaseline && hadNonEmptyBk)));
+
+        const techLocDelta = {
+            ...(lastCloudTechLocSnapshot || {}), ...locIn,
+            id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY',
+            techLocations: locIn.techLocations || getTechLocationsMap(),
+            closedJobsMap: locIn.closedJobsMap || getClosedJobsRegistry(),
+            deletedJobsMap: delReg,
+            clearedAuditLogsTimestamp: parseInt(rawStorageGet('elec_cleared_audit_logs_ts') || '0', 10) || 0,
+            updatedAt: new Date().toISOString()
+        };
+
+        if (keepPins) { techLocDelta._keepPins = true; delete techLocDelta.electricEquipmentPins; }
+        else { techLocDelta.electricEquipmentPins = JSON.parse(pinsStr); techLocDelta._keepPins = false; }
+        if (keepDelPins) { techLocDelta._keepDelPins = true; delete techLocDelta.deletedElectricEquipmentMap; }
+        else { techLocDelta.deletedElectricEquipmentMap = JSON.parse(delPinsStr); techLocDelta._keepDelPins = false; }
+        if (keepAudit) { techLocDelta._keepAuditLogs = true; delete techLocDelta.deletedEquipAuditLogs; }
+        else { techLocDelta.deletedEquipAuditLogs = trimAuditLogsForSheetQuota(JSON.parse(auditStr)); techLocDelta._keepAuditLogs = false; }
+        if (keepBk) { techLocDelta._keepBackups = true; delete techLocDelta.cloudGroupBackups; }
+        else { techLocDelta.cloudGroupBackups = parsedBk; techLocDelta._keepBackups = false; }
+
+        return {
+            payload: { action: 'patchDelta', group: grp, upsertedJobs, removedJobKeys, techLocDelta },
+            meta: {
+                nextJobHashes, removedJobKeys, delReg, pHash, dpHash, auHash, bkHash,
+                sentPinsStr: keepPins ? null : pinsStr,
+                sentDelPinsStr: keepDelPins ? null : delPinsStr,
+                sentAuditStr: keepAudit ? null : auditStr,
+                sentBkStr: keepBk ? null : bkStr
+            }
+        };
     }
 
-    function enqueueCloudPostTask(urlStr, initObj, rawBodyStr, resolveFn) {
-        if (pendingPostTask && pendingPostTask.isFullSave && rawBodyStr.includes('"patchDelta"')) {
-            pendingPostWaiters.push(resolveFn);
-            return;
-        }
-        pendingPostTask = { url: urlStr, init: { ...initObj }, bodyStr: rawBodyStr, isFullSave: rawBodyStr.includes('"saveJobs"') };
-        pendingPostWaiters.push(resolveFn);
-        setTimeout(runPostQueueWorker, 10);
-    }
-
-    async function runPostQueueWorker() {
-        if (isPostWorkerRunning) return;
+    async function drainCloudPostWorker() {
+        if (isPostWorkerRunning || !pendingPostTask) return;
         isPostWorkerRunning = true;
         try {
             while (pendingPostTask) {
-                const task = pendingPostTask, waiters = pendingPostWaiters.splice(0);
-                pendingPostTask = null; let ok = false;
+                const task = pendingPostTask, waiters = pendingPostWaiters;
+                pendingPostTask = null; pendingPostWaiters = [];
                 try {
-                    let bodyStr = task.bodyStr;
-                    let origObj = JSON.parse(bodyStr);
-                    if (origObj?.action === 'saveJobs' && Array.isArray(origObj.jobs)) {
-                        simSandbox.bypassRead = true;
-                        try { origObj.jobs = prepareJobsArrayForCloud(origObj.jobs); } finally { simSandbox.bypassRead = false; }
-                        bodyStr = JSON.stringify(buildDeltaFromSaveJobs(origObj.jobs) || origObj);
-                    } else if (origObj?.action === 'patchDelta') {
-                        origObj = sanitizeDirectPatchDeltaPayload(origObj);
-                        bodyStr = JSON.stringify(origObj);
-                    }
-                    const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 25000);
+                    const res = await nativeFetch.call(window, task.url, {
+                        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(task.payload)
+                    });
+                    const resText = await res.text();
+                    let ok = res.ok;
                     try {
-                        const res = await nativeFetch.call(window, task.url, { ...task.init, body: bodyStr, signal: ctrl.signal });
-                        if (res && res.ok) {
-                            let rJson = await res.clone().json().catch(() => ({}));
-                            if (rJson?.requireFullSync) {
-                                const fullPayload = (origObj?.action === 'saveJobs' && Array.isArray(origObj.jobs)) ? origObj : buildFullSavePayloadFromLocalStorage();
-                                const fullRes = await nativeFetch.call(window, task.url, { ...task.init, body: JSON.stringify(fullPayload), signal: ctrl.signal });
-                                if (fullRes && fullRes.ok) {
-                                    rJson = await fullRes.clone().json().catch(() => ({ status: 'ok' }));
-                                    if (Array.isArray(fullPayload.jobs)) origObj = fullPayload;
-                                }
-                            }
-                            if ((!rJson?.status || rJson.status === 'ok') && rJson?.ok !== false) {
-                                ok = true;
-                                if (Array.isArray(origObj?.jobs)) recordCloudBaseline(origObj.jobs);
-                                invalidateSheetCaches(); nativeRemoveItem.call(localStorage, 'elec_tech_has_pending_push');
-                            }
-                        }
-                    } finally { clearTimeout(tm); }
-                } catch (err) { ok = false; }
-                if (!ok) rawStorageSet('elec_tech_has_pending_push', 'true');
-                const respBody = JSON.stringify(ok ? { status: 'ok', ok: true, synced: true } : { status: 'error', ok: false });
-                waiters.forEach(resolve => resolve(new Response(respBody, { status: 200, headers: { 'Content-Type': 'application/json' } })));
+                        const j = JSON.parse(resText);
+                        if (j?.status === 'ok' && j?.ok !== false && !j?.skippedQuota && !j?.skippedBusyRam) ok = true;
+                        else if (j?.status === 'error' || j?.ok === false || j?.skippedBusyRam) ok = false;
+                    } catch (e) {}
+                    if (ok && task.meta) {
+                        task.meta.nextJobHashes.forEach((h, k) => syncedJobHashes.set(k, h));
+                        (task.meta.removedJobKeys || []).forEach(rk => {
+                            syncedDeletedJobKeys.set(rk, Number(task.meta.delReg?.[rk] || Date.now()));
+                            syncedJobHashes.delete('O_' + rk);
+                            syncedJobHashes.delete('F_' + rk);
+                        });
+                        if (task.meta.sentPinsStr !== null) { lastPinsHash = task.meta.pHash; lastSyncedLocalPinsStr = task.meta.sentPinsStr; }
+                        if (task.meta.sentDelPinsStr !== null) { lastDelPinsHash = task.meta.dpHash; lastSyncedLocalDelPinsStr = task.meta.sentDelPinsStr; }
+                        if (task.meta.sentAuditStr !== null) { lastAuditLogsHash = task.meta.auHash; lastSyncedLocalAuditStr = task.meta.sentAuditStr; }
+                        if (task.meta.sentBkStr !== null) { lastBackupsHash = task.meta.bkHash; lastSyncedLocalBackupsStr = task.meta.sentBkStr; }
+                        hasLocalEquipMutation = false;
+                        hasFirstBaseline = true;
+                        invalidateSheetCaches();
+                    }
+                    waiters.forEach(w => w.resolve(new Response(resText, { status: res.status || 200, headers: { 'Content-Type': 'application/json' } })));
+                } catch (err) {
+                    waiters.forEach(w => w.reject(err));
+                }
             }
-        } finally { isPostWorkerRunning = false; }
-    }
-
-    function sanitizeFetchedJsonUsers(rawText) {
-        if (!rawText || !rawText.includes('"users"')) return rawText;
-        try { const p = JSON.parse(rawText); if (Array.isArray(p?.users)) { ensureMySessionTokenSyncedInUsers(p.users); return JSON.stringify(p); } } catch (e) {}
-        return rawText;
+        } finally {
+            isPostWorkerRunning = false;
+        }
     }
 
     window.fetch = async function (input, init) {
-        let urlStr = typeof input === 'string' ? input : (input?.url || '');
-        if (urlStr.includes('generativelanguage.googleapis.com')) {
-            const fixedGeminiUrl = urlStr.replace('models/gemini-3.8-flash-preview:', 'models/gemini-2.5-flash:').replace('models/gemini-3.8-flash:', 'models/gemini-2.5-flash:');
-            return nativeFetch.call(this, fixedGeminiUrl, init);
-        }
-        if (!urlStr.includes('script.google.com')) return nativeFetch.apply(this, arguments);
-        if (!urlStr.includes('group=')) urlStr += `${urlStr.includes('?') ? '&' : '?'}group=${encodeURIComponent(getCurrentUserGroup())}&role=${encodeURIComponent(rawStorageGet('elec_app_current_role') || 'user')}`;
-        const method = (init?.method || 'GET').toUpperCase(), now = Date.now();
+        const rawUrl = typeof input === 'string' ? input : (input?.url || '');
+        if (!rawUrl.includes('script.google.com')) return nativeFetch.apply(window, arguments);
+
+        const method = (init?.method || 'GET').toUpperCase();
+        const scopedUrl = buildScopedSheetUrl(rawUrl);
+        const cacheKey = `${getCurrentUserGroup() || '__ADMIN__'}::${rawStorageGet('elec_app_current_role') || 'user'}`;
+
         if (method === 'GET') {
-            const bucketKey = getSheetCacheBucketKey(urlStr), cachedEntry = readSheetCacheBucket(bucketKey);
-            const cooldown = (mqttClient && mqttClient.connected) ? 45000 : 15000;
-            if (!forceManualGet && cachedEntry?.text && (now - (cachedEntry.ts || 0) < cooldown)) return new Response(sanitizeFetchedJsonUsers(cachedEntry.text), { status: 200, headers: { 'Content-Type': 'application/json' } });
-            forceManualGet = false; inFlightCloudGetCount++;
+            const mem = sheetMemoryCacheMap.get(cacheKey);
+            if (!forceManualGet && mem && (Date.now() - mem.ts < 3500)) {
+                return new Response(mem.text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+            }
+            forceManualGet = false;
+            inFlightCloudGetCount++;
             try {
-                const res = await nativeFetch.call(window, urlStr, init);
-                if (res && res.ok) {
-                    let txt = await res.clone().text();
-                    if (txt && txt.includes('"status":"ok"')) {
-                        txt = sanitizeFetchedJsonUsers(txt); const parsed = JSON.parse(txt);
-                        if (bucketKey.startsWith('USERS_MASTER::') || Array.isArray(parsed?.jobs)) writeSheetCacheBucket(bucketKey, txt);
-                        if (Array.isArray(parsed?.jobs)) { recordCloudBaseline(parsed.jobs); const locReg = parsed.jobs.find(j => j?.jobType === 'tech_loc'); if (locReg && simSandbox.active) simSandbox.deferredCloudLocReg = locReg; }
-                        return new Response(txt, { status: 200, headers: { 'Content-Type': 'application/json' } });
-                    }
-                }
-                return res;
-            } catch (err) {
-                if (cachedEntry?.text) return new Response(sanitizeFetchedJsonUsers(cachedEntry.text), { status: 200, headers: { 'Content-Type': 'application/json' } });
-                throw err;
-            } finally { Promise.resolve().then(() => { inFlightCloudGetCount = Math.max(0, inFlightCloudGetCount - 1); }); }
-        }
-        if (method === 'POST' && typeof init?.body === 'string') {
-            if (init.body.includes('"verifyLogin"') || init.body.includes('"verifyUserPassword"')) { invalidateSheetCaches(); return nativeFetch.call(window, urlStr, init); }
-            if (init.body.includes('"saveUsers"')) {
-                try { const b = JSON.parse(init.body); if (Array.isArray(b?.users)) { ensureMySessionTokenSyncedInUsers(b.users); init = { ...init, body: JSON.stringify(b) }; } } catch (e) {}
-                invalidateSheetCaches(); return nativeFetch.call(window, urlStr, init);
-            }
-            if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
-                const hasPendingRetry = rawStorageGet('elec_tech_has_pending_push') === 'true';
-                const isDirectPmDelta = init.body.includes(PM_LOC_PREFIX) && init.body.includes('"patchDelta"');
-                if (isViewerRole() || (now > allowWriteUntilMs && !hasPendingRetry && !isDirectPmDelta)) {
-                    return new Response(JSON.stringify({ status: 'skipped_quota', ok: false, skippedQuota: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-                }
-                return new Promise((resolve) => enqueueCloudPostTask(urlStr, init, init.body, resolve));
-            }
-        }
-        return nativeFetch.call(window, urlStr, init);
-    };
-
-    function enterSimSandbox(initialPinsArray) {
-        const clone = Array.isArray(initialPinsArray) ? JSON.parse(JSON.stringify(initialPinsArray)) : JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]');
-        simSandbox.workingJson = sanitizePinsBeforeWrite(JSON.stringify(clone));
-        simSandbox.deferredCloudLocReg = null; simSandbox.committing = false; simSandbox.active = true; refreshRamPinsIndex();
-    }
-    function exitSimSandbox(commitPinsArray = null) {
-        if (Array.isArray(commitPinsArray) && canCurrentUserEditScada()) {
-            simSandbox.committing = true; simSandbox.active = false; simSandbox.deferredCloudLocReg = null;
-            try { unlockCloudWrite(25000); localStorage.setItem('elec_labeled_places_list', JSON.stringify(commitPinsArray)); } finally { simSandbox.committing = false; }
-        } else {
-            simSandbox.active = false; const snap = simSandbox.deferredCloudLocReg; simSandbox.deferredCloudLocReg = null;
-            if (snap) {
+                const res = await nativeFetch.call(window, scopedUrl, init);
+                const text = await res.text();
                 try {
-                    const curDel = { ...JSON.parse(rawStorageGet('elec_deleted_labeled_places_map') || '{}'), ...(snap.deletedElectricEquipmentMap || {}) };
-                    localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(curDel));
-                    if (Array.isArray(snap.electricEquipmentPins)) {
-                        const byId = new Map();
-                        [...JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]'), ...snap.electricEquipmentPins].forEach(p => {
-                            if (!p?.id) return; const pMs = new Date(p.updatedAt || 0).getTime() || 0;
-                            if (curDel[p.id] && pMs <= (new Date(curDel[p.id]).getTime() || 0)) return;
-                            const ex = byId.get(p.id); if (!ex || pMs >= (new Date(ex.updatedAt || 0).getTime() || 0)) byId.set(p.id, p);
+                    const data = JSON.parse(text);
+                    if (data?.status === 'ok' && Array.isArray(data.jobs)) {
+                        data.jobs.forEach(j => {
+                            if (!j || j.jobType === 'tech_loc') return;
+                            const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+                            if (rk) syncedJobHashes.set((j.jobType === 'fault' ? 'F_' : 'O_') + rk, computeCanonicalJobHash(j));
                         });
-                        localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(byId.values())));
+                        const locReg = data.jobs.find(j => j && j.jobType === 'tech_loc');
+                        if (locReg) {
+                            lastCloudTechLocSnapshot = locReg;
+                            if (simSandbox.active) simSandbox.deferredCloudLocReg = locReg;
+                            const canSyncClean = !hasLocalEquipMutation && !pendingPostTask && !isPostWorkerRunning;
+                            if (Array.isArray(locReg.electricEquipmentPins)) { const s = JSON.stringify(locReg.electricEquipmentPins); lastPinsHash = `${hashString(s)}_${s.length}`; if (canSyncClean && lastSyncedLocalPinsStr === null) lastSyncedLocalPinsStr = s; }
+                            if (locReg.deletedElectricEquipmentMap) { const s = JSON.stringify(locReg.deletedElectricEquipmentMap); lastDelPinsHash = `${hashString(s)}_${s.length}`; if (canSyncClean && lastSyncedLocalDelPinsStr === null) lastSyncedLocalDelPinsStr = s; }
+                            if (Array.isArray(locReg.deletedEquipAuditLogs)) { const s = JSON.stringify(locReg.deletedEquipAuditLogs); lastAuditLogsHash = `${hashString(s)}_${s.length}`; if (canSyncClean && lastSyncedLocalAuditStr === null) lastSyncedLocalAuditStr = s; }
+                            if (locReg.cloudGroupBackups) { const s = slimGroupBackupsJson(JSON.stringify(locReg.cloudGroupBackups)); lastBackupsHash = `${hashString(s)}_${s.length}`; if (!pendingPostTask && !isPostWorkerRunning) lastSyncedLocalBackupsStr = s; }
+                            hasFirstBaseline = true;
+                        }
+                        sheetMemoryCacheMap.set(cacheKey, { ts: Date.now(), text });
+                        if (text.length <= SHEET_DISK_CACHE_MAX_CHARS) rawStorageSet(SHEET_CACHE_STORAGE_KEY, text);
                     }
                 } catch (e) {}
+                return new Response(text, { status: res.status || 200, headers: { 'Content-Type': 'application/json' } });
+            } finally {
+                inFlightCloudGetCount = Math.max(0, inFlightCloudGetCount - 1);
             }
         }
-        ramIndex.pinsRaw = null; refreshRamPinsIndex();
-    }
 
-    // ========================================================================
-    // 6. ยืนยันตัวตน, ตัดเซสชัน 1 ชม. แม่นยำ, Online Presence, ShortLink & PWA Push
-    // ========================================================================
-    async function verifyLoginOnServer(username, password) {
-        unlockCloudWrite(20000); forceCloudRead();
-        const newSessionToken = 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-        const res = await fetch(CLOUD_USER_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'verifyLogin', username, password, sessionToken: newSessionToken }) });
-        const data = await res.json();
-        if (data?.status === 'ok' && data.authenticated && data.user) {
-            if (Array.isArray(data.users) && data.users.length > 0) { cachedAccountsStr = ''; localStorage.setItem('elec_user_accounts', JSON.stringify(data.users.map(parseAccountRecord))); }
-            const fullUser = normalizeUsernameFormat(data.user.username), role = data.user.role || 'user';
-            let grp = normalizePeaGroupName(getUserGroupName(fullUser));
-            if (!grp && role !== 'admin') grp = normalizePeaGroupName(data.user.group || rawStorageGet(LAST_GROUP_SESSION_KEY) || 'กฟส.บึง') || 'กฟส.บึง';
-            if (data.targetApiUrl && String(data.targetApiUrl).startsWith('https://script.google.com/')) rawStorageSet('elec_cloud_user_api_url', String(data.targetApiUrl).trim());
-            else nativeRemoveItem.call(localStorage, 'elec_cloud_user_api_url');
-            const prevGrp = normalizePeaGroupName(rawStorageGet(LAST_GROUP_SESSION_KEY) || '');
-            if (grp && prevGrp && grp !== prevGrp && role !== 'admin') {
-                try {
-                    rawStorageSet('elec_labeled_places_list', JSON.stringify(JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]').filter(p => p && normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') === grp)));
-                    rawStorageSet('elecReportsComplete_all', JSON.stringify(JSON.parse(rawStorageGet('elecReportsComplete_all') || '[]').filter(o => normalizePeaGroupName(getJobGroupName(o)) === grp)));
-                    rawStorageSet('fault_reports_all', JSON.stringify(JSON.parse(rawStorageGet('fault_reports_all') || '[]').filter(f => normalizePeaGroupName(getJobGroupName(f)) === grp)));
-                } catch (e) {}
-            }
-            if (grp) rawStorageSet(LAST_GROUP_SESSION_KEY, grp);
-            rawStorageSet('elec_app_logged_in', 'true'); rawStorageSet('elec_app_current_user', fullUser); rawStorageSet('elec_app_current_group', grp);
-            rawStorageSet('elec_app_current_role', role); rawStorageSet('elec_app_session_token', data.user.sessionToken || newSessionToken); rawStorageSet('elec_app_last_active', String(Date.now()));
-            ramIndex.pinsRaw = null; ramIndex.delPinsRaw = null; refreshRamDelPinsIndex(); refreshRamPinsIndex();
-            invalidateSheetCaches(); hasFirstBaseline = false; syncedJobHashes.clear();
-            lastBackupsHash = ''; lastPinsHash = ''; lastDelPinsHash = ''; lastAuditLogsHash = '';
-            refreshMqttSubscriptions();
-        }
-        return data;
-    }
-    async function verifyPasswordOnServer(password, usernameOpt) {
-        const res = await fetch(CLOUD_USER_API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'verifyUserPassword', username: usernameOpt || rawStorageGet('elec_app_current_user') || '', password }) });
-        const data = await res.json(); return Boolean(data?.status === 'ok' && data.verified);
-    }
-
-    function updateUserOnlineHeartbeat(pageLabel = '📱 หน้าช่าง', coords = null, gpsEnabled = true) {
-        if (rawStorageGet('elec_app_logged_in') !== 'true') return;
-        const curUser = (rawStorageGet('elec_app_current_user') || '').trim(); if (!curUser) return;
-        const curRole = rawStorageGet('elec_app_current_role') || 'user', nowIso = new Date().toISOString(), locMap = getTechLocationsMap(), existing = locMap[curUser] || {};
-        Object.keys(locMap).forEach(k => { if (k !== curUser && !isSystemLocRegistryKey(k, locMap[k]) && isSameTechPerson(k, curUser)) delete locMap[k]; });
-        const allowGps = gpsEnabled && !isEmbeddedIframe && curRole !== 'viewer' && curRole !== 'admin';
-        locMap[curUser] = { ...existing, username: curUser, role: curRole, group: getCurrentUserGroup(), lat: allowGps ? (coords?.lat ?? existing.lat ?? null) : null, lon: allowGps ? (coords?.lon ?? existing.lon ?? null) : null, gpsDisabled: !allowGps, currentPage: isEmbeddedIframe ? '💻 หน้าหลัก (เปิดคู่หน้าช่าง)' : pageLabel, isOnline: true, lastSeenAt: nowIso, updatedAt: nowIso };
-        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
-    }
-
-    function getAccountsOnlineStatusList(localPageLabel = '📱 หน้าช่าง', hasLocalGps = false) {
-        const curUser = (rawStorageGet('elec_app_current_user') || '').trim(), locMap = getTechLocationsMap(), now = Date.now();
-        return getParsedUserAccounts().map(acc => {
-            let matchedLoc = null, bestMs = -1;
-            Object.keys(locMap).forEach(k => {
-                const c = locMap[k];
-                if (!c || isSystemLocRegistryKey(k, c)) return;
-                if (isSameTechPerson(k, acc.username) || isSameTechPerson(c.username, acc.username)) {
-                    const tMs = new Date(c.lastSeenAt || c.updatedAt || 0).getTime() || 0;
-                    if (tMs > bestMs) { bestMs = tMs; matchedLoc = c; }
+        if (method === 'POST' && typeof init?.body === 'string') {
+            try {
+                const bodyObj = JSON.parse(init.body);
+                if (['verifyLogin', 'verifyPassword', 'login', 'saveUsers', 'resolveShortUrl'].includes(bodyObj?.action)) {
+                    if (bodyObj.action === 'saveUsers') invalidateSheetCaches();
+                    return nativeFetch.call(window, scopedUrl, init);
                 }
-            });
-            const isMe = isSameTechPerson(curUser, acc.username), lastSeenMs = bestMs > 0 ? bestMs : 0, diffMs = now - lastSeenMs;
-            const isOnline = isMe || Boolean(matchedLoc && matchedLoc.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
-            return { username: acc.username, displayName: formatTechDisplayName(acc.username), role: acc.role || 'user', isOnline, isMe, lastSeenMs, diffMs, currentPage: isMe ? localPageLabel : (matchedLoc?.currentPage || (acc.role === 'tech' ? '📱 หน้าช่าง' : '💻 หน้าหลัก')), hasGps: isMe ? Boolean(hasLocalGps) : Boolean(matchedLoc && !matchedLoc.gpsDisabled && matchedLoc.lat && matchedLoc.lon) };
-        }).sort((a, b) => (a.isOnline !== b.isOnline ? (a.isOnline ? -1 : 1) : (b.lastSeenMs || 0) - (a.lastSeenMs || 0)));
+                if (isViewerRole()) {
+                    return new Response(JSON.stringify({ status: 'ok', skippedViewer: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+                }
+                if (bodyObj?.action === 'patchDelta') {
+                    const res = await nativeFetch.call(window, scopedUrl, init);
+                    invalidateSheetCaches();
+                    return res;
+                }
+                if (bodyObj?.action === 'saveJobs') {
+                    const built = buildPatchDeltaFromSaveJobs(bodyObj);
+                    return new Promise((resolve, reject) => {
+                        if (pendingPostTask) {
+                            const mapU = new Map();
+                            [...(pendingPostTask.payload.upsertedJobs || []), ...built.payload.upsertedJobs].forEach(j => {
+                                const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
+                                if (rk) mapU.set((j.jobType === 'fault' ? 'F_' : 'O_') + rk, j);
+                            });
+                            built.payload.upsertedJobs = Array.from(mapU.values());
+                            built.payload.removedJobKeys = Array.from(new Set([...(pendingPostTask.payload.removedJobKeys || []), ...built.payload.removedJobKeys]));
+                            built.meta.removedJobKeys = built.payload.removedJobKeys;
+                            built.meta.nextJobHashes = new Map([...pendingPostTask.meta.nextJobHashes, ...built.meta.nextJobHashes]);
+                        }
+                        pendingPostTask = { url: scopedUrl, payload: built.payload, meta: built.meta };
+                        pendingPostWaiters.push({ resolve, reject });
+                        drainCloudPostWorker();
+                    });
+                }
+            } catch (e) {}
+        }
+        return nativeFetch.call(window, scopedUrl, init);
+    };
+    // ========================================================================
+    // 8. Server Auth (SHA-256), Online Presence, Geo & ShortLink Utilities
+    // ========================================================================
+    async function computeSha256Hex(str) {
+        if (!window.crypto?.subtle) return '';
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(str ?? '')));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    let lastActivityTouchMs = 0;
-    function checkSessionInactivity(markActiveNow = true) {
-        if (rawStorageGet('elec_app_logged_in') !== 'true') return false;
-        const now = Date.now(), last = parseInt(rawStorageGet('elec_app_last_active') || '0', 10);
-        if (last > 0 && (now - last > INACTIVITY_TIMEOUT_MS)) {
-            if (typeof window.triggerAutoLogout === 'function') window.triggerAutoLogout();
-            else if (typeof window.handleTechLogout === 'function') { window.handleTechLogout(); showCustomAlert('⏳ ระบบได้ออกจากระบบอัตโนมัติ เนื่องจากไม่มีการใช้งานเกิน 1 ชั่วโมง', '🔒 หมดเวลาการเชื่อมต่อ'); }
-            return true;
+    async function matchAccountLocally(uInput, pwdPlain, accountsList) {
+        const pwdHash = await computeSha256Hex(pwdPlain);
+        return (accountsList || []).find(acc => {
+            if (!isUsernameMatchingAccount(uInput, acc.username)) return false;
+            const stored = String(acc.password || '').trim(), cleanStored = stored.replace(/^sha256:/i, '').toLowerCase();
+            return stored === pwdPlain || (pwdHash && cleanStored === pwdHash);
+        }) || null;
+    }
+
+    async function verifyLoginOnServer(username, password) {
+        const normU = normalizeUsernameFormat(username), pwd = String(password || '').trim();
+        const sessToken = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const res = await nativeFetch.call(window, getActiveCloudApiUrl(), {
+            method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ action: 'verifyLogin', username: normU, rawUsername: String(username || '').trim(), password: pwd, sessionToken: sessToken })
+        });
+        const data = await res.json();
+        if (Array.isArray(data?.users) && data.users.length > 0) {
+            cachedAccountsStr = '';
+            rawStorageSet('elec_user_accounts', JSON.stringify(data.users.map(parseAccountRecord)));
         }
-        if (markActiveNow && (now - lastActivityTouchMs >= 4000 || last === 0)) {
-            lastActivityTouchMs = now;
-            rawStorageSet('elec_app_last_active', String(now));
+        let authedUser = (data?.authenticated && data?.user) ? parseAccountRecord(data.user) : null;
+        if (data?.authenticated === undefined) {
+            authedUser = await matchAccountLocally(normU, pwd, getParsedUserAccounts());
+        }
+        if (!authedUser) return { status: 'ok', authenticated: false };
+
+        const canonUser = normalizeUsernameFormat(authedUser.username);
+        const role = (authedUser.role || 'user').split('::')[0] || 'user';
+        const grp = normalizePeaGroupName(data?.user?.group || getUserGroupName(canonUser)) || (role !== 'admin' ? 'กฟส.บึง' : '');
+        const finalToken = data?.user?.sessionToken || sessToken;
+
+        rawStorageSet('elec_app_logged_in', 'true');
+        rawStorageSet('elec_app_current_user', canonUser);
+        rawStorageSet('elec_app_current_role', role);
+        rawStorageSet('elec_app_current_group', grp);
+        rawStorageSet(LAST_GROUP_SESSION_KEY, grp || '__ADMIN_ALL__');
+        rawStorageSet('elec_app_session_token', finalToken);
+        rawStorageSet('elec_app_last_active', String(Date.now()));
+        invalidateSheetCaches();
+        connectMqttLiveBus(true);
+        return { status: 'ok', authenticated: true, user: { username: canonUser, role, group: grp, displayName: authedUser.displayName || '' } };
+    }
+
+    async function verifyPasswordOnServer(typedPassword) {
+        const pwd = String(typedPassword || '').trim();
+        if (!pwd) return false;
+        const curUser = normalizeUsernameFormat(rawStorageGet('elec_app_current_user') || '');
+        const candidates = curUser && curUser.toLowerCase() !== 'admin' ? [curUser, 'admin'] : ['admin'];
+        for (const u of candidates) {
+            try {
+                const res = await nativeFetch.call(window, getActiveCloudApiUrl(), {
+                    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'verifyLogin', username: u, rawUsername: u, password: pwd, checkOnly: true })
+                });
+                const d = await res.json();
+                if (d?.authenticated === true) return true;
+                if (d?.authenticated === undefined && await matchAccountLocally(u, pwd, getParsedUserAccounts())) return true;
+            } catch (e) {
+                if (await matchAccountLocally(u, pwd, getParsedUserAccounts())) return true;
+            }
         }
         return false;
     }
-    ['mousedown', 'keydown', 'touchstart', 'click'].forEach(ev => window.addEventListener(ev, () => checkSessionInactivity(true), { passive: true }));
-    window.addEventListener('focus', () => checkSessionInactivity(true));
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkSessionInactivity(false); });
-    setInterval(() => checkSessionInactivity(false), 30000);
+
+    function updateUserOnlineHeartbeat(currentPageLabel = '💻 หน้าหลัก', coordsObj = null, gpsEnabled = false) {
+        if (rawStorageGet('elec_app_logged_in') !== 'true') return;
+        const curUser = normalizeUsernameFormat(rawStorageGet('elec_app_current_user') || '');
+        if (!curUser) return;
+        const role = (rawStorageGet('elec_app_current_role') || 'user').trim();
+        const grp = normalizePeaGroupName(getCurrentUserGroup());
+        const nowIso = new Date().toISOString();
+        const locMap = getTechLocationsMap();
+        const prev = locMap[curUser] || {};
+        const allowGps = Boolean(gpsEnabled && coordsObj && !isEmbeddedIframe && role !== 'viewer' && !isNaN(parseFloat(coordsObj.lat)) && !isNaN(parseFloat(coordsObj.lon)));
+
+        locMap[curUser] = {
+            ...prev, username: curUser, role, group: grp, isOnline: true,
+            currentPage: isEmbeddedIframe ? '💻 หน้าหลัก (เปิดคู่หน้าช่าง)' : currentPageLabel,
+            gpsDisabled: !allowGps,
+            lat: allowGps ? Number(parseFloat(coordsObj.lat).toFixed(6)) : null,
+            lon: allowGps ? Number(parseFloat(coordsObj.lon).toFixed(6)) : null,
+            lastSeenAt: nowIso, updatedAt: nowIso
+        };
+        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+    }
+
+    function getAccountsOnlineStatusList(myPageLabel = '💻 หน้าหลัก', myHasGps = false) {
+        const accounts = getParsedUserAccounts(), locMap = getTechLocationsMap();
+        const curUser = rawStorageGet('elec_app_current_user') || '', isLogged = rawStorageGet('elec_app_logged_in') === 'true', now = Date.now();
+        return accounts.map(acc => {
+            const isMe = Boolean(isLogged && curUser && isUsernameMatchingAccount(curUser, acc.username));
+            const locEntry = Object.entries(locMap).find(([k, v]) => !isSystemLocRegistryKey(k, v) && (isUsernameMatchingAccount(k, acc.username) || isUsernameMatchingAccount(v?.username, acc.username)))?.[1] || null;
+            const lastSeenMs = isMe ? now : (locEntry ? (new Date(locEntry.lastSeenAt || locEntry.updatedAt || 0).getTime() || 0) : 0);
+            const diffMs = lastSeenMs ? Math.max(0, now - lastSeenMs) : Infinity;
+            const isOnline = isMe || Boolean(locEntry && locEntry.isOnline !== false && lastSeenMs > 0 && diffMs <= ONLINE_THRESHOLD_MS);
+            return {
+                username: acc.username, displayName: formatTechDisplayName(acc.username), role: acc.role || 'user',
+                group: getUserGroupName(acc.username), isOnline, isMe,
+                currentPage: isMe ? myPageLabel : (locEntry?.currentPage || '📱 ระบบงานไฟฟ้า'),
+                hasGps: isMe ? Boolean(myHasGps) : Boolean(locEntry && !locEntry.gpsDisabled && !isNaN(parseFloat(locEntry.lat)) && !isNaN(parseFloat(locEntry.lon))),
+                lastSeenMs, diffMs
+            };
+        }).sort((a, b) => (Number(b.isOnline) - Number(a.isOnline)) || (a.diffMs - b.diffMs));
+    }
 
     function calcHaversineKm(lat1, lon1, lat2, lon2) {
-        const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * (Math.sin(dLon / 2) ** 2);
-        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+        const R = 6371.0088, toRad = Math.PI / 180;
+        const dLat = (parseFloat(lat2) - parseFloat(lat1)) * toRad, dLon = (parseFloat(lon2) - parseFloat(lon1)) * toRad;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(parseFloat(lat1) * toRad) * Math.cos(parseFloat(lat2) * toRad) * Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
     }
-    function decodeS2CellIdToLatLon(hexStr) {
-        try {
-            const id = BigInt('0x' + hexStr); if (id === 0n) return null; const face = Number(id >> 61n); if (face < 0 || face > 5) return null;
-            const posToIJ = [[0,1,3,2],[0,2,3,1],[3,2,0,1],[3,1,0,2]], posToOri = [1,0,0,3], lookupIJ = new Int32Array(1024);
-            const initC = (lv, i, j, oO, p, o) => { if (lv === 4) lookupIJ[(p << 2) + oO] = (((i << 4) + j) << 2) + o; else { const r = posToIJ[o]; for (let k = 0; k < 4; k++) initC(lv + 1, (i << 1) + (r[k] >> 1), (j << 1) + (r[k] & 1), oO, (p << 2) + k, o ^ posToOri[k]); } };
-            for (let d = 0; d < 4; d++) initC(0, 0, 0, d, 0, d);
-            let i = 0, j = 0, o = face & 1;
-            for (let k = 7; k >= 0; k--) { const nb = k === 7 ? 2 : 4, b = Number((id >> BigInt(k * 8 + 1)) & ((1n << BigInt(2 * nb)) - 1n)), v = lookupIJ[(b << 2) + o]; i += (v >> 6) << (k * 4); j += ((v >> 2) & 15) << (k * 4); o = v & 3; }
-            const uv = s => s >= 0.5 ? (4 * s * s - 1) / 3 : (1 - 4 * (1 - s) * (1 - s)) / 3, u = uv((i + 0.5) / 1073741824), v = uv((j + 0.5) / 1073741824);
-            const xyz = [[1,u,v],[-u,1,v],[-u,-v,1],[-1,-v,-u],[v,-1,-u],[v,u,-1]][face], lat = Math.atan2(xyz[2], Math.hypot(xyz[0], xyz[1])) * (180 / Math.PI), lon = Math.atan2(xyz[1], xyz[0]) * (180 / Math.PI);
-            if (lat >= 5 && lat <= 21 && lon >= 97 && lon <= 106) return { lat: lat.toFixed(6), lon: lon.toFixed(6) };
-        } catch (e) {} return null;
-    }
-    function deepParseCoords(rawStr, isHtmlBody = false) {
+
+    function deepParseCoords(rawStr) {
         if (!rawStr) return null;
-        let s = String(rawStr).replace(/\\u0026/gi, '&').replace(/\\u003d/gi, '=').replace(/\\u002f/gi, '/').replace(/&amp;/gi, '&');
-        for (let i = 0; i < 3; i++) { try { s = decodeURIComponent(s); } catch (e) { break; } }
-        const m3d = s.match(/!3d(-?\d{1,2}\.\d{4,})!4d(-?\d{2,3}\.\d{4,})/); if (m3d) return { lat: parseFloat(m3d[1]).toFixed(6), lon: parseFloat(m3d[2]).toFixed(6) };
-        const mUrl = s.match(/(?:@|center=|q=|ll=|sll=|daddr=|destination=|search\/|place\/|dir\/\/)(-?\d{1,2}\.\d{3,})\s*[,\s+]+\s*\+?(-?\d{2,3}\.\d{3,})/i); if (mUrl) return { lat: parseFloat(mUrl[1]).toFixed(6), lon: parseFloat(mUrl[2]).toFixed(6) };
-        const mDms = s.match(/(\d{1,2})[°\s]+(\d{1,2})['’′\s]+([\d.]+)["”″\s]*([NS])[\s,+]*(\d{2,3})[°\s]+(\d{1,2})['’′\s]+([\d.]+)["”″\s]*([EW])/i);
-        if (mDms) { let la = parseFloat(mDms[1]) + parseFloat(mDms[2]) / 60 + parseFloat(mDms[3]) / 3600, lo = parseFloat(mDms[5]) + parseFloat(mDms[6]) / 60 + parseFloat(mDms[7]) / 3600; return { lat: (mDms[4].toUpperCase() === 'S' ? -la : la).toFixed(6), lon: (mDms[8].toUpperCase() === 'W' ? -lo : lo).toFixed(6) }; }
-        const mLL = s.match(/Lat[\s:=]*(-?\d+\.\d+)[\s,]*Long?[\s:=]*(-?\d+\.\d+)/i); if (mLL) return { lat: parseFloat(mLL[1]).toFixed(6), lon: parseFloat(mLL[2]).toFixed(6) };
-        const mFt = s.match(/(?:!1s|ftid=|\b)0x([0-9a-f]{16}):0x[0-9a-f]{8,16}/i); if (mFt) { const s2 = decodeS2CellIdToLatLon(mFt[1]); if (s2) return s2; }
-        const mNl = s.match(/\[null\s*,\s*null\s*,\s*([5-9]\.\d{4,}|1\d\.\d{4,}|20\.\d{4,})\s*,\s*(9[7-9]\.\d{4,}|10[0-6]\.\d{4,})\]/); if (mNl) return { lat: parseFloat(mNl[1]).toFixed(6), lon: parseFloat(mNl[2]).toFixed(6) };
-        if (!isHtmlBody && s.length < 400) {
-            const mP = s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
-            if (mP) { const a = parseFloat(mP[1]), b = parseFloat(mP[2]); return (a >= 95 && a <= 108 && b >= 4 && b <= 23) ? { lat: b.toFixed(6), lon: a.toFixed(6) } : { lat: a.toFixed(6), lon: b.toFixed(6) }; }
+        let s = String(rawStr).trim();
+        try { s = decodeURIComponent(s); } catch (e) {}
+        const dms = s.match(/(\d{1,2})°\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)["″]?\s*([NSns])\s*[,\s]+\s*(\d{1,3})°\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)["″]?\s*([EWew])/);
+        if (dms) {
+            const la = (Number(dms[1]) + Number(dms[2]) / 60 + Number(dms[3]) / 3600) * (/s/i.test(dms[4]) ? -1 : 1);
+            const lo = (Number(dms[5]) + Number(dms[6]) / 60 + Number(dms[7]) / 3600) * (/w/i.test(dms[8]) ? -1 : 1);
+            return { lat: Number(la.toFixed(6)), lon: Number(lo.toFixed(6)) };
         }
-        return null;
+        const m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/i) ||
+            s.match(/[?&](?:q|ll|destination|query|center|daddr)=(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)/i) ||
+            s.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/) ||
+            s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+        if (!m) return null;
+        let la = parseFloat(m[1]), lo = parseFloat(m[2]);
+        if (isNaN(la) || isNaN(lo)) return null;
+        if (la >= 95 && la <= 108 && lo >= 4 && lo <= 23) { const t = la; la = lo; lo = t; }
+        return (Math.abs(la) <= 90 && Math.abs(lo) <= 180) ? { lat: Number(la.toFixed(6)), lon: Number(lo.toFixed(6)) } : null;
     }
-    async function fetchWithTimeout(url, ms = 6000) { const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), ms); try { return await nativeFetch.call(window, url, { signal: ctrl.signal, cache: 'no-store' }); } finally { clearTimeout(tm); } }
-    async function queryUnshorteners(targetUrl) {
-        const enc = encodeURIComponent(targetUrl), exNx = h => String(h || '').replace(/\\u0026/gi, '&').match(/https?:\/\/(?:www\.|maps\.)?google\.[a-z.]+\/maps[^\s"'<>\\]+/i)?.[0] || null;
-        return Promise.any([
-            fetchWithTimeout(`https://api.microlink.io/?url=${enc}`).then(r => r.json()).then(d => { const c = deepParseCoords(`${d?.data?.url || ''} ${d?.data?.image?.url || ''}`, false); if (c) return { coords: c }; if (d?.data?.url && d.data.url !== targetUrl) return { nextUrl: d.data.url }; throw 0; }),
-            fetchWithTimeout(`https://api.allorigins.win/get?url=${enc}`).then(r => r.json()).then(d => { const c = deepParseCoords(d?.status?.url || '', false) || deepParseCoords(d?.contents || '', true); if (c) return { coords: c }; const nx = exNx(d?.status?.url || d?.contents); if (nx) return { nextUrl: nx }; throw 0; }),
-            fetchWithTimeout(`https://unshorten.me/json/${targetUrl}`).then(r => r.json()).then(d => { const c = deepParseCoords(d?.resolved_url || '', false); if (c) return { coords: c }; if (d?.resolved_url && d.resolved_url !== targetUrl) return { nextUrl: d.resolved_url }; throw 0; }),
-            fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${enc}`).then(r => r.text()).then(t => { const c = deepParseCoords(t, true); if (c) return { coords: c }; const nx = exNx(t); if (nx) return { nextUrl: nx }; throw 0; }),
-            fetchWithTimeout(`https://corsproxy.io/?${enc}`).then(async r => { const t = await r.text(), c = deepParseCoords(r.url || '', false) || deepParseCoords(t, true); if (c) return { coords: c }; const nx = exNx(t); if (nx) return { nextUrl: nx }; throw 0; })
-        ]);
-    }
+
     async function resolveGoogleShortLinkUniversal(rawInput) {
-        const text = String(rawInput || '').trim(); if (!text) return null;
-        const direct = deepParseCoords(text, false); if (direct) return direct;
-        const match = text.match(SHORT_URL_REGEX); if (!match) return null;
-        const shortUrl = (/^https?:\/\//i.test(match[0]) ? match[0] : 'https://' + match[0]).split('?')[0];
-        try { const cache = JSON.parse(rawStorageGet(SHORT_LINK_CACHE_KEY) || '{}'); if (cache[shortUrl]?.lat && cache[shortUrl]?.lon) return cache[shortUrl]; } catch (e) {}
-        try {
-            const s1 = await queryUnshorteners(shortUrl), coords = s1?.coords || (s1?.nextUrl ? (deepParseCoords(s1.nextUrl, false) || (await queryUnshorteners(s1.nextUrl))?.coords) : null);
-            if (coords?.lat && coords?.lon) {
-                const cache = JSON.parse(rawStorageGet(SHORT_LINK_CACHE_KEY) || '{}'); cache[shortUrl] = coords;
-                const keys = Object.keys(cache); if (keys.length > 200) keys.slice(0, keys.length - 200).forEach(k => delete cache[k]);
-                rawStorageSet(SHORT_LINK_CACHE_KEY, JSON.stringify(cache)); return coords;
-            }
-        } catch (e) {} return null;
-    }
-    async function autoResolveShortLinkInputEl(el) {
-        if (!el || el.dataset.resolvingShort === 'true') return;
-        const match = (el.value || '').match(SHORT_URL_REGEX); if (!match || el.id === 'rawCustomerPasteInput' || el.id === 'address') return;
-        const matchedToken = match[0]; el.dataset.resolvingShort = 'true'; showToast('⏳ กำลังแปลงลิงก์ย่อ Google Maps เป็นพิกัด...');
-        try {
-            const coords = await resolveGoogleShortLinkUniversal(matchedToken);
-            if (!coords?.lat || !coords?.lon) return showToast('⚠️ คลายลิงก์สั้นไม่สำเร็จ กรุณาวางพิกัดตัวเลขแทน');
-            if (!(el.value || '').includes(matchedToken)) return;
-            const id = el.id || '', pairStr = `${coords.lat}, ${coords.lon}`, fullUrl = `https://www.google.com/maps?q=${coords.lat},${coords.lon}`;
-            if (id.includes('LatInput') || id.includes('LonInput')) { const pfx = id.replace(/(?:Lat|Lon)Input$/, ''); if (document.getElementById(pfx + 'LatInput') && document.getElementById(pfx + 'LonInput')) { document.getElementById(pfx + 'LatInput').value = coords.lat; document.getElementById(pfx + 'LonInput').value = coords.lon; } }
-            else if (id === 'leftBrowserUrlInput') { el.value = fullUrl; const ifr = document.getElementById('leftBrowserIframe'); if (ifr) ifr.src = `${fullUrl}&hl=th&z=16&output=embed`; }
-            else if (id === 'gps' || id === 'gpsInput' || id === 'ce_gps' || id === 'techGpsInput') el.value = fullUrl; else el.value = pairStr;
-            const hint = document.getElementById('equipShortLinkStatus'); if (hint && id === 'equipCoordInput') { hint.textContent = `✅ แปลงลิงก์สั้นสำเร็จ: ${pairStr}`; hint.className = 'text-[10px] text-emerald-600 font-bold mt-1'; }
-            showToast(`📍 แปลงลิงก์ย่อสำเร็จ: ${pairStr}`); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
-        } finally { delete el.dataset.resolvingShort; }
-    }
-    ['input', 'change'].forEach(evt => document.addEventListener(evt, e => { const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && SHORT_URL_REGEX.test(t.value || '')) autoResolveShortLinkInputEl(t); }, true));
-    document.addEventListener('paste', e => { const t = e.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) setTimeout(() => { if (SHORT_URL_REGEX.test(t.value || '')) autoResolveShortLinkInputEl(t); }, 50); }, true);
+        const direct = deepParseCoords(rawInput);
+        if (direct) return direct;
+        const m = String(rawInput || '').match(SHORT_URL_REGEX);
+        if (!m) return null;
+        const shortUrl = (/^https?:\/\//i.test(m[0]) ? m[0] : 'https://' + m[0]).trim();
+        const cacheKey = shortUrl.split('?')[0];
+        let cache = {};
+        try { cache = JSON.parse(rawStorageGet(SHORT_LINK_CACHE_KEY) || '{}') || {}; } catch (e) {}
+        if (cache[cacheKey]?.lat && cache[cacheKey]?.lon) return cache[cacheKey];
 
-    function renderCanvasHomeIconIfPresent() {
+        let found = null;
         try {
-            const favEl = document.getElementById('favIconPng'), touchEl = document.getElementById('appleTouchIconPng'); if (!favEl && !touchEl) return;
-            const isTech = Boolean(document.getElementById('techMainApp')), cv = document.createElement('canvas'); cv.width = 512; cv.height = 512;
-            const ctx = cv.getContext('2d'), grad = ctx.createLinearGradient(0, 0, 512, 512);
-            if (isTech) { grad.addColorStop(0, '#0f766e'); grad.addColorStop(0.5, '#0d9488'); grad.addColorStop(1, '#1e3a8a'); } else { grad.addColorStop(0, '#1e3a8a'); grad.addColorStop(0.5, '#2563eb'); grad.addColorStop(1, '#4f46e5'); }
-            const r = 115; ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(512 - r, 0); ctx.quadraticCurveTo(512, 0, 512, r); ctx.lineTo(512, 512 - r); ctx.quadraticCurveTo(512, 512, 512 - r, 512); ctx.lineTo(r, 512); ctx.quadraticCurveTo(0, 512, 0, 512 - r); ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0); ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '310px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; ctx.fillText(isTech ? '🛠️' : '⚡', 256, 270);
-            if (isTech) { ctx.font = '205px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; ctx.fillText('⚡', 266, 252); }
-            const png = cv.toDataURL('image/png'); if (favEl) favEl.href = png; if (touchEl) touchEl.href = png;
+            const res = await nativeFetch.call(window, getActiveCloudApiUrl(), {
+                method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'resolveShortUrl', url: shortUrl })
+            });
+            const d = await res.json();
+            found = (d?.lat && d?.lon) ? deepParseCoords(`${d.lat},${d.lon}`) : deepParseCoords(d?.resolvedUrl || d?.url || d?.html || '');
         } catch (e) {}
-    }
-
-    function openPmCalendarFromPushIfRequested() {
-        if (typeof window.openPmCalendarModal === 'function') window.openPmCalendarModal();
-    }
-    function initPwaAndServiceWorker() {
-        renderCanvasHomeIconIfPresent();
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('./sw.js').then(reg => reg.update()).catch(() => {});
-            navigator.serviceWorker.addEventListener('message', (e) => { if (e.data?.type === 'OPEN_PM_FROM_PUSH') openPmCalendarFromPushIfRequested(); });
+        if (!found) {
+            try {
+                const r2 = await nativeFetch.call(window, `https://unshorten.me/json/${encodeURIComponent(shortUrl)}`);
+                const d2 = await r2.json();
+                found = deepParseCoords(d2?.resolved_url || '');
+            } catch (e) {}
         }
-        try {
-            const urlObj = new URL(window.location.href);
-            if (urlObj.searchParams.get('openPm') === '1') {
-                urlObj.searchParams.delete('openPm');
-                window.history.replaceState({}, '', urlObj.pathname + urlObj.search + urlObj.hash);
-                setTimeout(openPmCalendarFromPushIfRequested, 650);
-            }
-        } catch (e) {}
-        if (isEmbeddedIframe || window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true || document.getElementById('pwaInstallBanner')) return;
-        let deferredPrompt = null; const banner = document.createElement('div'); banner.id = 'pwaInstallBanner';
-        banner.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[180] hidden items-center gap-2 bg-slate-900/95 text-white px-4 py-2 rounded-full shadow-2xl border border-emerald-400/50 text-xs font-bold backdrop-blur-md';
-        banner.innerHTML = `<span>📲 ติดตั้งเป็นแอปเต็มจอ</span><button type="button" id="pwaInstallConfirmBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded-full text-[11px] font-extrabold shadow transition">ติดตั้งเลย</button><button type="button" onclick="this.parentElement.classList.add('hidden')" class="text-slate-400 hover:text-white pl-1 text-base leading-none">&times;</button>`;
-        document.body.appendChild(banner);
-        window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; banner.classList.remove('hidden'); banner.classList.add('flex'); });
-        document.getElementById('pwaInstallConfirmBtn').onclick = async () => { if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === 'accepted') banner.classList.add('hidden'); deferredPrompt = null; } };
+        if (found) {
+            cache[cacheKey] = found;
+            rawStorageSet(SHORT_LINK_CACHE_KEY, JSON.stringify(Object.fromEntries(Object.entries(cache).slice(-250))));
+        }
+        return found;
     }
 
-    refreshRamDelPinsIndex(); refreshRamPinsIndex();
-    const PeaCore = {
-        CLOUD_USER_API_URL, REGISTRY_LOC_KEY, isEmbeddedIframe, simSandbox, ramIndex, rawStorageGet, rawStorageSet,
-        normalizePeaGroupName, refreshRamPinsIndex, refreshRamDelPinsIndex, enterSimSandbox, exitSimSandbox,
-        unlockCloudWrite, forceCloudRead, createTrailingAsyncQueue,
-        onRealtimeChange(fn) { if (typeof fn === 'function') realtimeSubscribers.add(fn); },
+    ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => {
+        if (rawStorageGet('elec_app_logged_in') === 'true') rawStorageSet('elec_app_last_active', String(Date.now()));
+    }, { passive: true }));
+    setInterval(() => {
+        if (rawStorageGet('elec_app_logged_in') !== 'true') return;
+        const lastAct = parseInt(rawStorageGet('elec_app_last_active') || '0', 10);
+        if (lastAct > 0 && (Date.now() - lastAct > INACTIVITY_TIMEOUT_MS)) {
+            if (typeof window.triggerAutoLogout === 'function') window.triggerAutoLogout();
+            else if (typeof window.handleTechLogout === 'function') window.handleTechLogout();
+        }
+    }, 30000);
+
+    window.PeaCore = {
+        REGISTRY_LOC_KEY, isEmbeddedIframe, simSandbox, ramIndex,
+        rawStorageGet, rawStorageSet, refreshRamPinsIndex, refreshRamDelPinsIndex,
+        unlockCloudWrite, forceCloudRead, invalidateSheetCaches, onRealtimeChange, notifyStorageUpdated,
+        createTrailingAsyncQueue, enterSimSandbox, exitSimSandbox,
         verifyLoginOnServer, verifyPasswordOnServer, updateUserOnlineHeartbeat, getAccountsOnlineStatusList,
-        runWithGroupViewFilter, cleanReopenedAndCancelledJobsInStorage, getStorageUsageStats, cleanTemporaryCacheSafe, downloadCsvFallback
+        cleanReopenedAndCancelledJobsInStorage, runWithGroupViewFilter, getStorageUsageStats, cleanTemporaryCacheSafe,
+        downloadCsvFallback, calcHaversineKm, deepParseCoords, resolveGoogleShortLinkUniversal
     };
+
     Object.assign(window, {
-        PeaCore, CLOUD_USER_API_URL, getActiveCloudApiUrl, normalizePeaGroupName, getUserGroupName, getUserBaseId,
-        normalizeUsernameFormat, isUsernameMatchingAccount, parseAccountRecord, getParsedUserAccounts,
-        formatTechDisplayName, isSameTechPerson, getValidSystemGroupsSet, getCurrentUserGroup, getJobGroupName,
-        isCurrentUserAdmin, isViewerRole, canCurrentUserEditScada, canCurrentUserSeeJob, escapeHtmlStr, hexToClosestPinColorKey,
-        showToast, showCustomAlert, showCustomConfirm, showCustomPrompt, copyTextToClipboard, copyTechText: copyTextToClipboard,
-        ensureXlsxLoaded: ensureXlsxLibraryLoaded, ensureTechXlsxLoaded: ensureXlsxLibraryLoaded,
-        isAutoGeneratedFakeClosure, getClosedJobsRegistry, getClosedReportsRegistry: getClosedJobsRegistry,
-        saveClosedJobToRegistry, saveClosedReportsRegistry: syncClosedRegistryObject, syncClosedRegistryObject,
-        getDeletedJobsRegistry, recordDeletedJobToRegistry, syncDeletedRegistryObject, getTechLocationsMap, mergeTechLocationsMap,
-        calcHaversineKm, deepParseCoords, resolveGoogleShortLinkUniversal, __unlockCloudWrite: unlockCloudWrite
+        CLOUD_USER_API_URL, getActiveCloudApiUrl, normalizePeaGroupName, stripPeaGroupSuffix,
+        getUserGroupName, getUserBaseId, normalizeUsernameFormat, isUsernameMatchingAccount,
+        parseAccountRecord, getParsedUserAccounts, formatTechDisplayName, isSameTechPerson,
+        getValidSystemGroupsSet, getCurrentUserGroup, getJobGroupName,
+        isCurrentUserAdmin, isViewerRole, canCurrentUserEditScada, canCurrentUserSeeJob,
+        escapeHtmlStr, hexToClosestPinColorKey, showToast, showCustomAlert, showCustomConfirm, showCustomPrompt,
+        copyTextToClipboard, copyTechText: copyTextToClipboard,
+        ensureXlsxLibraryLoaded, ensureXlsxLoaded: ensureXlsxLibraryLoaded, ensureTechXlsxLoaded: ensureXlsxLibraryLoaded,
+        downloadCsvFallback, isAutoGeneratedFakeClosure,
+        getClosedJobsRegistry, getClosedReportsRegistry: getClosedJobsRegistry,
+        syncClosedRegistryObject, saveClosedReportsRegistry: syncClosedRegistryObject, saveClosedJobToRegistry,
+        getDeletedJobsRegistry, recordDeletedJobToRegistry, syncDeletedRegistryObject,
+        getTechLocationsMap, mergeTechLocationsMap, calcHaversineKm, deepParseCoords, resolveGoogleShortLinkUniversal
     });
 
-    if (document.readyState === 'loading') {
-        window.addEventListener('DOMContentLoaded', () => { checkSessionInactivity(true); initPwaAndServiceWorker(); initMqttTransport(); });
-    } else {
-        checkSessionInactivity(true); initPwaAndServiceWorker(); initMqttTransport();
-    }
+    refreshRamDelPinsIndex();
+    refreshRamPinsIndex();
+    seedMqttPinBaseline(ramIndex.pinsList);
+    connectMqttLiveBus(false);
 })();
-// ==================== จบไฟล์ shared-core.js ====================
+// ==================== จบไฟล์ shared-core.js (v6.7) ====================
