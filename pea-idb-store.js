@@ -1,6 +1,6 @@
 // ============================================================================
-// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v1.8 (pea-idb-store.js)
-// ป้องกัน Iframe บูตทับข้อมูลหน้าหลัก + เขียนลง DB เฉพาะเมื่อค่าเปลี่ยนจริง + ครอบ Fetch ทั้งชั้นในและชั้นนอก
+// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v1.9 (pea-idb-store.js)
+// รองรับคีย์จริงครบทุกโมดูล + ป้องกัน Iframe ทับข้อมูล + ครอบ Fetch ทั้งชั้นในและชั้นนอก 100%
 // ============================================================================
 (function () {
     'use strict';
@@ -16,7 +16,9 @@
     const IDB_OPEN_TIMEOUT_MS = 2500;
 
     const OFFLOAD_LIMITS = {
+        elec_app_auto_backup_snapshot: 60000,
         elec_auto_backup_snapshot: 60000,
+        elec_cloud_group_backups_map: 120000,
         elec_labeled_places_list: 1500000,
         default: 800000
     };
@@ -25,6 +27,12 @@
         'elec_labeled_places_list',
         'elec_deleted_labeled_places_map',
         'elec_deleted_equip_audit_logs',
+        'elecReportsComplete_all',
+        'fault_reports_all',
+        'elec_pm_calendar_plans_v1',
+        'elec_app_auto_backup_snapshot',
+        'elec_cloud_group_backups_map',
+        'overdue_ca_list',
         'faultHistory',
         'outageHistory',
         'elec_auto_backup_snapshot',
@@ -35,11 +43,23 @@
         elec_labeled_places_list: '[]',
         elec_deleted_labeled_places_map: '{}',
         elec_deleted_equip_audit_logs: '[]',
+        elecReportsComplete_all: '[]',
+        fault_reports_all: '[]',
+        elec_pm_calendar_plans_v1: '[]',
+        elec_app_auto_backup_snapshot: '',
+        elec_cloud_group_backups_map: '{}',
+        overdue_ca_list: '[]',
         faultHistory: '[]',
         outageHistory: '[]',
         elec_auto_backup_snapshot: '',
         elec_ca_overdue_list: '[]'
     };
+
+    const BACKUP_SNAPSHOT_KEYS = [
+        'elec_app_auto_backup_snapshot',
+        'elec_auto_backup_snapshot',
+        'elec_cloud_group_backups_map'
+    ];
 
     const rawGet = Storage.prototype.getItem;
     const rawSet = Storage.prototype.setItem;
@@ -202,10 +222,25 @@
 
     function getItemRecencyMs(obj) {
         if (!obj || typeof obj !== 'object') return 0;
-        const iso = obj.updatedAt || obj.deletedAt || obj.savedAt || obj.timestamp;
-        if (!iso) return 0;
-        const ms = typeof iso === 'number' ? iso : new Date(iso).getTime();
-        return isNaN(ms) ? 0 : ms;
+        const candidates = [
+            obj.updatedAt,
+            obj.editedAt,
+            obj.techReport?.updatedAt,
+            obj.techNav?.updatedAt,
+            obj.reopenedAt,
+            obj.deletedAt,
+            obj.savedAt,
+            obj.timestamp,
+            obj.createdAtMs
+        ];
+        let maxMs = 0;
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            if (!c) continue;
+            const ms = typeof c === 'number' ? c : new Date(c).getTime();
+            if (!isNaN(ms) && ms > maxMs) maxMs = ms;
+        }
+        return maxMs;
     }
 
     function filterDeletedPinsJson(pinsJsonStr, delMapJsonStr) {
@@ -235,7 +270,7 @@
                 }
                 const map = new Map();
                 const getKey = (it) => {
-                    const explicitId = it?.id || it?.jobId || it?.logId || it?.uid;
+                    const explicitId = it?.id || it?.dateTimeSaved || it?.timestamp || it?.jobId || it?.logId || it?.uid;
                     return explicitId ? `id_${explicitId}` : `raw_${JSON.stringify(it)}`;
                 };
                 idbData.forEach((it) => map.set(getKey(it), it));
@@ -284,13 +319,16 @@
                 window.renderLabeledPlacesList?.(true);
             }
         }
-        if (keysArr.includes('faultHistory') || keysArr.includes('outageHistory')) {
+        if (keysArr.some((k) => k === 'fault_reports_all' || k === 'elecReportsComplete_all' || k === 'faultHistory' || k === 'outageHistory')) {
             window.loadFaultHistory?.();
             window.loadOutageHistory?.();
+            window.autoFillJobNo?.(false);
             window.renderJobCards?.();
         }
-        if (keysArr.includes('elec_ca_overdue_list')) {
+        if (keysArr.some((k) => k === 'overdue_ca_list' || k === 'elec_ca_overdue_list')) {
+            window.reloadOverdueCaFromStorage?.();
             window.renderCaModalList?.();
+            window.checkCaOverdueEnhanced?.(true);
         }
     }
 
@@ -313,6 +351,7 @@
             hydratingOffloadedKeys.clear();
             dirtyWriteQueue.clear();
             ramCache.clear();
+            physTsMap = {};
             return;
         }
         if (e.key === META_TS_KEY && e.newValue) {
@@ -327,16 +366,19 @@
         }
         if (e.newValue === null) {
             e.stopImmediatePropagation();
+            let latestTsMap = physTsMap;
+            try { latestTsMap = JSON.parse(rawGet.call(window.localStorage, META_TS_KEY) || '{}') || {}; } catch (err) {}
             const verBefore = keyVersionMap.get(e.key) || 0;
             idbGetEnvelope(e.key).then((env) => {
                 if ((keyVersionMap.get(e.key) || 0) !== verBefore) return;
                 const curPhys = rawGet.call(window.localStorage, e.key);
-                if (isOffloadMarker(curPhys) || env) {
+                if (isOffloadMarker(curPhys) || (latestTsMap[e.key] && env)) {
                     if (env && env.val !== ramCache.get(e.key)) {
                         ramCache.set(e.key, env.val);
                         triggerAppRefreshForKeys([e.key], false);
                     }
                 } else if (curPhys === null) {
+                    delete physTsMap[e.key];
                     hydratingOffloadedKeys.delete(e.key);
                     ramCache.delete(e.key);
                     triggerAppRefreshForKeys([e.key], false);
@@ -372,6 +414,7 @@
                 bumpKeyVersion(msg.key);
                 pendingPreReadyOps.delete(msg.key);
                 hydratingOffloadedKeys.delete(msg.key);
+                delete physTsMap[msg.key];
                 if (!ramCache.has(msg.key)) return;
                 ramCache.delete(msg.key);
                 triggerAppRefreshForKeys([msg.key], false);
@@ -435,12 +478,14 @@
                 savePhysTs(key, writeTs);
             } catch (quotaErr) {
                 offload = true;
-                if (key !== 'elec_auto_backup_snapshot' && ramCache.has('elec_auto_backup_snapshot')) {
-                    const bkStr = ramCache.get('elec_auto_backup_snapshot');
-                    const bkVer = bumpKeyVersion('elec_auto_backup_snapshot');
-                    dirtyWriteQueue.set('elec_auto_backup_snapshot', { op: 'set', valStr: bkStr, ts: writeTs, ver: bkVer, epoch: clearEpoch, offload: true });
-                    flushKeyWriteQueue('elec_auto_backup_snapshot');
-                }
+                BACKUP_SNAPSHOT_KEYS.forEach((bkKey) => {
+                    if (key !== bkKey && ramCache.has(bkKey)) {
+                        const bkStr = ramCache.get(bkKey);
+                        const bkVer = bumpKeyVersion(bkKey);
+                        dirtyWriteQueue.set(bkKey, { op: 'set', valStr: bkStr, ts: writeTs, ver: bkVer, epoch: clearEpoch, offload: true });
+                        flushKeyWriteQueue(bkKey);
+                    }
+                });
             }
         }
 
@@ -468,7 +513,7 @@
             return;
         }
         if (hydratingOffloadedKeys.has(key) && (valStr === '[]' || valStr === '{}' || valStr === '')) return;
-        if (key === 'elec_auto_backup_snapshot' && hydratingOffloadedKeys.size > 0) return;
+        if ((key === 'elec_app_auto_backup_snapshot' || key === 'elec_auto_backup_snapshot') && hydratingOffloadedKeys.size > 0) return;
 
         const ts = nextWriteTs();
         const ver = bumpKeyVersion(key);
@@ -560,7 +605,6 @@
             hydratedKeys.add(key);
             hydratingOffloadedKeys.delete(key);
 
-            // หากได้รับข้อมูลสดจากหน้าต่างอื่น (BroadcastChannel / storage) ระหว่างกำลังรอเปิด DB ให้คงข้อมูลสดนั้นไว้ห้ามเอาค่าเก่าทับเด็ดขาด
             if (receivedLiveExternalSync) return;
 
             if (latestPreOp?.op === 'del') {
@@ -588,14 +632,16 @@
                 }
             } else if (typeof bootPhys === 'string') {
                 const physTs = Number(physTsMap[key]) || 0;
-                const finalVal = latestPreOp?.op === 'set'
+                let finalVal = latestPreOp?.op === 'set'
                     ? latestPreOp.valStr
                     : ((env && env.ts > physTs && env.val && env.val !== bootPhys) ? env.val : bootPhys);
+                if (key === 'elec_labeled_places_list') {
+                    finalVal = filterDeletedPinsJson(finalVal, ramCache.get('elec_deleted_labeled_places_map'));
+                }
                 const ver = bumpKeyVersion(key);
                 ramCache.set(key, finalVal);
                 if (finalVal !== bootPhys) updatedKeys.add(key);
 
-                // เขียนลงดิสก์เฉพาะเมื่อข้อมูลเปลี่ยนจริง หรือยังไม่มีสำเนาใน IndexedDB (ไม่เขียนซ้ำพร่ำเพรื่อทุกครั้งที่เปิดหน้าเว็บ)
                 if (!env || env.val !== finalVal || shouldOffloadKey(key, finalVal)) {
                     persistManagedKeyPhysical(key, finalVal, latestPreOp?.ts || Math.max(physTs, env?.ts || 0) || nextWriteTs(), ver, Boolean(latestPreOp));
                 }
@@ -614,7 +660,6 @@
 
     const readyPromise = hydrateAllManagedKeys();
 
-    // ครอบ window.fetch ทั้งก่อนและหลัง shared-core.js โหลด เพื่อให้ทั้ง GET และ POST รอ IndexedDB พร้อมก่อนทำงาน
     function ensureFetchBootGuarded() {
         if (typeof window.fetch !== 'function' || window.fetch.__peaIdbOuterGuarded) return;
         const prevFetch = window.fetch;
@@ -642,9 +687,11 @@
             window.pushAllJobsToCloud = guardedPush;
         }
     }
+    if (typeof queueMicrotask === 'function') queueMicrotask(attachPostCoreGuards);
     setTimeout(attachPostCoreGuards, 0);
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', attachPostCoreGuards);
     else attachPostCoreGuards();
+    window.addEventListener('load', attachPostCoreGuards, { once: true });
 
     window.PeaIdbStore = {
         ready: readyPromise,
@@ -654,6 +701,7 @@
             MANAGED_KEYS.forEach((k) => {
                 const ram = ramCache.get(k) || '';
                 const phys = rawGet.call(window.localStorage, k);
+                if (!ram && phys === null) return;
                 report[k] = {
                     sizeKB: Number((ram.length / 1024).toFixed(1)),
                     mode: isOffloadMarker(phys) ? 'IndexedDB (Offloaded)' : 'Mirrored (IDB + LocalStorage)',
