@@ -1714,29 +1714,32 @@
         if (!activeMapNav) {
             loadStoredLabeledPlaces();
             let candidate = null;
+            const matchMe = (u) => Boolean(u && (typeof window.isSameTechPerson === 'function' ? window.isSameTechPerson(u, curUser) : String(u).trim() === curUser));
             if (typeof window.getActiveEquipmentNavItems === 'function') {
                 try {
                     const extItems = window.getActiveEquipmentNavItems();
-                    if (Array.isArray(extItems)) {
-                        candidate = extItems.find(it => it && String(it.techName || it.username || '').trim() === curUser) || null;
-                    }
+                    if (Array.isArray(extItems)) candidate = extItems.find(it => it && matchMe(it.techName || it.username)) || null;
                 } catch (e) {}
             }
             const storedNav = safeJsonParse(localStorage.getItem(STORAGE_KEY_ACTIVE_EQUIP_NAV), null);
-            if (!candidate && storedNav && String(storedNav.techName || '').trim() === curUser) {
+            if (!candidate && storedNav && matchMe(storedNav.techName)) {
                 const ageMs = Date.now() - (Number(storedNav.departTimestamp) || 0);
                 if (ageMs >= 0 && ageMs < 6 * 3600 * 1000) candidate = storedNav;
                 else localStorage.removeItem(STORAGE_KEY_ACTIVE_EQUIP_NAV);
             }
             if (!candidate) return;
 
-            const pid = candidate.placeId || candidate.pinId || storedNav?.placeId;
+            const pid = candidate.placeId || candidate.pinId || storedNav?.placeId || '';
             const targetPin = pid ? labeledPlaces.find(p => p.id === pid && canCurrentUserSeeEquipPin(p)) : null;
-            if (!targetPin) { localStorage.removeItem(STORAGE_KEY_ACTIVE_EQUIP_NAV); return; }
+            const dLat = targetPin ? parseFloat(targetPin.lat) : parseFloat(candidate.destLat);
+            const dLon = targetPin ? parseFloat(targetPin.lon) : parseFloat(candidate.destLon);
+            if (isNaN(dLat) || isNaN(dLon)) { localStorage.removeItem(STORAGE_KEY_ACTIVE_EQUIP_NAV); return; }
+
             activeMapNav = {
                 ...(storedNav || {}), ...candidate,
-                placeId: targetPin.id, placeName: candidate.placeName || targetPin.name,
-                destLat: parseFloat(targetPin.lat), destLon: parseFloat(targetPin.lon), techName: curUser
+                placeId: targetPin ? targetPin.id : (pid || 'fault_target'),
+                placeName: candidate.placeTitle || candidate.placeName || targetPin?.name || 'จุดหมาย',
+                destLat: dLat, destLon: dLon, techName: curUser
             };
             persistActiveEquipMapNav();
         }
@@ -1751,7 +1754,6 @@
             await drawAndRefreshRouteToLabeledPin(window.lastKnownTechCoords, { lat: activeMapNav.destLat, lon: activeMapNav.destLon }, fitRoute);
         }
     }
-
     async function startLabeledPlaceNavigation(placeId, openExternalGoogleMaps = false) {
         loadStoredLabeledPlaces();
         const place = labeledPlaces.find(p => p.id === placeId && canCurrentUserSeeEquipPin(p));
@@ -1975,7 +1977,7 @@
         syncMarkersRafId = requestAnimationFrame(() => { syncMarkersRafId = null; syncLodAndViewportMarkersNow(); });
     }
     // ===== จบพาทที่ 6 / 12 ของไฟล์ scada-engine.js =====
-        // ===== เริ่มพาทที่ 7 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 6 / 12) =====
+    // ===== เริ่มพาทที่ 7 / 12 ของไฟล์ scada-engine.js (วางต่อจากพาทที่ 6 / 12) =====
     function initLabeledLeafletMap() {
         const mapContainer = document.getElementById('labeledInteractiveMap');
         if (!mapContainer || typeof L === 'undefined' || leafletMap) return;
@@ -1987,8 +1989,10 @@
 
         const defCenter = window.lastKnownTechCoords ? [window.lastKnownTechCoords.lat, window.lastKnownTechCoords.lon] : [13.095, 101.125];
         leafletMap = L.map('labeledInteractiveMap').setView(defCenter, 12);
+        window.__labeledLeafletMap = leafletMap;
 
         const gStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' }).addTo(leafletMap);
+
         const gHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' });
         const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' });
         L.control.layers({ '🗺️ แผนที่ถนน (Google)': gStreets, '🛰️ ดาวเทียม+ชื่อถนน (Google)': gHybrid, '🌐 OpenStreetMap': osm }, null, { position: 'topright' }).addTo(leafletMap);
@@ -2401,15 +2405,19 @@
         return touchedEdges;
     }
 
-    window.__scadaSanitizePinsHook = function (pinsArr) {
+        window.__scadaSanitizePinsHook = function (pinsArr) {
         if (!Array.isArray(pinsArr) || pinsArr.length === 0) return;
         const pinSet = new Set(pinsArr.map(p => p?.id).filter(Boolean)), seenUndir = new Set();
         pinsArr.forEach(p => {
             if (!p || !Array.isArray(p.scadaLines)) return;
             p.scadaLines = p.scadaLines.filter(edge => {
                 if (!edge?.to || edge.to === p.id || !pinSet.has(edge.to)) return false;
-                const pair = p.id < edge.to ? `${p.id}__${edge.to}` : `${edge.to}__${p.id}`;
-                const dk = `${pair}|${normFd(edge.fd)}|${normHex(edge.col) || '#10b981'}|${edge.st || 'oh'}`;
+                const fwd = p.id < edge.to;
+                const pair = fwd ? `${p.id}__${edge.to}` : `${edge.to}__${p.id}`;
+                const rawW = Array.isArray(edge.w) ? edge.w : [];
+                const ordW = (fwd ? rawW : [...rawW].reverse()).map(pt => `${Number(pt[0]).toFixed(5)},${Number(pt[1]).toFixed(5)}`).join(';');
+                const effSide = fwd ? (edge.side || 0) : -(edge.side || 0);
+                const dk = `${pair}|${normFd(edge.fd)}|${normHex(edge.col) || '#10b981'}|${edge.st || 'oh'}|${effSide}|${ordW}`;
                 if (seenUndir.has(dk)) return false;
                 seenUndir.add(dk); return true;
             });
@@ -4021,9 +4029,15 @@
     function bootstrapScadaEngineModule() {
         if (hasBootstrappedScadaEngine) return;
         hasBootstrappedScadaEngine = true;
-        injectScadaMasterStyles(); injectScadaModalsAndTabUI(); loadStoredLabeledPlaces();
+        injectScadaMasterStyles(); injectScadaModalsAndTabUI(); injectScadaToolbarUI();
+        loadStoredLabeledPlaces();
         lastCheckedDateIsoForSchedule = getTodayLocalIso();
         renderLabeledPlacesList(false);
+        if (window.PeaIdbStore?.ready) {
+            window.PeaIdbStore.ready.then(() => {
+                if (!simState.active) { loadStoredLabeledPlaces(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+            }).catch(() => {});
+        }
         setTimeout(() => resumeActiveEquipMapNavIfNeeded(false), 350);
         if (new URLSearchParams(window.location.search).get('tab') === 'map') setTimeout(() => switchTechMainTab('map'), 220);
         setInterval(() => {
@@ -4033,7 +4047,7 @@
             }
         }, 60000);
     }
-
+    
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapScadaEngineModule);
     else bootstrapScadaEngineModule();
 })();
