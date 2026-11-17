@@ -12,8 +12,8 @@
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     <meta name="theme-color" content="#2563eb">
 
-    <link id="mainFavIconPng" rel="icon" sizes="any" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
-    <link id="mainAppleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
+    <link id="favIconPng" rel="icon" sizes="any" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%234f46e5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='115' fill='url(%23g)'/%3E%3Cpath d='M318 48L142 304h114l-44 160 198-272H296l44-144z' fill='%23ffffff'/%3E%3C/svg%3E">
     <link id="webManifestLink" rel="manifest" href="manifest-main.json">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -37,12 +37,25 @@
         }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        input[type="text"], input[type="password"], input[type="number"], input[type="tel"], input[type="date"], select, textarea {
-            background-color: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 0.75rem; transition: all 0.2s ease;
+
+        /* กำหนดสไตล์พื้นฐานระดับ (0,0,1) ชนะ Preflight (*) ของ Tailwind CDN แต่ไม่ทับคลาสสีขอบและพื้นหลังโทนมืด */
+        input:where(:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="hidden"])),
+        select,
+        textarea {
+            background-color: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 0.75rem;
+            transition: all 0.2s ease;
         }
-        input:focus, select:focus, textarea:focus {
-            background-color: #ffffff; border-color: #3b82f6 !important; outline: none; box-shadow: 0 0 0 4px rgba(59,130,246,0.12);
+        input:where(:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="hidden"]):focus),
+        select:where(:focus),
+        textarea:where(:focus) {
+            background-color: #ffffff;
+            border-color: #3b82f6 !important;
+            outline: none;
+            box-shadow: 0 0 0 4px rgba(59,130,246,0.12);
         }
+
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -77,14 +90,16 @@
         }
         #mobileScadaReturnBar { z-index: 910 !important; }
 
-        /* มาตรฐานลำดับชั้น Z-Index ป้องกันหน้าต่างยืนยันจมหลังป๊อปอัปอื่น */
+        /* มาตรฐานลำดับชั้น Z-Index ป้องกันหน้าต่างยืนยันหรือหน้าต่างแก้ไขย่อยจมหลังป๊อปอัปอื่น */
         #loginScreen { z-index: 1100 !important; }
         #stationModal, #issueModal, #tambonModal, #apiKeyModal, #meterLinkModal, #backupModal, #caModal, #stripWordsModal { z-index: 1150 !important; }
-        #scadaCadImportModal, #userManageModal { z-index: 1250 !important; }
-        #customAlertModal, #customConfirmModal { z-index: 1450 !important; }
-        #toast { z-index: 1500 !important; }
+        #scadaCadImportModal, #userManageModal, #onlineUsersModal { z-index: 1250 !important; }
+        #customTambonEditModal, #customUserEditModal { z-index: 1300 !important; }
+        #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
+        #toast { z-index: 1500 !important; 
+            }
 
-        @keyframes scadaFieldFlash {
+   @keyframes scadaFieldFlash {
             0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.65); background-color: #ecfdf5; }
             100% { box-shadow: 0 0 0 6px rgba(16,185,129,0); background-color: #ffffff; }
         }
@@ -201,7 +216,7 @@
                     </defs>
                     <rect width="600" height="500" fill="url(#bg)" />
                     <g stroke="rgba(255,255,255,0.15)" stroke-width="2">
-                        <line x1="100" y1="150" x2="250" y2="100" /><line x1="250" y1="100" x2="450" y2="180" /><line x1="450" y1="180" x2="350" y2="350" />
+                        <line x1="100" y1="150" x2="250" y2="100" /><line x1="250" y1="100" x2="450" y2="180" /><line x1="450" y2="180" x2="350" y2="350" />
                         <line x1="350" y1="350" x2="150" y2="300" /><line x1="150" y1="300" x2="100" y2="150" /><line x1="250" y1="100" x2="350" y2="350" />
                     </g>
                     <circle cx="100" cy="150" r="6" fill="#60a5fa" /><circle cx="250" cy="100" r="8" fill="#34d399" /><circle cx="450" cy="180" r="6" fill="#60a5fa" />
@@ -211,7 +226,7 @@
                 </svg>
             </div>
             <div class="px-2">
-                <div class="inline-block bg-blue-100 text-blue-700 font-bold text-xs px-3 py-1 rounded-full mb-3 shadow-sm">เวอร์ชัน 6.4 Modular</div>
+                <div class="inline-block bg-blue-100 text-blue-700 font-bold text-xs px-3 py-1 rounded-full mb-3 shadow-sm">เวอร์ชัน 6.5 Modular</div>
                 <h1 class="text-4xl font-bold text-slate-800 leading-tight tracking-tight mb-4">ระบบจัดการ<br><span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">งานไฟฟ้าขัดข้อง</span></h1>
                 <p class="text-slate-500 text-sm leading-relaxed mb-6">บันทึกการแจ้งเหตุ เชื่อมผังวงจร SCADA คำนวณขนาดฟิวส์ และวิเคราะห์สถิติข้อมูลแบบเรียลไทม์พร้อมผู้ช่วย AI</p>
                 <div class="flex flex-wrap gap-2.5 text-[11px] font-semibold text-slate-600">
@@ -454,7 +469,7 @@
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>📍 พิกัด GPS</span></label>
                         <input type="text" id="gpsInput" class="w-full px-4 py-2" placeholder="วางพิกัด Lat, Long หรือลิงก์ Google Maps / maps.app.goo.gl">
                         <div id="mapPreviewContainerTab1" class="hidden mt-2.5 rounded-xl overflow-hidden border border-slate-300 shadow-sm bg-slate-100">
-                            <div class="bg-slate-800 text-white text-[11px] px-3 py-1.5 flex justify-between items-center"><span id="mapCoordLabelTab1" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span><a id="mapExternalLinkTab1" href="#" target="_blank" class="text-blue-300 hover:text-white underline ml-2">เปิดแอป Maps ↗</a></div>
+                            <div class="bg-slate-800 text-white text-[11px] px-3 py-1.5 flex justify-between items-center"><span id="mapCoordLabelTab1" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span><a id="mapExternalLinkTab1" href="#" target="_blank" rel="noopener noreferrer" class="text-blue-300 hover:text-white underline ml-2">เปิดแอป Maps ↗</a></div>
                             <iframe id="googleMapIframeTab1" class="w-full h-56 border-0" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
                         </div>
                     </div>
@@ -480,8 +495,7 @@
                     <div id="historyListFault" class="space-y-3 max-h-80 overflow-y-auto"><p class="text-sm text-slate-500 text-center py-4">ยังไม่มีประวัติการบันทึก</p></div>
                 </div>
             </div>
-            <!-- ===== จบพาทที่ 1 / 2 ของไฟล์ index.html ===== -->
-                        <!-- ===== เริ่มพาทที่ 2 / 2 ของไฟล์ index.html (วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) ===== -->
+
             <!-- ================= TAB 2: รับแจ้งไฟฟ้าขัดข้อง ================= -->
             <div id="tab2" class="tab-content p-6 space-y-4">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
@@ -524,7 +538,7 @@
                     <div data-id="metaGrid" class="p-2 -mx-2 bg-slate-50/50 rounded-lg border border-slate-100">
                         <div class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>📅 ข้อมูลการแจ้ง</span></div>
                         <div class="grid grid-cols-3 gap-2 px-2 pb-1">
-                            <div><label class="text-xs font-bold text-slate-700">วันที่แจ้ง:</label><input type="text" id="reportDate" class="text-sm px-2 py-1.5 w-full" placeholder="วว/ดด/ปปปป" onchange="autoFillJobNo()" oninput="autoFillJobNo()"></div>
+                            <div><label class="text-xs font-bold text-slate-700">วันที่แจ้ง:</label><input type="text" id="reportDate" class="text-sm px-2 py-1.5 w-full" placeholder="วว/ดด/ปปปป"></div>
                             <div><label class="text-xs font-bold text-slate-700">งานที่:</label><input type="number" min="1" inputmode="numeric" id="jobNo" class="text-sm px-2 py-1.5 w-full" placeholder="เช่น 1"></div>
                             <div><label class="text-xs font-bold text-slate-700">กะ:</label><input type="number" min="1" inputmode="numeric" id="shift" class="text-sm px-2 py-1.5 w-full" placeholder="เช่น 1"></div>
                         </div>
@@ -574,7 +588,7 @@
                         <label class="drag-handle flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 cursor-move"><span class="text-slate-400 text-lg leading-none">≡</span> <span>📌 พิกัด (GPS Link):</span></label>
                         <input type="text" id="gps" class="w-full px-4 py-2 text-sm" placeholder="วางพิกัด หรือลิงก์ Google Maps / maps.app.goo.gl">
                         <div id="mapPreviewContainer" class="hidden mt-2.5 rounded-xl overflow-hidden border border-slate-300 shadow-sm bg-slate-100">
-                            <div class="bg-slate-800 text-white text-[11px] px-3 py-1.5 flex justify-between items-center"><span id="mapCoordLabel" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span><a id="mapExternalLink" href="#" target="_blank" class="text-blue-300 hover:text-white underline ml-2">เปิดแอป Maps ↗</a></div>
+                            <div class="bg-slate-800 text-white text-[11px] px-3 py-1.5 flex justify-between items-center"><span id="mapCoordLabel" class="font-medium truncate">📍 แผนที่จุดเกิดเหตุ</span><a id="mapExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="text-blue-300 hover:text-white underline ml-2">เปิดแอป Maps ↗</a></div>
                             <iframe id="googleMapIframe" class="w-full h-56 border-0" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
                         </div>
                     </div>
@@ -763,27 +777,64 @@
 
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 text-sm z-[1500]">แจ้งเตือนระบบ</div>
 
-    <!-- 📦 โหลด MQTT และโมดูลระบบตามลำดับ ไม่ซ้ำซ้อน -->
+    <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="shared-core.js?v=121"></script>
-    <script src="main-app.js?v=121"></script>
-    <script src="pm-calendar.js?v=121"></script>
-    <script src="pm-push.js?v=121"></script>
-
-    <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยน & กันกล่องแนะนำเด้งเองตอนรับค่าจาก SCADA/AI -->
+    <script src="pea-idb-store.js?v=123"></script>
+    <script src="shared-core.js?v=123"></script>
+    <script src="main-app.js?v=123"></script>
+    <script src="pm-calendar.js?v=123"></script>
+    <script src="scada-fault-locator.js?v=123"></script>
+    <script src="pm-push.js?v=123"></script>
+    
+    <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เพี้ยน + กันเด้งเติมวันที่/กะขณะลบแก้ + คลายลิงก์ตำบล + ลงทะเบียน SW -->
     <script>
-        (function () {
-            document.addEventListener('wheel', function (e) {
+        (function() {
+            document.addEventListener('wheel', function(e) {
                 const el = e.target;
                 if (el && el.tagName === 'INPUT' && el.type === 'number' && document.activeElement === el) {
                     el.blur();
                 }
             }, { passive: true });
-
+            
+            // อนุญาตให้กดลบช่องวันที่แจ้งและเลขกะจนว่างเพื่อพิมพ์ค่าใหม่ได้โดยไม่เด้งค่าเก่าทับทันที
+            document.addEventListener('input', function(e) {
+                const el = e.target;
+                if ((el?.id === 'reportDate' || el?.id === 'shift') && document.activeElement === el && !el.value.trim()) {
+                    e.stopImmediatePropagation();
+                }
+            }, true);
+            
+            ['reportDate', 'shift'].forEach(function(id) {
+                document.getElementById(id)?.addEventListener('blur', function() {
+                    if (!this.value.trim() && typeof window.autoFillJobNo === 'function') {
+                        window.autoFillJobNo(true);
+                    }
+                });
+            });
+            
+            // รองรับการวางพิกัด "Lat, Lon" หรือลิงก์สั้น Maps ในช่องละติจูดหน้าจัดการตำบล
+            let tbLinkTimer = null;
+            document.getElementById('newTambonLatInput')?.addEventListener('input', function() {
+                clearTimeout(tbLinkTimer);
+                const raw = this.value.trim();
+                if (!raw || /^-?\d+(?:\.\d+)?$/.test(raw)) return;
+                const self = this;
+                tbLinkTimer = setTimeout(async function() {
+                    const c = (typeof window.extractCoordsFromInput === 'function' ? window.extractCoordsFromInput(raw) : null) ||
+                        (typeof window.resolveGoogleShortLinkUniversal === 'function' ? await window.resolveGoogleShortLinkUniversal(raw) : null);
+                    if (c && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lon))) {
+                        self.value = Number(c.lat).toFixed(4);
+                        const lonEl = document.getElementById('newTambonLonInput');
+                        if (lonEl) lonEl.value = Number(c.lon).toFixed(4);
+                        window.showToast?.('📍 ดึงพิกัดละติจูดและลองจิจูดเรียบร้อยแล้ว');
+                    }
+                }, 350);
+            });
+            
             function attachSuggestFocusGuard() {
                 if (typeof window.showSuggestionsData === 'function' && !window.showSuggestionsData.__focusGuarded) {
                     const origShowSuggest = window.showSuggestionsData;
-                    const guarded = function (inputEl, listId) {
+                    const guarded = function(inputEl, listId) {
                         if (!inputEl || document.activeElement !== inputEl) {
                             document.getElementById(listId)?.classList.add('hidden');
                             return;
@@ -796,8 +847,14 @@
             }
             attachSuggestFocusGuard();
             window.addEventListener('DOMContentLoaded', attachSuggestFocusGuard);
+            window.addEventListener('load', attachSuggestFocusGuard);
+            
+            if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+                window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('./sw.js').catch(function() {});
+                });
+            }
         })();
     </script>
-
-</body>
+    </body>
 </html>
