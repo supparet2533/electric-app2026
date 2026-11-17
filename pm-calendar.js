@@ -566,14 +566,14 @@
     let hasPendingPmCloudSync = false;
     let fallbackCloudTimer = null;
 
-    const _origFetchForPm = window.fetch;
-    window.fetch = async function (input, init) {
+     const _origFetchForPm = window.fetch;
+    window.fetch = async function(input, init) {
         const urlStr = typeof input === 'string' ? input : (input?.url || '');
         const isGas = urlStr.includes('script.google.com');
         let didAttachPmWrite = false;
         let attachedSyncSeq = 0;
-
-        if (isGas && init && init.method === 'POST' && typeof init.body === 'string') {
+        
+        if (isGas && init && init.method === 'POST' && typeof init.body === 'string' && (isUserCurrentlyLoggedIn() || hasPendingPmCloudSync)) {
             if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
                 try {
                     loadPmPlansFromStorage();
@@ -608,7 +608,9 @@
                 if (response.ok) {
                     try {
                         const rj = await response.clone().json();
-                        if (rj && (rj.status === 'error' || rj.result === 'error' || rj.ok === false)) gasWriteOk = false;
+                        if (rj && (rj.status === 'error' || rj.result === 'error' || rj.ok === false || rj.skippedBusyRam || rj.skippedQuota || rj.skippedViewer || rj.patched === false)) {
+                            gasWriteOk = false;
+                        }
                     } catch (e) {}
                 }
                 if (gasWriteOk) {
@@ -636,7 +638,7 @@
             if (isGas) inFlightGasCount = Math.max(0, inFlightGasCount - 1);
         }
     };
-
+    
     async function savePmPlansAndSync(pushCloud = true) {
         rememberActiveAuthForLoggedOutAlerts();
         pmPlans = prunePmPlansArray(pmPlans);
@@ -652,7 +654,7 @@
         } finally { isSyncingPmInternal = false; }
         if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
         checkAndTriggerScheduledPmAlerts(false);
-
+        
         if (pushCloud && !isEmbed) {
             const targetSeq = ++pendingPmSyncSeq;
             hasPendingPmCloudSync = true;
@@ -660,7 +662,7 @@
             if (typeof window.pushAllJobsToCloud === 'function') {
                 window.pushAllJobsToCloud(true);
             } else if (typeof window.syncJobsWithFieldPage === 'function') {
-                window.syncJobsWithFieldPage(true);
+                window.syncJobsWithFieldPage();
             }
             if (fallbackCloudTimer) clearTimeout(fallbackCloudTimer);
             const runFallbackCheck = (attempt = 0) => {
@@ -673,12 +675,14 @@
                 if (apiUrl && apiUrl.includes('script.google.com')) {
                     loadPmPlansFromStorage();
                     const freshLocMap = writePmShardsIntoLocMap(safeGetLocMap());
+                    const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
+                    const targetGroupParam = (role === 'admin' && !explicitGroup) ? '' : getActivePmGroup();
                     fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
                             action: 'patchDelta',
-                            group: getActivePmGroup(),
+                            group: targetGroupParam,
                             techLocDelta: { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', techLocations: freshLocMap, updatedAt: new Date().toISOString() }
                         })
                     }).catch(() => {}).finally(() => {
@@ -691,7 +695,6 @@
             fallbackCloudTimer = setTimeout(() => runFallbackCheck(0), 5000);
         }
     }
-
     function syncPmPlansFromLocationsMap() {
         if (isSyncingPmInternal) return false;
         const locMap = safeGetLocMap(), incomingList = [];
@@ -1222,8 +1225,10 @@
     }
 
     const probedLeafletContainerIds = new Set();
-    function discoverExistingLeafletMaps() {
-        if (typeof L === 'undefined' || !L.Map || (scadaMapRef && repairMapRef)) return;
+        function discoverExistingLeafletMaps() {
+        if (typeof L === 'undefined' || !L.Map) return;
+        if (!scadaMapRef && window.__labeledLeafletMap) bindSingleLeafletMapEvents(window.__labeledLeafletMap);
+        if (scadaMapRef && repairMapRef) return;
         let needResize = false;
         [['labeledInteractiveMap', scadaMapRef], ['repairJobsLeafletMap', repairMapRef]].forEach(([id, ref]) => {
             if (ref || probedLeafletContainerIds.has(id)) return;
@@ -1867,7 +1872,7 @@
     // ========================================================================
     // 10. นำทาง GPS, แชร์ LINE, Excel, ปุ่มเตือนซ้ำทุกนาที & นาฬิกาปลอดการยิงซ้อน
     // ========================================================================
-    function navigatePmPlanGps(itemId) {
+        function navigatePmPlanGps(itemId) {
         const item = getAllVisibleCalendarItems().find(x => x.id === itemId); if (!item) return;
         const lat = parseFloat(item.lat), lon = parseFloat(item.lon), hasCoord = !isNaN(lat) && !isNaN(lon);
         if (isUserCurrentlyLoggedIn() && item.linkedPinId && typeof window.startLabeledPlaceNavigation === 'function') {
@@ -1881,9 +1886,18 @@
             if (sameAsEquip) { closePmCalendarModal(); document.getElementById('pmAlertPopupModal')?.classList.add('hidden'); window.startLabeledPlaceNavigation(item.linkedPinId, true); return; }
         }
         if (!hasCoord) { safeToast('⚠️ หมุดแผนงานนี้ยังไม่ได้ระบุพิกัด GPS'); return; }
-        if (isUserCurrentlyLoggedIn() && typeof window.recordEquipmentNavStart === 'function' && !safeIsViewer()) window.recordEquipmentNavStart({ id: item.id, name: `PM: ${item.title}`, note: item.note || '', ownerGroup: normPmGrp(item.ownerGroup || getActivePmGroup()), lat, lon }, { distanceKm: '2.0', durationMin: 5, isArrived: false });
-        window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}&travelmode=driving`, '_blank');
+        if (isUserCurrentlyLoggedIn() && typeof window.recordEquipmentNavStart === 'function' && !safeIsViewer()) {
+            const startCoord = window.lastKnownTechCoords;
+            const route = (startCoord && typeof window.calculateInstantRouteFallback === 'function')
+                ? window.calculateInstantRouteFallback(startCoord, { lat, lon })
+                : { distanceKm: '2.0', durationMin: 5, isArrived: false };
+            window.recordEquipmentNavStart({ id: item.id, name: `PM: ${item.title}`, note: item.note || '', ownerGroup: normPmGrp(item.ownerGroup || getActivePmGroup()), lat, lon }, route);
+        }
+        const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat.toFixed(6)},${lon.toFixed(6)}&travelmode=driving`;
+        const win = window.open(mapsUrl, '_blank');
+        if (!win && !(Core && Core.isEmbeddedIframe)) window.location.href = mapsUrl;
     }
+
     function shareSinglePmPlanToLine(itemId) {
         const item = getAllVisibleCalendarItems().find(x => x.id === itemId); if (!item) return;
         const cat = getCategoryMeta(item.category), alCfg = getPlanEffectiveAlertConfig(item);
@@ -1987,17 +2001,33 @@
         exportPmPlansToExcel, togglePmSoundSetting, togglePmRepeatEveryMinSetting, requestPmBrowserNotificationPermission, acknowledgeCurrentPmAlertRound
     });
 
+        function ensureSwitchTechTabWrapped() {
+        if (typeof window.switchTechMainTab === 'function' && !window.switchTechMainTab.__pmWrapped) {
+            const origSwitch = window.switchTechMainTab;
+            const wrapped = function (...args) {
+                const res = origSwitch.apply(this, args);
+                setTimeout(() => { injectPmButtonsIntoScadaToolbar(); renderAllExternalPmMapLayers(); }, 180);
+                return res;
+            };
+            wrapped.__pmWrapped = true;
+            window.switchTechMainTab = wrapped;
+        }
+    }
+
     function bootstrapPmCalendarModule() {
         rememberActiveAuthForLoggedOutAlerts(); bindLeafletMapHooks(); injectPmCalendarStyles(); injectPmModalsDOM(); injectQuickAddBoxIntoCalendar();
         loadPmPlansFromStorage(); syncPmPlansFromLocationsMap(); updatePmSoundAndNotifButtonsUI();
         if (isUserCurrentlyLoggedIn()) refreshPmAllViews();
-        if (typeof window.switchTechMainTab === 'function' && !window.switchTechMainTab.__pmWrapped) {
-            const origSwitch = window.switchTechMainTab;
-            const wrapped = function (...args) { const res = origSwitch.apply(this, args); setTimeout(() => { injectPmButtonsIntoScadaToolbar(); renderAllExternalPmMapLayers(); }, 180); return res; };
-            wrapped.__pmWrapped = true; window.switchTechMainTab = wrapped;
+        ensureSwitchTechTabWrapped();
+        if (window.PeaIdbStore?.ready) {
+            window.PeaIdbStore.ready.then(() => {
+                loadPmPlansFromStorage(); syncPmPlansFromLocationsMap();
+                if (isUserCurrentlyLoggedIn()) refreshPmAllViews();
+            }).catch(() => {});
         }
         let lastKnownLoginState = isUserCurrentlyLoggedIn();
         setInterval(() => {
+            ensureSwitchTechTabWrapped();
             const nowLogged = isUserCurrentlyLoggedIn();
             if (nowLogged !== lastKnownLoginState) {
                 lastKnownLoginState = nowLogged;
@@ -2005,7 +2035,7 @@
                 else { closePmPlanFormModal(); closePmCalendarModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
             }
         }, 1200);
-        setTimeout(async () => { rememberActiveAuthForLoggedOutAlerts(); if (!isUserCurrentlyLoggedIn()) await pullPmPlansWhileLoggedOut(); else syncPmPlansFromLocationsMap(); if (isUserCurrentlyLoggedIn()) refreshPmAllViews(); checkAndTriggerScheduledPmAlerts(false); }, 1400);
+        setTimeout(async () => { ensureSwitchTechTabWrapped(); rememberActiveAuthForLoggedOutAlerts(); if (!isUserCurrentlyLoggedIn()) await pullPmPlansWhileLoggedOut(); else syncPmPlansFromLocationsMap(); if (isUserCurrentlyLoggedIn()) refreshPmAllViews(); checkAndTriggerScheduledPmAlerts(false); }, 1400);
         setInterval(checkExactScheduleClockTick, 15000);
         setInterval(() => { rememberActiveAuthForLoggedOutAlerts(); if (!document.hidden && isUserCurrentlyLoggedIn()) { syncPmPlansFromLocationsMap(); updatePmHeaderBadgesAndStrip(); } }, 10000);
         document.addEventListener('visibilitychange', triggerWakeScheduleCheck);
