@@ -1,5 +1,5 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v122 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v129 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
 const CACHE_NAME = 'pea-smart-tools-v129';
@@ -60,6 +60,9 @@ const MAP_TILE_HOST_RE = /^(?:(?:mt|khms)\d?\.google\.com|(?:[a-z0-9-]+\.)?tile\
 const BYPASS_HOSTS = [
     'script.google.com',
     'script.googleusercontent.com',
+    'drive.google.com',
+    'drive.usercontent.google.com',
+    'lh3.googleusercontent.com',
     'generativelanguage.googleapis.com',
     'firebaseinstallations.googleapis.com',
     'fcmregistrations.googleapis.com',
