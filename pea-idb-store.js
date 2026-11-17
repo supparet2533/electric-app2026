@@ -1,6 +1,7 @@
 // ============================================================================
-// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v1.9 (pea-idb-store.js)
-// รองรับคีย์จริงครบทุกโมดูล + ป้องกัน Iframe ทับข้อมูล + ครอบ Fetch ทั้งชั้นในและชั้นนอก 100%
+// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v2.1 (pea-idb-store.js)
+// ซิงค์คีย์ CA (overdue_ca_list) + แผนงาน PM + ป้องกัน Iframe บูตทับข้อมูลหน้าหลักครบ 100%
+// พาทที่ 1 / 2 : Config, RAM Cache, IndexedDB Core & Merge Helpers
 // ============================================================================
 (function () {
     'use strict';
@@ -16,11 +17,11 @@
     const IDB_OPEN_TIMEOUT_MS = 2500;
 
     const OFFLOAD_LIMITS = {
-        elec_app_auto_backup_snapshot: 60000,
-        elec_auto_backup_snapshot: 60000,
-        elec_cloud_group_backups_map: 120000,
-        elec_labeled_places_list: 1500000,
-        default: 800000
+        elec_auto_backup_snapshot: 50000,
+        elec_app_auto_backup_snapshot: 50000,
+        elec_cloud_group_backups_map: 100000,
+        elec_labeled_places_list: 450000,
+        default: 400000
     };
 
     const MANAGED_KEYS = new Set([
@@ -29,14 +30,14 @@
         'elec_deleted_equip_audit_logs',
         'elecReportsComplete_all',
         'fault_reports_all',
-        'elec_pm_calendar_plans_v1',
-        'elec_app_auto_backup_snapshot',
         'elec_cloud_group_backups_map',
-        'overdue_ca_list',
+        'elec_app_auto_backup_snapshot',
+        'elec_auto_backup_snapshot',
         'faultHistory',
         'outageHistory',
-        'elec_auto_backup_snapshot',
-        'elec_ca_overdue_list'
+        'overdue_ca_list',
+        'elec_ca_overdue_list',
+        'elec_pm_calendar_plans_v1'
     ]);
 
     const EMPTY_FALLBACK = {
@@ -45,21 +46,15 @@
         elec_deleted_equip_audit_logs: '[]',
         elecReportsComplete_all: '[]',
         fault_reports_all: '[]',
-        elec_pm_calendar_plans_v1: '[]',
-        elec_app_auto_backup_snapshot: '',
         elec_cloud_group_backups_map: '{}',
-        overdue_ca_list: '[]',
+        elec_app_auto_backup_snapshot: '',
+        elec_auto_backup_snapshot: '',
         faultHistory: '[]',
         outageHistory: '[]',
-        elec_auto_backup_snapshot: '',
-        elec_ca_overdue_list: '[]'
+        overdue_ca_list: '[]',
+        elec_ca_overdue_list: '[]',
+        elec_pm_calendar_plans_v1: '[]'
     };
-
-    const BACKUP_SNAPSHOT_KEYS = [
-        'elec_app_auto_backup_snapshot',
-        'elec_auto_backup_snapshot',
-        'elec_cloud_group_backups_map'
-    ];
 
     const rawGet = Storage.prototype.getItem;
     const rawSet = Storage.prototype.setItem;
@@ -84,8 +79,15 @@
     let isDbReady = false;
     let bc = null;
 
-    try { if ('BroadcastChannel' in window) bc = new BroadcastChannel(SYNC_CHANNEL); } catch (e) {}
-    try { physTsMap = JSON.parse(rawGet.call(window.localStorage, META_TS_KEY) || '{}') || {}; } catch (e) { physTsMap = {}; }
+    try {
+        if ('BroadcastChannel' in window) bc = new BroadcastChannel(SYNC_CHANNEL);
+    } catch (e) {}
+
+    try {
+        physTsMap = JSON.parse(rawGet.call(window.localStorage, META_TS_KEY) || '{}') || {};
+    } catch (e) {
+        physTsMap = {};
+    }
 
     function nextWriteTs() {
         lastMonotonicTs = Math.max(Date.now(), lastMonotonicTs + 1);
@@ -100,7 +102,9 @@
 
     function savePhysTs(key, ts) {
         physTsMap[key] = ts;
-        try { rawSet.call(window.localStorage, META_TS_KEY, JSON.stringify(physTsMap)); } catch (e) {}
+        try {
+            rawSet.call(window.localStorage, META_TS_KEY, JSON.stringify(physTsMap));
+        } catch (e) {}
     }
 
     function isOffloadMarker(val) {
@@ -121,6 +125,7 @@
         return null;
     }
 
+    // อ่านสถานะเริ่มต้นจาก localStorage เข้า RAM ทันทีที่โหลดสคริปต์ (0ms)
     MANAGED_KEYS.forEach((key) => {
         try {
             const physVal = rawGet.call(window.localStorage, key);
@@ -151,7 +156,11 @@
             const timer = setTimeout(() => finish(null), IDB_OPEN_TIMEOUT_MS);
 
             let req;
-            try { req = indexedDB.open(DB_NAME, 1); } catch (e) { return finish(null); }
+            try {
+                req = indexedDB.open(DB_NAME, 1);
+            } catch (e) {
+                return finish(null);
+            }
             req.onupgradeneeded = (ev) => {
                 const db = ev.target.result;
                 if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
@@ -160,9 +169,17 @@
             req.onerror = () => finish(null);
             req.onsuccess = (ev) => {
                 const openedDb = ev.target.result;
-                openedDb.onversionchange = () => { try { openedDb.close(); } catch (e) {} if (dbInst === openedDb) dbInst = null; };
-                openedDb.onclose = () => { if (dbInst === openedDb) dbInst = null; };
-                if (settled) { try { openedDb.close(); } catch (e) {} return; }
+                openedDb.onversionchange = () => {
+                    try { openedDb.close(); } catch (e) {}
+                    if (dbInst === openedDb) dbInst = null;
+                };
+                openedDb.onclose = () => {
+                    if (dbInst === openedDb) dbInst = null;
+                };
+                if (settled) {
+                    try { openedDb.close(); } catch (e) {}
+                    return;
+                }
                 dbInst = openedDb;
                 finish(dbInst);
             };
@@ -180,7 +197,9 @@
                 tx.oncomplete = () => resolve(true);
                 tx.onerror = () => resolve(false);
                 tx.onabort = () => resolve(false);
-            } catch (e) { resolve(false); }
+            } catch (e) {
+                resolve(false);
+            }
         });
     }
 
@@ -193,7 +212,9 @@
                 const req = tx.objectStore(STORE_NAME).get(key);
                 req.onsuccess = () => resolve(unwrapIdbRecord(req.result));
                 req.onerror = () => resolve(null);
-            } catch (e) { resolve(null); }
+            } catch (e) {
+                resolve(null);
+            }
         });
     }
 
@@ -207,7 +228,9 @@
                 tx.oncomplete = () => resolve(true);
                 tx.onerror = () => resolve(false);
                 tx.onabort = () => resolve(false);
-            } catch (e) { resolve(false); }
+            } catch (e) {
+                resolve(false);
+            }
         });
     }
 
@@ -222,25 +245,10 @@
 
     function getItemRecencyMs(obj) {
         if (!obj || typeof obj !== 'object') return 0;
-        const candidates = [
-            obj.updatedAt,
-            obj.editedAt,
-            obj.techReport?.updatedAt,
-            obj.techNav?.updatedAt,
-            obj.reopenedAt,
-            obj.deletedAt,
-            obj.savedAt,
-            obj.timestamp,
-            obj.createdAtMs
-        ];
-        let maxMs = 0;
-        for (let i = 0; i < candidates.length; i++) {
-            const c = candidates[i];
-            if (!c) continue;
-            const ms = typeof c === 'number' ? c : new Date(c).getTime();
-            if (!isNaN(ms) && ms > maxMs) maxMs = ms;
-        }
-        return maxMs;
+        const iso = obj.updatedAt || obj.editedAt || obj.deletedAt || obj.savedAt || obj.timestamp || obj.dateTimeSaved;
+        if (!iso) return 0;
+        const ms = typeof iso === 'number' ? iso : new Date(iso).getTime();
+        return isNaN(ms) ? 0 : ms;
     }
 
     function filterDeletedPinsJson(pinsJsonStr, delMapJsonStr) {
@@ -256,7 +264,9 @@
                 return (new Date(p.updatedAt || 0).getTime() || 0) > (new Date(dIso).getTime() || 0);
             });
             return filtered.length !== pins.length ? JSON.stringify(filtered) : pinsJsonStr;
-        } catch (e) { return pinsJsonStr; }
+        } catch (e) {
+            return pinsJsonStr;
+        }
     }
 
     function mergeOffloadedJson(key, idbStr, earlyDeltaStr) {
@@ -265,12 +275,12 @@
             const idbData = JSON.parse(idbStr);
             const ramData = JSON.parse(earlyDeltaStr);
             if (Array.isArray(idbData) && Array.isArray(ramData) && ramData.length > 0) {
-                if (idbData.some(x => typeof x !== 'object' || x === null) || ramData.some(x => typeof x !== 'object' || x === null)) {
+                if (idbData.some((x) => typeof x !== 'object' || x === null) || ramData.some((x) => typeof x !== 'object' || x === null)) {
                     return JSON.stringify(Array.from(new Set([...idbData, ...ramData])));
                 }
                 const map = new Map();
                 const getKey = (it) => {
-                    const explicitId = it?.id || it?.dateTimeSaved || it?.timestamp || it?.jobId || it?.logId || it?.uid;
+                    const explicitId = it?.id || it?.jobId || it?.logId || it?.uid || it?.timestamp || it?.dateTimeSaved;
                     return explicitId ? `id_${explicitId}` : `raw_${JSON.stringify(it)}`;
                 };
                 idbData.forEach((it) => map.set(getKey(it), it));
@@ -287,30 +297,44 @@
         } catch (e) {}
         return idbStr;
     }
-
+    // ===== จบพาทที่ 1 / 2 ของไฟล์ pea-idb-store.js =====
+        // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ pea-idb-store.js (วางต่อจากพาทที่ 1) =====
     function dispatchSyntheticStorageEvent(key, newVal) {
         let ev = null;
         try {
             ev = new StorageEvent('storage', { key, newValue: newVal, oldValue: null, storageArea: window.localStorage });
         } catch (e1) {
-            try { ev = new StorageEvent('storage', { key, newValue: newVal, oldValue: null }); } catch (e2) {}
+            try {
+                ev = new StorageEvent('storage', { key, newValue: newVal, oldValue: null });
+            } catch (e2) {}
         }
-        if (ev) { try { window.dispatchEvent(ev); } catch (e) {} }
+        if (ev) {
+            try { window.dispatchEvent(ev); } catch (e) {}
+        }
     }
 
     function triggerAppRefreshForKeys(keysArr, isInitialBoot = false) {
         if (!keysArr || !keysArr.length) return;
         const simActive = Boolean(window.PeaCore?.simSandbox?.active);
 
-        const hasEquipUpdate = keysArr.some((k) => k === 'elec_labeled_places_list' || k === 'elec_deleted_labeled_places_map' || k === 'elec_deleted_equip_audit_logs');
+        const hasEquipUpdate = keysArr.some((k) =>
+            k === 'elec_labeled_places_list' ||
+            k === 'elec_deleted_labeled_places_map' ||
+            k === 'elec_deleted_equip_audit_logs'
+        );
         if (hasEquipUpdate && !simActive) {
             try {
+                window.PeaCore?.refreshRamDelPinsIndex?.();
                 const parsed = JSON.parse(ramCache.get('elec_labeled_places_list') || '[]');
                 window.PeaCore?.refreshRamPinsIndex?.(parsed);
             } catch (e) {}
         }
 
-        keysArr.forEach((key) => dispatchSyntheticStorageEvent(key, ramCache.get(key) ?? null));
+        if (typeof window.PeaCore?.notifyStorageUpdated === 'function') {
+            window.PeaCore.notifyStorageUpdated(keysArr);
+        } else {
+            keysArr.forEach((key) => dispatchSyntheticStorageEvent(key, ramCache.get(key) ?? null));
+        }
 
         if (isInitialBoot && hasEquipUpdate && !simActive) {
             if (rawGet.call(window.localStorage, 'elec_app_logged_in') === 'true' && typeof window.__onScadaRoleUpdated === 'function') {
@@ -319,16 +343,21 @@
                 window.renderLabeledPlacesList?.(true);
             }
         }
-        if (keysArr.some((k) => k === 'fault_reports_all' || k === 'elecReportsComplete_all' || k === 'faultHistory' || k === 'outageHistory')) {
+        if (keysArr.some((k) => k === 'elecReportsComplete_all' || k === 'fault_reports_all' || k === 'faultHistory' || k === 'outageHistory')) {
             window.loadFaultHistory?.();
             window.loadOutageHistory?.();
             window.autoFillJobNo?.(false);
             window.renderJobCards?.();
         }
-        if (keysArr.some((k) => k === 'overdue_ca_list' || k === 'elec_ca_overdue_list')) {
+        if (keysArr.includes('overdue_ca_list') || keysArr.includes('elec_ca_overdue_list')) {
             window.reloadOverdueCaFromStorage?.();
+            window.syncCaAndStripBadges?.();
+            const rawCa = ramCache.get('overdue_ca_list') || ramCache.get('elec_ca_overdue_list') || '[]';
+            try {
+                const cnt = String(JSON.parse(rawCa).length);
+                document.querySelectorAll('#caCountBadge').forEach((el) => { el.textContent = cnt; });
+            } catch (e) {}
             window.renderCaModalList?.();
-            window.checkCaOverdueEnhanced?.(true);
         }
     }
 
@@ -344,6 +373,7 @@
         }
     }
 
+    // ซิงค์ข้ามหน้าจอแยก (index.html <-> page2.html)
     window.addEventListener('storage', function (e) {
         if (!e || e.isTrusted === false) return;
         if (e.key === null) {
@@ -351,7 +381,6 @@
             hydratingOffloadedKeys.clear();
             dirtyWriteQueue.clear();
             ramCache.clear();
-            physTsMap = {};
             return;
         }
         if (e.key === META_TS_KEY && e.newValue) {
@@ -366,19 +395,16 @@
         }
         if (e.newValue === null) {
             e.stopImmediatePropagation();
-            let latestTsMap = physTsMap;
-            try { latestTsMap = JSON.parse(rawGet.call(window.localStorage, META_TS_KEY) || '{}') || {}; } catch (err) {}
             const verBefore = keyVersionMap.get(e.key) || 0;
             idbGetEnvelope(e.key).then((env) => {
                 if ((keyVersionMap.get(e.key) || 0) !== verBefore) return;
                 const curPhys = rawGet.call(window.localStorage, e.key);
-                if (isOffloadMarker(curPhys) || (latestTsMap[e.key] && env)) {
+                if (isOffloadMarker(curPhys) || env) {
                     if (env && env.val !== ramCache.get(e.key)) {
                         ramCache.set(e.key, env.val);
                         triggerAppRefreshForKeys([e.key], false);
                     }
                 } else if (curPhys === null) {
-                    delete physTsMap[e.key];
                     hydratingOffloadedKeys.delete(e.key);
                     ramCache.delete(e.key);
                     triggerAppRefreshForKeys([e.key], false);
@@ -414,7 +440,6 @@
                 bumpKeyVersion(msg.key);
                 pendingPreReadyOps.delete(msg.key);
                 hydratingOffloadedKeys.delete(msg.key);
-                delete physTsMap[msg.key];
                 if (!ramCache.has(msg.key)) return;
                 ramCache.delete(msg.key);
                 triggerAppRefreshForKeys([msg.key], false);
@@ -448,7 +473,10 @@
                         try {
                             rawSet.call(window.localStorage, key, markerVal);
                         } catch (e) {
-                            try { rawRem.call(window.localStorage, key); rawSet.call(window.localStorage, key, markerVal); } catch (e2) {}
+                            try {
+                                rawRem.call(window.localStorage, key);
+                                rawSet.call(window.localStorage, key, markerVal);
+                            } catch (e2) {}
                         }
                     }
                     savePhysTs(key, job.ts);
@@ -456,7 +484,10 @@
                         try { bc.postMessage({ type: 'IDB_KV_RELOAD', key, ts: job.ts, senderId }); } catch (e) {}
                     }
                 } else if (!ok && job.offload) {
-                    try { rawSet.call(window.localStorage, key, job.valStr); savePhysTs(key, job.ts); } catch (e) {}
+                    try {
+                        rawSet.call(window.localStorage, key, job.valStr);
+                        savePhysTs(key, job.ts);
+                    } catch (e) {}
                 }
             }
         } finally {
@@ -478,7 +509,7 @@
                 savePhysTs(key, writeTs);
             } catch (quotaErr) {
                 offload = true;
-                BACKUP_SNAPSHOT_KEYS.forEach((bkKey) => {
+                ['elec_auto_backup_snapshot', 'elec_app_auto_backup_snapshot', 'elec_cloud_group_backups_map'].forEach((bkKey) => {
                     if (key !== bkKey && ramCache.has(bkKey)) {
                         const bkStr = ramCache.get(bkKey);
                         const bkVer = bumpKeyVersion(bkKey);
@@ -501,7 +532,8 @@
         dirtyWriteQueue.set(key, { op: 'del', ts: nextWriteTs(), ver, epoch: clearEpoch });
         flushKeyWriteQueue(key);
     }
-
+    // ===== จบพาทที่ 2 / 3 ของไฟล์ pea-idb-store.js =====
+        // ===== เริ่มพาทที่ 3 / 3 ของไฟล์ pea-idb-store.js (วางต่อจากพาทที่ 2 จนจบไฟล์) =====
     const idbSetItemFn = function (key, value) {
         if (this !== window.localStorage || !MANAGED_KEYS.has(key)) {
             return rawSet.call(this, key, value);
@@ -513,7 +545,7 @@
             return;
         }
         if (hydratingOffloadedKeys.has(key) && (valStr === '[]' || valStr === '{}' || valStr === '')) return;
-        if ((key === 'elec_app_auto_backup_snapshot' || key === 'elec_auto_backup_snapshot') && hydratingOffloadedKeys.size > 0) return;
+        if ((key === 'elec_auto_backup_snapshot' || key === 'elec_app_auto_backup_snapshot') && hydratingOffloadedKeys.size > 0) return;
 
         const ts = nextWriteTs();
         const ver = bumpKeyVersion(key);
@@ -522,7 +554,10 @@
         if (!hydratedKeys.has(key) || !dbInst) {
             pendingPreReadyOps.set(key, { op: 'set', valStr, ts, ver });
             if (!isOffloadMarker(bootPhysicalState.get(key)) && !shouldOffloadKey(key, valStr)) {
-                try { rawSet.call(this, key, valStr); savePhysTs(key, ts); } catch (e) {}
+                try {
+                    rawSet.call(this, key, valStr);
+                    savePhysTs(key, ts);
+                } catch (e) {}
             }
             if (bc && valStr.length <= BC_INLINE_MAX_CHARS) {
                 try { bc.postMessage({ type: 'IDB_KV_SET', key, valStr, ts, senderId }); } catch (e) {}
@@ -557,8 +592,11 @@
                 ramCache.delete(key);
                 delete physTsMap[key];
                 try { rawSet.call(window.localStorage, META_TS_KEY, JSON.stringify(physTsMap)); } catch (e) {}
-                if (!hydratedKeys.has(key) || !dbInst) pendingPreReadyOps.set(key, { op: 'del', ts: nextWriteTs(), ver });
-                else enqueueKeyDelete(key, ver);
+                if (!hydratedKeys.has(key) || !dbInst) {
+                    pendingPreReadyOps.set(key, { op: 'del', ts: nextWriteTs(), ver });
+                } else {
+                    enqueueKeyDelete(key, ver);
+                }
                 if (bc) { try { bc.postMessage({ type: 'IDB_KV_REM', key, senderId }); } catch (e) {} }
             }
         }
@@ -593,7 +631,9 @@
             ...Array.from(MANAGED_KEYS).filter((k) => k !== 'elec_deleted_labeled_places_map')
         ];
         const envMap = new Map();
-        await Promise.all(orderedKeys.map(async (k) => { envMap.set(k, await idbGetEnvelope(k)); }));
+        await Promise.all(orderedKeys.map(async (k) => {
+            envMap.set(k, await idbGetEnvelope(k));
+        }));
 
         const updatedKeys = new Set();
         orderedKeys.forEach((key) => {
@@ -632,21 +672,34 @@
                 }
             } else if (typeof bootPhys === 'string') {
                 const physTs = Number(physTsMap[key]) || 0;
-                let finalVal = latestPreOp?.op === 'set'
+                const finalVal = latestPreOp?.op === 'set'
                     ? latestPreOp.valStr
                     : ((env && env.ts > physTs && env.val && env.val !== bootPhys) ? env.val : bootPhys);
-                if (key === 'elec_labeled_places_list') {
-                    finalVal = filterDeletedPinsJson(finalVal, ramCache.get('elec_deleted_labeled_places_map'));
-                }
                 const ver = bumpKeyVersion(key);
                 ramCache.set(key, finalVal);
                 if (finalVal !== bootPhys) updatedKeys.add(key);
 
-                if (!env || env.val !== finalVal || shouldOffloadKey(key, finalVal)) {
-                    persistManagedKeyPhysical(key, finalVal, latestPreOp?.ts || Math.max(physTs, env?.ts || 0) || nextWriteTs(), ver, Boolean(latestPreOp));
+                if (!env || env.val !== finalVal || finalVal !== bootPhys || shouldOffloadKey(key, finalVal)) {
+                    persistManagedKeyPhysical(
+                        key,
+                        finalVal,
+                        latestPreOp?.ts || Math.max(physTs, env?.ts || 0) || nextWriteTs(),
+                        ver,
+                        Boolean(latestPreOp)
+                    );
                 }
             }
         });
+
+        // เชื่อมข้อมูล CA จากคีย์เดิม (ถ้ามี) เข้าสู่คีย์หลัก overdue_ca_list อัตโนมัติ
+        const mainCa = ramCache.get('overdue_ca_list');
+        const legacyCa = ramCache.get('elec_ca_overdue_list');
+        if ((!mainCa || mainCa === '[]') && legacyCa && legacyCa !== '[]') {
+            const ts = nextWriteTs(), ver = bumpKeyVersion('overdue_ca_list');
+            ramCache.set('overdue_ca_list', legacyCa);
+            persistManagedKeyPhysical('overdue_ca_list', legacyCa, ts, ver, false);
+            updatedKeys.add('overdue_ca_list');
+        }
 
         hydratingOffloadedKeys.clear();
         isDbReady = true;
@@ -687,11 +740,10 @@
             window.pushAllJobsToCloud = guardedPush;
         }
     }
-    if (typeof queueMicrotask === 'function') queueMicrotask(attachPostCoreGuards);
     setTimeout(attachPostCoreGuards, 0);
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', attachPostCoreGuards);
     else attachPostCoreGuards();
-    window.addEventListener('load', attachPostCoreGuards, { once: true });
+    window.addEventListener('load', attachPostCoreGuards);
 
     window.PeaIdbStore = {
         ready: readyPromise,
@@ -701,7 +753,6 @@
             MANAGED_KEYS.forEach((k) => {
                 const ram = ramCache.get(k) || '';
                 const phys = rawGet.call(window.localStorage, k);
-                if (!ram && phys === null) return;
                 report[k] = {
                     sizeKB: Number((ram.length / 1024).toFixed(1)),
                     mode: isOffloadMarker(phys) ? 'IndexedDB (Offloaded)' : 'Mirrored (IDB + LocalStorage)',
@@ -712,3 +763,4 @@
         }
     };
 })();
+// ==================== จบไฟล์ pea-idb-store.js (v2.1) ====================
