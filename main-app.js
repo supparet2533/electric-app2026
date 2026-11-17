@@ -80,46 +80,73 @@
         }
 
         // วาดไอคอนสายฟ้าคมชัด 512x512 รองรับทั้ง id="favIconPng" ใน index.html และ id="mainFavIconPng"
+                // วาดไอคอนเหรียญตราสายฟ้าสีทอง 512x512 เข้าชุดกับ Splash Screen และ Manifest ใหม่
         function renderMainHomeIconPng() {
             try {
                 const fav = document.getElementById('favIconPng') || document.getElementById('mainFavIconPng');
                 const touch = document.getElementById('appleTouchIconPng') || document.getElementById('mainAppleTouchIconPng');
                 if (!fav && !touch) return;
-                
+
                 const canvas = document.createElement('canvas');
                 canvas.width = 512;
                 canvas.height = 512;
                 const ctx = canvas.getContext('2d');
-                const grad = ctx.createLinearGradient(0, 0, 512, 512);
-                grad.addColorStop(0, '#2563eb');
-                grad.addColorStop(1, '#4f46e5');
-                
-                const r = 115;
+
+                const bgGrad = ctx.createRadialGradient(180, 140, 20, 256, 256, 380);
+                bgGrad.addColorStop(0, '#1e3a8a');
+                bgGrad.addColorStop(0.55, '#0f172a');
+                bgGrad.addColorStop(1, '#060913');
+
+                const r = 112;
                 ctx.beginPath();
-                ctx.moveTo(r, 0);
-                ctx.lineTo(512 - r, 0);
-                ctx.quadraticCurveTo(512, 0, 512, r);
-                ctx.lineTo(512, 512 - r);
-                ctx.quadraticCurveTo(512, 512, 512 - r, 512);
-                ctx.lineTo(r, 512);
-                ctx.quadraticCurveTo(0, 512, 0, 512 - r);
-                ctx.lineTo(0, r);
-                ctx.quadraticCurveTo(0, 0, r, 0);
+                ctx.moveTo(r, 0); ctx.lineTo(512 - r, 0); ctx.quadraticCurveTo(512, 0, 512, r);
+                ctx.lineTo(512, 512 - r); ctx.quadraticCurveTo(512, 512, 512 - r, 512);
+                ctx.lineTo(r, 512); ctx.quadraticCurveTo(0, 512, 0, 512 - r);
+                ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
                 ctx.closePath();
-                ctx.fillStyle = grad;
+                ctx.fillStyle = bgGrad;
                 ctx.fill();
-                
-                ctx.fillStyle = '#ffffff';
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
+                ctx.lineWidth = 6;
+                ctx.setLineDash([22, 14]);
                 ctx.beginPath();
-                ctx.moveTo(318, 48);
-                ctx.lineTo(142, 304);
-                ctx.lineTo(256, 304);
-                ctx.lineTo(212, 464);
-                ctx.lineTo(410, 192);
-                ctx.lineTo(296, 192);
-                ctx.closePath();
+                ctx.arc(256, 256, 196, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+
+                const glow = ctx.createRadialGradient(256, 256, 10, 256, 256, 170);
+                glow.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
+                glow.addColorStop(1, 'rgba(245, 158, 11, 0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(256, 256, 170, 0, Math.PI * 2);
                 ctx.fill();
-                
+
+                const boltGrad = ctx.createLinearGradient(140, 76, 370, 436);
+                boltGrad.addColorStop(0, '#fef9c3');
+                boltGrad.addColorStop(0.32, '#fde047');
+                boltGrad.addColorStop(0.68, '#f59e0b');
+                boltGrad.addColorStop(1, '#b45309');
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(2, 6, 23, 0.65)';
+                ctx.shadowBlur = 14;
+                ctx.shadowOffsetX = 6;
+                ctx.shadowOffsetY = 12;
+                ctx.beginPath();
+                ctx.moveTo(298, 76); ctx.lineTo(136, 282); ctx.lineTo(244, 282);
+                ctx.lineTo(214, 436); ctx.lineTo(376, 230); ctx.lineTo(268, 230);
+                ctx.closePath();
+                ctx.fillStyle = boltGrad;
+                ctx.fill();
+                ctx.lineWidth = 5;
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = '#fef08a';
+                ctx.stroke();
+                ctx.restore();
+
                 const pngUrl = canvas.toDataURL('image/png');
                 if (fav) fav.href = pngUrl;
                 if (touch) touch.href = pngUrl;
@@ -2275,6 +2302,46 @@
         return new Date(yr, (parseInt(dp[1], 10) || 1) - 1, parseInt(dp[0], 10) || 1, parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2], 10) || 0).getTime() || 0;
     }
 
+       function extractMainHistoryPhotos(item, jobKey) {
+        const closedReg = getClosedJobsRegistry();
+        const tr = item?.techReport || (jobKey ? closedReg[jobKey] : null);
+        if (Array.isArray(tr?.photos) && tr.photos.length) return tr.photos.filter(p => p && (p.viewUrl || p.thumbUrl));
+        if (Array.isArray(tr?.photoUrls) && tr.photoUrls.length) {
+            return tr.photoUrls.filter(Boolean).map(u => {
+                const m = String(u).match(/\/d\/([A-Za-z0-9_-]{15,})|[?&]id=([A-Za-z0-9_-]{15,})/);
+                const id = m ? (m[1] || m[2]) : '';
+                return { id, viewUrl: u, thumbUrl: id ? `https://drive.google.com/thumbnail?id=${id}&sz=w1000` : u, directUrl: id ? `https://lh3.googleusercontent.com/d/${id}=w1000` : '' };
+            });
+        }
+        return [];
+    }
+
+    function openMainPhotoLightbox(imgSrc, driveUrl = '') {
+        if (!imgSrc && !driveUrl) return;
+        let m = document.getElementById('peaMainPhotoLightbox');
+        if (!m) {
+            m = document.createElement('div'); m.id = 'peaMainPhotoLightbox';
+            m.className = 'fixed inset-0 z-[1490] hidden bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-3';
+            m.onclick = e => { if (e.target === m) m.classList.add('hidden'); };
+            document.body.appendChild(m);
+        }
+        const drvBtn = driveUrl ? `<a href="${escapeHtmlStr(driveUrl)}" target="_blank" rel="noopener noreferrer" class="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-xl text-xs font-extrabold shadow">🔗 เปิดไฟล์เต็มใน Google Drive ↗</a>` : '';
+        m.innerHTML = `<div class="max-w-3xl w-full flex flex-col items-center gap-3"><img src="${escapeHtmlStr(imgSrc || driveUrl)}" class="max-h-[78dvh] w-auto max-w-full rounded-2xl shadow-2xl border border-white/20 object-contain bg-slate-900"><div class="flex items-center gap-2">${drvBtn}<button type="button" onclick="document.getElementById('peaMainPhotoLightbox').classList.add('hidden')" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-extrabold shadow">✕ ปิดรูปภาพ</button></div></div>`;
+        m.classList.remove('hidden');
+    }
+    window.openMainPhotoLightbox = openMainPhotoLightbox;
+
+        function buildMainHistoryPhotoStripHtml(item, jobKey) {
+        const photos = extractMainHistoryPhotos(item, jobKey);
+        if (!photos.length) return '';
+        const thumbs = photos.map((p, idx) => {
+            const src = p.thumbUrl || p.directUrl || p.viewUrl;
+            const alt = escJsAttr(p.directUrl || '');
+            return `<button type="button" onclick="openMainPhotoLightbox('${escJsAttr(src)}','${escJsAttr(p.viewUrl || '')}')" class="relative w-14 h-14 rounded-lg overflow-hidden border border-teal-300 shadow-sm shrink-0 bg-slate-900 hover:opacity-90 transition"><img src="${escapeHtmlStr(src)}" onerror="if(!this.dataset.fb&&'${alt}'){this.dataset.fb='1';this.src='${alt}';}" class="w-full h-full object-cover"><span class="absolute bottom-0 right-0 bg-slate-900/80 text-white text-[9px] font-bold px-1 rounded-tl">#${idx + 1}</span></button>`;
+        }).join('');
+        return `<div class="p-2 bg-teal-50/70 border border-teal-200 rounded-lg space-y-1"><div class="text-[10px] font-bold text-teal-800">📷 ภาพถ่ายหน้างาน (${photos.length} รูป):</div><div class="flex items-center gap-1.5 overflow-x-auto">${thumbs}</div></div>`;
+    }
+
     function loadOutageHistory() {
         Core.cleanReopenedAndCancelledJobsInStorage();
         tagUntaggedLocalJobsWithCurrentGroup();
@@ -2308,9 +2375,10 @@
                 const emoji = pLevel === 'critical' ? '🔴' : (pLevel === 'urgent' ? '🟡' : '🟢');
                 const brd = pLevel === 'critical' ? 'border-l-rose-500' : (pLevel === 'urgent' ? 'border-l-amber-500' : 'border-l-emerald-500');
                 const safeKey = String(item.dateTimeSaved || '').replace(/'/g, "\\'");
+                const photoHtml = buildMainHistoryPhotoStripHtml(item, item.dateTimeSaved);
                 const div = document.createElement('div');
                 div.className = `bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full border-l-4 ${brd}`;
-                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">${emoji} งานที่ ${escapeHtmlStr(item.jobNo)} (กะ ${escapeHtmlStr(item.shift)}) - ${escapeHtmlStr(item.issueType)}</span><span class="text-slate-400 shrink-0 whitespace-nowrap">📅 ${escapeHtmlStr(item.reportDate)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div><div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">บันทึกเมื่อ: ${escapeHtmlStr(item.dateTimeSaved)}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editOutageItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyOutageAgain('${safeKey}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteOutageItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
+                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">${emoji} งานที่ ${escapeHtmlStr(item.jobNo)} (กะ ${escapeHtmlStr(item.shift)}) - ${escapeHtmlStr(item.issueType)}</span><span class="text-slate-400 shrink-0 whitespace-nowrap">📅 ${escapeHtmlStr(item.reportDate)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div>${photoHtml}<div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">บันทึกเมื่อ: ${escapeHtmlStr(item.dateTimeSaved)}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editOutageItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyOutageAgain('${safeKey}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteOutageItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
                 historyList.appendChild(div);
             });
         }, null, []);
@@ -2344,8 +2412,8 @@
             setTimeout(syncJobsWithFieldPage, 200);
         }, '🗑️ ยืนยันการลบประวัติ');
     }
-
-    function loadFaultHistory() {
+    
+        function loadFaultHistory() {
         Core.cleanReopenedAndCancelledJobsInStorage();
         tagUntaggedLocalJobsWithCurrentGroup();
         const delReg = getDeletedJobsRegistry();
@@ -2369,9 +2437,10 @@
             historyList.innerHTML = '';
             history.forEach(item => {
                 const safeKey = String(item.timestamp || '').replace(/'/g, "\\'");
+                const photoHtml = buildMainHistoryPhotoStripHtml(item, item.timestamp);
                 const div = document.createElement('div');
                 div.className = 'bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full';
-                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">⚡ ${escapeHtmlStr(item.circuit)} - 🏭 ${escapeHtmlStr(item.station)} (${escapeHtmlStr(item.system)})</span><span class="text-slate-400 shrink-0 whitespace-nowrap">⏰ ${escapeHtmlStr(item.time)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div><div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">${escapeHtmlStr(new Date(item.timestamp).toLocaleString('th-TH'))}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editFaultItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyFaultAgain('${safeKey}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteFaultItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
+                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">⚡ ${escapeHtmlStr(item.circuit)} - 🏭 ${escapeHtmlStr(item.station)} (${escapeHtmlStr(item.system)})</span><span class="text-slate-400 shrink-0 whitespace-nowrap">⏰ ${escapeHtmlStr(item.time)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div>${photoHtml}<div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">${escapeHtmlStr(new Date(item.timestamp).toLocaleString('th-TH'))}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editFaultItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyFaultAgain('${safeKey}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteFaultItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
                 historyList.appendChild(div);
             });
         }, null, []);
@@ -2433,7 +2502,18 @@
         );
         const safeIso = new Date(Math.max(now.getTime(), prevMaxMs > 0 ? prevMaxMs + 1000 : 0)).toISOString();
         const insp = formatTechDisplayName(Core.rawStorageGet('elec_app_current_user') || 'ผู้ใช้งานทั่วไป');
-        const rep = { status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)', realCause: item.techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ', actionTaken: item.techReport?.actionTaken || 'ปิดงานเรียบร้อย', fieldGps: item.gps || '', finishTime: finStr, inspector: insp, updatedAt: safeIso, needsMainSync: true };
+        const rep = {
+    status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
+    realCause: item.techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ',
+    actionTaken: item.techReport?.actionTaken || 'ปิดงานเรียบร้อย',
+    fieldGps: item.techReport?.fieldGps || item.gps || '',
+    finishTime: finStr,
+    inspector: insp,
+    ...(item.techReport?.photos ? { photos: item.techReport.photos } : {}),
+    ...(item.techReport?.photoUrls ? { photoUrls: item.techReport.photoUrls } : {}),
+    updatedAt: safeIso,
+    needsMainSync: true
+};
         const hdr = jobType === 'outage' ? `📋 งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'}` : `📋 วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
         item.formattedText = `${(item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0]}\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdr}\n🚦 สถานะ : ${rep.status}\n🔍 สาเหตุจริง : ${rep.realCause}\n🛠️ การแก้ไข : ${rep.actionTaken}\n⏰ เวลาเสร็จ : ${finStr}\n👷 ผู้ตรวจสอบ : ${insp}`;
         item.techReport = rep;
@@ -2534,23 +2614,22 @@
                 let list = JSON.parse(localStorage.getItem('fault_reports_all') || '[]').filter(f => f && !(f.timestamp && delReg[f.timestamp]));
                 if (sd) list = list.filter(i => { const d = new Date(i.timestamp || 0); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === sd; });
                 if (!list.length) return showToast('ไม่มีข้อมูลสำหรับวันที่เลือก');
-                headers = ['วันที่บันทึก', 'เวลา', 'ระบบ', 'วงจร', 'สถานี', 'สภาพอากาศ', 'เหตุ', 'จำนวนครั้ง', 'T/L', 'โชว์เฟส', 'กระแส A', 'กระแส B', 'กระแส C', 'กระแส G', 'ระยะทาง', 'โซน', 'ปัจจุบันกระแส', 'อุปกรณ์เห็นฟอลต์', 'ปลดอุปกรณ์', 'จ่ายไฟชนอุปกรณ์', 'ผู้แจ้ง', 'พิกัด GPS', 'สถานะหน้างาน', 'สาเหตุจริง', 'การแก้ไข', 'เวลาเสร็จ', 'ช่างผู้ตรวจสอบ'];
-                rows = list.map(i => { const tr = i.techReport || closedReg[i.timestamp]; return [new Date(i.timestamp).toLocaleDateString('th-TH'), i.time, i.system, i.circuit, i.station, i.weather, i.cause, i.count, i.tlStatus, i.phase, i.currA, i.currB, i.currC, i.currG, i.distance, i.zone, i.presentCurr, i.device, i.disconnectDevice, i.powerUpToDevice, i.reporter, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-')].map(c => String(c ?? '')); });
+                headers = ['วันที่บันทึก', 'เวลา', 'ระบบ', 'วงจร', 'สถานี', 'สภาพอากาศ', 'เหตุ', 'จำนวนครั้ง', 'T/L', 'โชว์เฟส', 'กระแส A', 'กระแส B', 'กระแส C', 'กระแส G', 'ระยะทาง', 'โซน', 'ปัจจุบันกระแส', 'อุปกรณ์เห็นฟอลต์', 'ปลดอุปกรณ์', 'จ่ายไฟชนอุปกรณ์', 'ผู้แจ้ง', 'พิกัด GPS', 'สถานะหน้างาน', 'สาเหตุจริง', 'การแก้ไข', 'เวลาเสร็จ', 'ช่างผู้ตรวจสอบ', 'รูปถ่ายหน้างาน (Drive)'];
+                rows = list.map(i => { const tr = i.techReport || closedReg[i.timestamp]; const pics = extractMainHistoryPhotos(i, i.timestamp).map(p => p.viewUrl).filter(Boolean).join('\n') || '-'; return [new Date(i.timestamp).toLocaleDateString('th-TH'), i.time, i.system, i.circuit, i.station, i.weather, i.cause, i.count, i.tlStatus, i.phase, i.currA, i.currB, i.currC, i.currG, i.distance, i.zone, i.presentCurr, i.device, i.disconnectDevice, i.powerUpToDevice, i.reporter, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-'), pics].map(c => String(c ?? '')); });
                 filename = `Fault_Report_${sd || 'All'}.xlsx`; sheetName = 'รายงานเหตุ_TR_TL';
             } else {
                 const sd = document.getElementById('exportDateTab2')?.value || '';
                 let list = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]').filter(o => o && !(o.dateTimeSaved && delReg[o.dateTimeSaved]));
                 if (sd) { const [y, m, d] = sd.split('-'); list = list.filter(i => i.dateTimeSaved?.startsWith(`${d}/${m}/${parseInt(y, 10) + 543}`)); }
                 if (!list.length) return showToast('ไม่มีข้อมูลสำหรับวันที่เลือก');
-                headers = ['วันที่บันทึก', 'วันที่แจ้ง', 'งานที่', 'กะ', 'ลักษณะอาการ', 'ผู้ปฏิบัติงาน', 'บริเวณ', 'ที่อยู่', 'เบอร์โทรศัพท์', 'พิกัด GPS', 'สถานะหน้างาน', 'สาเหตุจริง', 'การแก้ไข', 'เวลาเสร็จ', 'ช่างผู้ตรวจสอบ'];
-                rows = list.map(i => { const tr = i.techReport || closedReg[i.dateTimeSaved]; return [i.dateTimeSaved?.split(' ')[0] || '', i.reportDate, i.jobNo, i.shift, i.issueType, i.workerName, i.area, i.address, i.phone, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-')].map(c => String(c ?? '')); });
+                headers = ['วันที่บันทึก', 'วันที่แจ้ง', 'งานที่', 'กะ', 'ลักษณะอาการ', 'ผู้ปฏิบัติงาน', 'บริเวณ', 'ที่อยู่', 'เบอร์โทรศัพท์', 'พิกัด GPS', 'สถานะหน้างาน', 'สาเหตุจริง', 'การแก้ไข', 'เวลาเสร็จ', 'ช่างผู้ตรวจสอบ', 'รูปถ่ายหน้างาน (Drive)'];
+                rows = list.map(i => { const tr = i.techReport || closedReg[i.dateTimeSaved]; const pics = extractMainHistoryPhotos(i, i.dateTimeSaved).map(p => p.viewUrl).filter(Boolean).join('\n') || '-'; return [i.dateTimeSaved?.split(' ')[0] || '', i.reportDate, i.jobNo, i.shift, i.issueType, i.workerName, i.area, i.address, i.phone, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-'), pics].map(c => String(c ?? '')); });
                 filename = `Outage_Report_${sd || 'All'}.xlsx`; sheetName = 'ประวัติรับแจ้ง';
             }
             if ((await ensureXlsxLoaded()) && typeof XLSX !== 'undefined') { const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([headers, ...rows]); XLSX.utils.book_append_sheet(wb, ws, sheetName); XLSX.writeFile(wb, filename); showToast('📊 ส่งออกไฟล์ Excel (.xlsx) สำเร็จ!'); }
             else Core.downloadCsvFallback(headers, rows, filename);
         }, null, []);
     }
-
     async function exportAnalyticsToExcel() {
         if (!currentFilteredFaults.length && !currentFilteredOutages.length) return showToast('⚠️ ไม่มีข้อมูลสถิติสำหรับส่งออก');
         const counts = {}; currentFilteredOutages.forEach(i => { const k = i.issueType || 'อื่นๆ'; counts[k] = (counts[k] || 0) + 1; });
