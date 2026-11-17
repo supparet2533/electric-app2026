@@ -1,6 +1,7 @@
 // ============================================================================
-// 🎯⚡ PEA SMART GRID — FAULT DISTANCE & CURRENT LOCATOR v2.4 (scada-fault-locator.js)
-// ชี้เป้าฟอลต์ 22kV จากระยะ (กม.) หรือกระแส (A) + คำนวณ Z ต้นน้ำอัตโนมัติ + แก้ดร็อปดาวน์กระพริบ 100%
+// 🎯⚡ PEA SMART GRID — FAULT DISTANCE & CURRENT LOCATOR v2.5 (scada-fault-locator.js)
+// ชี้เป้าฟอลต์ 22kV จากระยะ (กม.) หรือกระแส (A) + ปุ่มล้างค่าที่กรอก + ปลอดจอกระพริบ 100%
+// พาทที่ 1 / 2 : 22kV Line Impedance, Upstream Z Solver & Multi-Cable Graph Engine
 // ============================================================================
 (function () {
     'use strict';
@@ -31,6 +32,8 @@
         IDEAL_ZERO: { label: 'ไม่คิดอิมพีแดนซ์สถานี', rs1: 0.01, xs1: 0.15, rs0: 0.02, xs0: 0.25 }
     };
 
+    const DEFAULT_AMP_HINT_TEXT = '💡 กรอกกระแสฟอลต์ (แอมป์) เพื่อคำนวณเป็นระยะ กม. อัตโนมัติ (ระบบ 22kV)';
+
     const safeSessionGet = (k) => { try { return window.sessionStorage.getItem(k); } catch (e) { return null; } };
     const safeSessionSet = (k, v) => { try { window.sessionStorage.setItem(k, v); } catch (e) {} };
     const escapeRe = (s) => String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -47,6 +50,7 @@
     let lastKnownLoggedState = false;
     let activePacketApplySeq = 0;
     let lastHandledPktTs = parseInt(safeSessionGet(HANDLED_PKT_SESSION_KEY) || '0', 10) || 0;
+    let lastClearedPktTs = 0;
 
     function loadCalcPrefs() {
         try {
@@ -339,7 +343,8 @@
         });
         return { adj, fullPhysAdj, physicalEdges };
     }
-
+    // ===== จบพาทที่ 1 / 2 ของไฟล์ scada-fault-locator.js (v2.5) =====
+        // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ scada-fault-locator.js (วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) =====
     function computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, activeAdj, fullPhysAdj) {
         const zeroVec = { r1: 0, x1: 0, r0: 0, x0: 0 };
         const srcPin = pinMap.get(sourcePinId), srcT = srcPin?.scadaNode?.t || 'PIN';
@@ -550,12 +555,48 @@
         if (resBox) { resBox.innerHTML = ''; resBox.classList.add('hidden'); }
     }
 
+    function resetFaultLocatorInputs(silent = false) {
+        activePacketApplySeq++;
+        try { localStorage.removeItem(FAULT_PKT_KEY); } catch (e) {}
+        ['scadaFaultKmInput', 'scadaFaultAmpInput', 'scadaFaultRfInput'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const phSel = document.getElementById('scadaFaultPhaseSelect');
+        if (phSel) phSel.value = 'LL';
+        const tolSel = document.getElementById('scadaFaultTolSelect');
+        if (tolSel) tolSel.value = '0.15';
+        saveCalcPrefs({ faultType: 'LL', rfOhm: 0 });
+
+        const hintEl = document.getElementById('scadaFaultAmpCalcBadge');
+        if (hintEl) {
+            hintEl.textContent = DEFAULT_AMP_HINT_TEXT;
+            hintEl.className = 'text-[10.5px] text-slate-400';
+        }
+        clearFaultLocatorOverlay();
+        if (!silent) window.showToast?.('🧹 ล้างค่าคำนวณและหมุดชี้เป้าฟอลต์เรียบร้อยแล้ว');
+    }
+
+    function clearQuickFaultLocatorFromMainForm(silent = false) {
+        ['tab1QuickFaultAmpInput', 'tab1QuickFaultKmInput'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const typeSel = document.getElementById('tab1QuickFaultTypeSelect');
+        if (typeSel) typeSel.value = 'AUTO';
+        try { localStorage.removeItem(FAULT_PKT_KEY); } catch (e) {}
+
+        const clearPkt = { type: 'SCADA_CLEAR_FAULT_LOCATOR', ts: Date.now() };
+        try { faultBc?.postMessage(clearPkt); } catch (e) {}
+        try { document.getElementById('leftBrowserIframe')?.contentWindow?.postMessage(clearPkt, '*'); } catch (e) {}
+        if (!silent) window.showToast?.('🧹 ล้างค่าชี้เป้าฟอลต์เรียบร้อยแล้ว');
+    }
+
     function populateFaultSourceDropdown(preferFeeder = '', preferDevice = '', preferStation = '') {
         const sel = document.getElementById('scadaFaultSourceSelect');
         if (!sel) return { unmatchedDeviceHint: '' };
         const hasPrefer = Boolean(preferFeeder || preferDevice || preferStation);
 
-        // ป้องกันการเขียนทับ DOM ขณะผู้ใช้กำลังกางดร็อปดาวน์เลือกหมุดบนมือถือ (ต้นเหตุจอกระพริบและเด้งกลับบนสุด)
         if (!hasPrefer && document.activeElement === sel && sel.options.length > 0) {
             return { unmatchedDeviceHint: '' };
         }
@@ -578,13 +619,10 @@
         ];
         const nextOptsHtml = opts.length ? opts.join('') : '<option value="">-- ยังไม่มีหมุดที่เชื่อมสายไฟในผัง --</option>';
 
-        // อัปเดต innerHTML เฉพาะเมื่อรายการหมุดเปลี่ยนแปลงจริงเท่านั้น
         if (sel.__lastOptsHtml !== nextOptsHtml || sel.options.length === 0) {
             sel.innerHTML = nextOptsHtml;
             sel.__lastOptsHtml = nextOptsHtml;
-            if (prevVal && allCandidates.some((p) => p.id === prevVal)) {
-                sel.value = prevVal;
-            }
+            if (prevVal && allCandidates.some((p) => p.id === prevVal)) sel.value = prevVal;
         }
 
         let unmatchedDeviceHint = '';
@@ -666,7 +704,7 @@
         const hintEl = document.getElementById('scadaFaultAmpCalcBadge');
         if (hintEl) {
             if (!cfg) {
-                hintEl.textContent = '💡 กรอกกระแสฟอลต์ (แอมป์) เพื่อคำนวณเป็นระยะ กม. อัตโนมัติ (ระบบ 22kV)';
+                hintEl.textContent = DEFAULT_AMP_HINT_TEXT;
                 hintEl.className = 'text-[10.5px] text-slate-400';
             } else if (cfg.exceedsMidSwitch) {
                 hintEl.textContent = `⚠️ กระแส ${cfg.ampVal.toLocaleString()} แอมป์ สูงกว่าพิกัดลัดวงจร ณ หมุดนี้ (~${cfg.maxPossibleAmp.toLocaleString()} แอมป์) • จุดช็อตอยู่ฝั่งต้นสายก่อนถึงหมุดนี้`;
@@ -862,10 +900,10 @@
         pnl.innerHTML =
             `<div class="p-2.5 rounded-xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-slate-900 border border-rose-400/40 space-y-2">` +
             `<div class="grid grid-cols-2 sm:grid-cols-12 gap-1.5 items-center">` +
-            `<select id="scadaFaultSourceSelect" onchange="onFaultAmpParamsChanged(false)" class="col-span-2 sm:col-span-5 px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-slate-600 text-xs font-bold"></select>` +
+            `<select id="scadaFaultSourceSelect" onchange="onFaultAmpParamsChanged(false)" class="col-span-2 sm:col-span-4 px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-slate-600 text-xs font-bold"></select>` +
             `<input type="number" step="0.01" min="0.05" inputmode="decimal" id="scadaFaultKmInput" placeholder="ระยะ กม. (เช่น 4.35)" oninput="onFaultKmManualInput()" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();executeFaultDistanceSearch(0,'km');}" class="col-span-1 sm:col-span-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white border border-slate-600 text-xs font-bold">` +
             `<select id="scadaFaultTolSelect" class="col-span-1 sm:col-span-2 px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold"><option value="0.15">เผื่อ ±150 ม.</option><option value="0.30">เผื่อ ±300 ม.</option><option value="0">จุดเป๊ะ</option></select>` +
-            `<div class="col-span-2 sm:col-span-2 flex gap-1"><button type="button" onclick="executeFaultDistanceSearch(0,'auto')" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-1.5 px-2 rounded-lg text-[11px] font-extrabold shadow">🔍 ชี้เป้า</button><button type="button" onclick="clearFaultLocatorOverlay()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 py-1.5 px-2 rounded-lg text-[11px] font-bold" title="ล้างเส้น">✖</button></div></div>` +
+            `<div class="col-span-2 sm:col-span-3 flex gap-1"><button type="button" onclick="executeFaultDistanceSearch(0,'auto')" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-1.5 px-2 rounded-lg text-[11px] font-extrabold shadow whitespace-nowrap">🔍 ชี้เป้า</button><button type="button" onclick="resetFaultLocatorInputs(false)" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-slate-500/60 py-1.5 px-2.5 rounded-lg text-[11px] font-extrabold whitespace-nowrap" title="ล้างค่าที่กรอกและหมุดชี้เป้า">🧹 ล้างค่า</button></div></div>` +
             `<div class="p-2 rounded-lg bg-slate-950/75 border border-amber-400/30 space-y-1.5">` +
             `<div class="grid grid-cols-2 sm:grid-cols-12 gap-1.5 items-center">` +
             `<input type="number" step="10" min="50" inputmode="numeric" id="scadaFaultAmpInput" placeholder="⚡ กระแสฟอลต์ (แอมป์)" oninput="onFaultAmpParamsChanged(false)" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();onFaultAmpParamsChanged(true);}" class="col-span-1 sm:col-span-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-amber-400/50 text-xs font-extrabold placeholder:text-amber-200/50">` +
@@ -873,7 +911,7 @@
             `<select id="scadaFaultCableSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-3 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold">${cableOpts}</select>` +
             `<select id="scadaFaultSubZSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold">${subOpts}</select>` +
             `<input type="number" step="0.5" min="0" max="50" id="scadaFaultRfInput" value="${rfInitVal}" title="ความต้านทานดิน/กิ่งไม้ (โอห์ม)" onchange="onFaultAmpParamsChanged(true)" placeholder="โอห์มดิน (ปกติ 0)" class="col-span-2 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold"></div>` +
-            `<div id="scadaFaultAmpCalcBadge" class="text-[10.5px] text-slate-400">💡 กรอกกระแสฟอลต์ (แอมป์) เพื่อคำนวณเป็นระยะ กม. อัตโนมัติ (ระบบ 22kV)</div></div>` +
+            `<div id="scadaFaultAmpCalcBadge" class="text-[10.5px] text-slate-400">${DEFAULT_AMP_HINT_TEXT}</div></div>` +
             `<div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-300">` +
             `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultStopOpenChk" checked onchange="onFaultAmpParamsChanged(false)" class="accent-rose-500 rounded"><span>หยุดที่สวิตช์ปลด</span></label>` +
             `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultDownstreamChk" checked class="accent-rose-500 rounded"><span>วัดเฉพาะฝั่งท้ายน้ำ (กรณีเริ่มจากสวิตช์กลางสาย)</span></label></div>` +
@@ -883,6 +921,17 @@
     }
 
     function refreshFaultSourceOptions() { populateFaultSourceDropdown(); }
+
+    function handleIncomingLocatorMessage(pkt) {
+        if (!pkt || !document.getElementById('techMainApp')) return;
+        if (pkt.type === 'SCADA_CLEAR_FAULT_LOCATOR') {
+            if (pkt.ts && pkt.ts <= lastClearedPktTs) return;
+            lastClearedPktTs = pkt.ts || Date.now();
+            resetFaultLocatorInputs(true);
+            return;
+        }
+        if (pkt.type === 'SCADA_LOCATE_FAULT_DISTANCE') applyIncomingFaultPacket(pkt);
+    }
 
     async function applyIncomingFaultPacket(pkt) {
         if (!pkt || pkt.type !== 'SCADA_LOCATE_FAULT_DISTANCE' || !document.getElementById('techMainApp')) return;
@@ -956,7 +1005,8 @@
             `<input type="number" step="10" min="50" inputmode="numeric" id="tab1QuickFaultAmpInput" placeholder="⚡ กระแส (แอมป์)" oninput="if(this.value){const k=document.getElementById('tab1QuickFaultKmInput');if(k)k.value='';}" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();triggerFaultLocatorFromMainForm();}" class="w-28 px-2 py-1 text-xs font-extrabold bg-white border border-amber-400 rounded-lg text-slate-800">` +
             `<select id="tab1QuickFaultTypeSelect" class="px-1.5 py-1 text-[11px] font-bold bg-white border border-amber-300 rounded-lg text-slate-700"><option value="AUTO">เฟสอัตโนมัติ</option><option value="LL">ช็อต 2 เฟส</option><option value="LG">ลงดิน 1 เฟส</option><option value="3P">ช็อต 3 เฟส</option></select>` +
             `<input type="number" step="0.01" min="0.05" inputmode="decimal" id="tab1QuickFaultKmInput" placeholder="หรือ กม." oninput="onQuickFaultKmBarInput(this.value)" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();triggerFaultLocatorFromMainForm();}" class="w-24 px-2 py-1 text-xs font-bold bg-white border border-rose-300 rounded-lg text-slate-800">` +
-            `<button type="button" onclick="triggerFaultLocatorFromMainForm()" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold shadow-sm shrink-0">🎯 ชี้เป้าบนผัง</button></div>`;
+            `<button type="button" onclick="triggerFaultLocatorFromMainForm()" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold shadow-sm shrink-0">🎯 ชี้เป้าบนผัง</button>` +
+            `<button type="button" onclick="clearQuickFaultLocatorFromMainForm(false)" class="bg-white hover:bg-slate-100 text-slate-700 border border-rose-300 px-2 py-1.5 rounded-lg text-[11px] font-extrabold shadow-sm shrink-0" title="ล้างค่าชี้เป้าฟอลต์">🧹 ล้างค่า</button></div>`;
         anchorEl.parentElement.insertBefore(box, anchorEl);
 
         document.getElementById('distanceInput')?.addEventListener('input', function () {
@@ -967,7 +1017,7 @@
             const origReset = window.resetFaultForm;
             window.resetFaultForm = Object.assign(function () {
                 const r = origReset.apply(this, arguments);
-                ['tab1QuickFaultKmInput', 'tab1QuickFaultAmpInput'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+                clearQuickFaultLocatorFromMainForm(true);
                 return r;
             }, { __faultKmHooked: true });
         }
@@ -1049,8 +1099,8 @@
         }
     }
 
-    window.addEventListener('message', (ev) => { if (ev?.data?.type === 'SCADA_LOCATE_FAULT_DISTANCE') applyIncomingFaultPacket(ev.data); });
-    if (faultBc) faultBc.onmessage = (ev) => applyIncomingFaultPacket(ev?.data);
+    window.addEventListener('message', (ev) => handleIncomingLocatorMessage(ev?.data));
+    if (faultBc) faultBc.onmessage = (ev) => handleIncomingLocatorMessage(ev?.data);
     window.PeaCore?.onRealtimeChange?.((keys) => {
         if (panelOpen && Array.isArray(keys) && (keys.includes(STORAGE_KEY_LABELS) || keys.includes(STORAGE_KEY_DELETED))) {
             populateFaultSourceDropdown();
@@ -1064,6 +1114,7 @@
 
     Object.assign(window, {
         toggleScadaFaultLocatorPanel, executeFaultDistanceSearch, clearFaultLocatorOverlay,
+        resetFaultLocatorInputs, clearQuickFaultLocatorFromMainForm,
         zoomToFaultCandidate, navigateToFaultCandidate, shareFaultLocatorReportToLine,
         triggerFaultLocatorFromMainForm, refreshFaultSourceOptions, onQuickFaultKmBarInput,
         onFaultAmpParamsChanged, onFaultKmManualInput
@@ -1086,4 +1137,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initFaultLocatorModule);
     else initFaultLocatorModule();
 })();
-// ==================== จบไฟล์ scada-fault-locator.js (v2.4) ====================
+// ==================== จบไฟล์ scada-fault-locator.js (v2.5) ====================
