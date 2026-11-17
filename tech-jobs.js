@@ -1064,6 +1064,26 @@
         if (mapChanged) writeClosedReg(closedMap);
     }
 
+        function getNormalizedReportPhotos(tr) {
+        if (!tr || typeof tr !== 'object') return [];
+        if (Array.isArray(tr.photos) && tr.photos.length > 0) return tr.photos.filter(p => p && (p.viewUrl || p.thumbUrl || p.pendingDataUrl));
+        if (Array.isArray(tr.photoUrls) && tr.photoUrls.length > 0) {
+            return tr.photoUrls.filter(Boolean).map(u => {
+                const idM = String(u).match(/\/d\/([A-Za-z0-9_-]{15,})|[?&]id=([A-Za-z0-9_-]{15,})/);
+                const fid = idM ? (idM[1] || idM[2]) : '';
+                return { id: fid, viewUrl: u, thumbUrl: fid ? `https://drive.google.com/thumbnail?id=${fid}&sz=w1000` : u };
+            });
+        }
+        return [];
+    }
+
+    function formatTechPhotosTextLines(tr) {
+        const urls = getNormalizedReportPhotos(tr).map(p => p.viewUrl).filter(Boolean);
+        if (urls.length === 0) return '';
+        if (urls.length === 1) return `\n📷 ภาพหน้างาน : ${urls[0]}`;
+        return urls.map((u, idx) => `\n📷 ภาพหน้างาน (${idx + 1}) : ${u}`).join('');
+    }
+
     function normalizeJobGpsAndReportText(storageKey, isFault) {
         try {
             const list = JSON.parse(localStorage.getItem(storageKey) || '[]');
@@ -1088,7 +1108,8 @@
                     const urg = getJobUrgencyInfo(item, isFault ? 'fault' : 'outage');
                     const hdr = !isFault ? `${urg.dot} งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'} (${item.issueType || '-'})` : `${urg.dot} วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
                     const gpsLine = tr.fieldGps ? `\n📍 พิกัดหน้างาน : ${tr.fieldGps}` : '';
-                    const techText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdr}\n🚦 สถานะ : ${tr.status}\n🔍 สาเหตุจริง : ${tr.realCause || '-'}\n🛠️ การแก้ไข : ${tr.actionTaken || '-'}\n⏰ เวลาเสร็จ : ${tr.finishTime || '-'}\n👷 ผู้ตรวจสอบ : ${tr.inspector || '-'}${gpsLine}`;
+                    const photoLines = formatTechPhotosTextLines(tr);
+                    const techText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdr}\n🚦 สถานะ : ${tr.status}\n🔍 สาเหตุจริง : ${tr.realCause || '-'}\n🛠️ การแก้ไข : ${tr.actionTaken || '-'}\n⏰ เวลาเสร็จ : ${tr.finishTime || '-'}\n👷 ผู้ตรวจสอบ : ${tr.inspector || '-'}${gpsLine}${photoLines}`;
                     const baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
                     const full = `${baseText}\n\n${techText}`;
                     if (item.formattedText !== full) { item.formattedText = full; changed = true; }
@@ -1099,7 +1120,6 @@
             if (changed) localStorage.setItem(storageKey, JSON.stringify(list));
         } catch (e) {}
     }
-
     function mergeCloudJobsToLocal(cloudJobs, pruneStale = false) {
         Core.cleanReopenedAndCancelledJobsInStorage();
         rescueFalselyClosedRecentJobs();
@@ -1185,7 +1205,7 @@
         verifyActiveJobNavWatchStillValid();
     }
     // ===== จบพาทที่ 3 / 5 ของไฟล์ tech-jobs.js =====
-        // ===== เริ่มพาทที่ 4 / 5 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 3 / 5) =====
+    // ===== เริ่มพาทที่ 4 / 5 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 3 / 5) =====
     function applyCloudLocRegistry(locReg) {
         if (!locReg) return getDeletedJobsRegistry();
         const delMap = { ...getDeletedJobsRegistry(), ...(locReg.deletedJobsMap || {}) };
@@ -1274,6 +1294,40 @@
         }
     }
 
+    async function flushOfflinePendingPhotosInStorage() {
+        if (!navigator.onLine || isViewerRole() || typeof uploadBase64PhotoToDriveServer !== 'function') return;
+        const closedMap = readClosedReg();
+        let closedDirty = false;
+        for (const [sk, isF] of [['elecReportsComplete_all', false], ['fault_reports_all', true]]) {
+            const list = JSON.parse(localStorage.getItem(sk) || '[]');
+            let listDirty = false;
+            for (const item of list) {
+                const photos = item?.techReport?.photos;
+                if (!Array.isArray(photos) || !photos.some(p => p && !p.viewUrl && p.pendingDataUrl)) continue;
+                const grp = normTechGrp(getJobGroupName(item) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+                const lbl = !isF ? `Job${item.jobNo || ''}_S${item.shift || ''}` : `${item.circuit || 'Fault'}_${item.station || ''}`;
+                for (const p of photos) {
+                    if (p && !p.viewUrl && p.pendingDataUrl) {
+                        const up = await uploadBase64PhotoToDriveServer(p.pendingDataUrl, lbl, grp);
+                        if (up?.ok && up.viewUrl) {
+                            p.id = up.fileId || ''; p.viewUrl = up.viewUrl; p.thumbUrl = up.thumbUrl || up.viewUrl; p.directUrl = up.directUrl || '';
+                            delete p.pendingDataUrl; listDirty = true;
+                        }
+                    }
+                }
+                if (listDirty) {
+                    item.techReport.photoUrls = photos.map(p => p.viewUrl).filter(Boolean);
+                    item.techReport.updatedAt = new Date().toISOString();
+                    item.techReport.needsMainSync = true;
+                    const jk = isF ? item.timestamp : item.dateTimeSaved;
+                    if (jk && closedMap[jk]) { closedMap[jk] = item.techReport; closedDirty = true; }
+                }
+            }
+            if (listDirty) { localStorage.setItem(sk, JSON.stringify(list)); normalizeJobGpsAndReportText(sk, isF); }
+        }
+        if (closedDirty) writeClosedReg(closedMap);
+    }
+
     const _queuedPushAllJobs = Core.createTrailingAsyncQueue(async function (silent = false) {
         if (isViewerRole() || localStorage.getItem('elec_app_logged_in') !== 'true') return true;
         const myEpoch = authSessionEpoch;
@@ -1286,6 +1340,8 @@
             }
             return false;
         }
+
+        await flushOfflinePendingPhotosInStorage();
 
         if (!Core.isEmbeddedIframe) {
             const role = localStorage.getItem('elec_app_current_role') || 'user';
@@ -1328,12 +1384,18 @@
 
             const delMap = getDeletedJobsRegistry(), myGrp = normTechGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
             const pushedSyncMeta = new Map();
+            const stripBase64FromReport = (rep) => {
+                if (!rep || !Array.isArray(rep.photos)) return rep;
+                const cleanPhotos = rep.photos.filter(p => p && p.viewUrl).map(({ pendingDataUrl, uploading, ...rest }) => rest);
+                return { ...rep, photos: cleanPhotos, photoUrls: cleanPhotos.map(p => p.viewUrl) };
+            };
             const prepLocalJob = (i, jType) => {
                 const rk = jType === 'fault' ? i.timestamp : i.dateTimeSaved;
-                pushedSyncMeta.set((jType === 'fault' ? 'F_' : 'O_') + rk, { repUpd: i.techReport?.updatedAt || '', navUpd: i.techNav?.updatedAt || '' });
+                const hasUnuploadedPic = Array.isArray(i.techReport?.photos) && i.techReport.photos.some(p => p?.pendingDataUrl && !p.viewUrl);
+                if (!hasUnuploadedPic) pushedSyncMeta.set((jType === 'fault' ? 'F_' : 'O_') + rk, { repUpd: i.techReport?.updatedAt || '', navUpd: i.techNav?.updatedAt || '' });
                 const c = { ...i, jobType: jType, ownerGroup: normTechGrp(getJobGroupName(i) || myGrp) };
                 delete c.pendingInitialUpload;
-                if (c.techReport) { c.techReport = { ...c.techReport }; delete c.techReport.needsMainSync; }
+                if (c.techReport) { c.techReport = stripBase64FromReport(c.techReport); delete c.techReport.needsMainSync; }
                 if (c.techNav) { c.techNav = { ...c.techNav }; delete c.techNav.needsMainSync; }
                 if (c.recommendedTech && !c.recommendedTech.hasGps) delete c.recommendedTech;
                 return c;
@@ -1352,7 +1414,8 @@
                 if (rk) combinedMap.set((lj.jobType === 'fault' ? 'F_' : 'O_') + rk, lj);
             });
 
-            const closedSnap = readClosedReg();
+            const closedSnap = {};
+            Object.entries(readClosedReg()).forEach(([k, v]) => { closedSnap[k] = stripBase64FromReport(v); });
             const locRegistryItem = { ...(prevLocReg || {}), jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: getTechLocationsMap(), closedJobsMap: closedSnap, closedReports: closedSnap, deletedJobsMap: delMap, updatedAt: new Date().toISOString() };
             cachedCloudJobs = Array.from(combinedMap.values());
 
@@ -1371,6 +1434,7 @@
         return false;
     });
     function pushAllJobsToCloud(silent = false) { return _queuedPushAllJobs(silent); }
+
     // ========================================================================
     // 6. ตัวกรองวันที่/กะ/ประเภทใบงาน & จัดมาตรฐานวันที่เลขหลักเดียวอัตโนมัติ
     // ========================================================================
@@ -1740,6 +1804,263 @@
         return { otherType, pending, traveling, total: pending + traveling, inDateCount };
     }
 
+        // ========================================================================
+    // 📷 เอนจินถ่ายรูปหน้างาน + ย่อขนาด ~100KB + ฝังลายน้ำ วันเวลา/GPS + ส่งขึ้น Drive
+    // ========================================================================
+    const MAX_JOB_PHOTOS = 4;
+    const MAX_PHOTO_DIM = 1280;
+    let pendingModalPhotos = [];
+    let photoModalSessionId = 0;
+
+    async function uploadBase64PhotoToDriveServer(dataUrl, jobLabel, branchGroup) {
+        const apiUrl = getActiveCloudApiUrl();
+        if (!apiUrl || !navigator.onLine) return null;
+        try {
+            const role = localStorage.getItem('elec_app_current_role') || 'tech';
+            Core.unlockCloudWrite(25000);
+            const res = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'uploadJobPhoto',
+                    group: branchGroup || normTechGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
+                    role: role,
+                    jobLabel: jobLabel || 'Job',
+                    mimeType: 'image/jpeg',
+                    base64Data: dataUrl
+                })
+            });
+            return await res.json();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function resolveBestStampCoordsForModal(jobItem) {
+        if (isGpsTrackingEnabled && !lastKnownTechCoords && navigator.geolocation) {
+            await new Promise(resolve => {
+                navigator.geolocation.getCurrentPosition(
+                    pos => { recordCurrentTechGpsLocation(pos.coords.latitude, pos.coords.longitude); resolve(); },
+                    () => resolve(),
+                    { enableHighAccuracy: true, timeout: 2200, maximumAge: 20000 }
+                );
+            });
+        }
+        if (isGpsTrackingEnabled && lastKnownTechCoords && !isNaN(lastKnownTechCoords.lat) && !isNaN(lastKnownTechCoords.lon)) {
+            const gpsInp = document.getElementById('techGpsInput');
+            if (gpsInp && (!gpsInp.value.trim() || gpsInp.value.trim() === '-')) {
+                gpsInp.value = `https://www.google.com/maps?q=${lastKnownTechCoords.lat.toFixed(6)},${lastKnownTechCoords.lon.toFixed(6)}`;
+            }
+            return { lat: lastKnownTechCoords.lat, lon: lastKnownTechCoords.lon, source: 'GPS มือถือ' };
+        }
+        const typedGps = document.getElementById('techGpsInput')?.value || '';
+        const parsedTyped = deepParseCoords(typedGps, false);
+        if (parsedTyped?.lat && parsedTyped?.lon) return { lat: Number(parsedTyped.lat), lon: Number(parsedTyped.lon), source: 'พิกัดหน้างาน' };
+        const fromJob = extractCoordsFromJob(jobItem, currentEditingJobKey);
+        if (fromJob && !fromJob.isApproxTambon) return { lat: fromJob.lat, lon: fromJob.lon, source: 'พิกัดใบงาน' };
+        return null;
+    }
+
+    async function compressAndStampPhotoFile(file, jobItem, jobType) {
+        const coordInfo = await resolveBestStampCoordsForModal(jobItem);
+        const objUrl = URL.createObjectURL(file);
+        try {
+            const img = await new Promise((resolve, reject) => {
+                const im = new Image();
+                im.onload = () => resolve(im);
+                im.onerror = () => reject(new Error('อ่านไฟล์รูปไม่สำเร็จ'));
+                im.src = objUrl;
+            });
+
+            let w = img.naturalWidth || img.width || 1280;
+            let h = img.naturalHeight || img.height || 960;
+            if (w > MAX_PHOTO_DIM || h > MAX_PHOTO_DIM) {
+                const ratio = Math.min(MAX_PHOTO_DIM / w, MAX_PHOTO_DIM / h);
+                w = Math.max(320, Math.round(w * ratio));
+                h = Math.max(240, Math.round(h * ratio));
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+
+            const scale = Math.max(0.56, Math.min(1.18, w / 960));
+            const barH = Math.round(98 * scale);
+            const grad = ctx.createLinearGradient(0, h - barH - Math.round(28 * scale), 0, h);
+            grad.addColorStop(0, 'rgba(2, 6, 23, 0)');
+            grad.addColorStop(0.32, 'rgba(2, 6, 23, 0.72)');
+            grad.addColorStop(1, 'rgba(2, 6, 23, 0.90)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, h - barH - Math.round(28 * scale), w, barH + Math.round(28 * scale));
+
+            const padX = Math.round(16 * scale), barBottom = h - Math.round(12 * scale);
+            const lineH = Math.round(24 * scale);
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(padX, barBottom - lineH * 3 + Math.round(4 * scale), Math.max(3, Math.round(4.5 * scale)), lineH * 3 - Math.round(2 * scale));
+
+            const branchGrp = normTechGrp(getJobGroupName(jobItem) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+            const jobLabelText = jobType === 'outage'
+                ? `งานที่ ${jobItem?.jobNo || '-'} (กะ ${getEffectiveJobShift(jobItem)}) • ${String(jobItem?.issueType || 'ไฟขัดข้อง').slice(0, 26)}`
+                : `วงจร ${jobItem?.circuit || '-'} สถานี${jobItem?.station || '-'} (${jobItem?.system || '-'})`;
+            const now = new Date();
+            const dtStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543} เวลา ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} น.`;
+            const inspector = (document.getElementById('techInspectorInput')?.value || '').trim() || formatTechDisplayName(localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน');
+            const gpsStamp = coordInfo
+                ? `📍 ${coordInfo.source}: ${coordInfo.lat.toFixed(6)}, ${coordInfo.lon.toFixed(6)}`
+                : '📍 พิกัด GPS: ไม่ได้เปิดระบุตำแหน่ง';
+
+            const tx = padX + Math.round(12 * scale);
+            ctx.textBaseline = 'alphabetic';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+            ctx.shadowBlur = Math.max(2, Math.round(4 * scale));
+
+            ctx.font = `700 ${Math.round(18 * scale)}px Prompt, sans-serif`;
+            ctx.fillStyle = '#fde047';
+            ctx.fillText(`⚡ กฟภ. (${branchGrp}) • ${jobLabelText}`, tx, barBottom - lineH * 2);
+
+            ctx.font = `600 ${Math.round(16 * scale)}px Prompt, sans-serif`;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(`📅 ${dtStr} • 👷 ${inspector}`, tx, barBottom - lineH);
+
+            ctx.font = `600 ${Math.round(15 * scale)}px Prompt, monospace`;
+            ctx.fillStyle = '#67e8f9';
+            ctx.fillText(gpsStamp, tx, barBottom);
+
+            let quality = 0.76;
+            let dataUrl = canvas.toDataURL('image/jpeg', quality);
+            if ((dataUrl.length * 0.75) > 148000) dataUrl = canvas.toDataURL('image/jpeg', 0.64);
+            if ((dataUrl.length * 0.75) > 170000) dataUrl = canvas.toDataURL('image/jpeg', 0.54);
+            canvas.width = 1; canvas.height = 1;
+            return dataUrl;
+        } finally {
+            try { URL.revokeObjectURL(objUrl); } catch (e) {}
+        }
+    }
+
+    function ensurePhotoBoxInModal() {
+        if (document.getElementById('techPhotoCaptureBox')) return;
+        const gpsInp = document.getElementById('techGpsInput');
+        const anchor = gpsInp?.parentElement;
+        if (!anchor) return;
+        const box = document.createElement('div');
+        box.id = 'techPhotoCaptureBox';
+        box.className = 'p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2';
+        box.innerHTML = `<div class="flex items-center justify-between gap-2"><label class="font-bold text-slate-700 text-xs flex items-center gap-1"><span>📷 รูปถ่ายหน้างาน (ฝังพิกัด+เวลาอัตโนมัติ)</span></label><span id="techPhotoCountLabel" class="text-[10px] font-extrabold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">0 / ${MAX_JOB_PHOTOS} รูป</span></div><div class="grid grid-cols-2 gap-2"><button type="button" onclick="triggerTechPhotoPicker('camera')" class="bg-teal-600 hover:bg-teal-700 text-white py-2 px-2.5 rounded-xl text-xs font-extrabold shadow-sm flex items-center justify-center gap-1">📷 ถ่ายรูปหน้างาน</button><button type="button" onclick="triggerTechPhotoPicker('gallery')" class="bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 py-2 px-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1">🖼️ เลือกจากอัลบั้ม</button></div><input type="file" id="techCameraFileInput" accept="image/*" capture="environment" class="hidden" onchange="handleTechPhotoFilesSelected(event)"><input type="file" id="techGalleryFileInput" accept="image/*" multiple class="hidden" onchange="handleTechPhotoFilesSelected(event)"><div id="techPhotoPreviewGrid" class="hidden grid-cols-4 gap-2 pt-1"></div>`;
+        anchor.insertAdjacentElement('afterend', box);
+    }
+
+    function triggerTechPhotoPicker(mode) {
+        if (isViewerRole()) return showToast(VIEWER_LOCK_MSG);
+        if (pendingModalPhotos.length >= MAX_JOB_PHOTOS) return showToast(`⚠️ แนบรูปได้สูงสุด ${MAX_JOB_PHOTOS} รูปต่อใบงานครับ`);
+        document.getElementById(mode === 'camera' ? 'techCameraFileInput' : 'techGalleryFileInput')?.click();
+    }
+
+    function renderModalPhotoPreviewGrid() {
+        const grid = document.getElementById('techPhotoPreviewGrid'), cntLbl = document.getElementById('techPhotoCountLabel');
+        if (cntLbl) cntLbl.textContent = `${pendingModalPhotos.length} / ${MAX_JOB_PHOTOS} รูป`;
+        if (!grid) return;
+        if (pendingModalPhotos.length === 0) {
+            grid.classList.add('hidden'); grid.classList.remove('grid'); grid.innerHTML = ''; return;
+        }
+        grid.classList.remove('hidden'); grid.classList.add('grid');
+        grid.innerHTML = pendingModalPhotos.map((p, idx) => {
+            const previewSrc = p.previewSrc || p.pendingDataUrl || p.thumbUrl || p.directUrl || p.viewUrl || '';
+            const altSrc = escJsAttr(p.directUrl || '');
+            const openSrc = escJsAttr(p.previewSrc || p.pendingDataUrl || p.thumbUrl || p.viewUrl || '');
+            const openDrive = escJsAttr(p.viewUrl || '');
+            const stBadge = p.uploading
+                ? '<span class="bg-amber-500/95 text-slate-950 text-[9px] font-extrabold px-1.5 py-0.5 rounded animate-pulse">⏳ อัปโหลด</span>'
+                : (p.viewUrl ? '<span class="bg-emerald-600/95 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded">✅ Drive</span>' : '<span class="bg-orange-500/95 text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded">🟠 รอเน็ต</span>');
+            return `<div class="relative rounded-xl overflow-hidden border border-slate-300 bg-slate-900 aspect-square shadow-sm"><img src="${escapeHtmlStr(previewSrc)}" onerror="if(!this.dataset.fb&&'${altSrc}'){this.dataset.fb='1';this.src='${altSrc}';}" onclick="openJobPhotoLightbox('${openSrc}','${openDrive}')" class="w-full h-full object-cover cursor-pointer"><div class="absolute bottom-1 left-1 pointer-events-none">${stBadge}</div><button type="button" onclick="removePendingTechPhoto(${idx})" class="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white text-xs font-extrabold flex items-center justify-center shadow">&times;</button></div>`;
+        }).join('');
+    }
+
+    function removePendingTechPhoto(idx) {
+        pendingModalPhotos.splice(idx, 1);
+        renderModalPhotoPreviewGrid();
+    }
+
+    async function handleTechPhotoFilesSelected(event) {
+        const files = Array.from(event.target?.files || []);
+        if (event.target) event.target.value = '';
+        if (!files.length || isViewerRole()) return;
+
+        const remain = MAX_JOB_PHOTOS - pendingModalPhotos.length;
+        if (remain <= 0) return showToast(`⚠️ แนบรูปครบ ${MAX_JOB_PHOTOS} รูปแล้ว`);
+        const picked = files.slice(0, remain);
+        const mySession = photoModalSessionId;
+        const sk = currentEditingJobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all';
+        const jobItem = JSON.parse(localStorage.getItem(sk) || '[]').find(i => (currentEditingJobType === 'outage' ? i.dateTimeSaved : i.timestamp) === currentEditingJobKey) || {};
+        const branchGrp = normTechGrp(getJobGroupName(jobItem) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        const jobLbl = currentEditingJobType === 'outage' ? `Job${jobItem.jobNo || ''}_S${jobItem.shift || ''}` : `${jobItem.circuit || 'Fault'}_${jobItem.station || ''}`;
+
+        showToast('⏳ กำลังย่อขนาดภาพและประทับตราพิกัด/เวลา...');
+        for (const f of picked) {
+            try {
+                const stampedDataUrl = await compressAndStampPhotoFile(f, jobItem, currentEditingJobType);
+                if (mySession !== photoModalSessionId) return;
+                const entry = {
+                    localId: 'ph_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                    id: '', viewUrl: '', thumbUrl: '', directUrl: '',
+                    takenAt: new Date().toISOString(), jobLabel: jobLbl,
+                    previewSrc: stampedDataUrl, pendingDataUrl: stampedDataUrl,
+                    uploading: navigator.onLine
+                };
+                pendingModalPhotos.push(entry);
+                renderModalPhotoPreviewGrid();
+
+                if (navigator.onLine) {
+                    entry.uploadPromise = uploadBase64PhotoToDriveServer(stampedDataUrl, jobLbl, branchGrp).then(res => {
+                        entry.uploading = false;
+                        if (res?.ok && res.viewUrl) {
+                            entry.id = res.fileId || ''; entry.viewUrl = res.viewUrl;
+                            entry.thumbUrl = res.thumbUrl || res.viewUrl; entry.directUrl = res.directUrl || '';
+                            delete entry.pendingDataUrl;
+                        }
+                        if (mySession === photoModalSessionId) renderModalPhotoPreviewGrid();
+                        return res;
+                    });
+                }
+            } catch (err) {
+                showToast('❌ ไม่สามารถประมวลผลรูปภาพนี้ได้');
+            }
+        }
+    }
+
+    function openJobPhotoLightbox(imgSrc, driveViewUrl = '') {
+        if (!imgSrc && !driveViewUrl) return;
+        let modal = document.getElementById('peaJobPhotoLightbox');
+        if (!modal) {
+            modal = document.createElement('div'); modal.id = 'peaJobPhotoLightbox';
+            modal.className = 'fixed inset-0 z-[1490] hidden bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-3';
+            modal.onclick = e => { if (e.target === modal) modal.classList.add('hidden'); };
+            document.body.appendChild(modal);
+        }
+        const safeImg = escapeHtmlStr(imgSrc || driveViewUrl);
+        const driveBtn = driveViewUrl ? `<a href="${escapeHtmlStr(driveViewUrl)}" target="_blank" rel="noopener noreferrer" class="bg-blue-600 hover:bg-blue-500 text-white px-3.5 py-2 rounded-xl text-xs font-extrabold shadow">🔗 เปิดไฟล์เต็มใน Google Drive ↗</a>` : '';
+        modal.innerHTML = `<div class="max-w-3xl w-full flex flex-col items-center gap-3"><img src="${safeImg}" class="max-h-[78dvh] w-auto max-w-full rounded-2xl shadow-2xl border border-white/20 object-contain bg-slate-900"><div class="flex items-center gap-2">${driveBtn}<button type="button" onclick="document.getElementById('peaJobPhotoLightbox').classList.add('hidden')" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-xs font-extrabold shadow">✕ ปิดรูปภาพ</button></div></div>`;
+        modal.classList.remove('hidden');
+    }
+
+    function buildJobPhotosCardStripHtml(tr) {
+        const photos = getNormalizedReportPhotos(tr);
+        if (!photos.length) return '';
+        const thumbs = photos.map((p, i) => {
+            const src = p.thumbUrl || p.pendingDataUrl || p.directUrl || p.viewUrl;
+            const alt = escJsAttr(p.directUrl || '');
+            const openImg = escJsAttr(src || '');
+            const openDrv = escJsAttr(p.viewUrl || '');
+            return `<button type="button" onclick="openJobPhotoLightbox('${openImg}','${openDrv}')" class="relative w-14 h-14 rounded-lg overflow-hidden border border-emerald-300 shadow-sm shrink-0 bg-slate-900 group"><img src="${escapeHtmlStr(src)}" onerror="if(!this.dataset.fb&&'${alt}'){this.dataset.fb='1';this.src='${alt}';}" class="w-full h-full object-cover group-hover:scale-105 transition"><span class="absolute bottom-0 right-0 bg-slate-900/80 text-white text-[9px] font-bold px-1 rounded-tl">#${i + 1}</span></button>`;
+        }).join('');
+        return `<div class="pt-1.5 mt-1 border-t border-emerald-200/70"><div class="text-[10px] font-bold text-emerald-800 mb-1">📷 ภาพถ่ายหน้างาน (${photos.length} รูป • แตะเพื่อดูภาพขยาย):</div><div class="flex items-center gap-1.5 overflow-x-auto pb-0.5">${thumbs}</div></div>`;
+    }
+
+    Object.assign(window, { triggerTechPhotoPicker, handleTechPhotoFilesSelected, removePendingTechPhoto, openJobPhotoLightbox });
+
+    // ========================================================================
+    // 8. เรนเดอร์การ์ดใบงานซ่อม (แบนเนอร์เตือนข้ามหมวด + รูปหน้างาน + กันกระพริบ)
+    // ========================================================================
     function computeJobCardsRenderSignature(rawList, equipNavItems, closedReg, otherSummary) {
         const jobType = document.getElementById('filterJobType')?.value || 'outage';
         const fStat = document.getElementById('filterJobStatus')?.value || 'pending';
@@ -1754,8 +2075,9 @@
         const jSig = rawList.map(it => {
             const k = jobType === 'outage' ? it.dateTimeSaved : it.timestamp;
             const tr = getEffectiveJobReport(it, k, closedReg) || {};
+            const pSig = getNormalizedReportPhotos(tr).map(p => p.viewUrl || p.localId || 'loc').join(',');
             const rec = (!tr.status && !it.techNav) ? findNearestTechForJob(it) : null;
-            return `${k}~${it.editedAt || ''}~${it.jobNo || ''}~${it.shift || ''}~${it.issueType || ''}~${it.area || ''}~${it.address || ''}~${it.phone || ''}~${it.circuit || ''}~${it.station || ''}~${it.cause || ''}~${it.gps || ''}~${tr.status || ''}~${tr.realCause || ''}~${tr.actionTaken || ''}~${tr.finishTime || ''}~${tr.inspector || ''}~${it.techNav ? it.techNav.techName + ':' + Boolean(it.techNav.isArrived) : ''}~${rec ? rec.techName + ':' + rec.distanceKm : ''}`;
+            return `${k}~${it.editedAt || ''}~${it.jobNo || ''}~${it.shift || ''}~${it.issueType || ''}~${it.area || ''}~${it.address || ''}~${it.phone || ''}~${it.circuit || ''}~${it.station || ''}~${it.cause || ''}~${it.gps || ''}~${tr.status || ''}~${tr.realCause || ''}~${tr.actionTaken || ''}~${tr.finishTime || ''}~${tr.inspector || ''}~${pSig}~${it.techNav ? it.techNav.techName + ':' + Boolean(it.techNav.isArrived) : ''}~${rec ? rec.techName + ':' + rec.distanceKm : ''}`;
         }).join('|');
         return `${jobType}#${fStat}#${fShift}#${fDate}#${sOrd}#${kw}#${role}#${grp}##${othSig}##${eqSig}##${jSig}`;
     }
@@ -1928,14 +2250,13 @@
 
                 const card = document.createElement('div');
                 card.className = `p-3.5 rounded-2xl border bg-white shadow-sm space-y-2 ${urgency.cardBorder}`;
-                card.innerHTML = `<div class="flex justify-between items-start gap-2"><div class="min-w-0 flex-1"><div class="mb-1 flex flex-wrap items-center gap-y-1">${metaBadges}</div><div class="${urgency.titleColor} text-sm font-extrabold flex items-center gap-1"><span>${urgency.dot}</span><span>${mainTitle}</span></div></div><span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${badgeClass}">${escapeHtmlStr(badgeLabel)}</span></div><div class="text-xs text-slate-600">${subHtml}</div>${(!isDone && !nav) ? `<div class="px-2.5 py-1.5 bg-amber-50/90 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex flex-wrap items-center justify-between gap-1"><span class="font-bold text-amber-800">⏰ เวลาลงข้อมูล: ${escapeHtmlStr(loggedTimeStr)} (${escapeHtmlStr(dStr)})</span>${(jobType === 'outage' && item.workerName && item.workerName !== '-') ? `<span class="text-[10px] font-semibold text-slate-600 bg-white px-2 py-0.5 rounded border border-amber-200">👷 ผู้แจ้ง: ${escapeHtmlStr(formatTechDisplayName(item.workerName))}</span>` : ''}</div>${buildRecommendedTechBadgeHtml(item)}` : ''}${(nav && !isDone) ? `<div class="realtime-nav-box p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl text-[11px] text-blue-950 space-y-1" data-job-key="${escapeHtmlStr(key)}" data-job-type="${jobType}">${formatRealtimeNavHtml(nav)}</div>` : ''}${tr ? `<div class="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-950 space-y-0.5"><div><strong>🔍 สาเหตุจริง:</strong> ${escapeHtmlStr(tr.realCause || '-')}</div><div><strong>🛠️ การแก้ไข:</strong> ${escapeHtmlStr(tr.actionTaken || '-')}</div><div class="text-[10px] text-emerald-700 pt-0.5">📅 ${escapeHtmlStr(dStr)} | ⏰ ลงข้อมูล: ${escapeHtmlStr(loggedTimeStr)} | ✅ เสร็จ: ${escapeHtmlStr(tr.finishTime || '-')} | 👷 ช่าง: ${escapeHtmlStr(formatTechDisplayName(tr.inspector || '-'))}</div></div>` : ''}<div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100"><div class="flex flex-wrap gap-1.5 mr-auto">${dialTel ? `<a href="tel:${escapeHtmlStr(dialTel)}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold">📞 โทร ${escapeHtmlStr(rawPhoneLabel)}</a>` : ''}${travelBtn}${(nav && !isDone && !isViewer) ? `<button type="button" onclick="handleCancelNavigation('${safeKey}', '${jobType}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold">❌ ยกเลิกเดินทาง</button>` : ''}${!isDone ? `<button type="button" onclick="focusSingleRepairJobOnMap('${safeKey}')" class="btn-focus-repair-map bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold">⚡ ดูจุดบนแมพ</button>` : ''}</div>${(!isDone && !isViewer) ? `<button type="button" onclick="quickVoiceCloseFromCard('${safeKey}', '${jobType}')" class="btn-voice-quick-close bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-xl text-xs font-extrabold shadow-sm flex items-center gap-1 shrink-0">🎙️ พูดปิดงาน</button>` : ''}${!isViewer ? `<button type="button" onclick="openInspectModal('${safeKey}', '${jobType}')" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm shrink-0">${tr ? '✏️ แก้ไขผลหน้างาน' : '🛠️ แจ้งผลตรวจสอบ'}</button>` : ''}</div>`;
+                card.innerHTML = `<div class="flex justify-between items-start gap-2"><div class="min-w-0 flex-1"><div class="mb-1 flex flex-wrap items-center gap-y-1">${metaBadges}</div><div class="${urgency.titleColor} text-sm font-extrabold flex items-center gap-1"><span>${urgency.dot}</span><span>${mainTitle}</span></div></div><span class="text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${badgeClass}">${escapeHtmlStr(badgeLabel)}</span></div><div class="text-xs text-slate-600">${subHtml}</div>${(!isDone && !nav) ? `<div class="px-2.5 py-1.5 bg-amber-50/90 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex flex-wrap items-center justify-between gap-1"><span class="font-bold text-amber-800">⏰ เวลาลงข้อมูล: ${escapeHtmlStr(loggedTimeStr)} (${escapeHtmlStr(dStr)})</span>${(jobType === 'outage' && item.workerName && item.workerName !== '-') ? `<span class="text-[10px] font-semibold text-slate-600 bg-white px-2 py-0.5 rounded border border-amber-200">👷 ผู้แจ้ง: ${escapeHtmlStr(formatTechDisplayName(item.workerName))}</span>` : ''}</div>${buildRecommendedTechBadgeHtml(item)}` : ''}${(nav && !isDone) ? `<div class="realtime-nav-box p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl text-[11px] text-blue-950 space-y-1" data-job-key="${escapeHtmlStr(key)}" data-job-type="${jobType}">${formatRealtimeNavHtml(nav)}</div>` : ''}${tr ? `<div class="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-950 space-y-0.5"><div><strong>🔍 สาเหตุจริง:</strong> ${escapeHtmlStr(tr.realCause || '-')}</div><div><strong>🛠️ การแก้ไข:</strong> ${escapeHtmlStr(tr.actionTaken || '-')}</div><div class="text-[10px] text-emerald-700 pt-0.5">📅 ${escapeHtmlStr(dStr)} | ⏰ ลงข้อมูล: ${escapeHtmlStr(loggedTimeStr)} | ✅ เสร็จ: ${escapeHtmlStr(tr.finishTime || '-')} | 👷 ช่าง: ${escapeHtmlStr(formatTechDisplayName(tr.inspector || '-'))}</div>${buildJobPhotosCardStripHtml(tr)}</div>` : ''}<div class="flex flex-wrap items-center justify-between gap-1.5 pt-1 border-t border-slate-100"><div class="flex flex-wrap gap-1.5 mr-auto">${dialTel ? `<a href="tel:${escapeHtmlStr(dialTel)}" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold">📞 โทร ${escapeHtmlStr(rawPhoneLabel)}</a>` : ''}${travelBtn}${(nav && !isDone && !isViewer) ? `<button type="button" onclick="handleCancelNavigation('${safeKey}', '${jobType}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-lg text-[11px] font-bold">❌ ยกเลิกเดินทาง</button>` : ''}${!isDone ? `<button type="button" onclick="focusSingleRepairJobOnMap('${safeKey}')" class="btn-focus-repair-map bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-1.5 rounded-lg text-[11px] font-bold">⚡ ดูจุดบนแมพ</button>` : ''}</div>${(!isDone && !isViewer) ? `<button type="button" onclick="quickVoiceCloseFromCard('${safeKey}', '${jobType}')" class="btn-voice-quick-close bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-xl text-xs font-extrabold shadow-sm flex items-center gap-1 shrink-0">🎙️ พูดปิดงาน</button>` : ''}${!isViewer ? `<button type="button" onclick="openInspectModal('${safeKey}', '${jobType}')" class="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm shrink-0">${tr ? '✏️ แก้ไขผลหน้างาน' : '🛠️ แจ้งผลตรวจสอบ'}</button>` : ''}</div>`;
                 container.appendChild(card);
             });
         }
         if (typeof renderRepairJobsMapMarkers === 'function') renderRepairJobsMapMarkers(false);
         requestAnimationFrame(() => { container.style.minHeight = ''; if (savedScrollY > 0 && Math.abs(window.scrollY - savedScrollY) > 40) window.scrollTo(0, savedScrollY); });
     }
-
     // ========================================================================
     // 9. สั่งปิดงานด้วยเสียงแม่นยำ (กันคำไทย เค-) & บันทึกผลตรวจสอบปลอด Clock Skew
     // ========================================================================
@@ -2051,9 +2372,10 @@
         try { saveCancelledJobNavMap(JSON.parse(localStorage.getItem(CANCELLED_JOB_NAV_KEY) || '{}')); saveCancelledEquipNavMap(JSON.parse(localStorage.getItem(CANCELLED_EQUIP_NAV_KEY) || '{}')); } catch (e) {}
     }
 
-    function openInspectModal(key, jobType) {
+        function openInspectModal(key, jobType) {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
         stopActiveVoiceSession();
+        photoModalSessionId++;
         currentEditingJobKey = key; currentEditingJobType = jobType;
         const item = JSON.parse(localStorage.getItem(jobType === 'outage' ? 'elecReportsComplete_all' : 'fault_reports_all') || '[]').find(i => (jobType === 'outage' ? i.dateTimeSaved : i.timestamp) === key);
         if (!item) return;
@@ -2062,6 +2384,7 @@
             ? `<div>${urgency.dot} <strong>งานที่ ${escapeHtmlStr(item.jobNo)} (กะ ${escapeHtmlStr(item.shift)})</strong> วันที่ ${escapeHtmlStr(dStr)} <span class="text-amber-700 font-bold">(⏰ ลงข้อมูล ${escapeHtmlStr(loggedTimeModal)})</span></div><div>⚡ อาการรับแจ้ง: ${escapeHtmlStr(item.issueType)} <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${urgency.tagClass}">${urgency.dot} ${urgency.label}</span></div><div>🏠 บริเวณ/ที่อยู่: ${escapeHtmlStr(item.area)} (${escapeHtmlStr(item.address)})</div>`
             : `<div>${urgency.dot} <strong>วงจร ${escapeHtmlStr(item.circuit)} สถานี${escapeHtmlStr(item.station)}</strong> เวลา ${escapeHtmlStr(item.time)}</div><div>🚨 เหตุ: ${escapeHtmlStr(item.cause)} เฟส ${escapeHtmlStr(item.phase)}</div>`;
         ensureVoiceControlBoxInModal();
+        ensurePhotoBoxInModal();
         document.getElementById('voiceAutoCloseStatusBanner')?.classList.add('hidden');
         const statusSelect = document.getElementById('techStatusInput');
         if (statusSelect && !statusSelect.querySelector('option[value="รอแก้ไข"]')) {
@@ -2077,9 +2400,18 @@
         document.getElementById('techGpsInput').value = normalizeCoordPairToMapsUrl(preferredGps);
         document.getElementById('techFinishTimeInput').value = tr.finishTime || defTime;
         document.getElementById('techInspectorInput').value = existingInspector || (loggedUser ? formatTechDisplayName(loggedUser) : '');
+
+        pendingModalPhotos = getNormalizedReportPhotos(tr).map(p => ({ ...p, uploading: false }));
+        renderModalPhotoPreviewGrid();
         document.getElementById('inspectModal')?.classList.remove('hidden');
     }
-    function closeInspectModal() { stopActiveVoiceSession(); document.getElementById('inspectModal')?.classList.add('hidden'); }
+
+    function closeInspectModal() {
+        stopActiveVoiceSession();
+        photoModalSessionId++;
+        pendingModalPhotos = [];
+        document.getElementById('inspectModal')?.classList.add('hidden');
+    }
 
     async function submitTechReport(sendLine = false) {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
@@ -2090,6 +2422,22 @@
         try {
             stopRealtimeGpsWatch(currentEditingJobKey);
             Core.unlockCloudWrite(25000);
+
+            if (navigator.onLine && pendingModalPhotos.some(p => p.uploading || (!p.viewUrl && p.pendingDataUrl))) {
+                showToast('⏳ กำลังอัปโหลดรูปหน้างานขึ้น Google Drive...');
+                for (const p of pendingModalPhotos) {
+                    if (p.uploadPromise) { try { await p.uploadPromise; } catch (e) {} }
+                    if (!p.viewUrl && p.pendingDataUrl) {
+                        const res = await uploadBase64PhotoToDriveServer(p.pendingDataUrl, p.jobLabel || 'Job', p.ownerGroup || '');
+                        if (res?.ok && res.viewUrl) {
+                            p.id = res.fileId || ''; p.viewUrl = res.viewUrl;
+                            p.thumbUrl = res.thumbUrl || res.viewUrl; p.directUrl = res.directUrl || '';
+                            delete p.pendingDataUrl;
+                        }
+                    }
+                }
+            }
+
             const gpsEl = document.getElementById('techGpsInput'), rawGpsVal = (gpsEl?.value || '').trim();
             if (rawGpsVal && /(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(rawGpsVal)) {
                 try { const c = await resolveGoogleShortLinkUniversal(rawGpsVal); if (c?.lat && c?.lon && gpsEl) gpsEl.value = `https://www.google.com/maps?q=${c.lat},${c.lon}`; } catch (e) {}
@@ -2136,9 +2484,19 @@
                 return;
             }
 
+            const savedPhotos = pendingModalPhotos.map(p => ({
+                id: p.id || '', viewUrl: p.viewUrl || '', thumbUrl: p.thumbUrl || '', directUrl: p.directUrl || '',
+                takenAt: p.takenAt || new Date().toISOString(), jobLabel: p.jobLabel || '',
+                ...(!p.viewUrl && p.pendingDataUrl ? { pendingDataUrl: p.pendingDataUrl } : {})
+            })).filter(p => p.viewUrl || p.pendingDataUrl);
+
             const safeUpdateIso = new Date(Math.max(Date.now(), prevMaxRefMs > 0 ? prevMaxRefMs + 1000 : 0)).toISOString();
             if (fieldGps) { item.gps = fieldGps; item.editedAt = safeUpdateIso; }
-            item.techReport = { status, realCause, actionTaken, fieldGps: fieldGps || item.gps || '', finishTime, inspector, updatedAt: safeUpdateIso, needsMainSync: true };
+            item.techReport = {
+                status, realCause, actionTaken, fieldGps: fieldGps || item.gps || '', finishTime, inspector,
+                ...(savedPhotos.length ? { photos: savedPhotos, photoUrls: savedPhotos.map(p => p.viewUrl).filter(Boolean) } : {}),
+                updatedAt: safeUpdateIso, needsMainSync: true
+            };
             delete item.techNav; item.navCancelledAt = safeUpdateIso;
             const cNavMap = getCancelledJobNavMap(); cNavMap[currentEditingJobKey] = safeUpdateIso; saveCancelledJobNavMap(cNavMap);
             if (status.includes('เสร็จสิ้น')) {
@@ -2153,7 +2511,8 @@
 
             const urgency = getJobUrgencyInfo(item, currentEditingJobType);
             const hdrLine = currentEditingJobType === 'outage' ? `${urgency.dot} งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'} (${item.issueType || '-'})` : `${urgency.dot} วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
-            const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdrLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}${fieldGps ? `\n📍 พิกัดหน้างาน : ${fieldGps}` : ''}`;
+            const photoLines = formatTechPhotosTextLines(item.techReport);
+            const techOnlyText = `--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdrLine}\n🚦 สถานะ : ${status}\n🔍 สาเหตุจริง : ${realCause}\n🛠️ การแก้ไข : ${actionTaken}\n⏰ เวลาเสร็จ : ${finishTime}\n👷 ผู้ตรวจสอบ : ${inspector}${fieldGps ? `\n📍 พิกัดหน้างาน : ${fieldGps}` : ''}${photoLines}`;
             item.formattedText = `${(item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0]}\n\n${techOnlyText}`;
 
             localStorage.setItem(storageKey, JSON.stringify(list));
@@ -2175,7 +2534,6 @@
             submitBtns.forEach(b => { b.disabled = false; });
         }
     }
-
     // ========================================================================
     // 10. ระบบแผนที่ใบงานซ่อม (ล็อกกัน ResizeObserver แย่งซูม + เชื่อมเหตุการณ์ระบบ)
     // ========================================================================
