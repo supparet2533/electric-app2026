@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ระบบเครื่องมือจัดการงานไฟฟ้า (รวมระบบ)</title>
 
     <meta name="mobile-web-app-capable" content="yes">
@@ -26,11 +26,17 @@
         body {
             overflow-x: clip;
             min-height: 100vh;
+            min-height: 100dvh;
             touch-action: pan-y pinch-zoom;
             font-family: 'Prompt', sans-serif;
-            background: #f8fafc;
-            background-image: radial-gradient(at 0% 0%, rgba(37,99,235,0.03) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(79,70,229,0.03) 0px, transparent 50%);
+            background: #ffffff;
             color: #1e293b;
+        }
+        @media (min-width: 640px) {
+            body {
+                background: #f8fafc;
+                background-image: radial-gradient(at 0% 0%, rgba(37,99,235,0.03) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(79,70,229,0.03) 0px, transparent 50%);
+            }
         }
         @supports not (overflow-x: clip) {
             body { overflow-x: hidden; }
@@ -65,7 +71,7 @@
         #historyListFault, #historyListOutage { overflow-x: hidden !important; max-width: 100%; }
         #historyListFault > div, #historyListOutage > div { max-width: 100%; overflow: hidden; overflow-wrap: anywhere; word-break: break-word; }
 
-        /* ยกเฉพาะแถวที่กำลังโฟกัสหรือกางเมนู Dropdown/Autocomplete จริง (ไม่นับปุ่มไมค์) */
+        /* ยกเฉพาะแถวที่กำลังโฟกัสหรือกางเมนู Dropdown/Autocomplete จริง */
         #sortable-tab1 > div, #sortable-tab2 > div { position: relative; }
         #sortable-tab1 > div:focus-within,
         #sortable-tab2 > div:focus-within {
@@ -76,6 +82,27 @@
         #sortable-tab2 > div:has(#issueDropdownMenu:not(.hidden), ul[id^="suggest-"]:not(.hidden)) {
             position: relative !important;
             z-index: 80 !important;
+        }
+
+        /* จัดแถบชี้เป้าฟอลต์ 22kV ให้เรียงเต็มความกว้างบนหน้าจอมือถือ ไม่ซ้อนเป็นแถวแคบชิดขวา */
+        @media (max-width: 639px) {
+            #tab1FaultLocatorQuickBox {
+                flex-direction: column !important;
+                align-items: stretch !important;
+                gap: 0.5rem !important;
+            }
+            #tab1FaultLocatorQuickBox > div {
+                justify-content: flex-start !important;
+                width: 100% !important;
+            }
+            #tab1FaultLocatorQuickBox > div > input,
+            #tab1FaultLocatorQuickBox > div > select {
+                flex: 1 1 30% !important;
+                min-width: 92px !important;
+            }
+            #tab1FaultLocatorQuickBox > div > button:first-of-type {
+                flex: 1 1 auto !important;
+            }
         }
 
         /* จัดระเบียบแถบเบราว์เซอร์ฝั่งซ้ายให้ไม่เบียดช่อง URL ทุกขนาดจอ */
@@ -96,10 +123,9 @@
         #scadaCadImportModal, #userManageModal, #onlineUsersModal { z-index: 1250 !important; }
         #customTambonEditModal, #customUserEditModal { z-index: 1300 !important; }
         #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
-        #toast { z-index: 1500 !important; 
-            }
+        #toast { z-index: 1500 !important; }
 
-   @keyframes scadaFieldFlash {
+        @keyframes scadaFieldFlash {
             0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.65); background-color: #ecfdf5; }
             100% { box-shadow: 0 0 0 6px rgba(16,185,129,0); background-color: #ffffff; }
         }
@@ -131,7 +157,7 @@
         body.role-viewer-readonly #geminiChatbot { display: none !important; }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen py-6 px-4 lg:py-10 flex items-start justify-center">
+<body class="bg-white sm:bg-slate-100 min-h-[100dvh] p-0 sm:py-6 sm:px-4 lg:py-10 flex items-stretch sm:items-start justify-center">
 
     <!-- 🔐 หน้าล็อกอิน Smart Grid -->
     <div id="loginScreen" class="hidden fixed inset-0 z-[1100] flex items-center justify-center overflow-hidden bg-slate-950 transition-opacity duration-500">
@@ -176,7 +202,7 @@
 
         <div class="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px] pointer-events-none"></div>
 
-        <div class="relative z-10 w-full max-w-6xl mx-6 flex flex-col md:flex-row items-center justify-between gap-10">
+        <div class="relative z-10 w-full max-w-6xl mx-4 sm:mx-6 flex flex-col md:flex-row items-center justify-between gap-10">
             <div class="text-white space-y-2 text-center md:text-left">
                 <div class="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-semibold px-3 py-1 rounded-full mb-1 backdrop-blur-sm">⚡ SMART GRID &amp; FAULT MANAGEMENT</div>
                 <h1 class="text-2xl md:text-4xl font-bold tracking-wide drop-shadow-md">Mobile Workforce Management</h1>
@@ -202,8 +228,8 @@
         <div class="absolute bottom-4 left-0 right-0 z-10 text-center text-[11px] text-white/75 px-4">© Provincial Electricity Authority All Rights Reserved.</div>
     </div>
 
-    <!-- 🌟 กล่องเนื้อหาหลักแบ่ง 2 ฝั่ง -->
-    <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start px-4">
+    <!-- 🌟 กล่องเนื้อหาหลัก (เต็มจอชิดขอบบนมือถือ / แบ่ง 2 ฝั่งบนคอมพิวเตอร์) -->
+    <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid-cols-1 lg:grid-cols-2 gap-0 sm:gap-8 lg:gap-12 items-start px-0 sm:px-4">
 
         <!-- ฝั่งซ้าย: แผงโลโก้ (คลิกเพื่อเปิดเบราว์เซอร์/ผัง SCADA เทียบเคียง) -->
         <div id="leftLogoPanel" class="hidden lg:flex flex-col justify-center sticky top-10 space-y-6">
@@ -263,10 +289,10 @@
         </div>
 
         <!-- ฝั่งขวา: แอปพลิเคชันจัดการงานไฟฟ้าหลัก -->
-        <div class="max-w-xl w-full mx-auto bg-white rounded-2xl shadow-xl overflow-visible mb-6 lg:mb-0 relative z-10">
+        <div class="w-full max-w-none sm:max-w-xl mx-auto min-h-[100dvh] sm:min-h-0 bg-white rounded-none sm:rounded-2xl shadow-none sm:shadow-xl overflow-visible mb-0 sm:mb-6 lg:mb-0 relative z-10 flex flex-col">
 
             <!-- Main Header & Tabs -->
-            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-4 text-white rounded-t-2xl">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-700 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-4 sm:px-5 sm:py-4 text-white rounded-none sm:rounded-t-2xl">
                 <div class="flex flex-col gap-3">
                     <div class="w-full">
                         <h1 class="text-lg sm:text-xl font-bold flex items-center gap-1.5 leading-snug">⚡ ระบบเครื่องมือจัดการงานไฟฟ้า</h1>
@@ -297,7 +323,7 @@
             </div>
 
             <!-- ================= TAB 1: รายงานเหตุ TR / TL ================= -->
-            <div id="tab1" class="tab-content active p-6 space-y-4">
+            <div id="tab1" class="tab-content active flex-1 px-4 py-5 sm:p-6 space-y-4">
                 <div class="flex flex-wrap justify-between items-center gap-1.5 border-b pb-2">
                     <h2 class="text-base font-bold text-slate-800">⚡ ฟอร์มรายงานเหตุ (TR / TL)</h2>
                     <div id="tab1ScadaActionBtns" class="flex items-center gap-1.5 flex-wrap">
@@ -497,7 +523,7 @@
             </div>
 
             <!-- ================= TAB 2: รับแจ้งไฟฟ้าขัดข้อง ================= -->
-            <div id="tab2" class="tab-content p-6 space-y-4">
+            <div id="tab2" class="tab-content flex-1 px-4 py-5 sm:p-6 space-y-4">
                 <div class="flex justify-between items-center border-b pb-2 mb-2">
                     <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">📞 ฟอร์มรับแจ้งไฟฟ้าขัดข้อง <button type="button" onclick="openMeterLinkModal()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded">⚙️ ลิงก์มิเตอร์</button></h2>
                     <span class="text-[10px] text-slate-400">ลาก ≡ เพื่อสลับลำดับ</span>
@@ -619,7 +645,7 @@
             </div>
 
             <!-- ================= TAB 3: คำนวณฟิวส์เมน 22kV ================= -->
-            <div id="tab3" class="tab-content p-6 space-y-4">
+            <div id="tab3" class="tab-content flex-1 px-4 py-5 sm:p-6 space-y-4">
                 <h2 class="text-base font-bold text-slate-800 border-b pb-2">⚡ 22kV Main Fuse Calc</h2>
                 <div id="transformer-list" class="space-y-3">
                     <div class="flex gap-2 items-center">
@@ -652,7 +678,7 @@
             </div>
 
             <!-- ================= TAB 4: แดชบอร์ดและสถิติกราฟ ================= -->
-            <div id="tab4" class="tab-content p-6 space-y-6">
+            <div id="tab4" class="tab-content flex-1 px-4 py-5 sm:p-6 space-y-6">
                 <div class="flex justify-between items-center border-b pb-2">
                     <h2 class="text-base font-bold text-slate-800">📊 แดชบอร์ดวิเคราะห์สถิติ</h2>
                     <div class="flex gap-1.5">
@@ -686,7 +712,7 @@
                 <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2"><div class="text-sm font-bold text-slate-800">🔌 สัดส่วนระบบที่เกิดเหตุ</div><div class="relative w-full h-52 flex justify-center"><canvas id="systemDoughnutChart"></canvas></div></div>
             </div>
 
-            <div class="bg-slate-50 px-6 py-3 border-t border-slate-200 text-center text-xs text-slate-500 font-medium rounded-b-2xl">Developed by SamSrikacha</div>
+            <div class="mt-auto bg-slate-50 px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:py-3 border-t border-slate-200 text-center text-xs text-slate-500 font-medium rounded-none sm:rounded-b-2xl">Developed by SamSrikacha</div>
         </div>
     </div>
 
@@ -779,13 +805,13 @@
 
     <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=123"></script>
-    <script src="shared-core.js?v=123"></script>
-    <script src="main-app.js?v=123"></script>
-    <script src="pm-calendar.js?v=123"></script>
-    <script src="scada-fault-locator.js?v=123"></script>
-    <script src="pm-push.js?v=123"></script>
-    
+    <script src="pea-idb-store.js?v=126"></script>
+    <script src="shared-core.js?v=126"></script>
+    <script src="main-app.js?v=126"></script>
+    <script src="pm-calendar.js?v=126"></script>
+    <script src="scada-fault-locator.js?v=126"></script>
+    <script src="pm-push.js?v=126"></script>
+
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เพี้ยน + กันเด้งเติมวันที่/กะขณะลบแก้ + คลายลิงก์ตำบล + ลงทะเบียน SW -->
     <script>
         (function() {
@@ -795,7 +821,7 @@
                     el.blur();
                 }
             }, { passive: true });
-            
+
             // อนุญาตให้กดลบช่องวันที่แจ้งและเลขกะจนว่างเพื่อพิมพ์ค่าใหม่ได้โดยไม่เด้งค่าเก่าทับทันที
             document.addEventListener('input', function(e) {
                 const el = e.target;
@@ -803,7 +829,7 @@
                     e.stopImmediatePropagation();
                 }
             }, true);
-            
+
             ['reportDate', 'shift'].forEach(function(id) {
                 document.getElementById(id)?.addEventListener('blur', function() {
                     if (!this.value.trim() && typeof window.autoFillJobNo === 'function') {
@@ -811,7 +837,7 @@
                     }
                 });
             });
-            
+
             // รองรับการวางพิกัด "Lat, Lon" หรือลิงก์สั้น Maps ในช่องละติจูดหน้าจัดการตำบล
             let tbLinkTimer = null;
             document.getElementById('newTambonLatInput')?.addEventListener('input', function() {
@@ -830,7 +856,7 @@
                     }
                 }, 350);
             });
-            
+
             function attachSuggestFocusGuard() {
                 if (typeof window.showSuggestionsData === 'function' && !window.showSuggestionsData.__focusGuarded) {
                     const origShowSuggest = window.showSuggestionsData;
@@ -848,7 +874,7 @@
             attachSuggestFocusGuard();
             window.addEventListener('DOMContentLoaded', attachSuggestFocusGuard);
             window.addEventListener('load', attachSuggestFocusGuard);
-            
+
             if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
                 window.addEventListener('load', function() {
                     navigator.serviceWorker.register('./sw.js').catch(function() {});
@@ -856,5 +882,5 @@
             }
         })();
     </script>
-    </body>
+</body>
 </html>
