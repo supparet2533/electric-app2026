@@ -6,7 +6,7 @@
   "lang": "th",
   "dir": "ltr",
   "start_url": "./page2.html",
-  "scope": "./page2.html",
+  "scope": "./page2",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0f766e",
