@@ -1,7 +1,6 @@
 // ============================================================================
-// 🎯⚡ PEA SMART GRID — FAULT DISTANCE & CURRENT LOCATOR v2.2 (scada-fault-locator.js)
-// ชี้เป้าฟอลต์ 22kV จากระยะ (กม.) หรือกระแส (A) + คำนวณ Z ต้นน้ำอัตโนมัติ + ปลอดฟังก์ชันซ้ำ 100%
-// พาทที่ 1 / 2 : 22kV Line Impedance, Upstream Z Solver & Multi-Cable Graph Engine
+// 🎯⚡ PEA SMART GRID — FAULT DISTANCE & CURRENT LOCATOR v2.4 (scada-fault-locator.js)
+// ชี้เป้าฟอลต์ 22kV จากระยะ (กม.) หรือกระแส (A) + คำนวณ Z ต้นน้ำอัตโนมัติ + แก้ดร็อปดาวน์กระพริบ 100%
 // ============================================================================
 (function () {
     'use strict';
@@ -45,6 +44,7 @@
     let panelOpen = false;
     let lastFaultResult = null;
     let lastActiveScopeKey = '';
+    let lastKnownLoggedState = false;
     let activePacketApplySeq = 0;
     let lastHandledPktTs = parseInt(safeSessionGet(HANDLED_PKT_SESSION_KEY) || '0', 10) || 0;
 
@@ -60,7 +60,7 @@
         try { localStorage.setItem(FAULT_PREF_KEY, JSON.stringify(Object.assign(loadCalcPrefs(), patch || {}))); } catch (e) {}
     }
 
-      function normalizeFaultTypeCode(rawPhaseOrType) {
+    function normalizeFaultTypeCode(rawPhaseOrType) {
         const s = String(rawPhaseOrType || '').toUpperCase().trim();
         if (!s) return 'LL';
         if (s === '3P' || s === 'LL' || s === 'LG') return s;
@@ -293,9 +293,8 @@
         out.push(pEnd);
         return out;
     }
-    // ===== จบพาทที่ 1 / 2 ของไฟล์ scada-fault-locator.js (v2.2) =====
-    // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ scada-fault-locator.js (v2.3 Final) =====
-       function isBarrierTerminalNode(pin, sourcePinId, stopAtOpenSwitch) {
+
+    function isBarrierTerminalNode(pin, sourcePinId, stopAtOpenSwitch) {
         if (!pin || pin.id === sourcePinId) return false;
         const eqT = pin.scadaNode?.t || 'PIN';
         if (eqT === 'RC' || eqT === 'CB') return true;
@@ -415,7 +414,7 @@
             ? { blockedNodes, blockedStartNeighbors, upstreamVec, upstreamKm: srcDistFromBrk }
             : { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec, upstreamKm: srcDistFromBrk };
     }
-    
+
     function findAmpHitDistanceOnSpan(vecStart, cabProfile, spanLimitKm, targetAmp, faultType, srcBus, rfOhm, allowClampOrigin) {
         const addSpanVec = (km) => ({
             r1: vecStart.r1 + cabProfile.r1 * km, x1: vecStart.x1 + cabProfile.x1 * km,
@@ -551,9 +550,16 @@
         if (resBox) { resBox.innerHTML = ''; resBox.classList.add('hidden'); }
     }
 
-     function populateFaultSourceDropdown(preferFeeder = '', preferDevice = '', preferStation = '') {
+    function populateFaultSourceDropdown(preferFeeder = '', preferDevice = '', preferStation = '') {
         const sel = document.getElementById('scadaFaultSourceSelect');
         if (!sel) return { unmatchedDeviceHint: '' };
+        const hasPrefer = Boolean(preferFeeder || preferDevice || preferStation);
+
+        // ป้องกันการเขียนทับ DOM ขณะผู้ใช้กำลังกางดร็อปดาวน์เลือกหมุดบนมือถือ (ต้นเหตุจอกระพริบและเด้งกลับบนสุด)
+        if (!hasPrefer && document.activeElement === sel && sel.options.length > 0) {
+            return { unmatchedDeviceHint: '' };
+        }
+
         const pins = getVisibleScadaPins(), prevVal = sel.value, wiredIds = new Set();
         pins.forEach((p) => (p.scadaLines || []).forEach((l) => { if (l?.to && l.to !== p.id) { wiredIds.add(p.id); wiredIds.add(l.to); } }));
 
@@ -570,7 +576,16 @@
             ...switches.map((s) => `<option value="${escHtml(s.id)}">${s.scadaNode?.t === 'VB' ? '▣' : '⚡'} [${escHtml(s.scadaNode?.t)}] ${escHtml(s.name)}</option>`),
             ...wiredPlainPins.map((wp) => `<option value="${escHtml(wp.id)}">📍 [หมุด] ${escHtml(wp.name)}</option>`)
         ];
-        sel.innerHTML = opts.length ? opts.join('') : '<option value="">-- ยังไม่มีหมุดที่เชื่อมสายไฟในผัง --</option>';
+        const nextOptsHtml = opts.length ? opts.join('') : '<option value="">-- ยังไม่มีหมุดที่เชื่อมสายไฟในผัง --</option>';
+
+        // อัปเดต innerHTML เฉพาะเมื่อรายการหมุดเปลี่ยนแปลงจริงเท่านั้น
+        if (sel.__lastOptsHtml !== nextOptsHtml || sel.options.length === 0) {
+            sel.innerHTML = nextOptsHtml;
+            sel.__lastOptsHtml = nextOptsHtml;
+            if (prevVal && allCandidates.some((p) => p.id === prevVal)) {
+                sel.value = prevVal;
+            }
+        }
 
         let unmatchedDeviceHint = '';
         const devClean = String(preferDevice || '').replace(/\(ID[^)]*\)/gi, '').trim().toLowerCase();
@@ -604,10 +619,9 @@
             }).filter((x) => x.score >= 45).sort((a, b) => b.score - a.score);
             if (scored.length > 0) { sel.value = scored[0].b.id; return { unmatchedDeviceHint }; }
         }
-        if (prevVal && allCandidates.some((p) => p.id === prevVal)) sel.value = prevVal;
+        if (prevVal && allCandidates.some((p) => p.id === prevVal) && sel.value !== prevVal) sel.value = prevVal;
         return { unmatchedDeviceHint };
     }
-
 
     function getSelectedSourceUpstreamQuick(srcId, cableKey, stopOpen) {
         if (!srcId) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0 };
@@ -848,7 +862,7 @@
         pnl.innerHTML =
             `<div class="p-2.5 rounded-xl bg-gradient-to-r from-rose-950/90 via-slate-900 to-slate-900 border border-rose-400/40 space-y-2">` +
             `<div class="grid grid-cols-2 sm:grid-cols-12 gap-1.5 items-center">` +
-            `<select id="scadaFaultSourceSelect" onfocus="refreshFaultSourceOptions()" onchange="onFaultAmpParamsChanged(false)" class="col-span-2 sm:col-span-5 px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-slate-600 text-xs font-bold"></select>` +
+            `<select id="scadaFaultSourceSelect" onchange="onFaultAmpParamsChanged(false)" class="col-span-2 sm:col-span-5 px-2.5 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-slate-600 text-xs font-bold"></select>` +
             `<input type="number" step="0.01" min="0.05" inputmode="decimal" id="scadaFaultKmInput" placeholder="ระยะ กม. (เช่น 4.35)" oninput="onFaultKmManualInput()" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();executeFaultDistanceSearch(0,'km');}" class="col-span-1 sm:col-span-3 px-2.5 py-1.5 rounded-lg bg-slate-800 text-white border border-slate-600 text-xs font-bold">` +
             `<select id="scadaFaultTolSelect" class="col-span-1 sm:col-span-2 px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold"><option value="0.15">เผื่อ ±150 ม.</option><option value="0.30">เผื่อ ±300 ม.</option><option value="0">จุดเป๊ะ</option></select>` +
             `<div class="col-span-2 sm:col-span-2 flex gap-1"><button type="button" onclick="executeFaultDistanceSearch(0,'auto')" class="flex-1 bg-rose-600 hover:bg-rose-500 text-white py-1.5 px-2 rounded-lg text-[11px] font-extrabold shadow">🔍 ชี้เป้า</button><button type="button" onclick="clearFaultLocatorOverlay()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 py-1.5 px-2 rounded-lg text-[11px] font-bold" title="ล้างเส้น">✖</button></div></div>` +
@@ -1005,12 +1019,23 @@
         const curScope = getCurrentScopeKey();
         let isLogged = false;
         try { isLogged = localStorage.getItem('elec_app_logged_in') === 'true'; } catch (e) {}
-        if (!isLogged || (lastActiveScopeKey && curScope !== lastActiveScopeKey)) {
+        const scopeChanged = Boolean(lastActiveScopeKey && curScope !== lastActiveScopeKey);
+        const loginChanged = (isLogged !== lastKnownLoggedState);
+
+        if (!isLogged || scopeChanged) {
             clearFaultLocatorOverlay();
             if (!isLogged && panelOpen) toggleScadaFaultLocatorPanel(false);
         }
         lastActiveScopeKey = curScope;
-        if (isLogged) { if (panelOpen) populateFaultSourceDropdown(); checkPendingFaultPacket(); }
+        lastKnownLoggedState = isLogged;
+
+        if (isLogged) {
+            const sel = document.getElementById('scadaFaultSourceSelect');
+            if (panelOpen && (scopeChanged || loginChanged || !sel?.options?.length)) {
+                populateFaultSourceDropdown();
+            }
+            checkPendingFaultPacket();
+        }
     }
 
     function hookRoleChangeCleanup() {
@@ -1026,7 +1051,16 @@
 
     window.addEventListener('message', (ev) => { if (ev?.data?.type === 'SCADA_LOCATE_FAULT_DISTANCE') applyIncomingFaultPacket(ev.data); });
     if (faultBc) faultBc.onmessage = (ev) => applyIncomingFaultPacket(ev?.data);
-    window.PeaCore?.onRealtimeChange?.((keys) => { if (keys.includes(STORAGE_KEY_LABELS) || keys.includes(STORAGE_KEY_DELETED)) { if (panelOpen) populateFaultSourceDropdown(); } });
+    window.PeaCore?.onRealtimeChange?.((keys) => {
+        if (panelOpen && Array.isArray(keys) && (keys.includes(STORAGE_KEY_LABELS) || keys.includes(STORAGE_KEY_DELETED))) {
+            populateFaultSourceDropdown();
+        }
+    });
+    window.addEventListener('storage', (ev) => {
+        if (panelOpen && (ev?.key === STORAGE_KEY_LABELS || ev?.key === STORAGE_KEY_DELETED)) {
+            populateFaultSourceDropdown();
+        }
+    });
 
     Object.assign(window, {
         toggleScadaFaultLocatorPanel, executeFaultDistanceSearch, clearFaultLocatorOverlay,
@@ -1037,6 +1071,7 @@
 
     function initFaultLocatorModule() {
         lastActiveScopeKey = getCurrentScopeKey();
+        try { lastKnownLoggedState = localStorage.getItem('elec_app_logged_in') === 'true'; } catch (e) {}
         injectFaultLocatorStyles(); hookLeafletInstance(); hookRoleChangeCleanup(); injectIndexTab1QuickLocatorBar();
         if (document.getElementById('techMainApp')) {
             if (!injectPage2ToolbarLocatorUI()) {
@@ -1044,11 +1079,11 @@
                 obs.observe(document.getElementById('techMainApp'), { childList: true, subtree: true });
             }
             setInterval(() => { hookLeafletInstance(); hookRoleChangeCleanup(); syncAuthScopeState(); }, 2500);
-            try { if (localStorage.getItem('elec_app_logged_in') === 'true') checkPendingFaultPacket(); } catch (e) {}
+            if (lastKnownLoggedState) checkPendingFaultPacket();
         }
     }
 
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initFaultLocatorModule);
     else initFaultLocatorModule();
 })();
-// ==================== จบไฟล์ scada-fault-locator.js (v2.3 Final) ====================
+// ==================== จบไฟล์ scada-fault-locator.js (v2.4) ====================
