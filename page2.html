@@ -40,22 +40,26 @@
             body { overflow-x: hidden; }
         }
 
-        /* กำหนดสไตล์พื้นฐานด้วย :where() เพื่อไม่ให้ทับคลาสสีพื้นหลังของ Tailwind */
-        :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]), select, textarea) {
+        /* กำหนดสไตล์พื้นฐานระดับ (0,0,1) ชนะ Preflight (*) ของ Tailwind CDN แต่ไม่ทับคลาสสีขอบและพื้นหลังโทนมืด (.bg-slate-800) */
+        input:where(:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="hidden"])),
+        select,
+        textarea {
             background-color: #f8fafc;
             border: 1.5px solid #e2e8f0;
             border-radius: 0.75rem;
             transition: all 0.2s ease;
         }
-        :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]), select, textarea):focus {
+        input:where(:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]):not([type="hidden"]):focus),
+        select:where(:focus),
+        textarea:where(:focus) {
             background-color: #ffffff;
             border-color: #2563eb !important;
             outline: none;
             box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
         }
 
-        /* รักษาพื้นหลังโทนมืดและสีตัวอักษรในแถบเครื่องมือ SCADA & จานสีเมื่อคลิกโฟกัส */
-        #scadaControlToolbar :is(input, select):focus,
+        /* รักษาพื้นหลังโทนมืดและสีตัวอักษรในแถบเครื่องมือ SCADA & จานสีเมื่อคลิกโฟกัส (ยกเว้น Checkbox) */
+        #scadaControlToolbar :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select):focus,
         #scadaColorPaletteModal :is(input:not([type="color"]), select):focus {
             background-color: #0f172a !important;
             border-color: #38bdf8 !important;
@@ -67,9 +71,10 @@
         html.is-embedded-frame body { padding: 0.35rem !important; }
         html.is-embedded-frame #techMainApp { max-width: 100% !important; width: 100% !important; }
 
+        /* มาตรฐานลำดับชั้น Z-Index ป้องกันหน้าต่างแจ้งเตือน/แก้ไขข้อความจมหลังป๊อปอัปอื่น */
         #techLoginScreen { z-index: 1100 !important; }
         #inspectModal { z-index: 1200 !important; }
-        #customAlertModal, #customConfirmModal { z-index: 1450 !important; }
+        #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
         #toast { z-index: 1500 !important; }
 
         body.role-viewer-readonly #inspectModal button[onclick^="submitTechReport"] { display: none !important; }
@@ -339,14 +344,33 @@
 
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
 
-    <!-- 📦 โหลดไลบรารีแผนที่, MQTT และโมดูลระบบครบทุกไฟล์ตามลำดับ (ไม่ซ้ำซ้อน) -->
+    <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="shared-core.js?v=121"></script>
-    <script src="tech-jobs.js?v=121"></script>
-    <script src="scada-engine.js?v=121"></script>
-    <script src="pm-calendar.js?v=121"></script>
-    <script src="pm-push.js?v=121"></script>
-
-</body>
+    <script src="pea-idb-store.js?v=123"></script>
+    <script src="shared-core.js?v=123"></script>
+    <script src="tech-jobs.js?v=123"></script>
+    <script src="scada-engine.js?v=123"></script>
+    <script src="pm-calendar.js?v=123"></script>
+    <script src="scada-fault-locator.js?v=123"></script>
+    <script src="pm-push.js?v=123"></script>
+    
+    <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
+    <script>
+        (function() {
+            document.addEventListener('wheel', function(e) {
+                const el = e.target;
+                if (el && el.tagName === 'INPUT' && el.type === 'number' && document.activeElement === el) {
+                    el.blur();
+                }
+            }, { passive: true });
+            
+            if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+                window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('./sw.js').catch(function() {});
+                });
+            }
+        })();
+    </script>
+    </body>
 </html>
