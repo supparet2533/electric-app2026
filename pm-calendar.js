@@ -917,14 +917,62 @@
     let isQuickInlineBoxVisible = false;
     let desktopModalWidthMode = '65vw';
 
-    function injectPmCalendarStyles() {
+        function injectPmCalendarStyles() {
         if (document.getElementById('peaPmCalendarStyles')) return;
         const st = document.createElement('style');
         st.id = 'peaPmCalendarStyles';
         st.textContent = `
             #toast { z-index: 1500 !important; }
             #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1460 !important; }
+            #pmCalendarModal h3 { flex-wrap: wrap !important; row-gap: 0.25rem !important; }
+            #pmHeaderGroupBadge { white-space: nowrap !important; flex-shrink: 0 !important; }
             .pm-day-cell { min-height: 60px; transition: all 0.15s ease; }
+
+            /* ขยายหน้าปฏิทินและฟอร์มแผน PM เต็มจอมือถือชิดขอบ 100% (ไร้ขอบมืดรอบนอก) */
+            @media (max-width: 639px) {
+                #pmCalendarModal,
+                #pmPlanFormModal {
+                    padding: 0 !important;
+                    align-items: stretch !important;
+                }
+                #pmCalendarModal .pm-calendar-dialog,
+                #pmPlanFormModal > div {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    height: 100vh !important;
+                    height: 100dvh !important;
+                    max-height: 100vh !important;
+                    max-height: 100dvh !important;
+                    border-radius: 0 !important;
+                    border: 0 !important;
+                    box-shadow: none !important;
+                }
+                #pmCalendarModal .pm-calendar-dialog > div:first-child,
+                #pmPlanFormModal > div > div:first-child {
+                    padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+                    padding-left: 0.85rem !important;
+                    padding-right: 0.85rem !important;
+                }
+                #pmPlanFormModal > div > div:last-child {
+                    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+                }
+                #pmCalendarModal .pm-desktop-split {
+                    padding: 0 0 max(0.75rem, env(safe-area-inset-bottom)) 0 !important;
+                    gap: 0.5rem !important;
+                }
+                #pmCalendarModal .pm-desktop-split > div {
+                    border-radius: 0 !important;
+                    border-left: 0 !important;
+                    border-right: 0 !important;
+                    padding: 0.75rem 0.6rem !important;
+                    box-shadow: none !important;
+                }
+                #pmSelectedDayTasksContainer {
+                    max-height: none !important;
+                    overflow-y: visible !important;
+                }
+            }
+
             @media (min-width: 640px) { .pm-day-cell { min-height: 76px; } }
             @media (min-width: 1024px) {
                 #pmCalendarModal .pm-calendar-dialog { width: var(--pm-desktop-w, 65vw) !important; max-width: var(--pm-desktop-w, 65vw) !important; min-height: 84dvh; }
@@ -954,7 +1002,6 @@
         `;
         document.head.appendChild(st);
     }
-
     function setPmDesktopModalWidth(widthVal) {
         desktopModalWidthMode = widthVal || '65vw';
         const dlg = document.querySelector('#pmCalendarModal .pm-calendar-dialog');
