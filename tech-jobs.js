@@ -339,6 +339,8 @@
     }
     // ===== จบพาทที่ 1 / 5 ของไฟล์ tech-jobs.js =====
         // ===== เริ่มพาทที่ 2 / 5 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 1 / 5) =====
+    let authSessionEpoch = 0;
+
     async function handleTechLogin() {
         const u = document.getElementById('techUsername')?.value.trim() || '';
         const p = document.getElementById('techPassword')?.value.trim() || '';
@@ -347,6 +349,7 @@
         if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังตรวจสอบรหัสผ่านที่เซิร์ฟเวอร์...'; }
         try {
             ensureTechAudioUnlocked();
+            authSessionEpoch++;
             isSyncingNow = false;
             const data = await Core.verifyLoginOnServer(u, p);
             if (data?.status === 'ok' && data.authenticated && data.user) {
@@ -356,12 +359,15 @@
                 cachedCloudJobs = [];
                 hasLoadedCloudBaseline = false;
                 lastRenderedCardsSignature = '';
+                lastRepairJobsSignature = '';
+                lastAutoFittedCoordsSig = '';
                 knownPendingJobKeys.clear();
                 hasInitializedPendingBaseline = false;
                 checkTechAuth();
                 await syncJobsFromCloud(false);
                 initTechGpsTracker();
                 renderJobCards();
+                setTimeout(upgradeRepairJobsShortLinks, 800);
                 showToast(`🔓 ยินดีต้อนรับคุณ ${formatTechDisplayName(data.user.username)}`);
             } else {
                 showToast('❌ รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง');
@@ -374,8 +380,10 @@
     }
 
     function handleTechLogout() {
+        authSessionEpoch++;
         if (typeof window.toggleScadaSimMode === 'function' && Core.simSandbox.active) window.toggleScadaSimMode(false, true);
         if (isRepairMapFullscreen && typeof toggleRepairJobsMapFullscreen === 'function') toggleRepairJobsMapFullscreen();
+        if (typeof window.__stopScadaMapRoute === 'function') { try { window.__stopScadaMapRoute(true); } catch (e) {} }
         const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
         const curGrp = normTechGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
         const wasRole = localStorage.getItem('elec_app_current_role') || 'user';
@@ -386,7 +394,6 @@
         releaseScreenWakeLockIfIdle(true);
         if (techGpsIntervalId) { clearInterval(techGpsIntervalId); techGpsIntervalId = null; }
 
-        // ล้างสถานะล็อกอินและ RAM ทันทีเพื่อหยุด Timer เบื้องหลังทั้งหมด ไม่ให้ดีดกลับเป็นออนไลน์
         ['elec_app_logged_in', 'elec_app_current_user', 'elec_app_current_group', 'elec_app_current_role', 'elec_app_session_token', 'elec_app_last_active'].forEach(k => localStorage.removeItem(k));
         lastKnownTechCoords = null;
         cachedCloudJobs = [];
@@ -394,6 +401,8 @@
         knownPendingJobKeys.clear();
         hasInitializedPendingBaseline = false;
         lastRenderedCardsSignature = '';
+        lastRepairJobsSignature = '';
+        lastAutoFittedCoordsSig = '';
 
         let snapshotLocs = null;
         if (curUser) {
@@ -411,7 +420,6 @@
         checkTechAuth();
         showToast('🔒 ออกจากระบบเรียบร้อยแล้ว');
 
-        // ส่งผ่านคิวปกติโดยไม่ติดเพดาน 64 KiB ของ keepalive (เพราะหน้าเว็บไม่ได้ปิดแท็บ)
         if (curUser && snapshotLocs && navigator.onLine && !wasViewer) {
             const nowIso = new Date().toISOString();
             const targetUrl = `${getActiveCloudApiUrl()}?group=${encodeURIComponent(curGrp)}&role=${encodeURIComponent(wasRole)}`;
@@ -680,10 +688,13 @@
     function findNearestTechForJob(item) {
         const destCoord = extractCoordsFromJob(item);
         if (!destCoord) return null;
-        const jobGroup = normTechGrp(getJobGroupName(item)), locMap = getTechLocationsMap(), accounts = getParsedUserAccounts();
-        const curUser = (localStorage.getItem('elec_app_current_user') || '').trim(), curRole = localStorage.getItem('elec_app_current_role') || 'user', nowMs = Date.now();
+        const jobGroup = normTechGrp(getJobGroupName(item)), locMap = { ...getTechLocationsMap() }, accounts = getParsedUserAccounts();
+        const curUser = normalizeUsernameFormat(localStorage.getItem('elec_app_current_user') || ''), curRole = localStorage.getItem('elec_app_current_role') || 'user', nowMs = Date.now();
 
         if (isGpsTrackingEnabled && lastKnownTechCoords && curUser && curRole !== 'admin' && curRole !== 'viewer' && !Core.isEmbeddedIframe) {
+            Object.keys(locMap).forEach(k => {
+                if (!isSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSameTechPerson(locMap[k]?.username, curUser))) delete locMap[k];
+            });
             locMap[curUser] = { username: curUser, role: curRole, group: normTechGrp(getCurrentUserGroup()), lat: lastKnownTechCoords.lat, lon: lastKnownTechCoords.lon, gpsDisabled: false, isOnline: true, lastSeenAt: new Date().toISOString() };
         }
 
@@ -708,6 +719,7 @@
         const best = pool[0];
         return { techName: best.username, distanceKm: best.roadKm.toFixed(1), durationMin: best.estMin, hasGps: true, isMe: Boolean(curUser && isSameTechPerson(best.username, curUser)) };
     }
+
     // ===== จบพาทที่ 2 / 5 ของไฟล์ tech-jobs.js =====
         // ===== เริ่มพาทที่ 3 / 5 ของไฟล์ tech-jobs.js (วางต่อจากพาทที่ 2 / 5) =====
     function calculateInstantRouteFallback(startCoord, destCoord) {
@@ -914,12 +926,18 @@
         );
         cachedCloudJobs.forEach(cj => { if ((cj.jobType === 'fault' ? cj.timestamp : cj.dateTimeSaved) === key) delete cj.navCancelledAt; });
 
-        const loggedInUser = (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+        const loggedInUser = normalizeUsernameFormat(localStorage.getItem('elec_app_current_user') || '') || 'ช่างหน้างาน';
         const myGroup = normTechGrp(getCurrentUserGroup()), now = new Date();
         const safeStartMs = Math.max(now.getTime(), maxPrevRefMs > 0 ? maxPrevRefMs + 2000 : 0);
         const departTimeStr = `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
-        const destCoord = extractCoordsFromJob(item, key), startCoord = lastKnownTechCoords || { lat: 13.1361, lon: 101.0322 };
-        const route = destCoord ? calculateInstantRouteFallback(startCoord, destCoord) : { distanceKm: '5.0', durationMin: 15, isArrived: false };
+        const destCoord = extractCoordsFromJob(item, key);
+        const hasRealTechGps = Boolean(isGpsTrackingEnabled && lastKnownTechCoords);
+        let route = (hasRealTechGps && destCoord)
+            ? calculateInstantRouteFallback(lastKnownTechCoords, destCoord)
+            : { distanceKm: '5.0', durationMin: 15, isArrived: false };
+        if (route.isArrived && (!hasRealTechGps || destCoord?.isApproxTambon)) {
+            route = { distanceKm: '1.5', durationMin: 5, isArrived: false };
+        }
         const etaMs = safeStartMs + (route.durationMin * 60000), etaDate = new Date(etaMs);
         const etaTimeStr = `${String(etaDate.getHours()).padStart(2, '0')}.${String(etaDate.getMinutes()).padStart(2, '0')} น.`;
 
@@ -942,7 +960,6 @@
         if (hasValidUrl) window.open(cleanLink, '_blank');
         await pushAllJobsToCloud(true);
     }
-
     async function handleCancelNavigation(key, jobType) {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
         stopRealtimeGpsWatch(key);
@@ -1204,12 +1221,14 @@
         }
         if (isSyncingNow && silent) return;
         isSyncingNow = true;
+        const myEpoch = authSessionEpoch;
         const statusEl = document.getElementById('cloudStatusText');
         try {
             if (!silent || !Core.isEmbeddedIframe) Core.forceCloudRead();
             if (!silent && statusEl) statusEl.textContent = '⏳ กำลังดึงใบงานล่าสุด...';
             const res = await fetch(getActiveCloudApiUrl() + '?t=' + Date.now(), { cache: 'no-store' });
             const data = await res.json();
+            if (myEpoch !== authSessionEpoch) return;
             if (data?.status === 'ok') {
                 if (Array.isArray(data.users) && data.users.length > 0) {
                     const parsedUsers = data.users.map(parseAccountRecord);
@@ -1239,8 +1258,9 @@
                     resumeMyActiveJobNavWatchIfNeeded();
                     if (statusEl) statusEl.textContent = `🟢 ซิงค์ล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น. • ในกลุ่ม ${realJobs.filter(j => canCurrentUserSeeJob(j)).length} งาน)`;
                 }
-                if (localStorage.getItem('elec_app_logged_in') === 'true') {
-                    Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled);
+                if (localStorage.getItem('elec_app_logged_in') === 'true' && !Core.isEmbeddedIframe) {
+                    const role = localStorage.getItem('elec_app_current_role') || 'user';
+                    Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled && role !== 'admin');
                 }
                 updateTechOnlineCountUI();
                 renderJobCards();
@@ -1255,7 +1275,8 @@
     }
 
     const _queuedPushAllJobs = Core.createTrailingAsyncQueue(async function (silent = false) {
-        if (isViewerRole()) return true;
+        if (isViewerRole() || localStorage.getItem('elec_app_logged_in') !== 'true') return true;
+        const myEpoch = authSessionEpoch;
         const statusEl = document.getElementById('cloudStatusText');
         const hasPendingRetry = localStorage.getItem('elec_tech_has_pending_push') === 'true';
         if (!navigator.onLine) {
@@ -1266,8 +1287,9 @@
             return false;
         }
 
-        if (localStorage.getItem('elec_app_logged_in') === 'true') {
-            Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled);
+        if (!Core.isEmbeddedIframe) {
+            const role = localStorage.getItem('elec_app_current_role') || 'user';
+            Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled && role !== 'admin');
         }
         if (typeof syncEquipNavToTechLocations === 'function') syncEquipNavToTechLocations();
         Core.cleanReopenedAndCancelledJobsInStorage();
@@ -1286,6 +1308,7 @@
                 Core.forceCloudRead();
                 const preRes = await fetch(getActiveCloudApiUrl() + '?t=' + Date.now(), { cache: 'no-store' });
                 const preData = await preRes.json();
+                if (myEpoch !== authSessionEpoch || localStorage.getItem('elec_app_logged_in') !== 'true') return false;
                 if (preData?.status === 'ok' && Array.isArray(preData.jobs)) {
                     hasLoadedCloudBaseline = true;
                     prevLocReg = preData.jobs.find(j => j.jobType === 'tech_loc') || null;
@@ -1296,6 +1319,7 @@
                 }
             } catch (e) {}
 
+            if (myEpoch !== authSessionEpoch || localStorage.getItem('elec_app_logged_in') !== 'true') return false;
             if (!hasLoadedCloudBaseline) {
                 localStorage.setItem('elec_tech_has_pending_push', 'true');
                 if (statusEl) statusEl.textContent = '🟠 รอเชื่อมต่อฐานข้อมูลครั้งแรกก่อนซิงค์...';
@@ -1328,13 +1352,14 @@
                 if (rk) combinedMap.set((lj.jobType === 'fault' ? 'F_' : 'O_') + rk, lj);
             });
 
-            const locRegistryItem = { ...(prevLocReg || {}), jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: getTechLocationsMap(), closedJobsMap: readClosedReg(), deletedJobsMap: delMap, updatedAt: new Date().toISOString() };
+            const closedSnap = readClosedReg();
+            const locRegistryItem = { ...(prevLocReg || {}), jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: getTechLocationsMap(), closedJobsMap: closedSnap, closedReports: closedSnap, deletedJobsMap: delMap, updatedAt: new Date().toISOString() };
             cachedCloudJobs = Array.from(combinedMap.values());
 
             Core.unlockCloudWrite(25000);
             const res = await fetch(getActiveCloudApiUrl(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'saveJobs', jobs: [...cachedCloudJobs, locRegistryItem] }) });
             const data = await res.json();
-            if (data?.status === 'ok' && data?.ok !== false && !data?.skippedQuota) {
+            if (myEpoch === authSessionEpoch && data?.status === 'ok' && data?.ok !== false && !data?.skippedQuota && !data?.skippedBusyRam && data?.patched !== false) {
                 clearSyncedFlagsInLocalJobs(pushedSyncMeta);
                 localStorage.removeItem('elec_tech_has_pending_push');
                 if (statusEl) statusEl.textContent = `🟢 อัปเดตข้อมูลล่าสุดแล้ว (${new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} น.)`;
@@ -1346,7 +1371,6 @@
         return false;
     });
     function pushAllJobsToCloud(silent = false) { return _queuedPushAllJobs(silent); }
-
     // ========================================================================
     // 6. ตัวกรองวันที่/กะ/ประเภทใบงาน & จัดมาตรฐานวันที่เลขหลักเดียวอัตโนมัติ
     // ========================================================================
@@ -1618,14 +1642,14 @@
         });
         saveEquipNavMap(equipMap); syncEquipNavToTechLocations(); updateEquipNavFloatingBanner();
     }
-
     function stopEquipmentNavigationByKey(navKey, isArrived = false) {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return false; }
         const equipMap = getEquipNavMap(), targetNav = equipMap[navKey];
-        const techName = targetNav?.techName || (localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน').trim();
+        const techName = normalizeUsernameFormat(targetNav?.techName || localStorage.getItem('elec_app_current_user') || '') || 'ช่างหน้างาน';
         if (targetNav && !canUserControlNavigation(targetNav.techName)) { showToast('⛔ เฉพาะช่างผู้กำลังเดินทาง หรือ Admin เท่านั้นที่ยกเลิกได้'); return false; }
 
         lastLocalEquipNavStartMs = 0;
+        const grp = normTechGrp(targetNav?.ownerGroup || getUserGroupName(techName) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
         const safeMs = Math.max(Date.now(), getNavEffectiveTimeMs(targetNav) + 1000), safeIso = new Date(safeMs).toISOString();
         const cancelMap = getCancelledEquipNavMap();
         cancelMap[navKey] = safeMs; if (techName) cancelMap[techName] = safeMs;
@@ -1633,11 +1657,13 @@
 
         delete equipMap[navKey]; saveEquipNavMap(equipMap);
         const locMap = getTechLocationsMap();
-        if (locMap[techName]?.activeEquipNav) {
-            locMap[techName].activeEquipNav = { id: navKey, techName, isTraveling: false, status: isArrived ? 'arrived' : 'cancelled', cancelledAtMs: safeMs, updatedAt: safeIso };
-            locMap[techName].updatedAt = safeIso;
-            localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
-        }
+        locMap[techName] = {
+            ...(locMap[techName] || { username: techName, isOnline: true }),
+            group: grp,
+            activeEquipNav: { id: navKey, techName, ownerGroup: grp, isTraveling: false, status: isArrived ? 'arrived' : 'cancelled', cancelledAtMs: safeMs, updatedAt: safeIso },
+            updatedAt: safeIso
+        };
+        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
         syncEquipNavToTechLocations();
         if (canUserControlNavigation(techName) && !isStoppingEquipNavInternal) {
             isStoppingEquipNavInternal = true;
@@ -2396,15 +2422,22 @@
         toggleRepairJobTooltips, handleTopRightRepairMapAction, toggleRepairJobsMapCollapse, toggleRepairJobsMapFullscreen
     });
 
-    async function bootstrapTechJobsModule() {
+        async function bootstrapTechJobsModule() {
         if (hasBootstrappedTechJobs) return;
         hasBootstrappedTechJobs = true;
         injectTechJobsDynamicStylesAndBanner(); pruneAllNavCancelStorage(); rescueFalselyClosedRecentJobs();
+        ['techUsername', 'techPassword'].forEach(id => {
+            document.getElementById(id)?.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.isComposing && !e.target.closest('form')) { e.preventDefault(); handleTechLogin(); }
+            });
+        });
         checkTechAuth(); updateSoundToggleButtonUI(); updateGpsToggleButtonUI(); updateDateFilterButtonsUI();
         syncEquipNavToTechLocations(); syncEquipNavFromTechLocations(); switchStatusTab('pending');
-        await syncJobsFromCloud(true); checkNewIncomingPendingJobs();
-        if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) await pushAllJobsToCloud(false);
-        initTechGpsTracker(); setTimeout(upgradeRepairJobsShortLinks, 1500);
+        if (localStorage.getItem('elec_app_logged_in') === 'true') {
+            await syncJobsFromCloud(true); checkNewIncomingPendingJobs();
+            if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) await pushAllJobsToCloud(false);
+            initTechGpsTracker(); setTimeout(upgradeRepairJobsShortLinks, 1500);
+        }
 
         setInterval(() => {
             updateLiveNavDomElements();
@@ -2415,9 +2448,22 @@
             });
         }, 1000);
         setInterval(syncEquipNavFromTechLocations, 2000);
-        setInterval(() => { pruneAllNavCancelStorage(); upgradeRepairJobsShortLinks(); }, 15000);
-        setInterval(() => { if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') { Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled); updateTechOnlineCountUI(); } }, 15000);
-        setInterval(async () => { if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') { await syncJobsFromCloud(true); if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) await pushAllJobsToCloud(false); } }, 5000);
+        setInterval(() => { pruneAllNavCancelStorage(); if (localStorage.getItem('elec_app_logged_in') === 'true') upgradeRepairJobsShortLinks(); }, 15000);
+        setInterval(() => {
+            if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                if (!Core.isEmbeddedIframe) {
+                    const role = localStorage.getItem('elec_app_current_role') || 'user';
+                    Core.updateUserOnlineHeartbeat('📱 หน้าช่าง', lastKnownTechCoords, isGpsTrackingEnabled && role !== 'admin');
+                }
+                updateTechOnlineCountUI();
+            }
+        }, 15000);
+        setInterval(async () => {
+            if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') {
+                await syncJobsFromCloud(true);
+                if (localStorage.getItem('elec_tech_has_pending_push') === 'true' && navigator.onLine) await pushAllJobsToCloud(false);
+            }
+        }, 5000);
     }
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapTechJobsModule);
     else bootstrapTechJobsModule();
