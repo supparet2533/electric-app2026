@@ -1,0 +1,1815 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<title>รายงานเหตุการณ์มิเตอร์ชำรุด - กฟส.บึง</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+<!-- ไลบรารีสำหรับสร้างไฟล์ PDF เพื่อแชร์ผ่านมือถือ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 10mm 14mm 10mm 16mm;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    overflow-x: hidden;
+    background: #f3f4f6;
+  }
+  body {
+    font-family: 'TH SarabunPSK', 'Sarabun', sans-serif;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: #000;
+    padding: 10px 8px 18px;
+    box-sizing: border-box;
+  }
+
+  /* แถบเครื่องมือและไฟสถานะเหนือใบงาน (ซ่อนอัตโนมัติเวลาพิมพ์/สร้าง PDF) */
+  .top-panel {
+    width: 100%;
+    max-width: 175mm;
+    margin: 0 auto 10px auto;
+    background: #fff;
+    padding: 10px 12px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .office-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .office-label {
+    font-weight: bold;
+    color: #4c1d95;
+    font-size: 13.5px;
+    white-space: nowrap;
+  }
+  .office-select, .office-custom-input {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 13.5px;
+    padding: 5px 8px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    outline: none;
+    background: #f8fafc;
+    color: #1e293b;
+  }
+  .office-select:focus, .office-custom-input:focus {
+    border-color: #6b21a8;
+    background: #fff;
+  }
+  .office-custom-input {
+    display: none;
+    width: 145px;
+  }
+  .toolbar-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 13px;
+    padding: 6px 11px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+    white-space: nowrap;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .btn-share {
+    background: #16a34a;
+    color: #fff;
+  }
+  .btn-share:disabled {
+    background: #86efac;
+    cursor: wait;
+  }
+  .btn-print {
+    background: #6b21a8;
+    color: #fff;
+  }
+  .btn-reset {
+    background: #e5e7eb;
+    color: #374151;
+  }
+  .btn-refill {
+    background: #dbeafe;
+    color: #1d4ed8;
+    display: none;
+  }
+
+  /* แถบข้อมูลอ้างอิงจากใบงานรับแจ้ง (แสดงเฉพาะบนจอ ไม่พิมพ์ลงกระดาษ A4) */
+  .linked-job-bar {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    background: linear-gradient(135deg, #eff6ff, #f0fdf4);
+    border: 1.5px solid #93c5fd;
+    border-radius: 8px;
+    padding: 7px 9px;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 12.5px;
+    color: #1e3a8a;
+  }
+  .linked-job-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+  }
+  .job-chip {
+    background: #ffffff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+    padding: 3px 7px;
+    border-radius: 6px;
+    font-weight: bold;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .job-chip.ca-chip {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #b91c1c;
+    cursor: pointer;
+  }
+  .linked-job-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .btn-gps-nav {
+    background: #2563eb;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-call-tel {
+    background: #0f766e;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  /* แถบหลอดไฟแสดงสถานะการเซ็นชื่อเหนือใบงาน */
+  .status-bar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    background: #f8fafc;
+    padding: 6px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+  }
+  .lamp-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 3px;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s ease;
+    font-size: 12px;
+    color: #64748b;
+    font-weight: bold;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lamp-bulb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    border: 1.5px solid #94a3b8;
+    flex-shrink: 0;
+    transition: all 0.25s ease;
+  }
+  .lamp-item.signed {
+    background: #fefce8;
+    border-color: #eab308;
+    color: #15803d;
+  }
+  .lamp-item.signed .lamp-bulb {
+    background: #facc15;
+    border-color: #ca8a04;
+    box-shadow: 0 0 10px 2px rgba(250, 204, 21, 0.9);
+  }
+
+  /* กรอบจำลองหน้ากระดาษ ย่อ-ขยายพอดีความกว้างหน้าจอมือถืออัตโนมัติ */
+  .page-stage {
+    width: 100%;
+    max-width: 175mm;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* หน้ากระดาษบนหน้าจอ */
+  .page {
+    width: 175mm;
+    margin: 0 auto;
+    background: #fff;
+    padding: 10mm 15mm;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    box-sizing: border-box;
+  }
+
+  @media screen and (max-width: 679px) {
+    body {
+      padding: 6px 4px 16px;
+    }
+    .top-panel {
+      padding: 8px 9px;
+      margin-bottom: 6px;
+      border-radius: 9px;
+    }
+    .btn {
+      font-size: 12px;
+      padding: 6px 9px;
+    }
+    .lamp-item {
+      font-size: 11px;
+      padding: 5px 2px;
+    }
+    .page {
+      margin: 0;
+      padding: 14px 14px 18px 14px;
+      border-radius: 8px;
+    }
+  }
+
+  /* ล็อกขนาดโลโก้ตายตัว (135px) */
+  .header-logo {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 6px;
+    cursor: pointer;
+  }
+  .pea-emblem-img {
+    width: 135px !important;
+    height: auto !important;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* ระบบจัดแถวให้ช่องกรอกข้อมูลไม่ตกบรรทัด */
+  .flex-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    margin: 2px 0;
+  }
+  .flex-row.indent-row {
+    padding-left: 36px;
+    box-sizing: border-box;
+  }
+  .nowrap {
+    white-space: nowrap;
+  }
+
+  .row-2col {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 15px;
+    margin: 2px 0;
+  }
+  .col-left {
+    width: 54%;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .col-right {
+    width: 46%;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  /* ช่องกรอกข้อมูลแบบเส้นประ ยืดหดอัตโนมัติ */
+  .line-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    border-bottom: 1px dotted #000;
+    font-family: inherit;
+    font-size: inherit;
+    color: #000;
+    background: transparent;
+    padding: 0 4px;
+    outline: none;
+  }
+  .line-input:focus {
+    background: #fef9c3;
+  }
+  /* สไตล์ข้อความแทนที่ input เวลาสร้าง PDF (ไม่ตัดสระบน-ล่าง ไม่ติด placeholder) */
+  .pdf-line-span {
+    flex: 1;
+    min-width: 0;
+    display: inline-block;
+    border-bottom: 1px dotted #000;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.38;
+    min-height: 1.32em;
+    color: #000;
+    padding: 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    vertical-align: baseline;
+    box-sizing: border-box;
+  }
+
+  /* ช่องทำเครื่องหมาย */
+  .checkbox-grid {
+    display: grid;
+    grid-template-columns: 30% 26% 44%;
+    margin: 2.5px 0;
+  }
+  .checkbox-grid-2 {
+    display: grid;
+    grid-template-columns: 52% 48%;
+    margin: 2.5px 0;
+  }
+  label.check-label {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: #000;
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+  }
+
+  .underline { text-decoration: underline; }
+
+  /* กล่องแสดงลายเซ็นบนฟอร์ม */
+  .sig-box {
+    text-align: center;
+    margin-top: 4px;
+  }
+  .sig-right {
+    margin-left: auto;
+    width: 50%;
+    text-align: center;
+    margin-top: 6px;
+  }
+  .sig-slot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 200px;
+    height: 46px;
+    border: 1.5px dashed #60a5fa;
+    border-bottom: 1px dotted #000;
+    background: #f8fafc;
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+  }
+  .sig-slot:active {
+    background: #eff6ff;
+  }
+  .sig-placeholder {
+    font-size: 12px;
+    color: #2563eb;
+    font-weight: bold;
+    pointer-events: none;
+  }
+  .sig-preview {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: none;
+    pointer-events: none;
+  }
+  .sig-name-line {
+    display: flex;
+    justify-content: center;
+    align-items: baseline;
+    margin-top: 2px;
+  }
+  .sig-name-input {
+    width: 165px;
+    flex: none;
+    text-align: center;
+  }
+
+  .bottom-grid {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .bottom-left, .bottom-right {
+    width: 48%;
+  }
+
+  /* หน้ากากแสดงสถานะระหว่างจัดหน้าสร้าง PDF */
+  .pdf-loading-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.72);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 15px;
+    font-weight: bold;
+  }
+  .pdf-loading-box {
+    background: #1e293b;
+    border: 1px solid #475569;
+    padding: 16px 22px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+  }
+
+  /* หน้าต่างป๊อปอัพเซ็นชื่อ */
+  .sig-modal-backdrop {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 10px;
+    box-sizing: border-box;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .sig-modal-backdrop.active {
+    display: flex;
+  }
+  .sig-modal-card {
+    background: #fff;
+    width: 100%;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .sig-modal-card.landscape {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center center;
+    border-radius: 0;
+    padding: 10px 16px;
+    box-shadow: none;
+  }
+  .sig-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-shrink: 0;
+  }
+  .sig-modal-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: #4c1d95;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .btn-rotate {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 13px;
+    font-weight: bold;
+    background: #ede9fe;
+    color: #5b21b6;
+    border: 1px solid #c4b5fd;
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sig-modal-canvas-wrap {
+    position: relative;
+    width: 100%;
+    height: 180px;
+    border: 2px solid #6b21a8;
+    border-radius: 8px;
+    background: #fafafa;
+    overflow: hidden;
+    touch-action: none;
+    flex: 1;
+    min-height: 110px;
+  }
+  .sig-modal-guide-line {
+    position: absolute;
+    left: 5%;
+    right: 5%;
+    bottom: 26%;
+    border-bottom: 1.5px dashed #cbd5e1;
+    pointer-events: none;
+  }
+  #modalCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .sig-modal-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    flex-shrink: 0;
+  }
+  .sig-modal-card.landscape .sig-modal-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .sig-modal-name-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 15px;
+    flex: 1;
+  }
+  .sig-modal-name-input {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 15px;
+    padding: 6px 10px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    width: 100%;
+    text-align: center;
+    outline: none;
+  }
+  .sig-modal-name-input:focus {
+    border-color: #6b21a8;
+    background: #faf5ff;
+  }
+  .sig-modal-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    flex: 1.1;
+  }
+  .modal-btn {
+    flex: 1;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 8px 8px;
+    border-radius: 7px;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .modal-btn-clear {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+  .modal-btn-cancel {
+    background: #e5e7eb;
+    color: #374151;
+  }
+  .modal-btn-save {
+    background: #16a34a;
+    color: #fff;
+    flex: 1.3;
+  }
+
+  @media print {
+    html, body {
+      background: #fff;
+      padding: 0;
+      overflow: visible !important;
+      line-height: 1.44;
+    }
+    .page-stage {
+      width: 100% !important;
+      max-width: none !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+    .page {
+      width: 100% !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    .no-print, .top-panel, .sig-placeholder, .sig-modal-backdrop {
+      display: none !important;
+    }
+    .sig-slot {
+      border: none;
+      border-bottom: 1px dotted #000;
+      background: transparent;
+      border-radius: 0;
+    }
+    .line-input:focus {
+      background: transparent;
+    }
+    input::placeholder {
+      color: transparent !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- แผงควบคุมและหลอดไฟสถานะการเซ็นชื่อเหนือใบงาน -->
+<div class="top-panel no-print">
+  <div class="toolbar-row">
+    <div class="office-group">
+      <span class="office-label">🏢 หน่วยงาน:</span>
+      <select id="officeSelect" class="office-select" onchange="handleOfficeChange()">
+        <option value="กฟส.บึง">กฟส.บึง</option>
+        <option value="custom">✏️ เปลี่ยนเป็น กฟส. อื่น...</option>
+      </select>
+      <input type="text" id="customOfficeInput" class="office-custom-input" placeholder="พิมพ์ชื่อ เช่น กฟส.ศรีราชา" oninput="applyCustomOffice()">
+    </div>
+
+    <div class="toolbar-actions">
+      <button type="button" id="refillJobBtn" class="btn btn-refill" onclick="applyIncomingJobPayload(cachedIncomingPayload)">🔄 ดึงข้อมูลใบงานเดิม</button>
+      <button type="button" class="btn btn-reset" onclick="resetAll()">ล้างฟอร์ม</button>
+      <button type="button" id="sharePdfBtn" class="btn btn-share" onclick="shareAsPDF()">📤 แชร์ PDF</button>
+      <button type="button" class="btn btn-print" onclick="window.print()">🖨️ พิมพ์</button>
+    </div>
+  </div>
+
+  <!-- แถบอ้างอิงใบงาน พิกัด GPS และเบอร์โทร (แสดงเฉพาะบนจอ ไม่พิมพ์ลงกระดาษ A4) -->
+  <div id="linkedJobInfoBar" class="linked-job-bar">
+    <div id="linkedJobBadges" class="linked-job-badges"></div>
+    <div id="linkedJobLinks" class="linked-job-links"></div>
+  </div>
+
+  <!-- แถบหลอดไฟแสดงสถานะว่าใครเซ็นแล้ว -->
+  <div class="status-bar">
+    <div id="lamp-sig1" class="lamp-item" onclick="openSigModal('sig1', 'พนักงานเวรฯ')">
+      <span class="lamp-bulb"></span>
+      <span>พนักงานเวรฯ</span>
+    </div>
+    <div id="lamp-sig2" class="lamp-item" onclick="openSigModal('sig2', 'ลูกค้า')">
+      <span class="lamp-bulb"></span>
+      <span>ลูกค้า</span>
+    </div>
+    <div id="lamp-sig3" class="lamp-item" onclick="openSigModal('sig3', 'หผ.ปบ.')">
+      <span class="lamp-bulb"></span>
+      <span>หผ.ปบ.</span>
+    </div>
+    <div id="lamp-sig4" class="lamp-item" onclick="openSigModal('sig4', 'ผมต. , ผบร.')">
+      <span class="lamp-bulb"></span>
+      <span>ผมต./ผบร.</span>
+    </div>
+  </div>
+</div>
+
+<!-- อัปโหลดรูปโลโก้จากเครื่องเพิ่มเติมได้หากต้องการ (ขนาดล็อกตายตัวที่ 135px) -->
+<input type="file" id="logoUpload" accept="image/*" style="display:none" onchange="changeLogoFile(event)">
+
+<!-- กรอบปรับสเกลหน้ากระดาษให้พอดีกับหน้าจอมือถืออัตโนมัติ -->
+<div id="pageStage" class="page-stage">
+  <div id="formPage" class="page">
+    <div class="header-logo" onclick="document.getElementById('logoUpload').click()" title="แตะเพื่อเปลี่ยนรูปตราสัญลักษณ์">
+      <img id="peaLogoImg" class="pea-emblem-img" src="./pea-logo.png" alt="ตราสัญลักษณ์ กฟภ.">
+    </div>
+
+    <div class="row-2col">
+      <div class="col-left"><span class="nowrap">จาก &nbsp;&nbsp;พนักงานแก้กระแสไฟฟ้าขัดข้อง</span></div>
+      <div class="col-right"><span class="nowrap">ถึง &nbsp;&nbsp;ผจก.<span class="pea-office-name">กฟส.บึง</span></span></div>
+    </div>
+    <div class="row-2col">
+      <div class="col-left">
+        <span class="nowrap">เลขที่</span>
+        <input type="text" id="docNoInput" class="line-input">
+      </div>
+      <div class="col-right">
+        <span class="nowrap">วันที่</span>
+        <input type="text" id="docDateInput" class="line-input">
+      </div>
+    </div>
+    <div>เรื่อง &nbsp;&nbsp;รายงานเหตุการณ์มิเตอร์ชำรุด</div>
+    <div style="margin-top: 2px;">เรียน &nbsp;&nbsp;ผจก.<span class="pea-office-name">กฟส.บึง</span> ผ่าน รจก. (ท)</div>
+
+    <!-- บรรทัดวันที่เวร และเวลาผลัดที่ 1 -->
+    <div class="flex-row indent-row" style="margin-top: 5px;">
+      <span class="nowrap">เวรแก้กระแสไฟฟ้าขัดข้องวันที่</span>
+      <input type="text" id="shiftDateInput" class="line-input">
+      <span class="nowrap">เวลา</span>
+      <label class="check-label"><input type="checkbox" id="shift1"> ๐๐.๓๐ - ๐๘.๓๐ น.</label>
+    </div>
+
+    <!-- บรรทัดเวลาผลัดที่ 2 และ 3 -->
+    <div class="flex-row" style="gap: 8px;">
+      <label class="check-label"><input type="checkbox" id="shift2"> ๐๘.๓๐ - ๑๖.๓๐ น.</label>
+      <label class="check-label"><input type="checkbox" id="shift3"> ๑๖.๓๐ - ๐๐.๓๐ น.</label>
+      <span class="nowrap">ขอรายงานเหตุการณ์มิเตอร์ชำรุดมีรายละเอียดดังต่อไปนี้</span>
+    </div>
+
+    <div class="flex-row" style="margin-top: 4px;">
+      <span class="nowrap">หมายเลข PEA มิเตอร์เก่า</span>
+      <input type="text" id="oldPeaInput" class="line-input" style="flex: 0 0 21%;">
+      <span class="nowrap">ที่อยู่</span>
+      <input type="text" id="addrLine1Input" class="line-input">
+    </div>
+
+    <div class="flex-row">
+      <input type="text" id="addrLine2Input" class="line-input" style="flex: 1.42;">
+      <span class="nowrap">เบอร์โทรศัพท์</span>
+      <input type="text" id="phoneInput" class="line-input" style="flex: 0.58;">
+    </div>
+
+    <div style="margin-top: 5px;">สาเหตุการชำรุดของมิเตอร์</div>
+    <div class="checkbox-grid">
+      <label class="check-label"><input type="checkbox" id="causeLightning"> ฟ้าลง</label>
+      <label class="check-label"><input type="checkbox" id="causeWater"> น้ำเข้า</label>
+      <label class="check-label"><input type="checkbox" id="causeAccident"> แตกชำรุดเนื่องจากอุบัติเหตุ</label>
+    </div>
+    <div class="checkbox-grid-2">
+      <label class="check-label"><input type="checkbox" id="causeTermIn"> จุดเข้าสายด้านเข้าชำรุด (นิวตรอน/เฟส)</label>
+      <label class="check-label"><input type="checkbox" id="causeTermOut"> จุดเข้าสายด้านออกชำรุด (นิวตรอน/เฟส)</label>
+    </div>
+    <div class="flex-row">
+      <span class="nowrap">สาเหตุอื่น ๆ ระบุ</span>
+      <input type="text" id="causeOtherInput" class="line-input">
+    </div>
+
+    <div style="margin-top: 5px;">อุปกรณ์ประกอบที่ชำรุด</div>
+    <div class="checkbox-grid">
+      <label class="check-label"><input type="checkbox" id="compBoard"> ไม้กระดาน</label>
+      <label class="check-label"><input type="checkbox" id="compBox"> ตู้</label>
+      <label class="check-label"><input type="checkbox" id="compWire"> สายด้านเข้า/ด้านออก</label>
+    </div>
+
+    <div style="padding-left: 36px; margin-top: 4px;"><span class="underline">วิธีการดำเนินการแก้ไข</span></div>
+    <div><label class="check-label"><input type="checkbox" id="actDirect"> ต่อตรง</label></div>
+    <div><label class="check-label"><input type="checkbox" id="actReplace"> สับเปลี่ยนมิเตอร์สำรองแก้ไฟ</label></div>
+
+    <div class="flex-row indent-row">
+      <span class="nowrap">ระบุรายละเอียด PEA มิเตอร์ใหม่</span>
+      <input type="text" id="newPeaInput" class="line-input" style="flex: 1.3;">
+      <span class="nowrap">หน่วยเริ่มต้น</span>
+      <input type="text" id="startUnitInput" class="line-input" style="flex: 0.7;">
+    </div>
+
+    <div style="margin-top: 6px; padding-left: 80px;">จึงเรียนมาเพื่อโปรดพิจารณาดำเนินการต่อไป</div>
+
+    <!-- ลายเซ็นจุดที่ 1: พนักงานเวรฯ -->
+    <div class="sig-right">
+      <div class="sig-slot" onclick="openSigModal('sig1', 'พนักงานเวรฯ')">
+        <span class="sig-placeholder" id="place-sig1">✍️ แตะเพื่อเซ็นชื่อ</span>
+        <img id="img-sig1" class="sig-preview" alt="ลายเซ็นพนักงานเวรฯ">
+      </div>
+      <div class="sig-name-line">(<input type="text" id="name-sig1" class="line-input sig-name-input" placeholder="ชื่อ-สกุล">)</div>
+      <div>พนักงานเวรฯ</div>
+    </div>
+
+    <div class="bottom-grid">
+      <!-- ลายเซ็นจุดที่ 2: ลูกค้า -->
+      <div class="bottom-left">
+        <div>ข้าพเจ้ายินยอมให้การไฟฟ้าส่วนภูมิภาค</div>
+        <div>เฉลี่ยหน่วยในการสับเปลี่ยนมิเตอร์ครั้งนี้</div>
+        <div class="sig-box">
+          <div class="sig-slot" onclick="openSigModal('sig2', 'ลูกค้า')">
+            <span class="sig-placeholder" id="place-sig2">✍️ แตะเพื่อเซ็นชื่อ</span>
+            <img id="img-sig2" class="sig-preview" alt="ลายเซ็นลูกค้า">
+          </div>
+          <div class="sig-name-line">(<input type="text" id="name-sig2" class="line-input sig-name-input" placeholder="ชื่อ-สกุล ลูกค้า">)</div>
+          <div>ลูกค้า</div>
+          <div style="display: flex; justify-content: center; align-items: baseline; gap: 4px;">
+            <input type="text" id="custDay" class="line-input" style="flex: 0 0 35px; text-align: center;"> /
+            <input type="text" id="custMonth" class="line-input" style="flex: 0 0 45px; text-align: center;"> /
+            <input type="text" id="custYear" class="line-input" style="flex: 0 0 48px; text-align: center;">
+          </div>
+        </div>
+      </div>
+
+      <!-- ลายเซ็นจุดที่ 3: หผ.ปบ. -->
+      <div class="bottom-right">
+        <div>เรียน ผจก.<span class="pea-office-name">กฟส.บึง</span></div>
+        <div>เพื่อโปรดทราบ และแจ้ง ผมต. , ผบร. ดำเนินการต่อไป</div>
+        <div class="sig-box">
+          <div class="sig-slot" onclick="openSigModal('sig3', 'หผ.ปบ.')">
+            <span class="sig-placeholder" id="place-sig3">✍️ แตะเพื่อเซ็นชื่อ</span>
+            <img id="img-sig3" class="sig-preview" alt="ลายเซ็น หผ.ปบ.">
+          </div>
+          <div class="sig-name-line">(<input type="text" id="name-sig3" class="line-input sig-name-input" placeholder="ชื่อ-สกุล">)</div>
+          <div>หผ.ปบ.<span class="pea-office-name">กฟส.บึง</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ลายเซ็นจุดที่ 4: ผมต. , ผบร. -->
+    <div style="margin-top: 6px; width: 48%;">
+      <div>ผมต. , ผบร.ดำเนินการตามระเบียบต่อไป</div>
+      <div class="sig-box">
+        <div class="sig-slot" onclick="openSigModal('sig4', 'ผมต. , ผบร.')">
+          <span class="sig-placeholder" id="place-sig4">✍️ แตะเพื่อเซ็นชื่อ</span>
+          <img id="img-sig4" class="sig-preview" alt="ลายเซ็น ผมต. , ผบร.">
+        </div>
+        <div class="sig-name-line">(<input type="text" id="name-sig4" class="line-input sig-name-input" placeholder="ชื่อ-สกุล">)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- หน้าต่างป๊อปอัพเซ็นชื่อ -->
+<div id="sigModal" class="sig-modal-backdrop no-print">
+  <div id="sigModalCard" class="sig-modal-card">
+    <div class="sig-modal-header">
+      <div id="modalTitle" class="sig-modal-title">ลงลายมือชื่อ</div>
+      <button type="button" id="rotateBtn" class="btn-rotate" onclick="toggleOrientation()">🔄 แนวตั้ง</button>
+    </div>
+    <div id="canvasWrap" class="sig-modal-canvas-wrap">
+      <div class="sig-modal-guide-line"></div>
+      <canvas id="modalCanvas"></canvas>
+    </div>
+    <div class="sig-modal-footer">
+      <div class="sig-modal-name-group">
+        <span>(</span>
+        <input type="text" id="modalNameInput" class="sig-modal-name-input" placeholder="พิมพ์ชื่อ-สกุล ตัวบรรจง">
+        <span>)</span>
+      </div>
+      <div class="sig-modal-actions">
+        <button type="button" class="modal-btn modal-btn-clear" onclick="clearModalCanvas()">ล้าง</button>
+        <button type="button" class="modal-btn modal-btn-cancel" onclick="closeSigModal()">ยกเลิก</button>
+        <button type="button" class="modal-btn modal-btn-save" onclick="saveSignature()">✓ บันทึกลายเซ็น</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const THAI_MONTHS_SHORT = [
+    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+  ];
+  const THAI_COMBINING_MARKS_RE = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
+  const CUSTOM_LOGO_STORAGE_KEY = 'pea_custom_logo_override_v3';
+  const DEFAULT_LOGO_FILE = './pea-logo.png';
+  let cachedIncomingPayload = null;
+
+  // แปลงไฟล์รูปโลโก้เป็น Data URL (PNG) เตรียมไว้ล่วงหน้าเพื่อให้ html2canvas จับภาพติดลง PDF 100%
+  function rasterizeSourceToPngDataUrl(srcUrl, fallbackW = 800, fallbackH = 660) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      if (/^https?:\/\//i.test(srcUrl)) {
+        try {
+          if (new URL(srcUrl, window.location.href).origin !== window.location.origin) {
+            img.crossOrigin = 'anonymous';
+          }
+        } catch (e) {}
+      }
+      img.onload = () => {
+        try {
+          const w = img.naturalWidth || fallbackW;
+          const h = img.naturalHeight || fallbackH;
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/png'));
+        } catch (e) {
+          resolve(srcUrl);
+        }
+      };
+      img.onerror = () => resolve('');
+      img.src = srcUrl;
+    });
+  }
+
+  async function initPeaLogoPng() {
+    const logoEl = document.getElementById('peaLogoImg');
+    if (!logoEl) return;
+
+    logoEl.onload = fitPaperToScreen;
+    const savedLogo = localStorage.getItem(CUSTOM_LOGO_STORAGE_KEY);
+    const targetSrc = savedLogo || DEFAULT_LOGO_FILE;
+
+    if (!targetSrc.startsWith('data:image/png')) {
+      const pngDataUrl = await rasterizeSourceToPngDataUrl(targetSrc, 800, 660);
+      logoEl.src = pngDataUrl || targetSrc;
+    } else {
+      logoEl.src = targetSrc;
+    }
+    fitPaperToScreen();
+  }
+
+  // --- ระบบปรับขนาดกระดาษให้พอดีกับหน้าจอมือถือ 100% ---
+  function fitPaperToScreen() {
+    const stage = document.getElementById('pageStage');
+    const page = document.getElementById('formPage');
+    if (!stage || !page) return;
+
+    if (window.innerWidth >= 680) {
+      page.style.width = '';
+      page.style.transform = 'none';
+      stage.style.height = 'auto';
+      return;
+    }
+
+    const availW = stage.clientWidth;
+    if (availW <= 0) return;
+
+    const baseSheetWidth = 568;
+    const scale = availW / baseSheetWidth;
+    page.style.width = baseSheetWidth + 'px';
+    page.style.transformOrigin = 'top left';
+    page.style.transform = `scale(${scale})`;
+    stage.style.height = Math.ceil(page.offsetHeight * scale) + 'px';
+  }
+
+  // --- 0. ระบบดึงวันที่ปัจจุบัน (พ.ศ.) และคำนวณผลัดเวรอัตโนมัติ ---
+  function autoFillDateAndShift() {
+    const now = new Date();
+    const day = now.getDate();
+    const monthShort = THAI_MONTHS_SHORT[now.getMonth()];
+    const buddhistYear = now.getFullYear() + 543;
+    const fullThaiDate = `${day} ${monthShort} ${buddhistYear}`;
+
+    const docDateEl = document.getElementById('docDateInput');
+    if (docDateEl) docDateEl.value = fullThaiDate;
+
+    const custDayEl = document.getElementById('custDay');
+    const custMonthEl = document.getElementById('custMonth');
+    const custYearEl = document.getElementById('custYear');
+    if (custDayEl) custDayEl.value = day;
+    if (custMonthEl) custMonthEl.value = monthShort;
+    if (custYearEl) custYearEl.value = buddhistYear;
+
+    const totalMinutes = now.getHours() * 60 + now.getMinutes();
+    const s1 = document.getElementById('shift1');
+    const s2 = document.getElementById('shift2');
+    const s3 = document.getElementById('shift3');
+    if (s1) s1.checked = false;
+    if (s2) s2.checked = false;
+    if (s3) s3.checked = false;
+
+    let shiftDateObj = new Date(now);
+    if (totalMinutes >= 30 && totalMinutes < 510) {
+      if (s1) s1.checked = true;
+    } else if (totalMinutes >= 510 && totalMinutes < 990) {
+      if (s2) s2.checked = true;
+    } else {
+      if (s3) s3.checked = true;
+      if (totalMinutes < 30) {
+        shiftDateObj.setDate(shiftDateObj.getDate() - 1);
+      }
+    }
+
+    const shiftDateStr = `${shiftDateObj.getDate()} ${THAI_MONTHS_SHORT[shiftDateObj.getMonth()]} ${shiftDateObj.getFullYear() + 543}`;
+    const shiftDateEl = document.getElementById('shiftDateInput');
+    if (shiftDateEl) shiftDateEl.value = shiftDateStr;
+  }
+
+  // --- 0.5 ระบบอ่านพารามิเตอร์จากลิงก์ใบงานรับแจ้ง/หน้าช่าง แล้วกรอกลงฟอร์มอัตโนมัติ ---
+  function decodeBase64UrlJson(rawB64) {
+    try {
+      let s = String(rawB64 || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+      while (s.length % 4 !== 0) s += '=';
+      const bin = atob(s);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return JSON.parse(new TextDecoder('utf-8').decode(bytes));
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function formatIncomingThaiDate(rawStr) {
+    const s = String(rawStr || '').trim();
+    if (!s || s === '-') return '';
+    const slash = s.split(/\s+/)[0].split('/');
+    if (slash.length === 3) {
+      const d = parseInt(slash[0], 10), m = parseInt(slash[1], 10);
+      let y = parseInt(slash[2], 10);
+      if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y > 0) {
+        if (y < 100) y += 2500;
+        else if (y < 2400) y += 543;
+        return `${d} ${THAI_MONTHS_SHORT[m - 1]} ${y}`;
+      }
+    }
+    const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) {
+      let y = parseInt(iso[1], 10);
+      const m = parseInt(iso[2], 10), d = parseInt(iso[3], 10);
+      if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
+        if (y < 2400) y += 543;
+        return `${d} ${THAI_MONTHS_SHORT[m - 1]} ${y}`;
+      }
+    }
+    return s;
+  }
+
+  function normalizeGpsNavUrl(rawGps) {
+    const s = String(rawGps || '').trim();
+    if (!s || s === '-') return '';
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)) return 'https://' + s;
+    const m = s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+    if (m) return `https://www.google.com/maps?q=${m[1]},${m[2]}`;
+    return '';
+  }
+
+  function visualCharCount(str) {
+    return String(str || '').replace(THAI_COMBINING_MARKS_RE, '').length;
+  }
+
+  function splitAddressForTwoLines(fullAddress, caStr) {
+    const cleanAddr = String(fullAddress || '').replace(/\s+/g, ' ').trim();
+    const caTag = caStr ? `CA: ${caStr}` : '';
+    if (!cleanAddr) return { line1: '', line2: caTag };
+
+    const MAX_VISUAL_LINE1 = 44;
+    if (visualCharCount(cleanAddr) <= MAX_VISUAL_LINE1) {
+      return { line1: cleanAddr, line2: caTag };
+    }
+
+    const words = cleanAddr.split(' ');
+    let line1 = '';
+    let restStartIdx = 0;
+    for (let i = 0; i < words.length; i++) {
+      const candidate = line1 ? `${line1} ${words[i]}` : words[i];
+      if (visualCharCount(candidate) <= MAX_VISUAL_LINE1 || !line1) {
+        line1 = candidate;
+        restStartIdx = i + 1;
+      } else {
+        break;
+      }
+    }
+
+    if (visualCharCount(line1) > MAX_VISUAL_LINE1 + 4) {
+      let cutPos = 0, vis = 0;
+      while (cutPos < cleanAddr.length && vis < MAX_VISUAL_LINE1) {
+        if (!THAI_COMBINING_MARKS_RE.test(cleanAddr[cutPos])) vis++;
+        THAI_COMBINING_MARKS_RE.lastIndex = 0;
+        cutPos++;
+      }
+      while (cutPos < cleanAddr.length && THAI_COMBINING_MARKS_RE.test(cleanAddr[cutPos])) {
+        THAI_COMBINING_MARKS_RE.lastIndex = 0;
+        cutPos++;
+      }
+      line1 = cleanAddr.slice(0, cutPos).trim();
+      const rest = cleanAddr.slice(cutPos).trim();
+      return { line1, line2: [rest, caTag].filter(Boolean).join(' • ') };
+    }
+
+    const rest = words.slice(restStartIdx).join(' ').trim();
+    const line2 = [rest, caTag].filter(Boolean).join(' • ');
+    return { line1, line2 };
+  }
+
+  function parseUrlJobPayload() {
+    const params = new URLSearchParams(window.location.search);
+    const decoded = params.get('d') ? (decodeBase64UrlJson(params.get('d')) || {}) : {};
+    const pick = (shortKey, ...longKeys) => {
+      for (const lk of longKeys) {
+        const v = params.get(lk);
+        if (v !== null && v !== undefined && String(v).trim() !== '') return String(v).trim();
+      }
+      const dv = decoded[shortKey];
+      return (dv !== null && dv !== undefined) ? String(dv).trim() : '';
+    };
+
+    const payload = {
+      office: pick('o', 'office', 'group'),
+      jobLabel: pick('j', 'job', 'docNo'),
+      reportDate: pick('dt', 'date', 'reportDate'),
+      shift: pick('s', 'shift'),
+      oldPea: pick('p', 'pea', 'oldPea'),
+      ca: pick('ca', 'caNo'),
+      address: pick('ad', 'addr', 'address'),
+      area: pick('ar', 'area'),
+      phone: pick('ph', 'phone', 'tel'),
+      gps: pick('g', 'gps'),
+      issue: pick('is', 'issue', 'symptom'),
+      realCause: pick('rc', 'cause', 'realCause'),
+      actionTaken: pick('ac', 'action', 'actionTaken'),
+      customerName: pick('cn', 'cust', 'customerName'),
+      workerName: pick('wn', 'worker', 'inspector'),
+      newPea: pick('np', 'newPea'),
+      startUnit: pick('un', 'unit', 'startUnit')
+    };
+
+    const hasAny = Object.values(payload).some(v => v && v !== '-');
+    return hasAny ? payload : null;
+  }
+
+  function escapeSafeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  function copyCaText(caVal, chipEl) {
+    if (!caVal || !navigator.clipboard) return;
+    navigator.clipboard.writeText(caVal).then(() => {
+      const old = chipEl.textContent;
+      chipEl.textContent = '✅ คัดลอก CA แล้ว!';
+      setTimeout(() => { chipEl.textContent = old; }, 1400);
+    }).catch(() => {});
+  }
+
+  function applyIncomingJobPayload(data) {
+    if (!data) return;
+    const cl = v => (v && v !== '-') ? String(v).trim() : '';
+
+    // 1) ตั้งค่าชื่อหน่วยงาน กฟส.
+    const office = cl(data.office);
+    if (office) {
+      const sel = document.getElementById('officeSelect');
+      const customInp = document.getElementById('customOfficeInput');
+      if (office === 'กฟส.บึง') {
+        sel.value = 'กฟส.บึง';
+        customInp.style.display = 'none';
+      } else {
+        sel.value = 'custom';
+        customInp.value = office;
+        customInp.style.display = 'inline-block';
+      }
+      updateOfficeTexts(office);
+    }
+
+    // 2) ช่อง "เลขที่" เว้นว่างไว้เสมอ + กรอกวันที่เวรและผลัดเวร
+    const docNoEl = document.getElementById('docNoInput');
+    if (docNoEl) docNoEl.value = '';
+
+    const shiftDateFormatted = formatIncomingThaiDate(cl(data.reportDate));
+    if (shiftDateFormatted) document.getElementById('shiftDateInput').value = shiftDateFormatted;
+
+    const shiftVal = cl(data.shift);
+    if (['1', '2', '3'].includes(shiftVal)) {
+      ['1', '2', '3'].forEach(s => {
+        const cb = document.getElementById('shift' + s);
+        if (cb) cb.checked = (s === shiftVal);
+      });
+    }
+
+    // 3) แยกเลข PEA มิเตอร์เก่า, เลข CA, พิกัดแฝงในที่อยู่, ชื่อลูกค้า และจัดที่อยู่ 2 บรรทัด
+    let rawAddr = cl(data.address);
+    let oldPea = cl(data.oldPea);
+    let ca = cl(data.ca);
+    let custName = cl(data.customerName);
+    let inlineGpsFallback = '';
+
+    if (rawAddr) {
+      const mPea = rawAddr.match(/(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์)\s*[:：=]?\s*([A-Za-z0-9-]+)/i);
+      if (mPea && !oldPea) oldPea = mPea[1].trim();
+
+      const mCa = rawAddr.match(/CA\s*(?:No\.?)?\s*[:：=]?\s*(\d{9,15})/i) || rawAddr.match(/\b(02\d{10})\b/);
+      if (mCa && !ca) ca = mCa[1].trim();
+
+      const mCust = rawAddr.match(/(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า)\s*[:：=]?\s*([^\n]+)/i);
+      if (mCust && !custName) custName = mCust[1].trim();
+
+      const mInlineLL = rawAddr.match(/(?:พิกัด\s*[:：=]?\s*)?Lat\s*[:：=]?\s*(-?\d+\.\d+)\s*[, ]*\s*Long?\s*[:：=]?\s*(-?\d+\.\d+)/i);
+      if (mInlineLL) {
+        inlineGpsFallback = `${mInlineLL[1]},${mInlineLL[2]}`;
+        rawAddr = rawAddr.replace(mInlineLL[0], ' ');
+      }
+
+      rawAddr = rawAddr
+        .split(/\r?\n/)
+        .map(line => line.replace(/^(?:🏠\s*|📍\s*)?(?:ที่อยู่|สถานที่ใช้ไฟ(?:ฟ้า)?|บ้านเลขที่)\s*[:：=]\s*/i, '').trim())
+        .filter(line => line &&
+          !/^(?:📟\s*)?(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์)\s*[:：=]/i.test(line) &&
+          !/^(?:💳\s*)?(?:CA\s*(?:No\.?)?|หมายเลขผู้ใช้ไฟ)\s*[:：=]/i.test(line) &&
+          !/^02\d{10}$/.test(line) &&
+          !/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า)\s*[:：=]/i.test(line)
+        )
+        .join(' ')
+        .replace(/^(?:ที่อยู่|สถานที่ใช้ไฟ(?:ฟ้า)?)\s*[:：=]\s*/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    const area = cl(data.area).replace(/^(?:บริเวณ|จุดเกิดเหตุ)\s*[:：=]\s*/i, '').trim();
+    let combinedAddr = rawAddr;
+    if (area && !combinedAddr.includes(area)) {
+      combinedAddr = combinedAddr ? `${combinedAddr} (${area})` : area;
+    }
+
+    if (oldPea) document.getElementById('oldPeaInput').value = oldPea;
+    const addrParts = splitAddressForTwoLines(combinedAddr, ca);
+    document.getElementById('addrLine1Input').value = addrParts.line1;
+    document.getElementById('addrLine2Input').value = addrParts.line2;
+
+    // 4) เบอร์โทร, ชื่อพนักงานเวร/ช่าง (ไม่ใส่คำว่า admin) และชื่อลูกค้า
+    const phone = cl(data.phone);
+    if (phone) document.getElementById('phoneInput').value = phone;
+
+    const worker = cl(data.workerName).replace(/\s*กฟ[ก-ฮ]{1,3}\.?.*$/, '').trim();
+    if (worker && !/^admin$/i.test(worker)) {
+      document.getElementById('name-sig1').value = worker;
+    }
+    if (custName) document.getElementById('name-sig2').value = custName;
+
+    // 5) วิเคราะห์สาเหตุการชำรุดและวิธีแก้ไขเบื้องต้นจากอาการรับแจ้ง/ผลตรวจช่าง
+    const symptomText = `${cl(data.issue)} ${cl(data.realCause)}`.trim();
+    if (symptomText) {
+      let matchedCheckbox = false;
+      if (/ฟ้าลง|ฟ้าผ่า/.test(symptomText)) { document.getElementById('causeLightning').checked = true; matchedCheckbox = true; }
+      if (/น้ำเข้า|เปียกน้ำ|น้ำซึม/.test(symptomText)) { document.getElementById('causeWater').checked = true; matchedCheckbox = true; }
+      if (/รถชน|อุบัติเหตุ|เสาล้ม|เสาหัก|มิเตอร์แตก|แตกร้าว/.test(symptomText)) { document.getElementById('causeAccident').checked = true; matchedCheckbox = true; }
+      if (/ด้านเข้า|สายเข้า/.test(symptomText)) { document.getElementById('causeTermIn').checked = true; matchedCheckbox = true; }
+      if (/ด้านออก|สายออก|ตูดมิเตอร์|ขั้วมิเตอร์/.test(symptomText)) { document.getElementById('causeTermOut').checked = true; matchedCheckbox = true; }
+
+      const detailCause = cl(data.realCause) || cl(data.issue);
+      if (detailCause && detailCause !== 'มิเตอร์ชำรุด' && (!matchedCheckbox || /ไหม้|ช็อต|ช๊อต|จอดับ|ไม่หมุน/.test(detailCause))) {
+        document.getElementById('causeOtherInput').value = detailCause;
+      }
+      if (/สายเข้า|สายออก|ขั้วสาย|สายเมน/.test(symptomText)) {
+        document.getElementById('compWire').checked = true;
+      }
+    }
+
+    const actionTxt = cl(data.actionTaken);
+    if (actionTxt) {
+      if (/ต่อตรง/.test(actionTxt)) document.getElementById('actDirect').checked = true;
+      if (/สับเปลี่ยน|เปลี่ยนมิเตอร์|มิเตอร์สำรอง/.test(actionTxt)) document.getElementById('actReplace').checked = true;
+    }
+    if (cl(data.newPea)) document.getElementById('newPeaInput').value = cl(data.newPea);
+    if (cl(data.startUnit)) document.getElementById('startUnitInput').value = cl(data.startUnit);
+
+    // 6) แสดงแถบอ้างอิงและปุ่มนำทางพิกัด GPS ด้านบนสุด (ไม่พิมพ์ลงกระดาษ A4)
+    const infoBar = document.getElementById('linkedJobInfoBar');
+    const badgesEl = document.getElementById('linkedJobBadges');
+    const linksEl = document.getElementById('linkedJobLinks');
+    const refillBtn = document.getElementById('refillJobBtn');
+    const jobLbl = cl(data.jobLabel);
+    const gpsUrl = normalizeGpsNavUrl(cl(data.gps) || inlineGpsFallback);
+    const dialTel = phone.replace(/[^\d+]/g, '');
+
+    const chips = [];
+    if (jobLbl) chips.push(`<span class="job-chip">📋 ${escapeSafeHtml(jobLbl)}</span>`);
+    if (ca) chips.push(`<span class="job-chip ca-chip" title="แตะเพื่อคัดลอกเลข CA" onclick="copyCaText('${escapeSafeHtml(ca)}', this)">💳 CA: ${escapeSafeHtml(ca)}</span>`);
+    if (oldPea) chips.push(`<span class="job-chip">📟 PEA เก่า: ${escapeSafeHtml(oldPea)}</span>`);
+
+    const actionLinks = [];
+    if (dialTel.length >= 9) actionLinks.push(`<a class="btn-call-tel" href="tel:${escapeSafeHtml(dialTel)}">📞 โทร ${escapeSafeHtml(phone)}</a>`);
+    if (gpsUrl) actionLinks.push(`<a class="btn-gps-nav" href="${escapeSafeHtml(gpsUrl)}" target="_blank" rel="noopener noreferrer">🗺️ นำทางพิกัด GPS ↗</a>`);
+
+    if (chips.length || actionLinks.length) {
+      badgesEl.innerHTML = chips.join('');
+      linksEl.innerHTML = actionLinks.join('');
+      infoBar.style.display = 'flex';
+    }
+    if (refillBtn) refillBtn.style.display = 'inline-flex';
+    fitPaperToScreen();
+  }
+
+  // --- 1. ระบบเปลี่ยนชื่อ กฟส. ---
+  function updateOfficeTexts(officeName) {
+    const name = officeName || 'กฟส.บึง';
+    document.querySelectorAll('.pea-office-name').forEach(el => el.textContent = name);
+    document.title = 'รายงานเหตุการณ์มิเตอร์ชำรุด - ' + name;
+  }
+
+  function handleOfficeChange() {
+    const select = document.getElementById('officeSelect');
+    const customInput = document.getElementById('customOfficeInput');
+    if (select.value === 'custom') {
+      customInput.style.display = 'inline-block';
+      customInput.focus();
+      applyCustomOffice();
+    } else {
+      customInput.style.display = 'none';
+      updateOfficeTexts('กฟส.บึง');
+      localStorage.setItem('pea_selected_office', 'กฟส.บึง');
+    }
+  }
+
+  function applyCustomOffice() {
+    const val = document.getElementById('customOfficeInput').value.trim();
+    updateOfficeTexts(val || 'กฟส............');
+    localStorage.setItem('pea_selected_office', 'custom');
+    localStorage.setItem('pea_custom_office_name', val);
+  }
+
+  // --- 2. ระบบโลโก้ (ดึง ./pea-logo.png เป็นค่าเริ่มต้น หรือแตะอัปโหลดเปลี่ยนเองได้) ---
+  function changeLogoFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const pngUrl = await rasterizeSourceToPngDataUrl(ev.target.result);
+      const finalSrc = pngUrl || ev.target.result;
+      const img = document.getElementById('peaLogoImg');
+      img.onload = fitPaperToScreen;
+      img.src = finalSrc;
+      localStorage.setItem(CUSTOM_LOGO_STORAGE_KEY, finalSrc);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    initPeaLogoPng();
+
+    const savedOffice = localStorage.getItem('pea_selected_office');
+    const savedCustom = localStorage.getItem('pea_custom_office_name');
+    if (savedOffice === 'custom' && savedCustom) {
+      document.getElementById('officeSelect').value = 'custom';
+      document.getElementById('customOfficeInput').value = savedCustom;
+      handleOfficeChange();
+    }
+
+    autoFillDateAndShift();
+    cachedIncomingPayload = parseUrlJobPayload();
+    if (cachedIncomingPayload) {
+      applyIncomingJobPayload(cachedIncomingPayload);
+    }
+    fitPaperToScreen();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(fitPaperToScreen);
+    }
+  });
+
+  window.addEventListener('load', fitPaperToScreen);
+
+  // --- 3. ระบบอัปเดตหลอดไฟสถานะการเซ็นชื่อเหนือใบงาน ---
+  function updateStatusLamps() {
+    ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
+      const imgEl = document.getElementById('img-' + id);
+      const lampEl = document.getElementById('lamp-' + id);
+      if (imgEl && imgEl.dataset.signed === 'true') {
+        lampEl.classList.add('signed');
+      } else {
+        lampEl.classList.remove('signed');
+      }
+    });
+  }
+
+  // --- 4. ระบบสร้างและแชร์ไฟล์ PDF ขนาด A4 แท้ 1 หน้าเต็ม (วาดโลโก้ลง Canvas โดยตรง ไม่หาย 100%) ---
+  function buildCleanA4ExportSheet() {
+    const origPage = document.getElementById('formPage');
+    const a4Sheet = document.createElement('div');
+    a4Sheet.style.cssText = [
+      'position:absolute',
+      'left:0',
+      'top:0',
+      'width:794px',
+      'height:1122px',
+      'background:#ffffff',
+      'padding:34px 50px 28px 56px',
+      'box-sizing:border-box',
+      'overflow:hidden',
+      'z-index:9998',
+      "font-family:'TH SarabunPSK','Sarabun',sans-serif",
+      'font-size:14.5px',
+      'line-height:1.45',
+      'color:#000000'
+    ].join(';');
+
+    const a4Inner = document.createElement('div');
+    a4Inner.style.cssText = 'width:100%;margin:0;padding:0;background:#ffffff;';
+    a4Inner.innerHTML = origPage.innerHTML;
+
+    // 1) วาดรูปโลโก้ pea-logo.png ลง Canvas โดยตรงเพื่อให้ html2canvas จับภาพติด 100%
+    const origLogo = origPage.querySelector('#peaLogoImg');
+    const cloneLogo = a4Inner.querySelector('#peaLogoImg');
+    if (origLogo && cloneLogo && origLogo.complete && origLogo.naturalWidth > 0) {
+      try {
+        const logoCanvas = document.createElement('canvas');
+        const lw = Math.min(800, Math.max(540, origLogo.naturalWidth));
+        const lh = Math.round(lw * (origLogo.naturalHeight / origLogo.naturalWidth));
+        logoCanvas.width = lw;
+        logoCanvas.height = lh;
+        logoCanvas.style.cssText = 'width:135px;height:auto;display:block;';
+        logoCanvas.getContext('2d').drawImage(origLogo, 0, 0, lw, lh);
+        logoCanvas.toDataURL('image/png');
+        cloneLogo.replaceWith(logoCanvas);
+      } catch (e) {
+        cloneLogo.src = origLogo.src;
+      }
+    }
+
+    // 2) แทนที่ช่องติ๊กถูกด้วยกล่องเวกเตอร์คมชัด
+    const origCbs = origPage.querySelectorAll('input[type="checkbox"]');
+    const cloneCbs = a4Inner.querySelectorAll('input[type="checkbox"]');
+    origCbs.forEach((origCb, idx) => {
+      const cCb = cloneCbs[idx];
+      if (!cCb) return;
+      const box = document.createElement('span');
+      box.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border:1.4px solid #000;border-radius:2px;background:#fff;flex-shrink:0;vertical-align:middle;box-sizing:border-box;';
+      if (origCb.checked) {
+        box.innerHTML = '<svg viewBox="0 0 12 12" width="11" height="11"><path d="M2 6.2L4.8 9L10 2.8" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      }
+      cCb.replaceWith(box);
+    });
+
+    // 3) แทนที่ช่อง input เส้นประด้วย span (ไม่ตัดสระแหว่ง และไม่พิมพ์คำว่า "ชื่อ-สกุล" ตอนว่าง)
+    const origInputs = origPage.querySelectorAll('input.line-input');
+    const cloneInputs = a4Inner.querySelectorAll('input.line-input');
+    origInputs.forEach((origInp, idx) => {
+      const cInp = cloneInputs[idx];
+      if (!cInp) return;
+      const span = document.createElement('span');
+      span.className = cInp.className.replace(/\bline-input\b/g, 'pdf-line-span');
+      const inlineSt = origInp.getAttribute('style');
+      if (inlineSt) span.setAttribute('style', inlineSt);
+      const val = String(origInp.value || '').trim();
+      span.textContent = val || '\u00A0';
+      if (origInp.id === 'addrLine2Input' && visualCharCount(val) > 42) {
+        span.style.fontSize = '12.8px';
+      }
+      cInp.replaceWith(span);
+    });
+
+    // 4) ซ่อนกรอบปุ่มแตะเซ็นชื่อบนกระดาษ PDF
+    a4Inner.querySelectorAll('.sig-placeholder').forEach(el => { el.style.display = 'none'; });
+    a4Inner.querySelectorAll('.sig-slot').forEach(el => {
+      el.style.border = 'none';
+      el.style.borderBottom = '1px dotted #000';
+      el.style.background = 'transparent';
+      el.style.borderRadius = '0';
+      el.style.height = '45px';
+    });
+
+    a4Sheet.appendChild(a4Inner);
+    return { a4Sheet, a4Inner };
+  }
+
+  async function shareAsPDF() {
+    const shareBtn = document.getElementById('sharePdfBtn');
+    const originalText = shareBtn.textContent;
+    shareBtn.disabled = true;
+    shareBtn.textContent = '⏳ กำลังสร้าง PDF...';
+
+    const logoEl = document.getElementById('peaLogoImg');
+    if (logoEl && (!logoEl.complete || logoEl.naturalWidth === 0)) {
+      await initPeaLogoPng();
+    }
+
+    const prevScrollX = window.scrollX || 0;
+    const prevScrollY = window.scrollY || 0;
+
+    const mask = document.createElement('div');
+    mask.className = 'pdf-loading-mask';
+    mask.innerHTML = '<div class="pdf-loading-box">⏳ กำลังจัดหน้ากระดาษ A4 (1 หน้า) และสร้างไฟล์ PDF...</div>';
+    document.body.appendChild(mask);
+
+    const { a4Sheet, a4Inner } = buildCleanA4ExportSheet();
+    window.scrollTo(0, 0);
+    document.body.appendChild(a4Sheet);
+
+    const peaNo = document.getElementById('oldPeaInput').value.trim() || 'ไม่ระบุเลข';
+    const docNo = document.getElementById('docNoInput').value.trim();
+    const officeName = document.querySelector('.pea-office-name').textContent.trim();
+    const safeSuffix = [docNo, peaNo].filter(Boolean).join('_').replace(/[\\/:*?"<>|\s]+/g, '_');
+    const fileName = `รายงานมิเตอร์ชำรุด_${officeName}_${safeSuffix || 'PEA'}.pdf`;
+
+    let pdfBlob = null;
+    try {
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+      const maxInnerH = 1122 - 34 - 28;
+      const naturalH = a4Inner.scrollHeight;
+      if (naturalH > maxInnerH) {
+        const fitRatio = maxInnerH / naturalH;
+        a4Inner.style.transformOrigin = 'top left';
+        a4Inner.style.transform = `scale(${fitRatio})`;
+        a4Inner.style.width = `${(100 / fitRatio).toFixed(3)}%`;
+      }
+
+      const opt = {
+        margin: 0,
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          x: 0,
+          y: 0,
+          width: 794,
+          height: 1122,
+          windowWidth: 794,
+          windowHeight: 1122,
+          scrollX: 0,
+          scrollY: 0
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const worker = html2pdf().set(opt).from(a4Sheet).toPdf();
+      const pdfObj = await worker.get('pdf');
+      if (pdfObj && pdfObj.internal && typeof pdfObj.internal.getNumberOfPages === 'function') {
+        while (pdfObj.internal.getNumberOfPages() > 1) {
+          pdfObj.deletePage(pdfObj.internal.getNumberOfPages());
+        }
+        pdfBlob = pdfObj.output('blob');
+      } else {
+        pdfBlob = await worker.outputPdf('blob');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      a4Sheet.remove();
+      mask.remove();
+      window.scrollTo(prevScrollX, prevScrollY);
+      shareBtn.disabled = false;
+      shareBtn.textContent = originalText;
+    }
+
+    if (!pdfBlob) return;
+
+    try {
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({
+          files: [pdfFile],
+          title: `รายงานเหตุการณ์มิเตอร์ชำรุด (${officeName})`,
+          text: `ใบรายงานเหตุการณ์มิเตอร์ชำรุด PEA: ${peaNo}${docNo ? ' (' + docNo + ')' : ''}`
+        });
+      } else {
+        const url = URL.createObjectURL(pdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+    } catch (shareErr) {
+      console.error(shareErr);
+    }
+  }
+
+  // --- 5. ระบบกระดานเซ็นชื่อ (หมึกสีน้ำเงิน #0033cc + แนวนอนเต็มจอ 100%) ---
+  let currentSlotId = null;
+  let isDrawing = false;
+  let hasDrawn = false;
+  let isLandscape = true;
+
+  const modal = document.getElementById('sigModal');
+  const modalCard = document.getElementById('sigModalCard');
+  const modalCanvas = document.getElementById('modalCanvas');
+  const ctx = modalCanvas.getContext('2d');
+  const modalNameInput = document.getElementById('modalNameInput');
+  const rotateBtn = document.getElementById('rotateBtn');
+
+  function syncModalToViewport() {
+    if (!modal.classList.contains('active')) return;
+    const vv = window.visualViewport;
+    const vw = vv ? vv.width : window.innerWidth;
+    const vh = vv ? vv.height : window.innerHeight;
+    const vx = vv ? vv.offsetLeft : 0;
+    const vy = vv ? vv.offsetTop : 0;
+
+    modal.style.left = vx + 'px';
+    modal.style.top = vy + 'px';
+    modal.style.width = vw + 'px';
+    modal.style.height = vh + 'px';
+
+    if (isLandscape) {
+      modal.style.padding = '0px';
+      modalCard.classList.add('landscape');
+      modalCard.style.width = vh + 'px';
+      modalCard.style.height = vw + 'px';
+      modalCard.style.maxWidth = 'none';
+      modalCard.style.maxHeight = 'none';
+      rotateBtn.textContent = '🔄 แนวตั้ง';
+    } else {
+      modal.style.padding = '10px';
+      modalCard.classList.remove('landscape');
+      modalCard.style.width = (vw - 20) + 'px';
+      modalCard.style.height = 'auto';
+      modalCard.style.maxWidth = '500px';
+      modalCard.style.maxHeight = (vh - 20) + 'px';
+      rotateBtn.textContent = '🔄 แนวนอน';
+    }
+  }
+
+  function resizeModalCanvas(preserveDrawing = false) {
+    let tempUrl = null;
+    if (preserveDrawing && hasDrawn) {
+      tempUrl = modalCanvas.toDataURL('image/png');
+    }
+
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const cw = modalCanvas.offsetWidth;
+    const ch = modalCanvas.offsetHeight;
+    modalCanvas.width = cw * ratio;
+    modalCanvas.height = ch * ratio;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineWidth = 3.0;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0033cc';
+
+    if (tempUrl) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, cw, ch);
+      };
+      img.src = tempUrl;
+    }
+  }
+
+  function toggleOrientation() {
+    isLandscape = !isLandscape;
+    syncModalToViewport();
+    resizeModalCanvas(true);
+  }
+
+  function openSigModal(slotId, roleTitle) {
+    currentSlotId = slotId;
+    document.getElementById('modalTitle').textContent = 'ลงลายมือชื่อ: ' + roleTitle;
+    const formNameInput = document.getElementById('name-' + slotId);
+    modalNameInput.value = formNameInput ? formNameInput.value : '';
+
+    modal.classList.add('active');
+    syncModalToViewport();
+    resizeModalCanvas(false);
+    clearModalCanvas();
+
+    const existingImg = document.getElementById('img-' + slotId);
+    if (existingImg && existingImg.dataset.signed === 'true') {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, modalCanvas.offsetWidth, modalCanvas.offsetHeight);
+        hasDrawn = true;
+      };
+      img.src = existingImg.src;
+    }
+  }
+
+  function closeSigModal() {
+    modal.classList.remove('active');
+    currentSlotId = null;
+  }
+
+  function clearModalCanvas() {
+    ctx.clearRect(0, 0, modalCanvas.offsetWidth, modalCanvas.offsetHeight);
+    hasDrawn = false;
+  }
+
+  function saveSignature() {
+    if (!currentSlotId) return;
+
+    const imgEl = document.getElementById('img-' + currentSlotId);
+    const placeEl = document.getElementById('place-' + currentSlotId);
+    const formNameInput = document.getElementById('name-' + currentSlotId);
+
+    if (formNameInput) {
+      formNameInput.value = modalNameInput.value;
+    }
+
+    if (hasDrawn) {
+      imgEl.src = modalCanvas.toDataURL('image/png');
+      imgEl.style.display = 'block';
+      imgEl.dataset.signed = 'true';
+      placeEl.style.display = 'none';
+    } else {
+      imgEl.removeAttribute('src');
+      imgEl.style.display = 'none';
+      imgEl.dataset.signed = 'false';
+      placeEl.style.display = 'inline';
+    }
+
+    updateStatusLamps();
+    closeSigModal();
+    fitPaperToScreen();
+  }
+
+  function getPointerPos(e) {
+    const rect = modalCanvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const cw = modalCanvas.offsetWidth;
+    const ch = modalCanvas.offsetHeight;
+
+    if (isLandscape) {
+      return {
+        x: (clientY - rect.top) * (cw / rect.height),
+        y: (rect.right - clientX) * (ch / rect.width)
+      };
+    } else {
+      return {
+        x: (clientX - rect.left) * (cw / rect.width),
+        y: (clientY - rect.top) * (ch / rect.height)
+      };
+    }
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    isDrawing = true;
+    hasDrawn = true;
+    const pos = getPointerPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+  }
+
+  function moveDraw(e) {
+    if (!isDrawing) return;
+    e.preventDefault();
+    const pos = getPointerPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+  }
+
+  function endDraw() {
+    isDrawing = false;
+  }
+
+  modalCanvas.addEventListener('mousedown', startDraw);
+  modalCanvas.addEventListener('mousemove', moveDraw);
+  window.addEventListener('mouseup', endDraw);
+
+  modalCanvas.addEventListener('touchstart', startDraw, { passive: false });
+  modalCanvas.addEventListener('touchmove', moveDraw, { passive: false });
+  modalCanvas.addEventListener('touchend', endDraw);
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncModalToViewport);
+    window.visualViewport.addEventListener('scroll', syncModalToViewport);
+  }
+  window.addEventListener('resize', () => {
+    syncModalToViewport();
+    fitPaperToScreen();
+  });
+
+  function resetAll() {
+    document.querySelectorAll('.line-input').forEach(inp => inp.value = '');
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
+      const imgEl = document.getElementById('img-' + id);
+      const placeEl = document.getElementById('place-' + id);
+      imgEl.removeAttribute('src');
+      imgEl.style.display = 'none';
+      imgEl.dataset.signed = 'false';
+      placeEl.style.display = 'inline';
+    });
+    updateStatusLamps();
+    autoFillDateAndShift();
+    fitPaperToScreen();
+  }
+</script>
+</body>
+</html>
