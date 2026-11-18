@@ -12,9 +12,9 @@
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     <meta name="theme-color" content="#1e3a8a">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=130">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=130">
-    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=130">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=134">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=134">
+    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=134">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -178,8 +178,10 @@
         body.role-viewer-readonly button[onclick^="deleteFaultItem"],
         body.role-viewer-readonly button[onclick^="editOutageItem"],
         body.role-viewer-readonly button[onclick^="deleteOutageItem"],
+        body.role-viewer-readonly button[onclick^="openMeterFormForOutageItem"],
         body.role-viewer-readonly button[onclick^="quickCloseJobFromMainHistory"],
         body.role-viewer-readonly button[onclick^="stopEquipNavFromMainPage"],
+        body.role-viewer-readonly #quickOpenMeterFormTab2Btn,
         body.role-viewer-readonly #cloudDataManageBtn,
         body.role-viewer-readonly #autoFillCustomerContainer,
         body.role-viewer-readonly #geminiChatbot { display: none !important; }
@@ -911,12 +913,12 @@
 
     <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=130"></script>
-    <script src="shared-core.js?v=130"></script>
-    <script src="main-app.js?v=130"></script>
-    <script src="pm-calendar.js?v=130"></script>
-    <script src="scada-fault-locator.js?v=130"></script>
-    <script src="pm-push.js?v=130"></script>
+    <script src="pea-idb-store.js?v=136"></script>
+    <script src="shared-core.js?v=136"></script>
+    <script src="main-app.js?v=136"></script>
+    <script src="pm-calendar.js?v=136"></script>
+    <script src="scada-fault-locator.js?v=136"></script>
+    <script src="pm-push.js?v=136"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
