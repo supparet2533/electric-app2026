@@ -1,321 +1,452 @@
 // ============================================================================
-// ⚡🏢 PEA SMART GRID — MAIN WORKSPACE & DISPATCH ENGINE v6.2 (main-app.js)
-// ระบบหน้าหลักสำหรับ index.html (ซิงค์ยอดใบงานเท่ากันทุกเครื่อง + รันเลขงาน/กะอัตโนมัติ)
-// พาทที่ 1 / 9 : State, Home Icon & Left Browser Dock (คงรูปแบบบรรทัดต้นฉบับ 100%)
+// ⚡🏢 PEA SMART GRID — MAIN WORKSPACE & DISPATCH ENGINE v6.5 (main-app.js)
+// ระบบหน้าหลักสำหรับ index.html (ซิงค์ยอดใบงาน + ส่งค่าเข้าใบมิเตอร์ชำรุดอัตโนมัติ)
+// พาทที่ 1 / 2 : State, Meter Form URL Encoder, Auth, RBAC, Stations & AI Chat
 // ============================================================================
 (function() {
-        'use strict';
-        
-        const Core = window.PeaCore;
-        const VIEWER_LOCK_MSG = '🔒 บัญชีผู้สำรวจ (ดูอย่างเดียว) ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้';
-        const DEFAULT_METER_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSfBsBdIcZRKR5N9I4rCuBLEhIIWIuKCsiUbsa83DmKnNUPZZQ/viewform?pli=1&pli=1';
-        const DRAFT_KEY_TAB1 = 'elec_draft_tab1_fault';
-        const DRAFT_KEY_TAB2 = 'elec_draft_tab2_outage';
-        const CLOUD_BACKUP_STORAGE_KEY = 'elec_cloud_group_backups_map';
-        const SCADA_BRIDGE_CHANNEL = 'pea_scada_form_bridge_v1';
-        const LAST_SHIFT_STATE_KEY = 'elec_last_shift_state';
-        const RESET_LOCK_KEY = 'elec_shift_job_reset_lock';
-        
-        const DEFAULT_USER_ACCOUNTS = [
-            { username: 'admin', password: '1234', role: 'admin', sessionToken: '', displayName: '' }
-        ];
-        
-        const DEFAULT_LEFT_BOOKMARKS = [
-            { name: '🛠️ หน้าช่าง (Page 2)', url: 'page2.html' },
-            { name: '🌧️ เรดาร์ฝน Windy', url: 'https://embed.windy.com/embed2.html?lat=13.116&lon=101.095&zoom=10&level=surface&overlay=rain' },
-            { name: '🗺️ Google Maps', url: 'https://www.google.com/maps?q=13.1361,101.0322&hl=th&z=13&output=embed' }
-        ];
-        
-        let userAccountsList = [];
-        let isSavingUsersToCloud = false;
-        let lastCloudSaveTimestamp = 0;
-        let collapsedUserGroups = new Set();
-        
-        let leftPopupWindowRef = null;
-        let isExplicitLeftBrowserAction = false;
-        
-        let editingFaultId = null;
-        let editingOutageId = null;
-        let isTimeManuallyEdited = false;
-        let isWeatherLockedByUser = false;
-        let weatherStreamInterval = null;
-        let isManualShiftOverride = false;
-        let isManualJobNoOverride = false;
-        
-        let issueBarChartInstance = null;
-        let systemDoughnutChartInstance = null;
-        let currentFilteredFaults = [];
-        let currentFilteredOutages = [];
-        let cachedCloudJobs = [];
-        let isUploadingFromMain = false;
-        
-        window.cloudEditedJobsOverrideMap = window.cloudEditedJobsOverrideMap || {};
-        
-                let authSessionEpochMain = 0;
+    'use strict';
 
-        function normGrp(raw) {
-            if (typeof window.normalizePeaGroupName === 'function') return window.normalizePeaGroupName(raw);
-            let g = String(raw || '').trim().replace(/\s+/g, ' ');
-            g = g.replace(/^(กฟ[ก-ฮ]{1,2})\.\s+/, '$1.').replace(/^(กฟ[สฟจตอยภผกนฉ])\s+/, '$1.').replace(/^(กฟ[สฟจตอยภผกนฉ])(?![.\s]|[ก-ฮ]\.|$)/, '$1.');
-            return g.trim();
+    const Core = window.PeaCore;
+    const VIEWER_LOCK_MSG = '🔒 บัญชีผู้สำรวจ (ดูอย่างเดียว) ไม่สามารถเพิ่ม แก้ไข หรือลบข้อมูลได้';
+    const LEGACY_GOOGLE_METER_LINK = 'https://docs.google.com/forms/d/e/1FAIpQLSfBsBdIcZRKR5N9I4rCuBLEhIIWIuKCsiUbsa83DmKnNUPZZQ/viewform?pli=1&pli=1';
+    const DRAFT_KEY_TAB1 = 'elec_draft_tab1_fault';
+    const DRAFT_KEY_TAB2 = 'elec_draft_tab2_outage';
+    const CLOUD_BACKUP_STORAGE_KEY = 'elec_cloud_group_backups_map';
+    const SCADA_BRIDGE_CHANNEL = 'pea_scada_form_bridge_v1';
+    const LAST_SHIFT_STATE_KEY = 'elec_last_shift_state';
+    const RESET_LOCK_KEY = 'elec_shift_job_reset_lock';
+
+    const DEFAULT_USER_ACCOUNTS = [
+        { username: 'admin', password: '1234', role: 'admin', sessionToken: '', displayName: '' }
+    ];
+
+    const DEFAULT_LEFT_BOOKMARKS = [
+        { name: '🛠️ หน้าช่าง (Page 2)', url: 'page2.html' },
+        { name: '📄 ใบมิเตอร์ชำรุด', url: 'meter-form.html' },
+        { name: '🌧️ เรดาร์ฝน Windy', url: 'https://embed.windy.com/embed2.html?lat=13.116&lon=101.095&zoom=10&level=surface&overlay=rain' },
+        { name: '🗺️ Google Maps', url: 'https://www.google.com/maps?q=13.1361,101.0322&hl=th&z=13&output=embed' }
+    ];
+
+    let userAccountsList = [];
+    let isSavingUsersToCloud = false;
+    let lastCloudSaveTimestamp = 0;
+    let collapsedUserGroups = new Set();
+
+    let leftPopupWindowRef = null;
+    let isExplicitLeftBrowserAction = false;
+
+    let editingFaultId = null;
+    let editingOutageId = null;
+    let isTimeManuallyEdited = false;
+    let isWeatherLockedByUser = false;
+    let weatherStreamInterval = null;
+    let isManualShiftOverride = false;
+    let isManualJobNoOverride = false;
+
+    let issueBarChartInstance = null;
+    let systemDoughnutChartInstance = null;
+    let currentFilteredFaults = [];
+    let currentFilteredOutages = [];
+    let cachedCloudJobs = [];
+    let isUploadingFromMain = false;
+
+    // เก็บข้อมูลลูกค้า/เลขมิเตอร์/เลข CA เบื้องหลังจากช่องวางข้อมูลผู้ใช้ไฟ เพื่อส่งเข้าใบมิเตอร์โดยไม่แสดงชื่อลูกค้าใน LINE
+    let lastPastedCustomerMeta = { customerName: '', peaNo: '', caNo: '' };
+
+    window.cloudEditedJobsOverrideMap = window.cloudEditedJobsOverrideMap || {};
+
+    let authSessionEpochMain = 0;
+
+    function normGrp(raw) {
+        if (typeof window.normalizePeaGroupName === 'function') return window.normalizePeaGroupName(raw);
+        let g = String(raw || '').trim().replace(/\s+/g, ' ');
+        g = g.replace(/^(กฟ[ก-ฮ]{1,2})\.\s+/, '$1.').replace(/^(กฟ[สฟจตอยภผกนฉ])\s+/, '$1.').replace(/^(กฟ[สฟจตอยภผกนฉ])(?![.\s]|[ก-ฮ]\.|$)/, '$1.');
+        return g.trim();
+    }
+
+    function escJsAttr(s) {
+        return escapeHtmlStr(String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
+    }
+
+    function normalizeThaiDateMain(rawStr) {
+        const tok = String(rawStr || '').trim().split(/\s+/)[0];
+        if (!tok || tok === '-') return '';
+        const sp = tok.split('/');
+        if (sp.length === 3) {
+            const d = parseInt(sp[0], 10), m = parseInt(sp[1], 10);
+            let y = parseInt(sp[2], 10);
+            if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y > 0) {
+                if (y < 100) y += 2500; else if (y < 2400) y += 543;
+                return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+            }
         }
+        return tok;
+    }
 
-        function escJsAttr(s) {
-            return escapeHtmlStr(String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
+    // ========================================================================
+    // 📄 เอนจินสร้างลิงก์ใบรายงานมิเตอร์ชำรุดพร้อมฝังข้อมูลอัตโนมัติ (Base64URL UTF-8)
+    // ========================================================================
+    function getBuiltInMeterFormBaseUrl() {
+        try {
+            if (/^https?:$/i.test(window.location.protocol)) {
+                const baseDir = window.location.pathname.replace(/[^/]*$/, '');
+                return `${window.location.origin}${baseDir}meter-form.html`;
+            }
+        } catch (e) {}
+        return 'meter-form.html';
+    }
+
+    function getConfiguredMeterFormBaseUrl() {
+        const saved = String(Core.rawStorageGet('meter_form_link') || '').trim();
+        if (!saved || saved === LEGACY_GOOGLE_METER_LINK || /^(?:\.\/|\/)?meter-form(?:\.html)?$/i.test(saved)) {
+            return getBuiltInMeterFormBaseUrl();
         }
+        return saved;
+    }
 
-        function normalizeThaiDateMain(rawStr) {
-            const tok = String(rawStr || '').trim().split(/\s+/)[0];
-            if (!tok || tok === '-') return '';
-            const sp = tok.split('/');
-            if (sp.length === 3) {
-                const d = parseInt(sp[0], 10), m = parseInt(sp[1], 10);
-                let y = parseInt(sp[2], 10);
-                if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y > 0) {
-                    if (y < 100) y += 2500; else if (y < 2400) y += 543;
-                    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+    function encodeBase64UrlJson(obj) {
+        try {
+            const cleanObj = {};
+            Object.entries(obj || {}).forEach(([k, v]) => {
+                if (v !== undefined && v !== null) {
+                    const s = String(v).trim();
+                    if (s && s !== '-') cleanObj[k] = s;
+                }
+            });
+            if (Object.keys(cleanObj).length === 0) return '';
+            const bytes = new TextEncoder().encode(JSON.stringify(cleanObj));
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function extractMeterMetaFromText(rawStr) {
+        if (!rawStr || !String(rawStr).trim()) return { customerName: '', peaNo: '', caNo: '' };
+        const s = String(rawStr).replace(
+            /^(\s*(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์|หมายเลขผู้ใช้ไฟ(?:ฟ้า)?\s*\(?CA\)?|CA\s*(?:No\.?)?)\s*)\r?\n+\s*/gim,
+            '$1 : '
+        );
+
+        let peaNo = '';
+        const mPea = s.match(/(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์|เลขมิเตอร์|เครื่องวัด)\s*[:：=]?\s*([A-Za-z0-9-]{4,20})/i);
+        if (mPea) peaNo = mPea[1].trim();
+
+        let caNo = '';
+        const mCa = s.match(/(?:หมายเลขผู้ใช้ไฟ(?:ฟ้า)?\s*\(?CA\)?|CA\s*(?:No\.?)?)\s*[:：=]?\s*(\d{9,15})/i) ||
+                    s.match(/(?:^|[^\d])(02\d{10})(?!\d)/);
+        if (mCa) caNo = mCa[1].trim();
+
+        let customerName = '';
+        const mCust = s.match(/(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า|ผู้ใช้ไฟ(?:ฟ้า)?|ชื่อผู้แจ้ง|ชื่อ-นามสกุล|ชื่อ-สกุล)\s*[:：=]?\s*([^\r\n]+)/i);
+        if (mCust && mCust[1]) {
+            let rawName = mCust[1].trim();
+            const addrTail = rawName.match(/\s+\d+(?:\/\d+)?\s*(?:ม\.|หมู่|ต\.|ตำบล|ซ\.|ซอย|ถ\.|ถนน).*$/);
+            if (addrTail) rawName = rawName.slice(0, addrTail.index).trim();
+            if (rawName && rawName !== '-') customerName = rawName;
+        }
+        if (!customerName) {
+            const lines = s.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            for (const ln of lines) {
+                if (/^(?:(?:คุณ|นาย|นาง|น\.ส\.|นางสาว)\s*)[ก-๙]{2,25}(?:\s+[ก-๙]{2,30})?$/.test(ln) &&
+                    !/(?:ม\.|หมู่|ต\.|ตำบล|ซอย|ถนน|บ้าน|ไฟ|มิเตอร์|ผู้ปฏิบัติงาน)/.test(ln)) {
+                    customerName = ln.trim();
+                    break;
                 }
             }
-            return tok;
         }
+        return { customerName, peaNo, caNo };
+    }
 
-        // วาดไอคอนสายฟ้าคมชัด 512x512 รองรับทั้ง id="favIconPng" ใน index.html และ id="mainFavIconPng"
-                // วาดไอคอนเหรียญตราสายฟ้าสีทอง 512x512 เข้าชุดกับ Splash Screen และ Manifest ใหม่
-        function renderMainHomeIconPng() {
-            try {
-                const fav = document.getElementById('favIconPng') || document.getElementById('mainFavIconPng');
-                const touch = document.getElementById('appleTouchIconPng') || document.getElementById('mainAppleTouchIconPng');
-                if (!fav && !touch) return;
+    function buildMeterFormUrlFromData(info) {
+        const baseUrl = getConfiguredMeterFormBaseUrl();
+        if (!baseUrl) return '';
+        if (/docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl;
 
-                const canvas = document.createElement('canvas');
-                canvas.width = 512;
-                canvas.height = 512;
-                const ctx = canvas.getContext('2d');
+        const addrMeta = extractMeterMetaFromText(info.address || '');
+        const peaNo = info.peaMeterNo || addrMeta.peaNo || '';
+        const caNo = info.caNo || addrMeta.caNo || '';
+        const custName = info.customerName || addrMeta.customerName || '';
 
-                const bgGrad = ctx.createRadialGradient(180, 140, 20, 256, 256, 380);
-                bgGrad.addColorStop(0, '#1e3a8a');
-                bgGrad.addColorStop(0.55, '#0f172a');
-                bgGrad.addColorStop(1, '#060913');
+        const cleanAddrLines = String(info.address || '')
+            .split(/\r?\n/)
+            .map(l => l.trim())
+            .filter(l => l &&
+                l !== '-' &&
+                !/^(?:📟\s*)?(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์)\s*[:：=]/i.test(l) &&
+                !/^(?:💳\s*)?(?:CA\s*(?:No\.?)?|หมายเลขผู้ใช้ไฟ)\s*[:：=]/i.test(l) &&
+                !/^02\d{10}$/.test(l) &&
+                !/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า)\s*[:：=]/i.test(l)
+            );
 
-                const r = 112;
-                ctx.beginPath();
-                ctx.moveTo(r, 0); ctx.lineTo(512 - r, 0); ctx.quadraticCurveTo(512, 0, 512, r);
-                ctx.lineTo(512, 512 - r); ctx.quadraticCurveTo(512, 512, 512 - r, 512);
-                ctx.lineTo(r, 512); ctx.quadraticCurveTo(0, 512, 0, 512 - r);
-                ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
-                ctx.closePath();
-                ctx.fillStyle = bgGrad;
-                ctx.fill();
+        const tr = info.techReport || {};
+        const inspectorOrWorker = (tr.inspector && tr.inspector !== '-')
+            ? formatTechDisplayName(tr.inspector)
+            : ((info.workerName && info.workerName !== '-') ? formatTechDisplayName(info.workerName) : formatTechDisplayName(Core.rawStorageGet('elec_app_current_user') || ''));
 
-                ctx.save();
-                ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
-                ctx.lineWidth = 6;
-                ctx.setLineDash([22, 14]);
-                ctx.beginPath();
-                ctx.arc(256, 256, 196, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.restore();
+        const payload = {
+            o: normGrp(info.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
+            j: (info.jobNo && info.jobNo !== '-') ? `งานที่ ${info.jobNo}${(info.shift && info.shift !== '-') ? ' กะ ' + info.shift : ''}` : '',
+            dt: info.reportDate || '',
+            s: info.shift || '',
+            p: peaNo,
+            ca: caNo,
+            ad: cleanAddrLines.join(' '),
+            ar: info.area || '',
+            ph: info.phone || '',
+            g: (tr.fieldGps && tr.fieldGps !== '-') ? tr.fieldGps : (info.gps || ''),
+            is: info.issueType || '',
+            rc: tr.realCause || info.realCause || '',
+            ac: tr.actionTaken || info.actionTaken || '',
+            cn: custName,
+            wn: inspectorOrWorker
+        };
 
-                const glow = ctx.createRadialGradient(256, 256, 10, 256, 256, 170);
-                glow.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
-                glow.addColorStop(1, 'rgba(245, 158, 11, 0)');
-                ctx.fillStyle = glow;
-                ctx.beginPath();
-                ctx.arc(256, 256, 170, 0, Math.PI * 2);
-                ctx.fill();
+        const encoded = encodeBase64UrlJson(payload);
+        if (!encoded) return baseUrl;
+        const cleanBase = baseUrl.split('?')[0];
+        return `${cleanBase}?d=${encoded}`;
+    }
 
-                const boltGrad = ctx.createLinearGradient(140, 76, 370, 436);
-                boltGrad.addColorStop(0, '#fef9c3');
-                boltGrad.addColorStop(0.32, '#fde047');
-                boltGrad.addColorStop(0.68, '#f59e0b');
-                boltGrad.addColorStop(1, '#b45309');
+    // วาดไอคอนเหรียญตราสายฟ้าสีทอง 512x512 (ไม่เขียนทับหากลิงก์ชี้ไปที่ไฟล์ .png แท้แล้ว)
+    function renderMainHomeIconPng() {
+        try {
+            const fav = document.getElementById('favIconPng') || document.getElementById('mainFavIconPng');
+            const touch = document.getElementById('appleTouchIconPng') || document.getElementById('mainAppleTouchIconPng');
+            if (!fav && !touch) return;
+            const curHref = (fav?.getAttribute('href') || touch?.getAttribute('href') || '');
+            if (/\.png(?:\?|$)/i.test(curHref)) return;
 
-                ctx.save();
-                ctx.shadowColor = 'rgba(2, 6, 23, 0.65)';
-                ctx.shadowBlur = 14;
-                ctx.shadowOffsetX = 6;
-                ctx.shadowOffsetY = 12;
-                ctx.beginPath();
-                ctx.moveTo(298, 76); ctx.lineTo(136, 282); ctx.lineTo(244, 282);
-                ctx.lineTo(214, 436); ctx.lineTo(376, 230); ctx.lineTo(268, 230);
-                ctx.closePath();
-                ctx.fillStyle = boltGrad;
-                ctx.fill();
-                ctx.lineWidth = 5;
-                ctx.lineJoin = 'round';
-                ctx.strokeStyle = '#fef08a';
-                ctx.stroke();
-                ctx.restore();
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
 
-                const pngUrl = canvas.toDataURL('image/png');
-                if (fav) fav.href = pngUrl;
-                if (touch) touch.href = pngUrl;
-            } catch (e) {}
+            const bgGrad = ctx.createRadialGradient(180, 140, 20, 256, 256, 380);
+            bgGrad.addColorStop(0, '#1e3a8a');
+            bgGrad.addColorStop(0.55, '#0f172a');
+            bgGrad.addColorStop(1, '#060913');
+
+            const r = 112;
+            ctx.beginPath();
+            ctx.moveTo(r, 0); ctx.lineTo(512 - r, 0); ctx.quadraticCurveTo(512, 0, 512, r);
+            ctx.lineTo(512, 512 - r); ctx.quadraticCurveTo(512, 512, 512 - r, 512);
+            ctx.lineTo(r, 512); ctx.quadraticCurveTo(0, 512, 0, 512 - r);
+            ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+            ctx.closePath();
+            ctx.fillStyle = bgGrad;
+            ctx.fill();
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(250, 204, 21, 0.42)';
+            ctx.lineWidth = 6;
+            ctx.setLineDash([22, 14]);
+            ctx.beginPath();
+            ctx.arc(256, 256, 196, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            const glow = ctx.createRadialGradient(256, 256, 10, 256, 256, 170);
+            glow.addColorStop(0, 'rgba(245, 158, 11, 0.45)');
+            glow.addColorStop(1, 'rgba(245, 158, 11, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(256, 256, 170, 0, Math.PI * 2);
+            ctx.fill();
+
+            const boltGrad = ctx.createLinearGradient(140, 76, 370, 436);
+            boltGrad.addColorStop(0, '#fef9c3');
+            boltGrad.addColorStop(0.32, '#fde047');
+            boltGrad.addColorStop(0.68, '#f59e0b');
+            boltGrad.addColorStop(1, '#b45309');
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(2, 6, 23, 0.65)';
+            ctx.shadowBlur = 14;
+            ctx.shadowOffsetX = 6;
+            ctx.shadowOffsetY = 12;
+            ctx.beginPath();
+            ctx.moveTo(298, 76); ctx.lineTo(136, 282); ctx.lineTo(244, 282);
+            ctx.lineTo(214, 436); ctx.lineTo(376, 230); ctx.lineTo(268, 230);
+            ctx.closePath();
+            ctx.fillStyle = boltGrad;
+            ctx.fill();
+            ctx.lineWidth = 5;
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#fef08a';
+            ctx.stroke();
+            ctx.restore();
+
+            const pngUrl = canvas.toDataURL('image/png');
+            if (fav) fav.href = pngUrl;
+            if (touch) touch.href = pngUrl;
+        } catch (e) {}
+    }
+
+    function guardNotViewer() {
+        if (isViewerRole()) {
+            showToast(VIEWER_LOCK_MSG);
+            return false;
         }
-        
-        function guardNotViewer() {
-            if (isViewerRole()) {
-                showToast(VIEWER_LOCK_MSG);
-                return false;
-            }
-            return true;
-        }
-        
-        // ========================================================================
-        // 1. ระบบเว็บเบราว์เซอร์ชิดขอบซ้ายจอ & เปิดผังวงจร SCADA คู่หน้าหลัก
-        // ========================================================================
-        function getLeftBrowserBookmarks() {
-            try {
-                const saved = Core.rawStorageGet('elec_left_browser_bookmarks');
-                if (saved) return JSON.parse(saved);
-            } catch (e) {}
-            return DEFAULT_LEFT_BOOKMARKS;
-        }
-        
-        function renderLeftBrowserBookmarks() {
-            const bar = document.getElementById('leftBrowserBookmarksBar');
-            if (!bar) return;
-            const list = getLeftBrowserBookmarks();
-            bar.innerHTML = `<span class="text-slate-400 font-semibold shrink-0">📌 ลิงก์ด่วน:</span>`;
-            
-            const scadaBtn = document.createElement('button');
-            scadaBtn.type = 'button';
-            scadaBtn.id = 'leftBmScadaQuickBtn';
-            scadaBtn.onclick = openScadaDiagramWorkspace;
-            scadaBtn.className = 'px-2.5 py-0.5 bg-teal-600 hover:bg-teal-500 text-white rounded-md font-bold shrink-0 border border-teal-400 shadow-sm transition';
-            scadaBtn.innerHTML = '⚡ ผังวงจร SCADA';
-            bar.appendChild(scadaBtn);
-            
-            list.forEach((bm, idx) => {
-                const wrap = document.createElement('div');
-                wrap.className = 'inline-flex items-center bg-slate-700/80 hover:bg-slate-600 text-slate-100 rounded-md overflow-hidden shrink-0 border border-slate-600 transition';
-                const safeUrl = String(bm.url || '').replace(/'/g, "\\'");
-                wrap.innerHTML = `
+        return true;
+    }
+
+    // ========================================================================
+    // 1. ระบบเว็บเบราว์เซอร์ชิดขอบซ้ายจอ & เปิดผังวงจร SCADA คู่หน้าหลัก
+    // ========================================================================
+    function getLeftBrowserBookmarks() {
+        try {
+            const saved = Core.rawStorageGet('elec_left_browser_bookmarks');
+            if (saved) return JSON.parse(saved);
+        } catch (e) {}
+        return DEFAULT_LEFT_BOOKMARKS;
+    }
+
+    function renderLeftBrowserBookmarks() {
+        const bar = document.getElementById('leftBrowserBookmarksBar');
+        if (!bar) return;
+        const list = getLeftBrowserBookmarks();
+        bar.innerHTML = `<span class="text-slate-400 font-semibold shrink-0">📌 ลิงก์ด่วน:</span>`;
+
+        const scadaBtn = document.createElement('button');
+        scadaBtn.type = 'button';
+        scadaBtn.id = 'leftBmScadaQuickBtn';
+        scadaBtn.onclick = openScadaDiagramWorkspace;
+        scadaBtn.className = 'px-2.5 py-0.5 bg-teal-600 hover:bg-teal-500 text-white rounded-md font-bold shrink-0 border border-teal-400 shadow-sm transition';
+        scadaBtn.innerHTML = '⚡ ผังวงจร SCADA';
+        bar.appendChild(scadaBtn);
+
+        list.forEach((bm, idx) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'inline-flex items-center bg-slate-700/80 hover:bg-slate-600 text-slate-100 rounded-md overflow-hidden shrink-0 border border-slate-600 transition';
+            const safeUrl = String(bm.url || '').replace(/'/g, "\\'");
+            wrap.innerHTML = `
                 <button type="button" onclick="loadLeftBrowserUrl('${safeUrl}', true)" class="px-2 py-0.5 font-medium truncate max-w-[160px]">${escapeHtmlStr(bm.name)}</button>
                 <button type="button" onclick="removeLeftBrowserBookmark(${idx})" class="px-1.5 py-0.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 leading-none" title="ลบลิงก์นี้">&times;</button>
             `;
-                bar.appendChild(wrap);
-            });
+            bar.appendChild(wrap);
+        });
+    }
+
+    function formatLeftBrowserUrl(rawUrl) {
+        let u = String(rawUrl || '').trim();
+        if (!u) return 'about:blank';
+        if (u.startsWith('page2.html') || u.startsWith('meter-form.html') || u.startsWith('./') || u.startsWith('/')) return u;
+        if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+
+        const ytMatch = u.match(/(?:youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+        if (ytMatch) {
+            const timeMatch = u.match(/[?&](?:t|start)=(\d+)/i);
+            const startQuery = timeMatch ? `?start=${timeMatch[1]}&autoplay=1` : '?autoplay=1';
+            return `https://www.youtube.com/embed/${ytMatch[1]}${startQuery}`;
         }
-        
-        function formatLeftBrowserUrl(rawUrl) {
-            let u = String(rawUrl || '').trim();
-            if (!u) return 'about:blank';
-            if (u.startsWith('page2.html') || u.startsWith('./') || u.startsWith('/')) return u;
-            if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-            
-            const ytMatch = u.match(/(?:youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
-            if (ytMatch) {
-                const timeMatch = u.match(/[?&](?:t|start)=(\d+)/i);
-                const startQuery = timeMatch ? `?start=${timeMatch[1]}&autoplay=1` : '?autoplay=1';
-                return `https://www.youtube.com/embed/${ytMatch[1]}${startQuery}`;
-            }
-            return u;
+        return u;
+    }
+
+    function addLeftBrowserBookmark() {
+        const url = (document.getElementById('leftBrowserUrlInput')?.value || '').trim();
+        if (!url) {
+            showToast('⚠️ กรุณาวางลิงก์ในช่องก่อนกดเก็บลิงก์');
+            return;
         }
-        
-        function addLeftBrowserBookmark() {
-            const url = (document.getElementById('leftBrowserUrlInput')?.value || '').trim();
-            if (!url) {
-                showToast('⚠️ กรุณาวางลิงก์ในช่องก่อนกดเก็บลิงก์');
-                return;
-            }
-            showCustomPrompt('ตั้งชื่อปุ่มลิงก์ด่วน:', 'เว็บงานไฟฟ้า', function(name) {
-                if (!name || !name.trim()) return;
-                const list = getLeftBrowserBookmarks();
-                list.push({ name: name.trim(), url: formatLeftBrowserUrl(url) });
-                localStorage.setItem('elec_left_browser_bookmarks', JSON.stringify(list));
-                renderLeftBrowserBookmarks();
-                showToast('⭐ บันทึกลิงก์ด่วนเรียบร้อยแล้ว');
-            }, '⭐ บันทึกลิงก์ด่วน');
-        }
-        
-        function removeLeftBrowserBookmark(index) {
+        showCustomPrompt('ตั้งชื่อปุ่มลิงก์ด่วน:', 'เว็บงานไฟฟ้า', function(name) {
+            if (!name || !name.trim()) return;
             const list = getLeftBrowserBookmarks();
-            list.splice(index, 1);
+            list.push({ name: name.trim(), url: formatLeftBrowserUrl(url) });
             localStorage.setItem('elec_left_browser_bookmarks', JSON.stringify(list));
             renderLeftBrowserBookmarks();
+            showToast('⭐ บันทึกลิงก์ด่วนเรียบร้อยแล้ว');
+        }, '⭐ บันทึกลิงก์ด่วน');
+    }
+
+    function removeLeftBrowserBookmark(index) {
+        const list = getLeftBrowserBookmarks();
+        list.splice(index, 1);
+        localStorage.setItem('elec_left_browser_bookmarks', JSON.stringify(list));
+        renderLeftBrowserBookmarks();
+    }
+
+    async function pasteClipboardToLeftBrowser() {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text && text.trim()) {
+                loadLeftBrowserUrl(text.trim(), true);
+                showToast('📋 ดึงลิงก์เข้าเบราว์เซอร์ฝั่งซ้ายแล้ว!');
+            } else {
+                showToast('⚠️ ไม่พบลิงก์ในคลิปบอร์ด');
+            }
+        } catch (e) {
+            showToast('⚠️ กรุณากด Ctrl+V ในช่องลิงก์แล้วกด Enter');
         }
-        
-        async function pasteClipboardToLeftBrowser() {
-            try {
-                const text = await navigator.clipboard.readText();
-                if (text && text.trim()) {
-                    loadLeftBrowserUrl(text.trim(), true);
-                    showToast('📋 ดึงลิงก์หน้า 2 เข้าเบราว์เซอร์ฝั่งซ้ายแล้ว!');
-                } else {
-                    showToast('⚠️ ไม่พบลิงก์ในคลิปบอร์ด');
-                }
-            } catch (e) {
-                showToast('⚠️ กรุณากด Ctrl+V ในช่องลิงก์แล้วกด Enter');
-            }
+    }
+
+    function openLeftWebBrowser() {
+        const logoPanel = document.getElementById('leftLogoPanel');
+        const dock = document.getElementById('leftBrowserDock');
+        const mainApp = document.getElementById('mainAppContent');
+        const savedWidth = Core.rawStorageGet('elec_left_browser_width') || '55vw';
+        const isDesktop = window.innerWidth >= 1024;
+
+        if (logoPanel) {
+            logoPanel.classList.remove('lg:flex');
+            logoPanel.classList.add('hidden');
         }
-        
-        function openLeftWebBrowser() {
-            const logoPanel = document.getElementById('leftLogoPanel');
-            const dock = document.getElementById('leftBrowserDock');
-            const mainApp = document.getElementById('mainAppContent');
-            const savedWidth = Core.rawStorageGet('elec_left_browser_width') || '55vw';
-            const isDesktop = window.innerWidth >= 1024;
-            
-            if (logoPanel) {
-                logoPanel.classList.remove('lg:flex');
-                logoPanel.classList.add('hidden');
-            }
-            if (dock) {
-                dock.style.width = isDesktop ? savedWidth : '100vw';
-                dock.classList.remove('hidden');
-                dock.classList.add('flex', 'mobile-force-open');
-            }
-            if (mainApp) {
-                mainApp.classList.remove('lg:grid-cols-2', 'max-w-7xl');
-                mainApp.classList.add('lg:grid-cols-1', 'max-w-full');
-                mainApp.style.paddingLeft = isDesktop ? savedWidth : '';
-            }
-            
-            renderLeftBrowserBookmarks();
-            const lastUrl = Core.rawStorageGet('elec_left_browser_last_url') || 'page2.html';
-            loadLeftBrowserUrl(lastUrl, true);
-            localStorage.setItem('elec_left_browser_open', 'true');
+        if (dock) {
+            dock.style.width = isDesktop ? savedWidth : '100vw';
+            dock.classList.remove('hidden');
+            dock.classList.add('flex', 'mobile-force-open');
         }
-        
-        function closeLeftWebBrowser() {
-            const logoPanel = document.getElementById('leftLogoPanel');
-            const dock = document.getElementById('leftBrowserDock');
-            const mainApp = document.getElementById('mainAppContent');
-            const iframe = document.getElementById('leftBrowserIframe');
-            const mobBar = document.getElementById('mobileScadaReturnBar');
-            
-            if (mobBar) {
-                mobBar.classList.add('hidden');
-                mobBar.classList.remove('flex');
-            }
-            if (iframe) iframe.src = 'about:blank';
-            if (dock) {
-                dock.classList.add('hidden');
-                dock.classList.remove('flex', 'mobile-force-open');
-            }
-            if (logoPanel) logoPanel.classList.add('lg:flex');
-            if (mainApp) {
-                mainApp.classList.add('lg:grid-cols-2', 'max-w-7xl');
-                mainApp.classList.remove('lg:grid-cols-1', 'max-w-full');
-                mainApp.style.paddingLeft = '';
-            }
-            if (leftPopupWindowRef && !leftPopupWindowRef.closed) {
-                leftPopupWindowRef.close();
-            }
-            localStorage.setItem('elec_left_browser_open', 'false');
+        if (mainApp) {
+            mainApp.classList.remove('lg:grid-cols-2', 'max-w-7xl');
+            mainApp.classList.add('lg:grid-cols-1', 'max-w-full');
+            mainApp.style.paddingLeft = isDesktop ? savedWidth : '';
         }
-        
-        function setLeftBrowserWidth(widthVal) {
-            const dock = document.getElementById('leftBrowserDock');
-            const mainApp = document.getElementById('mainAppContent');
-            const isDesktop = window.innerWidth >= 1024;
-            if (dock) dock.style.width = isDesktop ? widthVal : '100vw';
-            if (mainApp) mainApp.style.paddingLeft = isDesktop ? widthVal : '';
-            localStorage.setItem('elec_left_browser_width', widthVal);
+
+        renderLeftBrowserBookmarks();
+        const lastUrl = Core.rawStorageGet('elec_left_browser_last_url') || 'page2.html';
+        loadLeftBrowserUrl(lastUrl, true);
+        localStorage.setItem('elec_left_browser_open', 'true');
+    }
+
+    function closeLeftWebBrowser() {
+        const logoPanel = document.getElementById('leftLogoPanel');
+        const dock = document.getElementById('leftBrowserDock');
+        const mainApp = document.getElementById('mainAppContent');
+        const iframe = document.getElementById('leftBrowserIframe');
+        const mobBar = document.getElementById('mobileScadaReturnBar');
+
+        if (mobBar) {
+            mobBar.classList.add('hidden');
+            mobBar.classList.remove('flex');
         }
-        // ===== จบพาทที่ 1 / 9 ของไฟล์ main-app.js =====
-            // ===== เริ่มพาทที่ 2 / 9 ของไฟล์ main-app.js (วางต่อจากพาทที่ 1 / 9) =====
+        if (iframe) iframe.src = 'about:blank';
+        if (dock) {
+            dock.classList.add('hidden');
+            dock.classList.remove('flex', 'mobile-force-open');
+        }
+        if (logoPanel) logoPanel.classList.add('lg:flex');
+        if (mainApp) {
+            mainApp.classList.add('lg:grid-cols-2', 'max-w-7xl');
+            mainApp.classList.remove('lg:grid-cols-1', 'max-w-full');
+            mainApp.style.paddingLeft = '';
+        }
+        if (leftPopupWindowRef && !leftPopupWindowRef.closed) {
+            leftPopupWindowRef.close();
+        }
+        localStorage.setItem('elec_left_browser_open', 'false');
+    }
+
+    function setLeftBrowserWidth(widthVal) {
+        const dock = document.getElementById('leftBrowserDock');
+        const mainApp = document.getElementById('mainAppContent');
+        const isDesktop = window.innerWidth >= 1024;
+        if (dock) dock.style.width = isDesktop ? widthVal : '100vw';
+        if (mainApp) mainApp.style.paddingLeft = isDesktop ? widthVal : '';
+        localStorage.setItem('elec_left_browser_width', widthVal);
+    }
+
     function loadLeftBrowserUrl(rawUrl, isExplicit = false) {
         const dock = document.getElementById('leftBrowserDock');
         const iframe = document.getElementById('leftBrowserIframe');
@@ -357,7 +488,7 @@
     function openLeftBrowserPopup(overrideUrl) {
         const inputEl = document.getElementById('leftBrowserUrlInput');
         let url = String(overrideUrl || inputEl?.value || 'https://www.google.com').trim();
-        if (!/^https?:\/\//i.test(url) && !url.startsWith('page2.html')) url = 'https://' + url;
+        if (!/^https?:\/\//i.test(url) && !url.startsWith('page2.html') && !url.startsWith('meter-form.html')) url = 'https://' + url;
         const w = Math.floor(window.screen.availWidth * 0.54);
         const h = window.screen.availHeight;
         leftPopupWindowRef = window.open(
@@ -514,7 +645,6 @@
         const prevGrp = normGrp(Core.rawStorageGet('elec_app_current_group') || '');
         const fullCanonicalName = normalizeUsernameFormat(verifiedAcc.username);
         const realRole = verifiedAcc.role || 'user';
-        // ป้องกันบัญชีที่ไม่ได้พิมพ์ชื่อกลุ่มต่อท้ายรหัส ถูกเขียนทับกลุ่มสังกัดเป็นค่าว่าง
         const resolvedGrp = normGrp(getUserGroupName(fullCanonicalName)) ||
             (realRole !== 'admin' ? (prevGrp || normGrp(getCurrentUserGroup()) || 'กฟส.บึง') : '');
 
@@ -594,8 +724,7 @@
         if (typeof injectOnlineHeaderButton === 'function') injectOnlineHeaderButton();
         if (typeof injectCloudManagerHeaderButton === 'function') injectCloudManagerHeaderButton();
     }
-    // ===== จบพาทที่ 2 / 9 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 3 / 9 ของไฟล์ main-app.js (วางต่อจากพาทที่ 2 / 9) =====
+
     async function handleLogin() {
         const userInput = document.getElementById('loginUsername');
         const passInput = document.getElementById('loginPassword');
@@ -867,9 +996,7 @@
             }
         }, '✏️ เปลี่ยนชื่อกลุ่มสังกัด');
     }
-    // ===== จบพาทที่ 3 / 9 ของไฟล์ main-app.js =====
-    
-        // ===== เริ่มพาทที่ 4 / 9 ของไฟล์ main-app.js (วางต่อจากพาทที่ 3 / 9) =====
+
     function renderUserAccountList() {
         const container = document.getElementById('userAccountListContainer');
         const badge = document.getElementById('userAccountCountBadge');
@@ -1162,8 +1289,7 @@
         const modal = document.getElementById('onlineUsersModal');
         if (modal && !modal.classList.contains('hidden')) renderOnlineUsersModalList(list);
     }
-    // ===== จบพาทที่ 4 / 9 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 5 / 11 ของไฟล์ main-app.js (วางต่อจากพาทที่ 4) =====
+
     function openOnlineUsersModal() {
         if (!isCurrentUserAdmin()) {
             showCustomAlert('⛔ เฉพาะแอดมินเท่านั้นที่ดูสถานะออนไลน์ได้', '🔒 จำกัดสิทธิ์');
@@ -1440,8 +1566,7 @@
             c.appendChild(div);
         });
     }
-    // ===== จบพาทที่ 5 / 11 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 6 / 11 ของไฟล์ main-app.js (วางต่อจากพาทที่ 5 / 11) =====
+
     function addTambon() {
         if (!guardNotViewer()) return;
         const nEl = document.getElementById('newTambonNameInput'), laEl = document.getElementById('newTambonLatInput'), loEl = document.getElementById('newTambonLonInput');
@@ -1485,7 +1610,6 @@
     }
     function deleteTambon(name) { if (!guardNotViewer()) return; showCustomConfirm(`ต้องการลบ "${name}" ใช่หรือไม่?`, () => { delete targetTambonCoordinates[name]; localStorage.setItem('tambonCoordinates_custom', JSON.stringify(targetTambonCoordinates)); renderTambonDropdown(); renderTambonModalList(); showToast('🗑️ ลบตำบลเรียบร้อยแล้ว'); }, '🗑️ ยืนยันการลบตำบล'); }
 
-    // จัดการรายชื่อสถานี & ลักษณะอาการขัดข้อง & Autocomplete
     function initStations() {
         try { const s = JSON.parse(Core.rawStorageGet('stationList_custom') || '[]'); stationsList = s.length ? s : [...defaultStations]; } catch (e) { stationsList = [...defaultStations]; }
         renderStationDropdown();
@@ -1587,7 +1711,7 @@
     }
 
     // ========================================================================
-    // 6. ตั้งค่าลิงก์มิเตอร์, ผู้ช่วย AI (Gemini) & ระบบพิมพ์ด้วยเสียง (Voice Input)
+    // 6. ตั้งค่าลิงก์มิเตอร์ (กรอกข้อมูลอัตโนมัติ), ผู้ช่วย AI (Gemini) & ระบบพิมพ์ด้วยเสียง
     // ========================================================================
     let chatContext = [];
 
@@ -1599,17 +1723,32 @@
 
     function openMeterLinkModal() {
         if (!guardNotViewer()) return;
-        document.getElementById('meterLinkInput').value = Core.rawStorageGet('meter_form_link') || DEFAULT_METER_LINK;
+        const inp = document.getElementById('meterLinkInput');
+        if (inp) {
+            inp.value = getConfiguredMeterFormBaseUrl();
+            const bodyBox = inp.parentElement;
+            if (bodyBox && !document.getElementById('resetBuiltInMeterLinkBtn')) {
+                const helperBtn = document.createElement('button');
+                helperBtn.type = 'button';
+                helperBtn.id = 'resetBuiltInMeterLinkBtn';
+                helperBtn.className = 'w-full mt-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 py-1.5 px-2.5 rounded-lg text-[11px] font-bold transition';
+                helperBtn.textContent = '🔄 ใช้ใบรายงานมิเตอร์ในระบบ (ส่งเลข CA + ที่อยู่ + GPS กรอกอัตโนมัติ)';
+                helperBtn.onclick = () => {
+                    inp.value = getBuiltInMeterFormBaseUrl();
+                    showToast('✨ ตั้งเป็นลิงก์ใบรายงานมิเตอร์อัตโนมัติแล้ว กดปุ่มบันทึกได้เลย');
+                };
+                bodyBox.appendChild(helperBtn);
+            }
+        }
         document.getElementById('meterLinkModal')?.classList.remove('hidden');
     }
     function closeMeterLinkModal() { document.getElementById('meterLinkModal')?.classList.add('hidden'); }
     function saveMeterLink() {
         if (!guardNotViewer()) return;
-        const link = (document.getElementById('meterLinkInput')?.value || '').trim();
-        if (!link) return showCustomAlert('กรุณากรอกลิงก์', '📄 ตั้งค่าลิงก์มิเตอร์');
+        const link = (document.getElementById('meterLinkInput')?.value || '').trim() || getBuiltInMeterFormBaseUrl();
         localStorage.setItem('meter_form_link', link);
         if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
-        showToast('✅ บันทึกลิงก์ฟอร์มสำเร็จ');
+        showToast('✅ บันทึกลิงก์ฟอร์มมิเตอร์สำเร็จ');
         closeMeterLinkModal();
     }
 
@@ -1731,8 +1870,8 @@
             appendChatMessage(err.message === 'Invalid API Key' ? '❌ API Key ไม่ถูกต้อง กรุณาตั้งค่าใหม่' : '❌ ขออภัย เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'bot');
         }
     }
-    // ===== จบพาทที่ 6 / 11 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 7 / 11 ของไฟล์ main-app.js (วางต่อจากพาทที่ 6 / 11) =====
+    // ===== จบพาทที่ 1 / 2 ของไฟล์ main-app.js =====
+        // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ main-app.js (วางต่อจากพาทที่ 1) =====
     function startChatVoiceInput() {
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SR) return showToast('เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียง');
@@ -1942,7 +2081,7 @@
         });
     }
 
-        function computeMaxJobNoForShift(curShift, curDate) {
+    function computeMaxJobNoForShift(curShift, curDate) {
         const sTrim = String(curShift || '').trim();
         const dNorm = normalizeThaiDateMain(curDate);
         if (!sTrim) return 0;
@@ -1983,7 +2122,6 @@
         const curDate = String(dateEl?.value || rt.dateStr).trim();
         const maxNo = computeMaxJobNoForShift(curShift, curDate);
 
-        // หากมีเครื่องอื่นใน กฟส. บันทึกงานแรกของกะนี้เข้ามาแล้ว ให้ปลดตัวล็อกเริ่มกะใหม่อัตโนมัติทันที
         if (maxNo > 0 && Core.rawStorageGet(RESET_LOCK_KEY) === 'true') {
             localStorage.removeItem(RESET_LOCK_KEY);
         }
@@ -1998,8 +2136,7 @@
             jobNoEl.value = String(maxNo + 1);
         }
     }
-    // ===== จบพาทที่ 7 / 11 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 8 / 12 ของไฟล์ main-app.js (วางต่อจากพาทที่ 7) =====
+
     function checkShiftTransition(isInitialLoad = false) {
         const shiftEl = document.getElementById('shift'), dateEl = document.getElementById('reportDate'), jobNoEl = document.getElementById('jobNo');
         if (!shiftEl || !dateEl || !jobNoEl || editingOutageId) return;
@@ -2027,7 +2164,6 @@
             return;
         }
 
-        // บังคับเติมวันที่และกะเสมอแม้เปิดซ้ำในกะเดิม เพื่อไม่ให้ช่องกะว่างเปล่า
         if (!String(dateEl.value || '').trim() || (!isManualShiftOverride && dateEl.value.trim() !== dateStr)) {
             dateEl.value = dateStr;
         }
@@ -2077,7 +2213,7 @@
     }
 
     function saveOutageDraft() {
-        const draft = {};
+        const draft = { _meterMeta: lastPastedCustomerMeta };
         ['reportDate', 'jobNo', 'shift', 'issueType', 'workerName', 'area', 'address', 'phone', 'gps'].forEach(k => { draft[k] = document.getElementById(k)?.value || ''; });
         localStorage.setItem(DRAFT_KEY_TAB2, JSON.stringify(draft));
     }
@@ -2091,6 +2227,13 @@
                 localStorage.removeItem(DRAFT_KEY_TAB2);
                 autoFillJobNo(true);
                 return;
+            }
+            if (d._meterMeta && typeof d._meterMeta === 'object') {
+                lastPastedCustomerMeta = {
+                    customerName: d._meterMeta.customerName || '',
+                    peaNo: d._meterMeta.peaNo || '',
+                    caNo: d._meterMeta.caNo || ''
+                };
             }
             const rt = getRealTimeShiftAndDate();
             document.getElementById('reportDate').value = (d.reportDate === rt.dateStr && d.reportDate) ? d.reportDate : rt.dateStr;
@@ -2109,9 +2252,9 @@
     }
 
     // ========================================================================
-    // 9. บันทึก / แก้ไข / ลบ / แสดงประวัติ & ยอดสรุปตรงกันทุกคน (แท็บ 1 TR/TL & แท็บ 2 รับแจ้ง)
+    // 9. บันทึก / แก้ไข / ลบ / ส่งค่าเข้าใบมิเตอร์ชำรุดอัตโนมัติ (แท็บ 1 & แท็บ 2)
     // ========================================================================
-        function resetFaultForm() {
+    function resetFaultForm() {
         setEditingFaultId(null);
         document.getElementById('activeEditBannerTab1')?.remove();
         localStorage.removeItem(DRAFT_KEY_TAB1);
@@ -2132,6 +2275,7 @@
         setEditingOutageId(null);
         isManualShiftOverride = false;
         isManualJobNoOverride = false;
+        lastPastedCustomerMeta = { customerName: '', peaNo: '', caNo: '' };
         document.getElementById('activeEditBannerTab2')?.remove();
         localStorage.removeItem(DRAFT_KEY_TAB2);
         const { shiftStr, dateStr } = getRealTimeShiftAndDate();
@@ -2151,6 +2295,62 @@
     function openLineAppWithFallback(text) {
         copyTextToClipboard(text, '✅ บันทึกและคัดลอกข้อความเตรียมส่ง LINE แล้ว!');
         window.open('https://line.me/R/share?text=' + encodeURIComponent(text), '_blank');
+    }
+
+    function openMeterFormFromCurrentTab2() {
+        const rt = getRealTimeShiftAndDate();
+        const reportDate = (document.getElementById('reportDate')?.value || '').trim() || rt.dateStr;
+        const shift = (document.getElementById('shift')?.value || '').trim() || rt.shiftStr;
+        const jobNo = (document.getElementById('jobNo')?.value || '').trim();
+        const issueType = (document.getElementById('issueType')?.value || '').trim();
+        const workerName = (document.getElementById('workerName')?.value || '').trim();
+        const area = (document.getElementById('area')?.value || '').trim();
+        const address = (document.getElementById('address')?.value || '').trim();
+        const phone = (document.getElementById('phone')?.value || '').trim();
+        const gps = formatGpsInput(document.getElementById('gps')?.value || '');
+        const pasteMeta = extractMeterMetaFromText(document.getElementById('rawCustomerPasteInput')?.value || '');
+        const addrMeta = extractMeterMetaFromText(address);
+
+        const url = buildMeterFormUrlFromData({
+            ownerGroup: normGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
+            jobNo,
+            shift,
+            reportDate,
+            issueType,
+            workerName,
+            area,
+            address,
+            phone,
+            gps,
+            customerName: pasteMeta.customerName || lastPastedCustomerMeta.customerName || addrMeta.customerName || '',
+            peaMeterNo: addrMeta.peaNo || pasteMeta.peaNo || lastPastedCustomerMeta.peaNo || '',
+            caNo: addrMeta.caNo || pasteMeta.caNo || lastPastedCustomerMeta.caNo || ''
+        });
+        window.open(url, '_blank');
+    }
+
+    function openMeterFormForOutageItem(dateTimeSaved) {
+        const item = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]').find(h => h.dateTimeSaved === dateTimeSaved);
+        if (!item) return;
+        const closedReg = getClosedJobsRegistry();
+        const effTr = (item.techReport && !isAutoGeneratedFakeClosure(item.techReport)) ? item.techReport : closedReg[dateTimeSaved];
+        const url = buildMeterFormUrlFromData({
+            ownerGroup: getJobGroupName(item) || getCurrentUserGroup() || 'กฟส.บึง',
+            jobNo: item.jobNo,
+            shift: item.shift,
+            reportDate: item.reportDate || (item.dateTimeSaved ? String(item.dateTimeSaved).split(' ')[0] : ''),
+            issueType: item.issueType,
+            workerName: item.workerName,
+            area: item.area,
+            address: item.address,
+            phone: item.phone,
+            gps: item.gps,
+            customerName: item.customerName || '',
+            peaMeterNo: item.peaMeterNo || '',
+            caNo: item.caNo || '',
+            techReport: effTr || {}
+        });
+        window.open(url, '_blank');
     }
 
     function saveAndCopyFault(sendToLine = false) {
@@ -2215,7 +2415,9 @@
         const shift = (shiftEl?.value || '').trim() || rt.shiftStr;
         let jobNo = (jobNoEl?.value || '').trim();
 
-        // ป้องกันเลขงานชนกันเมื่อหลายเครื่องกดบันทึกพร้อมกันในเสี้ยววินาทีเดียวกัน
+        const allExistingOutages = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]');
+        const editingExistingItem = editingOutageId ? allExistingOutages.find(h => h.dateTimeSaved === editingOutageId) : null;
+
         if (!editingOutageId) {
             const maxExisting = computeMaxJobNoForShift(shift, reportDate);
             const parsedNo = parseInt(jobNo, 10);
@@ -2232,29 +2434,60 @@
         const gps = formatGpsInput(document.getElementById('gps')?.value || '');
         const pInfo = getIssuePriority(issueType);
         const nowTimeStr = new Date().toLocaleTimeString('th-TH', { hour12: false });
-        const existingKeys = new Set(JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]').map(x => x?.dateTimeSaved));
+        const existingKeys = new Set(allExistingOutages.map(x => x?.dateTimeSaved));
         let dateTimeSaved = `${reportDate} ${nowTimeStr}`;
         if (existingKeys.has(dateTimeSaved)) dateTimeSaved += `.${Date.now() % 1000}`;
+
+        const pasteMeta = extractMeterMetaFromText(document.getElementById('rawCustomerPasteInput')?.value || '');
+        const addrMeta = extractMeterMetaFromText(address);
+        const metaCustName = pasteMeta.customerName || lastPastedCustomerMeta.customerName || addrMeta.customerName || editingExistingItem?.customerName || '';
+        const metaPeaNo = addrMeta.peaNo || pasteMeta.peaNo || lastPastedCustomerMeta.peaNo || editingExistingItem?.peaMeterNo || '';
+        const metaCaNo = addrMeta.caNo || pasteMeta.caNo || lastPastedCustomerMeta.caNo || editingExistingItem?.caNo || '';
 
         let message = `${pInfo.emoji} งานที่${jobNo} กะ${shift}  รับแจ้งไฟฟ้าขัดข้อง วันที่${reportDate}\n🛠️***อย่าลืมทำ*** We safe \n⚡ลักษณะอาการ :  ${issueType}\n👷ผู้ปฏิบัติงาน ${workerName}\n🗺️ บริเวณ :  ${area}\n\n🏠ที่อยู่ : ${address}\n📞เบอร์โทร : ${phone}\n\n📌พิกัด  : ${gps}`;
         const normIssue = issueType.toLowerCase().replace(/\s+/g, '');
         if (normIssue.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => normIssue.includes(kw))) {
-            message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${Core.rawStorageGet('meter_form_link') || DEFAULT_METER_LINK}`;
+            const autoMeterUrl = buildMeterFormUrlFromData({
+                ownerGroup: normGrp(editingExistingItem?.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
+                jobNo,
+                shift,
+                reportDate,
+                issueType,
+                workerName,
+                area,
+                address,
+                phone,
+                gps,
+                customerName: metaCustName,
+                peaMeterNo: metaPeaNo,
+                caNo: metaCaNo,
+                techReport: editingExistingItem?.techReport || {}
+            });
+            message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${autoMeterUrl}`;
         }
 
         const isEditing = Boolean(editingOutageId);
         if (sendToLine) openLineAppWithFallback(message);
         else copyTextToClipboard(message, isEditing ? '✅ อัปเดตทับรายการเดิมและคัดลอกสำเร็จ!' : `บันทึกงานที่ ${jobNo} (กะ ${shift}) และคัดลอกสำเร็จ!`);
-        saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, pInfo.level);
+        saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, pInfo.level, {
+            customerName: metaCustName,
+            peaMeterNo: metaPeaNo,
+            caNo: metaCaNo
+        });
         resetOutageForm();
     }
 
-    function saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel) {
+    function saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel, extraMeterMeta = {}) {
         if (!guardNotViewer()) return;
         Core.unlockCloudWrite(20000);
         saveWorkerHistory([workerName]);
         saveAreaHistory([area]);
         autoAddIssueType(issueType);
+
+        const meterFields = {};
+        if (extraMeterMeta?.customerName) meterFields.customerName = extraMeterMeta.customerName;
+        if (extraMeterMeta?.peaMeterNo) meterFields.peaMeterNo = extraMeterMeta.peaMeterNo;
+        if (extraMeterMeta?.caNo) meterFields.caNo = extraMeterMeta.caNo;
 
         const history = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]');
         const curUser = (Core.rawStorageGet('elec_app_current_user') || '').trim();
@@ -2264,14 +2497,27 @@
             const idx = history.findIndex(h => h.dateTimeSaved === editingOutageId);
             if (idx !== -1) {
                 const techBlk = (history[idx].formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[1];
-                history[idx] = { ...history[idx], reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, ownerGroup: normGrp(getJobGroupName(history[idx]) || curGroup), formattedText: techBlk ? `${formattedText}\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---${techBlk}` : formattedText, priorityLevel, editedAt: new Date().toISOString(), pendingInitialUpload: true };
+                history[idx] = {
+                    ...history[idx],
+                    reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps,
+                    ...meterFields,
+                    ownerGroup: normGrp(getJobGroupName(history[idx]) || curGroup),
+                    formattedText: techBlk ? `${formattedText}\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---${techBlk}` : formattedText,
+                    priorityLevel,
+                    editedAt: new Date().toISOString(),
+                    pendingInitialUpload: true
+                };
             }
             setEditingOutageId(null);
         } else {
             localStorage.removeItem(RESET_LOCK_KEY);
             isManualShiftOverride = false;
             isManualJobNoOverride = false;
-            const newRec = { dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, formattedText, priorityLevel, createdAtMs: Date.now(), ownerUser: curUser, ownerGroup: curGroup, pendingInitialUpload: true };
+            const newRec = {
+                dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps,
+                ...meterFields,
+                formattedText, priorityLevel, createdAtMs: Date.now(), ownerUser: curUser, ownerGroup: curGroup, pendingInitialUpload: true
+            };
             newRec.recommendedTech = findNearestTechForMainPage(newRec);
             history.unshift(newRec);
         }
@@ -2282,8 +2528,7 @@
         autoFillJobNo(true);
         syncJobsWithFieldPage();
     }
-    // ===== จบพาทที่ 8 / 12 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 9 / 12 ของไฟล์ main-app.js (วางต่อจากพาทที่ 8 / 12) =====
+
     function highlightMatch(text, query) {
         const safe = escapeHtmlStr(text || '');
         if (!query) return safe;
@@ -2302,7 +2547,7 @@
         return new Date(yr, (parseInt(dp[1], 10) || 1) - 1, parseInt(dp[0], 10) || 1, parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2], 10) || 0).getTime() || 0;
     }
 
-       function extractMainHistoryPhotos(item, jobKey) {
+    function extractMainHistoryPhotos(item, jobKey) {
         const closedReg = getClosedJobsRegistry();
         const tr = item?.techReport || (jobKey ? closedReg[jobKey] : null);
         if (Array.isArray(tr?.photos) && tr.photos.length) return tr.photos.filter(p => p && (p.viewUrl || p.thumbUrl));
@@ -2331,7 +2576,7 @@
     }
     window.openMainPhotoLightbox = openMainPhotoLightbox;
 
-        function buildMainHistoryPhotoStripHtml(item, jobKey) {
+    function buildMainHistoryPhotoStripHtml(item, jobKey) {
         const photos = extractMainHistoryPhotos(item, jobKey);
         if (!photos.length) return '';
         const thumbs = photos.map((p, idx) => {
@@ -2378,7 +2623,7 @@
                 const photoHtml = buildMainHistoryPhotoStripHtml(item, item.dateTimeSaved);
                 const div = document.createElement('div');
                 div.className = `bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full border-l-4 ${brd}`;
-                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">${emoji} งานที่ ${escapeHtmlStr(item.jobNo)} (กะ ${escapeHtmlStr(item.shift)}) - ${escapeHtmlStr(item.issueType)}</span><span class="text-slate-400 shrink-0 whitespace-nowrap">📅 ${escapeHtmlStr(item.reportDate)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div>${photoHtml}<div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">บันทึกเมื่อ: ${escapeHtmlStr(item.dateTimeSaved)}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editOutageItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyOutageAgain('${safeKey}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteOutageItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
+                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">${emoji} งานที่ ${escapeHtmlStr(item.jobNo)} (กะ ${escapeHtmlStr(item.shift)}) - ${escapeHtmlStr(item.issueType)}</span><span class="text-slate-400 shrink-0 whitespace-nowrap">📅 ${escapeHtmlStr(item.reportDate)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div>${photoHtml}<div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">บันทึกเมื่อ: ${escapeHtmlStr(item.dateTimeSaved)}</span><div class="flex flex-wrap gap-1 shrink-0 ml-auto"><button type="button" onclick="openMeterFormForOutageItem('${safeKey}')" class="bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 py-1 rounded font-semibold" title="เปิดใบรายงานมิเตอร์ชำรุดพร้อมกรอกข้อมูลอัตโนมัติ">📄 ใบมิเตอร์</button><button type="button" onclick="editOutageItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyOutageAgain('${safeKey}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteOutageItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
                 historyList.appendChild(div);
             });
         }, null, []);
@@ -2391,6 +2636,11 @@
         if (!item) return;
         setEditingOutageId(dateTimeSaved);
         const cl = v => (v && v !== '-') ? v : '';
+        lastPastedCustomerMeta = {
+            customerName: cl(item.customerName),
+            peaNo: cl(item.peaMeterNo),
+            caNo: cl(item.caNo)
+        };
         ['reportDate', 'jobNo', 'shift', 'issueType', 'workerName', 'area', 'phone', 'gps'].forEach(k => { if (document.getElementById(k)) document.getElementById(k).value = cl(item[k]); });
         const addrEl = document.getElementById('address');
         addrEl.value = cl(item.address); addrEl.style.height = 'auto'; addrEl.style.height = addrEl.scrollHeight + 'px';
@@ -2412,8 +2662,8 @@
             setTimeout(syncJobsWithFieldPage, 200);
         }, '🗑️ ยืนยันการลบประวัติ');
     }
-    
-        function loadFaultHistory() {
+
+    function loadFaultHistory() {
         Core.cleanReopenedAndCancelledJobsInStorage();
         tagUntaggedLocalJobsWithCurrentGroup();
         const delReg = getDeletedJobsRegistry();
@@ -2503,17 +2753,17 @@
         const safeIso = new Date(Math.max(now.getTime(), prevMaxMs > 0 ? prevMaxMs + 1000 : 0)).toISOString();
         const insp = formatTechDisplayName(Core.rawStorageGet('elec_app_current_user') || 'ผู้ใช้งานทั่วไป');
         const rep = {
-    status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
-    realCause: item.techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ',
-    actionTaken: item.techReport?.actionTaken || 'ปิดงานเรียบร้อย',
-    fieldGps: item.techReport?.fieldGps || item.gps || '',
-    finishTime: finStr,
-    inspector: insp,
-    ...(item.techReport?.photos ? { photos: item.techReport.photos } : {}),
-    ...(item.techReport?.photoUrls ? { photoUrls: item.techReport.photoUrls } : {}),
-    updatedAt: safeIso,
-    needsMainSync: true
-};
+            status: 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)',
+            realCause: item.techReport?.realCause || 'ตรวจสอบแล้วเหตุการณ์ปกติ',
+            actionTaken: item.techReport?.actionTaken || 'ปิดงานเรียบร้อย',
+            fieldGps: item.techReport?.fieldGps || item.gps || '',
+            finishTime: finStr,
+            inspector: insp,
+            ...(item.techReport?.photos ? { photos: item.techReport.photos } : {}),
+            ...(item.techReport?.photoUrls ? { photoUrls: item.techReport.photoUrls } : {}),
+            updatedAt: safeIso,
+            needsMainSync: true
+        };
         const hdr = jobType === 'outage' ? `📋 งานที่ ${item.jobNo || '-'} กะ ${item.shift || '-'}` : `📋 วงจร ${item.circuit || '-'} สถานี${item.station || '-'} (${item.system || '-'})`;
         item.formattedText = `${(item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0]}\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---\n${hdr}\n🚦 สถานะ : ${rep.status}\n🔍 สาเหตุจริง : ${rep.realCause}\n🛠️ การแก้ไข : ${rep.actionTaken}\n⏰ เวลาเสร็จ : ${finStr}\n👷 ผู้ตรวจสอบ : ${insp}`;
         item.techReport = rep;
@@ -2601,8 +2851,7 @@
             }
         }, null, []);
     }
-    // ===== จบพาทที่ 9 / 12 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 10 / 12 ของไฟล์ main-app.js (วางต่อจากพาทที่ 9 / 12) =====
+
     async function exportData(type) {
         tagUntaggedLocalJobsWithCurrentGroup();
         const delReg = getDeletedJobsRegistry();
@@ -2638,7 +2887,8 @@
         if ((await ensureXlsxLoaded()) && typeof XLSX !== 'undefined') { const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([['รายการ', 'จำนวน'], ...rows]); XLSX.utils.book_append_sheet(wb, ws, 'สรุปสถิติ'); XLSX.writeFile(wb, fn); showToast('📊 ส่งออกสรุปสถิติสำเร็จ!'); }
         else Core.downloadCsvFallback(['รายการ', 'จำนวน'], rows, fn);
     }
-
+    // ===== จบพาทที่ 2 / 3 ของไฟล์ main-app.js =====
+        // ===== เริ่มพาทที่ 3 / 3 ของไฟล์ main-app.js (วางต่อจากพาทที่ 2 จนจบไฟล์) =====
     // ========================================================================
     // 11. ฐานข้อมูล CA ค้างจ่าย (12 หลัก / 02...) & ช่องวางข้อมูลผู้ใช้ไฟตัดคำอัตโนมัติ
     // ========================================================================
@@ -2737,6 +2987,14 @@
 
     function processCustomerPasteData(rawText) {
         if (!rawText || !rawText.trim()) return;
+        // สกัดเก็บชื่อลูกค้า เลขมิเตอร์ และเลข CA ไว้เบื้องหลังก่อนถูกตัดออกตามกฎตัดคำ
+        const preMeta = extractMeterMetaFromText(rawText);
+        lastPastedCustomerMeta = {
+            customerName: preMeta.customerName || '',
+            peaNo: preMeta.peaNo || '',
+            caNo: preMeta.caNo || ''
+        };
+
         const wholeLine = Core.rawStorageGet(STRIP_LINE_MODE_KEY) === 'true', mapRes = extractAndRemoveGoogleMapLinks(rawText);
         let text = mapRes.cleanedText, extractedGps = mapRes.extractedUrl;
 
@@ -2831,12 +3089,11 @@
     function editStripWordItem(idx) { showCustomPrompt('แก้ไขคำตัดออก:', stripWordsList[idx], nv => { if (nv?.trim()) { stripWordsList[idx] = nv.trim(); localStorage.setItem(STRIP_WORDS_KEY, JSON.stringify(stripWordsList)); renderStripWordsList(); } }); }
     function deleteStripWordItem(idx) { stripWordsList.splice(idx, 1); localStorage.setItem(STRIP_WORDS_KEY, JSON.stringify(stripWordsList)); syncCaAndStripBadges(); renderStripWordsList(); }
     function clearAllStripWords() { showCustomConfirm('ล้างคำตัดออกทั้งหมด?', () => { stripWordsList = []; localStorage.setItem(STRIP_WORDS_KEY, '[]'); syncCaAndStripBadges(); renderStripWordsList(); }); }
-    // ===== จบพาทที่ 10 / 12 ของไฟล์ main-app.js =====
-        // ===== เริ่มพาทที่ 11 / 13 ของไฟล์ main-app.js (วางต่อจากพาทที่ 10) =====
+
     // ========================================================================
     // 12. ซิงค์ใบงาน หน้า 1 <-> หน้า 2 ให้รายการและยอดรวมเท่ากันทุกคน 100%
     // ========================================================================
-     function findNearestTechForMainPage(item, preloadedLocMap = null) {
+    function findNearestTechForMainPage(item, preloadedLocMap = null) {
         const jobGroup = normGrp(getJobGroupName(item)), locMap = preloadedLocMap || getTechLocationsMap();
         const raw = `${item?.gps || ''} ${item?.address || ''} ${item?.area || ''} ${item?.weather || ''}`;
         let coords = extractCoordsFromInput(raw);
@@ -3316,7 +3573,7 @@
                 tambonCoordinates_custom: JSON.stringify(targetTambonCoordinates),
                 issueList_custom: JSON.stringify(issueList),
                 fuse_multiplier: Core.rawStorageGet('fuse_multiplier') || '1.5',
-                meter_form_link: Core.rawStorageGet('meter_form_link') || DEFAULT_METER_LINK
+                meter_form_link: getConfiguredMeterFormBaseUrl()
             };
             localStorage.setItem('elec_app_auto_backup_snapshot', JSON.stringify(snap));
             localStorage.setItem('last_auto_backup_time', String(Date.now()));
@@ -3351,7 +3608,7 @@
             elec_paste_strip_words: stripWordsList,
             elec_paste_strip_rules: stripRules
         };
-        const blobUrl = URL.createObjectURL(new Blob([JSON.stringify({ version: '6.2', exportDate: new Date().toISOString(), data }, null, 2)], { type: 'application/json;charset=utf-8' }));
+        const blobUrl = URL.createObjectURL(new Blob([JSON.stringify({ version: '6.5', exportDate: new Date().toISOString(), data }, null, 2)], { type: 'application/json;charset=utf-8' }));
         const a = document.createElement('a'); a.href = blobUrl; a.download = `Electrical_Tools_Backup_${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 3000);
@@ -3521,6 +3778,7 @@
         syncScadaPinsIntoAutocomplete(); closeScadaCadImportModal(); document.getElementById('scadaCadRawTextInput').value = '';
         await syncJobsWithFieldPage(); showToast(`✅ นำเข้าผัง SCADA สำเร็จ (ใหม่ ${added}, อัปเดต ${updated})`);
     }
+
     // ========================================================================
     // 14. ส่งออกฟังก์ชันสู่ Global & เริ่มต้นระบบเมื่อหน้าเว็บโหลดเสร็จสมบูรณ์
     // ========================================================================
@@ -3536,7 +3794,8 @@
         onTambonChanged, onWeatherManualChange, manualRefreshWeather, fetchLiveWeatherForTambon,
         openIssueManageModal, closeIssueManageModal, toggleIssueDropdown, selectIssueType, addIssueItem, editIssueItem, deleteIssueItem,
         showSuggestionsData, startVoiceInput, saveAndCopyFault, confirmResetFaultForm, resetFaultForm, loadFaultHistory, editFaultItem, copyFaultAgain, deleteFaultItem,
-        openMeterLinkModal, closeMeterLinkModal, saveMeterLink, openApiKeyModal, closeApiKeyModal, saveApiKey, sendChatMessage, startChatVoiceInput,
+        openMeterLinkModal, closeMeterLinkModal, saveMeterLink, openMeterFormFromCurrentTab2, openMeterFormForOutageItem, buildMeterFormUrlFromData, getConfiguredMeterFormBaseUrl,
+        openApiKeyModal, closeApiKeyModal, saveApiKey, sendChatMessage, startChatVoiceInput,
         autoFillJobNo, generateOutageMessage, saveOutageData, confirmResetOutageForm, resetOutageForm, loadOutageHistory, editOutageItem, copyOutageAgain, deleteOutageItem,
         openCaManageModal, closeCaManageModal, addCaNumber, deleteCaNumber, clearAllCaNumbers, renderCaModalList, checkCaOverdueEnhanced, reloadOverdueCaFromStorage, syncCaAndStripBadges,
         openStripWordsModal, closeStripWordsModal, onChangeStripRule, toggleStripWholeLineMode, addStripWordItem, deleteStripWordItem, editStripWordItem, clearAllStripWords, renderStripWordsList, clearAutoFillPasteBox, processCustomerPasteData,
@@ -3559,6 +3818,22 @@
     try { if ('BroadcastChannel' in window) new BroadcastChannel(SCADA_BRIDGE_CHANNEL).onmessage = e => { if (e.data?.type === 'SCADA_FILL_FAULT_FORM') handleIncomingScadaFormFill(e.data); }; } catch (e) {}
 
     window.addEventListener('DOMContentLoaded', () => {
+        // อัปเกรดลิงก์ใบมิเตอร์จาก Google Forms เปล่าเดิม มาเป็นใบรายงานมิเตอร์ในระบบอัตโนมัติ
+        if (Core.rawStorageGet('meter_form_link') === LEGACY_GOOGLE_METER_LINK) {
+            localStorage.setItem('meter_form_link', getBuiltInMeterFormBaseUrl());
+        }
+        const meterCfgBtn = document.querySelector('button[onclick="openMeterLinkModal()"]');
+        if (meterCfgBtn && !document.getElementById('quickOpenMeterFormTab2Btn')) {
+            const qBtn = document.createElement('button');
+            qBtn.type = 'button';
+            qBtn.id = 'quickOpenMeterFormTab2Btn';
+            qBtn.onclick = openMeterFormFromCurrentTab2;
+            qBtn.className = 'text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 py-1 rounded font-semibold';
+            qBtn.textContent = '📄 เปิดใบมิเตอร์';
+            qBtn.title = 'เปิดใบรายงานมิเตอร์ชำรุดพร้อมกรอกข้อมูลจากฟอร์มปัจจุบัน';
+            meterCfgBtn.insertAdjacentElement('beforebegin', qBtn);
+        }
+
         renderMainHomeIconPng(); clearStuckEditModes();
         initStations(); initTambonData(); initIssues(); initOverdueCaAndStripSettings();
         checkLoginStatus(); fetchUserAccountsFromCloud(true); startRealtimeWeatherStream();
@@ -3620,4 +3895,4 @@
         setInterval(() => { if (!document.hidden && Core.rawStorageGet('elec_app_logged_in') === 'true') fetchUserAccountsFromCloud(true); }, 15000);
     });
 })();
-// ==================== จบไฟล์ main-app.js (v6.2) ====================
+// ==================== จบไฟล์ main-app.js (v6.5) ====================
