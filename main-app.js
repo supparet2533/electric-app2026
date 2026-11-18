@@ -160,54 +160,71 @@
         return { customerName, peaNo, caNo };
     }
 
-    function buildMeterFormUrlFromData(info) {
+        function makeShortJobId(dateTimeSaved) {
+        const s = String(dateTimeSaved || '').trim();
+        if (!s || s === '-') return '';
+        const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?(?:\.(\d+))?$/);
+        if (m) {
+            const numStr = m[1].padStart(2, '0') + m[2].padStart(2, '0') + m[3] +
+                           m[4].padStart(2, '0') + m[5].padStart(2, '0') + (m[6] || '00').padStart(2, '0');
+            const b36 = Number(numStr).toString(36);
+            return m[7] ? `${b36}_${Number(m[7]).toString(36)}` : b36;
+        }
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        return 'k' + (h >>> 0).toString(36);
+    }
+
+    function encodeUtf8Base64Url(str) {
+        try {
+            const bytes = new TextEncoder().encode(String(str || '').trim());
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        } catch (e) { return ''; }
+    }
+
+    function buildShortMeterUrl(dateTimeSaved, ownerGroup) {
         const baseUrl = getConfiguredMeterFormBaseUrl();
-        if (!baseUrl) return '';
-        if (/docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl;
-
-        const addrMeta = extractMeterMetaFromText(info.address || '');
-        const peaNo = info.peaMeterNo || addrMeta.peaNo || '';
-        const caNo = info.caNo || addrMeta.caNo || '';
-        const custName = info.customerName || addrMeta.customerName || '';
-
-        const cleanAddrLines = String(info.address || '')
-            .split(/\r?\n/)
-            .map(l => l.trim())
-            .filter(l => l &&
-                l !== '-' &&
-                !/^(?:📟\s*)?(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์)\s*[:：=]/i.test(l) &&
-                !/^(?:💳\s*)?(?:CA\s*(?:No\.?)?|หมายเลขผู้ใช้ไฟ)\s*[:：=]/i.test(l) &&
-                !/^02\d{10}$/.test(l) &&
-                !/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า)\s*[:：=]/i.test(l)
-            );
-
-        const tr = info.techReport || {};
-        const inspectorOrWorker = (tr.inspector && tr.inspector !== '-')
-            ? formatTechDisplayName(tr.inspector)
-            : ((info.workerName && info.workerName !== '-') ? formatTechDisplayName(info.workerName) : formatTechDisplayName(Core.rawStorageGet('elec_app_current_user') || ''));
-
-        const payload = {
-            o: normGrp(info.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
-            j: (info.jobNo && info.jobNo !== '-') ? `งานที่ ${info.jobNo}${(info.shift && info.shift !== '-') ? ' กะ ' + info.shift : ''}` : '',
-            dt: info.reportDate || '',
-            s: info.shift || '',
-            p: peaNo,
-            ca: caNo,
-            ad: cleanAddrLines.join(' '),
-            ar: info.area || '',
-            ph: info.phone || '',
-            g: (tr.fieldGps && tr.fieldGps !== '-') ? tr.fieldGps : (info.gps || ''),
-            is: info.issueType || '',
-            rc: tr.realCause || info.realCause || '',
-            ac: tr.actionTaken || info.actionTaken || '',
-            cn: custName,
-            wn: inspectorOrWorker
-        };
-
-        const encoded = encodeBase64UrlJson(payload);
-        if (!encoded) return baseUrl;
+        if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl;
         const cleanBase = baseUrl.split('?')[0];
-        return `${cleanBase}?d=${encoded}`;
+        const shortId = makeShortJobId(dateTimeSaved);
+        if (!shortId) return cleanBase;
+        const grp = normGrp(ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        const grpParam = (grp !== 'กฟส.บึง') ? `&grp=${encodeUtf8Base64Url(grp)}` : '';
+        return `${cleanBase}?i=${shortId}${grpParam}`;
+    }
+
+    function buildMeterFormUrlFromData(info) {
+        if (info?.dateTimeSaved) {
+            return buildShortMeterUrl(info.dateTimeSaved, info.ownerGroup);
+        }
+        const baseUrl = getConfiguredMeterFormBaseUrl();
+        if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl || 'meter-form.html';
+        const addrMeta = extractMeterMetaFromText(info.address || '');
+        const tr = info.techReport || {};
+        const draftObj = {
+            office: normGrp(info.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
+            jobLabel: (info.jobNo && info.jobNo !== '-') ? `งานที่ ${info.jobNo}${(info.shift && info.shift !== '-') ? ' กะ ' + info.shift : ''}` : '',
+            reportDate: info.reportDate || '',
+            shift: info.shift || '',
+            oldPea: info.peaMeterNo || addrMeta.peaNo || '',
+            ca: info.caNo || addrMeta.caNo || '',
+            address: info.address || '',
+            area: info.area || '',
+            phone: info.phone || '',
+            gps: (tr.fieldGps && tr.fieldGps !== '-') ? tr.fieldGps : (info.gps || ''),
+            issue: info.issueType || '',
+            realCause: tr.realCause || info.realCause || '',
+            actionTaken: tr.actionTaken || info.actionTaken || '',
+            customerName: info.customerName || addrMeta.customerName || '',
+            workerName: (tr.inspector && tr.inspector !== '-') ? formatTechDisplayName(tr.inspector) : ((info.workerName && info.workerName !== '-') ? formatTechDisplayName(info.workerName) : formatTechDisplayName(Core.rawStorageGet('elec_app_current_user') || ''))
+        };
+        try { localStorage.setItem('pea_meter_live_draft', JSON.stringify(draftObj)); } catch (e) {}
+        return `${baseUrl.split('?')[0]}?draft=1`;
     }
 
     // วาดไอคอนเหรียญตราสายฟ้าสีทอง 512x512 (ไม่เขียนทับหากลิงก์ชี้ไปที่ไฟล์ .png แท้แล้ว)
@@ -2329,29 +2346,12 @@
         window.open(url, '_blank');
     }
 
-    function openMeterFormForOutageItem(dateTimeSaved) {
+        function openMeterFormForOutageItem(dateTimeSaved) {
         const item = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]').find(h => h.dateTimeSaved === dateTimeSaved);
         if (!item) return;
-        const closedReg = getClosedJobsRegistry();
-        const effTr = (item.techReport && !isAutoGeneratedFakeClosure(item.techReport)) ? item.techReport : closedReg[dateTimeSaved];
-        const url = buildMeterFormUrlFromData({
-            ownerGroup: getJobGroupName(item) || getCurrentUserGroup() || 'กฟส.บึง',
-            jobNo: item.jobNo,
-            shift: item.shift,
-            reportDate: item.reportDate || (item.dateTimeSaved ? String(item.dateTimeSaved).split(' ')[0] : ''),
-            issueType: item.issueType,
-            workerName: item.workerName,
-            area: item.area,
-            address: item.address,
-            phone: item.phone,
-            gps: item.gps,
-            customerName: item.customerName || '',
-            peaMeterNo: item.peaMeterNo || '',
-            caNo: item.caNo || '',
-            techReport: effTr || {}
-        });
-        window.open(url, '_blank');
+        window.open(buildShortMeterUrl(dateTimeSaved, getJobGroupName(item)), '_blank');
     }
+
 
     function saveAndCopyFault(sendToLine = false) {
         if (!guardNotViewer()) return;
@@ -2404,7 +2404,7 @@
         syncJobsWithFieldPage();
     }
 
-    function generateOutageMessage(sendToLine = false) {
+        function generateOutageMessage(sendToLine = false) {
         if (!guardNotViewer()) return;
         const rt = getRealTimeShiftAndDate();
         const dateEl = document.getElementById('reportDate'), shiftEl = document.getElementById('shift'), jobNoEl = document.getElementById('jobNo');
@@ -2437,6 +2437,8 @@
         const existingKeys = new Set(allExistingOutages.map(x => x?.dateTimeSaved));
         let dateTimeSaved = `${reportDate} ${nowTimeStr}`;
         if (existingKeys.has(dateTimeSaved)) dateTimeSaved += `.${Date.now() % 1000}`;
+        const finalJobKey = editingOutageId || dateTimeSaved;
+        const ownerGrp = normGrp(editingExistingItem?.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
 
         const pasteMeta = extractMeterMetaFromText(document.getElementById('rawCustomerPasteInput')?.value || '');
         const addrMeta = extractMeterMetaFromText(address);
@@ -2447,33 +2449,18 @@
         let message = `${pInfo.emoji} งานที่${jobNo} กะ${shift}  รับแจ้งไฟฟ้าขัดข้อง วันที่${reportDate}\n🛠️***อย่าลืมทำ*** We safe \n⚡ลักษณะอาการ :  ${issueType}\n👷ผู้ปฏิบัติงาน ${workerName}\n🗺️ บริเวณ :  ${area}\n\n🏠ที่อยู่ : ${address}\n📞เบอร์โทร : ${phone}\n\n📌พิกัด  : ${gps}`;
         const normIssue = issueType.toLowerCase().replace(/\s+/g, '');
         if (normIssue.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => normIssue.includes(kw))) {
-            const autoMeterUrl = buildMeterFormUrlFromData({
-                ownerGroup: normGrp(editingExistingItem?.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
-                jobNo,
-                shift,
-                reportDate,
-                issueType,
-                workerName,
-                area,
-                address,
-                phone,
-                gps,
-                customerName: metaCustName,
-                peaMeterNo: metaPeaNo,
-                caNo: metaCaNo,
-                techReport: editingExistingItem?.techReport || {}
-            });
-            message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${autoMeterUrl}`;
+            const shortMeterUrl = buildShortMeterUrl(finalJobKey, ownerGrp);
+            message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${shortMeterUrl}`;
         }
 
         const isEditing = Boolean(editingOutageId);
-        if (sendToLine) openLineAppWithFallback(message);
-        else copyTextToClipboard(message, isEditing ? '✅ อัปเดตทับรายการเดิมและคัดลอกสำเร็จ!' : `บันทึกงานที่ ${jobNo} (กะ ${shift}) และคัดลอกสำเร็จ!`);
-        saveOutageData(dateTimeSaved, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, pInfo.level, {
+        saveOutageData(finalJobKey, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, pInfo.level, {
             customerName: metaCustName,
             peaMeterNo: metaPeaNo,
             caNo: metaCaNo
         });
+        if (sendToLine) openLineAppWithFallback(message);
+        else copyTextToClipboard(message, isEditing ? '✅ อัปเดตทับรายการเดิมและคัดลอกสำเร็จ!' : `บันทึกงานที่ ${jobNo} (กะ ${shift}) และคัดลอกสำเร็จ!`);
         resetOutageForm();
     }
 
@@ -2492,6 +2479,7 @@
         const history = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]');
         const curUser = (Core.rawStorageGet('elec_app_current_user') || '').trim();
         const curGroup = normGrp(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        let savedRecordForQuickPush = null;
 
         if (editingOutageId) {
             const idx = history.findIndex(h => h.dateTimeSaved === editingOutageId);
@@ -2507,6 +2495,7 @@
                     editedAt: new Date().toISOString(),
                     pendingInitialUpload: true
                 };
+                savedRecordForQuickPush = history[idx];
             }
             setEditingOutageId(null);
         } else {
@@ -2520,15 +2509,43 @@
             };
             newRec.recommendedTech = findNearestTechForMainPage(newRec);
             history.unshift(newRec);
+            savedRecordForQuickPush = newRec;
         }
 
         localStorage.setItem('elecReportsComplete_all', JSON.stringify(history));
         if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
         loadOutageHistory();
         autoFillJobNo(true);
+
+        // ยิงข้อมูลใบงานด่วนแบบ keepalive เพื่อให้ข้อมูลขึ้นคลาวด์ทันทีแม้สลับหน้าจอไปแอป LINE
+        if (savedRecordForQuickPush && navigator.onLine) {
+            const apiUrl = getActiveCloudApiUrl();
+            if (apiUrl) {
+                const cleanJob = { ...savedRecordForQuickPush, jobType: 'outage' };
+                delete cleanJob.pendingInitialUpload;
+                fetch(apiUrl, {
+                    method: 'POST',
+                    keepalive: true,
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'patchDelta',
+                        group: cleanJob.ownerGroup || curGroup,
+                        forceSheetWrite: true,
+                        upsertedJobs: [cleanJob],
+                        removedJobKeys: [],
+                        techLocDelta: {
+                            id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY',
+                            techLocations: getTechLocationsMap(), closedJobsMap: getClosedJobsRegistry(),
+                            closedReports: getClosedJobsRegistry(), deletedJobsMap: getDeletedJobsRegistry(),
+                            _keepPins: true, _keepDelPins: true, _keepAuditLogs: true, _keepBackups: true,
+                            updatedAt: new Date().toISOString()
+                        }
+                    })
+                }).catch(() => {});
+            }
+        }
         syncJobsWithFieldPage();
     }
-
     function highlightMatch(text, query) {
         const safe = escapeHtmlStr(text || '');
         if (!query) return safe;
