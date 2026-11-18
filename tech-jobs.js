@@ -172,76 +172,82 @@
         };
     }
 
-    function buildTechMeterFormUrl(item, jobKey, liveOverrides = {}) {
+        function makeTechShortJobId(dateTimeSaved) {
+        const s = String(dateTimeSaved || '').trim();
+        if (!s || s === '-') return '';
+        const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?(?:\.(\d+))?$/);
+        if (m) {
+            const numStr = m[1].padStart(2, '0') + m[2].padStart(2, '0') + m[3] +
+                m[4].padStart(2, '0') + m[5].padStart(2, '0') + (m[6] || '00').padStart(2, '0');
+            const b36 = Number(numStr).toString(36);
+            return m[7] ? `${b36}_${Number(m[7]).toString(36)}` : b36;
+        }
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        return 'k' + (h >>> 0).toString(36);
+    }
+    
+    function buildTechMeterFormUrl(item, jobKey, liveOverrides = null) {
         const baseUrl = getTechMeterFormBaseUrl();
         if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl || 'meter-form.html';
-
-        const effRep = getEffectiveJobReport(item, jobKey, readClosedReg()) || {};
-        const addrMeta = extractTechMeterMetaFromText(item?.address || '');
-        const peaNo = item?.peaMeterNo || addrMeta.peaNo || '';
-        const caNo = item?.caNo || addrMeta.caNo || '';
-        const custName = item?.customerName || addrMeta.customerName || '';
-
-        const cleanAddrLines = String(item?.address || '')
-            .split(/\r?\n/)
-            .map(l => l.trim())
-            .filter(l => l &&
-                l !== '-' &&
-                !/^(?:📟\s*)?(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์)\s*[:：=]/i.test(l) &&
-                !/^(?:💳\s*)?(?:CA\s*(?:No\.?)?|หมายเลขผู้ใช้ไฟ)\s*[:：=]/i.test(l) &&
-                !/^02\d{10}$/.test(l) &&
-                !/^(?:👤\s*)?(?:ชื่อผู้ใช้ไฟ(?:ฟ้า)?|ชื่อลูกค้า)\s*[:：=]/i.test(l)
-            );
-
-        const shiftStr = getEffectiveJobShift(item);
-        const jobNoStr = (item?.jobNo && item.jobNo !== '-') ? String(item.jobNo).trim() : '';
-        const jobLabel = jobNoStr
-            ? `งานที่ ${jobNoStr}${(shiftStr && shiftStr !== 'ไม่ระบุ') ? ' กะ ' + shiftStr : ''}`
-            : (item?.circuit ? `วงจร ${item.circuit}` : '');
-
-        let bestGps = liveOverrides.fieldGps || effRep.fieldGps || item?.gps || '';
-        if ((!bestGps || bestGps === '-') && isGpsTrackingEnabled && lastKnownTechCoords) {
-            bestGps = `https://www.google.com/maps?q=${lastKnownTechCoords.lat.toFixed(6)},${lastKnownTechCoords.lon.toFixed(6)}`;
-        }
-
-        const loggedTech = formatTechDisplayName(localStorage.getItem('elec_app_current_user') || '');
-        const workerDisplay = liveOverrides.inspector ||
-            ((effRep.inspector && effRep.inspector !== '-') ? formatTechDisplayName(effRep.inspector) : '') ||
-            loggedTech ||
-            ((item?.workerName && item.workerName !== '-') ? formatTechDisplayName(item.workerName) : '');
-
-        const payload = {
-            o: normTechGrp(getJobGroupName(item) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง',
-            j: jobLabel,
-            dt: getJobDateDisplay(item),
-            s: ['1', '2', '3'].includes(shiftStr) ? shiftStr : '',
-            p: peaNo,
-            ca: caNo,
-            ad: cleanAddrLines.join(' '),
-            ar: item?.area || '',
-            ph: item?.phone || '',
-            g: normalizeCoordPairToMapsUrl(bestGps),
-            is: item?.issueType || item?.cause || '',
-            rc: liveOverrides.realCause || effRep.realCause || '',
-            ac: liveOverrides.actionTaken || effRep.actionTaken || '',
-            cn: custName,
-            wn: workerDisplay
-        };
-
-        const encoded = encodeTechBase64UrlJson(payload);
         const cleanBase = baseUrl.split('?')[0];
-        return encoded ? `${cleanBase}?d=${encoded}` : cleanBase;
+        const shortId = makeTechShortJobId(jobKey || item?.dateTimeSaved);
+        const grp = normTechGrp(getJobGroupName(item) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        
+        let grpParam = '';
+        if (grp !== 'กฟส.บึง') {
+            try {
+                const bytes = new TextEncoder().encode(grp);
+                let bin = '';
+                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                grpParam = '&grp=' + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            } catch (e) {}
+        }
+        
+        if (liveOverrides && Object.values(liveOverrides).some(v => v && String(v).trim())) {
+            const effRep = getEffectiveJobReport(item, jobKey, readClosedReg()) || {};
+            const addrMeta = extractTechMeterMetaFromText(item?.address || '');
+            const shiftStr = getEffectiveJobShift(item);
+            const jobNoStr = (item?.jobNo && item.jobNo !== '-') ? String(item.jobNo).trim() : '';
+            let bestGps = liveOverrides.fieldGps || effRep.fieldGps || item?.gps || '';
+            if ((!bestGps || bestGps === '-') && isGpsTrackingEnabled && lastKnownTechCoords) {
+                bestGps = `https://www.google.com/maps?q=${lastKnownTechCoords.lat.toFixed(6)},${lastKnownTechCoords.lon.toFixed(6)}`;
+            }
+            const draftObj = {
+                office: grp,
+                jobLabel: jobNoStr ? `งานที่ ${jobNoStr}${(shiftStr && shiftStr !== 'ไม่ระบุ') ? ' กะ ' + shiftStr : ''}` : '',
+                reportDate: getJobDateDisplay(item),
+                shift: ['1', '2', '3'].includes(shiftStr) ? shiftStr : '',
+                oldPea: item?.peaMeterNo || addrMeta.peaNo || '',
+                ca: item?.caNo || addrMeta.caNo || '',
+                address: item?.address || '',
+                area: item?.area || '',
+                phone: item?.phone || '',
+                gps: normalizeCoordPairToMapsUrl(bestGps),
+                issue: item?.issueType || '',
+                realCause: liveOverrides.realCause || effRep.realCause || '',
+                actionTaken: liveOverrides.actionTaken || effRep.actionTaken || '',
+                customerName: item?.customerName || addrMeta.customerName || '',
+                workerName: liveOverrides.inspector || formatTechDisplayName(localStorage.getItem('elec_app_current_user') || '')
+            };
+            try { localStorage.setItem('pea_meter_live_draft', JSON.stringify(draftObj)); } catch (e) {}
+            return shortId ? `${cleanBase}?i=${shortId}${grpParam}&draft=1` : `${cleanBase}?draft=1`;
+        }
+        
+        return shortId ? `${cleanBase}?i=${shortId}${grpParam}` : cleanBase;
     }
-
+    
     function openTechMeterFormByKey(key, jobType = 'outage') {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
         const sk = jobType === 'fault' ? 'fault_reports_all' : 'elecReportsComplete_all';
         const item = JSON.parse(localStorage.getItem(sk) || '[]').find(i => (jobType === 'fault' ? i?.timestamp : i?.dateTimeSaved) === key);
         if (!item) { showToast('⚠️ ไม่พบข้อมูลใบงานนี้'); return; }
-        const url = buildTechMeterFormUrl(item, key);
-        window.open(url, '_blank');
+        window.open(buildTechMeterFormUrl(item, key, null), '_blank');
     }
-
+    
     function openTechMeterFormFromModal() {
         if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
         const sk = currentEditingJobType === 'fault' ? 'fault_reports_all' : 'elecReportsComplete_all';
@@ -252,10 +258,9 @@
             fieldGps: (document.getElementById('techGpsInput')?.value || '').trim(),
             inspector: (document.getElementById('techInspectorInput')?.value || '').trim()
         };
-        const url = buildTechMeterFormUrl(item, currentEditingJobKey, liveOverrides);
-        window.open(url, '_blank');
+        window.open(buildTechMeterFormUrl(item, currentEditingJobKey, liveOverrides), '_blank');
     }
-
+    
     function pruneNavCancelMap(rawObj, keepIso = false) {
         if (!rawObj || typeof rawObj !== 'object') return {};
         const now = Date.now();
@@ -1452,22 +1457,25 @@
                 techLocDelta.deletedEquipAuditLogs = JSON.parse(localStorage.getItem('elec_deleted_equip_audit_logs') || '[]');
                 techLocDelta.clearedAuditLogsTimestamp = parseInt(localStorage.getItem('elec_cleared_audit_logs_ts') || '0', 10) || 0;
             }
-
-            const isPureHeartbeat = !forceWrite && upsertedJobs.length === 0 && !shouldSendPins && localStorage.getItem('elec_tech_has_pending_push') !== 'true';
+                        const isPureHeartbeat = !forceWrite && upsertedJobs.length === 0 && !shouldSendPins && localStorage.getItem('elec_tech_has_pending_push') !== 'true';
             if (forceWrite || upsertedJobs.length > 0 || shouldSendPins) Core.unlockCloudWrite(20000);
-
+            
+            const bodyPayloadStr = JSON.stringify({
+                action: 'patchDelta',
+                group: isCurrentUserAdmin() ? (normTechGrp(localStorage.getItem('elec_app_current_group') || '') || '') : myGrp,
+                ramOnly: isPureHeartbeat,
+                forceSheetWrite: Boolean(forceWrite && (upsertedJobs.length > 0 || shouldSendPins)),
+                upsertedJobs,
+                removedJobKeys: Object.keys(delReg),
+                techLocDelta
+            });
+            const useKeepalive = Boolean(!shouldSendPins && upsertedJobs.length <= 3 && new Blob([bodyPayloadStr]).size < 55000);
+            
             const res = await fetch(apiUrl, {
                 method: 'POST',
+                keepalive: useKeepalive,
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                    action: 'patchDelta',
-                    group: isCurrentUserAdmin() ? (normTechGrp(localStorage.getItem('elec_app_current_group') || '') || '') : myGrp,
-                    ramOnly: isPureHeartbeat,
-                    forceSheetWrite: Boolean(forceWrite && (upsertedJobs.length > 0 || shouldSendPins)),
-                    upsertedJobs,
-                    removedJobKeys: Object.keys(delReg),
-                    techLocDelta
-                })
+                body: bodyPayloadStr
             });
             const data = await res.json();
             if (myEpoch === authSessionEpoch && data?.status === 'ok' && !data?.skippedBusyRam && data?.patched !== false) {
@@ -2884,12 +2892,16 @@
             }
 
             // หากเป็นงานสับเปลี่ยนมิเตอร์ที่เพิ่งตรวจพบหน้างาน ให้แนบลิงก์ใบมิเตอร์พร้อมข้อมูลอัตโนมัติไว้ท้ายข้อความต้นฉบับด้วย
-            let baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
-            if (jobType === 'outage' && !baseText.includes('ใบแจ้งสับเปลี่ยนมิเตอร์')) {
-                const checkMeterBlob = `${item.issueType || ''} ${realCause} ${actionTaken}`.toLowerCase().replace(/\s+/g, '');
-                if (checkMeterBlob.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => checkMeterBlob.includes(kw))) {
-                    const meterLink = buildTechMeterFormUrl(item, key, { realCause, actionTaken, fieldGps: rep.fieldGps, inspector });
-                    baseText += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${meterLink}`;
+                        let baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+            if (jobType === 'outage') {
+                const shortMeterLink = buildTechMeterFormUrl(item, key, null);
+                if (baseText.includes('meter-form.html?d=')) {
+                    baseText = baseText.replace(/https?:\/\/[^\s]+meter-form\.html\?d=[A-Za-z0-9_-]+/g, shortMeterLink);
+                } else if (!baseText.includes('ใบแจ้งสับเปลี่ยนมิเตอร์')) {
+                    const checkMeterBlob = `${item.issueType || ''} ${realCause} ${actionTaken}`.toLowerCase().replace(/\s+/g, '');
+                    if (checkMeterBlob.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => checkMeterBlob.includes(kw))) {
+                        baseText += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${shortMeterLink}`;
+                    }
                 }
             }
 
