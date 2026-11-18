@@ -187,7 +187,7 @@
         } catch (e) { return ''; }
     }
 
-    function buildShortMeterUrl(dateTimeSaved, ownerGroup) {
+        function buildShortMeterUrl(dateTimeSaved, ownerGroup, forExternalLine = false) {
         const baseUrl = getConfiguredMeterFormBaseUrl();
         if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl;
         const cleanBase = baseUrl.split('?')[0];
@@ -195,7 +195,8 @@
         if (!shortId) return cleanBase;
         const grp = normGrp(ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
         const grpParam = (grp !== 'กฟส.บึง') ? `&grp=${encodeUtf8Base64Url(grp)}` : '';
-        return `${cleanBase}?i=${shortId}${grpParam}`;
+        const extParam = forExternalLine ? '&openExternalBrowser=1' : '';
+        return `${cleanBase}?i=${shortId}${grpParam}${extParam}`;
     }
 
     function buildMeterFormUrlFromData(info) {
@@ -2449,7 +2450,7 @@
         let message = `${pInfo.emoji} งานที่${jobNo} กะ${shift}  รับแจ้งไฟฟ้าขัดข้อง วันที่${reportDate}\n🛠️***อย่าลืมทำ*** We safe \n⚡ลักษณะอาการ :  ${issueType}\n👷ผู้ปฏิบัติงาน ${workerName}\n🗺️ บริเวณ :  ${area}\n\n🏠ที่อยู่ : ${address}\n📞เบอร์โทร : ${phone}\n\n📌พิกัด  : ${gps}`;
         const normIssue = issueType.toLowerCase().replace(/\s+/g, '');
         if (normIssue.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => normIssue.includes(kw))) {
-            const shortMeterUrl = buildShortMeterUrl(finalJobKey, ownerGrp);
+         const shortMeterUrl = buildShortMeterUrl(finalJobKey, ownerGrp, true);
             message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${shortMeterUrl}`;
         }
 
@@ -2518,29 +2519,23 @@
         autoFillJobNo(true);
 
         // ยิงข้อมูลใบงานด่วนแบบ keepalive เพื่อให้ข้อมูลขึ้นคลาวด์ทันทีแม้สลับหน้าจอไปแอป LINE
-        if (savedRecordForQuickPush && navigator.onLine) {
+                if (savedRecordForQuickPush && navigator.onLine) {
             const apiUrl = getActiveCloudApiUrl();
             if (apiUrl) {
                 const cleanJob = { ...savedRecordForQuickPush, jobType: 'outage' };
                 delete cleanJob.pendingInitialUpload;
+                const quickBodyStr = JSON.stringify({
+                    action: 'patchDelta',
+                    group: cleanJob.ownerGroup || curGroup,
+                    forceSheetWrite: true,
+                    upsertedJobs: [cleanJob],
+                    removedJobKeys: []
+                });
                 fetch(apiUrl, {
                     method: 'POST',
-                    keepalive: true,
+                    keepalive: new Blob([quickBodyStr]).size < 55000,
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({
-                        action: 'patchDelta',
-                        group: cleanJob.ownerGroup || curGroup,
-                        forceSheetWrite: true,
-                        upsertedJobs: [cleanJob],
-                        removedJobKeys: [],
-                        techLocDelta: {
-                            id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY',
-                            techLocations: getTechLocationsMap(), closedJobsMap: getClosedJobsRegistry(),
-                            closedReports: getClosedJobsRegistry(), deletedJobsMap: getDeletedJobsRegistry(),
-                            _keepPins: true, _keepDelPins: true, _keepAuditLogs: true, _keepBackups: true,
-                            updatedAt: new Date().toISOString()
-                        }
-                    })
+                    body: quickBodyStr
                 }).catch(() => {});
             }
         }
