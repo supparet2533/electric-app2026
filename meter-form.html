@@ -912,7 +912,6 @@
   const DEFAULT_LOGO_FILE = './pea-logo.png';
   let cachedIncomingPayload = null;
 
-  // แปลงไฟล์รูปโลโก้เป็น Data URL (PNG) เตรียมไว้ล่วงหน้าเพื่อให้ html2canvas จับภาพติดลง PDF 100%
   function rasterizeSourceToPngDataUrl(srcUrl, fallbackW = 800, fallbackH = 660) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -958,7 +957,6 @@
     fitPaperToScreen();
   }
 
-  // --- ระบบปรับขนาดกระดาษให้พอดีกับหน้าจอมือถือ 100% ---
   function fitPaperToScreen() {
     const stage = document.getElementById('pageStage');
     const page = document.getElementById('formPage');
@@ -982,7 +980,6 @@
     stage.style.height = Math.ceil(page.offsetHeight * scale) + 'px';
   }
 
-  // --- 0. ระบบดึงวันที่ปัจจุบัน (พ.ศ.) และคำนวณผลัดเวรอัตโนมัติ ---
   function autoFillDateAndShift() {
     const now = new Date();
     const day = now.getDate();
@@ -1025,7 +1022,6 @@
     if (shiftDateEl) shiftDateEl.value = shiftDateStr;
   }
 
-  // --- 0.5 ระบบอ่านพารามิเตอร์จากลิงก์ใบงานรับแจ้ง/หน้าช่าง แล้วกรอกลงฟอร์มอัตโนมัติ ---
   function decodeBase64UrlJson(rawB64) {
     try {
       let s = String(rawB64 || '').trim().replace(/-/g, '+').replace(/_/g, '/');
@@ -1267,20 +1263,17 @@
     }
     if (custName) document.getElementById('name-sig2').value = custName;
 
-    // 5) วิเคราะห์สาเหตุการชำรุดและวิธีแก้ไขเบื้องต้นจากอาการรับแจ้ง/ผลตรวจช่าง
+    // 5) ติ๊กเฉพาะช่องสาเหตุที่ตรงเงื่อนไข และเว้นว่างช่อง "สาเหตุอื่น ๆ ระบุ" เสมอ
+    const causeOtherEl = document.getElementById('causeOtherInput');
+    if (causeOtherEl) causeOtherEl.value = '';
+
     const symptomText = `${cl(data.issue)} ${cl(data.realCause)}`.trim();
     if (symptomText) {
-      let matchedCheckbox = false;
-      if (/ฟ้าลง|ฟ้าผ่า/.test(symptomText)) { document.getElementById('causeLightning').checked = true; matchedCheckbox = true; }
-      if (/น้ำเข้า|เปียกน้ำ|น้ำซึม/.test(symptomText)) { document.getElementById('causeWater').checked = true; matchedCheckbox = true; }
-      if (/รถชน|อุบัติเหตุ|เสาล้ม|เสาหัก|มิเตอร์แตก|แตกร้าว/.test(symptomText)) { document.getElementById('causeAccident').checked = true; matchedCheckbox = true; }
-      if (/ด้านเข้า|สายเข้า/.test(symptomText)) { document.getElementById('causeTermIn').checked = true; matchedCheckbox = true; }
-      if (/ด้านออก|สายออก|ตูดมิเตอร์|ขั้วมิเตอร์/.test(symptomText)) { document.getElementById('causeTermOut').checked = true; matchedCheckbox = true; }
-
-      const detailCause = cl(data.realCause) || cl(data.issue);
-      if (detailCause && detailCause !== 'มิเตอร์ชำรุด' && (!matchedCheckbox || /ไหม้|ช็อต|ช๊อต|จอดับ|ไม่หมุน/.test(detailCause))) {
-        document.getElementById('causeOtherInput').value = detailCause;
-      }
+      if (/ฟ้าลง|ฟ้าผ่า/.test(symptomText)) document.getElementById('causeLightning').checked = true;
+      if (/น้ำเข้า|เปียกน้ำ|น้ำซึม/.test(symptomText)) document.getElementById('causeWater').checked = true;
+      if (/รถชน|อุบัติเหตุ|เสาล้ม|เสาหัก|มิเตอร์แตก|แตกร้าว/.test(symptomText)) document.getElementById('causeAccident').checked = true;
+      if (/ด้านเข้า|สายเข้า/.test(symptomText)) document.getElementById('causeTermIn').checked = true;
+      if (/ด้านออก|สายออก|ตูดมิเตอร์|ขั้วมิเตอร์/.test(symptomText)) document.getElementById('causeTermOut').checked = true;
       if (/สายเข้า|สายออก|ขั้วสาย|สายเมน/.test(symptomText)) {
         document.getElementById('compWire').checked = true;
       }
@@ -1321,7 +1314,6 @@
     fitPaperToScreen();
   }
 
-  // --- 1. ระบบเปลี่ยนชื่อ กฟส. ---
   function updateOfficeTexts(officeName) {
     const name = officeName || 'กฟส.บึง';
     document.querySelectorAll('.pea-office-name').forEach(el => el.textContent = name);
@@ -1349,7 +1341,6 @@
     localStorage.setItem('pea_custom_office_name', val);
   }
 
-  // --- 2. ระบบโลโก้ (ดึง ./pea-logo.png เป็นค่าเริ่มต้น หรือแตะอัปโหลดเปลี่ยนเองได้) ---
   function changeLogoFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -1389,7 +1380,6 @@
 
   window.addEventListener('load', fitPaperToScreen);
 
-  // --- 3. ระบบอัปเดตหลอดไฟสถานะการเซ็นชื่อเหนือใบงาน ---
   function updateStatusLamps() {
     ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
       const imgEl = document.getElementById('img-' + id);
@@ -1402,7 +1392,6 @@
     });
   }
 
-  // --- 4. ระบบสร้างและแชร์ไฟล์ PDF ขนาด A4 แท้ 1 หน้าเต็ม (วาดโลโก้ลง Canvas โดยตรง ไม่หาย 100%) ---
   function buildCleanA4ExportSheet() {
     const origPage = document.getElementById('formPage');
     const a4Sheet = document.createElement('div');
@@ -1427,7 +1416,6 @@
     a4Inner.style.cssText = 'width:100%;margin:0;padding:0;background:#ffffff;';
     a4Inner.innerHTML = origPage.innerHTML;
 
-    // 1) วาดรูปโลโก้ pea-logo.png ลง Canvas โดยตรงเพื่อให้ html2canvas จับภาพติด 100%
     const origLogo = origPage.querySelector('#peaLogoImg');
     const cloneLogo = a4Inner.querySelector('#peaLogoImg');
     if (origLogo && cloneLogo && origLogo.complete && origLogo.naturalWidth > 0) {
@@ -1446,7 +1434,6 @@
       }
     }
 
-    // 2) แทนที่ช่องติ๊กถูกด้วยกล่องเวกเตอร์คมชัด
     const origCbs = origPage.querySelectorAll('input[type="checkbox"]');
     const cloneCbs = a4Inner.querySelectorAll('input[type="checkbox"]');
     origCbs.forEach((origCb, idx) => {
@@ -1460,7 +1447,6 @@
       cCb.replaceWith(box);
     });
 
-    // 3) แทนที่ช่อง input เส้นประด้วย span (ไม่ตัดสระแหว่ง และไม่พิมพ์คำว่า "ชื่อ-สกุล" ตอนว่าง)
     const origInputs = origPage.querySelectorAll('input.line-input');
     const cloneInputs = a4Inner.querySelectorAll('input.line-input');
     origInputs.forEach((origInp, idx) => {
@@ -1478,7 +1464,6 @@
       cInp.replaceWith(span);
     });
 
-    // 4) ซ่อนกรอบปุ่มแตะเซ็นชื่อบนกระดาษ PDF
     a4Inner.querySelectorAll('.sig-placeholder').forEach(el => { el.style.display = 'none'; });
     a4Inner.querySelectorAll('.sig-slot').forEach(el => {
       el.style.border = 'none';
@@ -1600,7 +1585,6 @@
     }
   }
 
-  // --- 5. ระบบกระดานเซ็นชื่อ (หมึกสีน้ำเงิน #0033cc + แนวนอนเต็มจอ 100%) ---
   let currentSlotId = null;
   let isDrawing = false;
   let hasDrawn = false;
