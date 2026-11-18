@@ -190,7 +190,7 @@
         return 'k' + (h >>> 0).toString(36);
     }
     
-    function buildTechMeterFormUrl(item, jobKey, liveOverrides = null) {
+    function buildTechMeterFormUrl(item, jobKey, liveOverrides = null, forExternalLine = false) {
         const baseUrl = getTechMeterFormBaseUrl();
         if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl || 'meter-form.html';
         const cleanBase = baseUrl.split('?')[0];
@@ -236,8 +236,8 @@
             try { localStorage.setItem('pea_meter_live_draft', JSON.stringify(draftObj)); } catch (e) {}
             return shortId ? `${cleanBase}?i=${shortId}${grpParam}&draft=1` : `${cleanBase}?draft=1`;
         }
-        
-        return shortId ? `${cleanBase}?i=${shortId}${grpParam}` : cleanBase;
+                const extParam = forExternalLine ? '&openExternalBrowser=1' : '';
+        return shortId ? `${cleanBase}?i=${shortId}${grpParam}${extParam}` : cleanBase;
     }
     
     function openTechMeterFormByKey(key, jobType = 'outage') {
@@ -2543,6 +2543,10 @@
                 ? `<button type="button" onclick="openInspectModal('${safeKey}','${jobType}')" class="flex-1 ${isDone ? 'bg-amber-500 hover:bg-amber-600' : 'bg-teal-600 hover:bg-teal-700'} text-white py-2 px-3 rounded-xl text-xs font-bold shadow-sm">${isDone ? '✏️ แก้ไขผลตรวจ' : '🛠️ แจ้งผลตรวจสอบ'}</button>`
                 : '';
 
+                        const voiceQuickBtn = (!isDone && !isViewer)
+                ? `<button type="button" onclick="quickVoiceCloseJob('${safeKey}','${jobType}', this)" class="bg-rose-600 hover:bg-rose-700 text-white py-2 px-3 rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1 transition">🎙️ พูดปิดงาน</button>`
+                : '';
+
             const reopenBtn = (isDone && !isViewer)
                 ? `<button type="button" onclick="reopenClosedJob('${safeKey}','${jobType}')" class="bg-slate-100 hover:bg-rose-50 text-rose-600 border border-rose-200 py-2 px-2.5 rounded-xl text-xs font-bold" title="ย้ายกลับไปงานรอแก้ไข">🔄 เปิดซ้ำ</button>`
                 : '';
@@ -2564,6 +2568,7 @@
                     <button type="button" onclick="copyJobTextFromTech('${safeKey}','${jobType}')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold ml-auto">📋 คัดลอก</button>
                 </div>
                 <div class="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                    ${voiceQuickBtn}
                     ${navActionBtns}
                     ${inspectBtn}
                     ${reopenBtn}
@@ -2892,11 +2897,11 @@
             }
 
             // หากเป็นงานสับเปลี่ยนมิเตอร์ที่เพิ่งตรวจพบหน้างาน ให้แนบลิงก์ใบมิเตอร์พร้อมข้อมูลอัตโนมัติไว้ท้ายข้อความต้นฉบับด้วย
-                        let baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+                                    let baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
             if (jobType === 'outage') {
-                const shortMeterLink = buildTechMeterFormUrl(item, key, null);
-                if (baseText.includes('meter-form.html?d=')) {
-                    baseText = baseText.replace(/https?:\/\/[^\s]+meter-form\.html\?d=[A-Za-z0-9_-]+/g, shortMeterLink);
+                const shortMeterLink = buildTechMeterFormUrl(item, key, null, true);
+                if (baseText.includes('meter-form.html?')) {
+                    baseText = baseText.replace(/https?:\/\/[^\s]+meter-form\.html\?[^\s]+/g, shortMeterLink);
                 } else if (!baseText.includes('ใบแจ้งสับเปลี่ยนมิเตอร์')) {
                     const checkMeterBlob = `${item.issueType || ''} ${realCause} ${actionTaken}`.toLowerCase().replace(/\s+/g, '');
                     if (checkMeterBlob.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => checkMeterBlob.includes(kw))) {
@@ -2904,7 +2909,6 @@
                     }
                 }
             }
-
             const urg = getJobUrgencyInfo(item, jobType);
             const hdr = jobType === 'outage'
                 ? `${urg.dot} งานที่ ${item.jobNo || '-'} กะ ${getEffectiveJobShift(item)} (${item.issueType || '-'})`
@@ -2960,14 +2964,16 @@
         }, '🔄 ยืนยันการเปิดใบงานซ้ำ');
     }
 
-    function stopActiveVoiceSession() {
-        if (autoSubmitVoiceTimer) { clearTimeout(autoSubmitVoiceTimer); autoSubmitVoiceTimer = null; }
+        function stopActiveVoiceSession() {
+        if (autoSubmitVoiceTimer) { clearTimeout(autoSubmitVoiceTimer);
+            autoSubmitVoiceTimer = null; }
+        document.getElementById('voiceAutoSaveBanner')?.remove();
         if (activeVoiceRecognition) {
             try { activeVoiceRecognition.stop(); } catch (e) {}
             activeVoiceRecognition = null;
         }
     }
-
+    
     function startVoice(inputId) {
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SR) { showToast('⚠️ เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียง'); return; }
@@ -2988,11 +2994,115 @@
         rec.onend = () => { if (activeVoiceRecognition === rec) activeVoiceRecognition = null; };
         rec.start();
     }
+    function cancelVoiceAutoSubmit() {
+        if (autoSubmitVoiceTimer) {
+            clearTimeout(autoSubmitVoiceTimer);
+            autoSubmitVoiceTimer = null;
+        }
+        const bar = document.getElementById('voiceAutoSaveBanner');
+        if (bar) bar.remove();
+    }
+
+    function parseSpokenRepairSummary(spokenText) {
+        const clean = String(spokenText || '').trim();
+        const presetCauses = [
+            [/ฟิวส์แรงต่ำขาด|ฟิวส์ขาด/, 'ฟิวส์แรงต่ำขาด'],
+            [/ฟิวส์แรงสูงขาด|ดรอปเอาท์|ดรอปฟิวส์/, 'ฟิวส์แรงสูงขาด (Drop Out Fuse)'],
+            [/กิ่งไม้|ต้นไม้/, 'กิ่งไม้แตะสายไฟ / ต้นไม้ล้มทับสาย'],
+            [/กระรอก|นก|งู|สัตว์/, 'สัตว์เลื้อยคลาน / นก / กระรอก'],
+            [/สายเมน.*หลวม|จุดต่อ.*ช็อต|ขั้วหลวม/, 'สายเมนเข้าบ้านหลวม / ช็อตที่จุดต่อ'],
+            [/มิเตอร์ชำรุด|ขั้วมิเตอร์ไหม้|มิเตอร์ไหม้/, 'มิเตอร์ชำรุด / ขั้วมิเตอร์ไหม้'],
+            [/เบรกเกอร์|ภายในบ้าน/, 'เบรกเกอร์/อุปกรณ์ภายในบ้านผู้ใช้ไฟชำรุด'],
+            [/ไฟปกติ|กระแสไฟปกติ/, 'ตรวจสอบแล้วกระแสไฟปกติ']
+        ];
+
+        const actionMatch = clean.match(/(เปลี่ยน|ดำเนินการ|แก้ไข|ตัดกิ่งไม้|ริดกิ่งไม้|สับเปลี่ยน|ต่อสาย|ขันแน่น|พันเทป|ยกเบรกเกอร์|จ่ายไฟ).*/);
+        let cause = '';
+        let action = '';
+
+        for (const [re, label] of presetCauses) {
+            if (re.test(clean)) { cause = label; break; }
+        }
+        if (actionMatch) {
+            action = actionMatch[0].trim();
+            if (!cause) cause = clean.slice(0, actionMatch.index).trim();
+        }
+        if (!cause) cause = clean;
+        if (!action) action = `${clean} (ดำเนินการแก้ไขและจ่ายไฟคืนปกติ)`;
+        return { cause, action };
+    }
+
+    function quickVoiceCloseJob(key, jobType = 'outage', btnEl = null) {
+        if (isViewerRole()) { showToast(VIEWER_LOCK_MSG); return; }
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {
+            openInspectModal(key, jobType);
+            showToast('⚠️ เบราว์เซอร์ไม่รองรับคำสั่งเสียง กรุณากดไมค์บนแป้นพิมพ์');
+            return;
+        }
+
+        ensureTechAudioUnlocked();
+        stopActiveVoiceSession();
+        const origHtml = btnEl ? btnEl.innerHTML : '';
+        if (btnEl) {
+            btnEl.innerHTML = '🎙️ กำลังฟัง...';
+            btnEl.classList.add('animate-pulse', 'ring-2', 'ring-amber-300');
+        }
+
+        const rec = new SR();
+        activeVoiceRecognition = rec;
+        rec.lang = 'th-TH';
+        showToast('🎙️ พูดสาเหตุและการแก้ไขได้เลย เช่น "ฟิวส์แรงต่ำขาด เปลี่ยนฟิวส์ 30A จ่ายไฟปกติ"');
+
+        const restoreBtn = () => {
+            if (btnEl) {
+                btnEl.innerHTML = origHtml || '🎙️ พูดปิดงาน';
+                btnEl.classList.remove('animate-pulse', 'ring-2', 'ring-amber-300');
+            }
+        };
+
+        rec.onresult = e => {
+            restoreBtn();
+            const transcript = (e.results?.[0]?.[0]?.transcript || '').trim();
+            if (!transcript) return;
+
+            openInspectModal(key, jobType);
+            const parsed = parseSpokenRepairSummary(transcript);
+            const statusEl = document.getElementById('techStatusInput');
+            const causeEl = document.getElementById('techCauseInput');
+            const actionEl = document.getElementById('techActionInput');
+            if (statusEl) statusEl.value = 'แก้ไขเสร็จสิ้น (จ่ายไฟคืนแล้ว)';
+            if (causeEl) causeEl.value = parsed.cause;
+            if (actionEl) actionEl.value = parsed.action;
+
+            cancelVoiceAutoSubmit();
+            const modalBody = document.querySelector('#inspectModal .p-4.overflow-y-auto');
+            if (modalBody) {
+                const bar = document.createElement('div');
+                bar.id = 'voiceAutoSaveBanner';
+                bar.className = 'p-2.5 bg-amber-50 border-2 border-amber-400 rounded-xl text-amber-950 text-xs font-bold flex items-center justify-between gap-2';
+                bar.innerHTML = `<span class="min-w-0 truncate">🎙️ "${escapeHtmlStr(transcript)}" — ปิดงานอัตโนมัติใน 3 วิ</span><button type="button" onclick="cancelVoiceAutoSubmit()" class="bg-amber-600 text-white px-2.5 py-1 rounded-lg text-[11px] shrink-0">⏸️ แก้ไข/แนบรูป</button>`;
+                modalBody.insertBefore(bar, modalBody.firstChild);
+                modalBody.querySelectorAll('input, textarea, select, label').forEach(inp => {
+                    inp.addEventListener('pointerdown', cancelVoiceAutoSubmit, { once: true });
+                    inp.addEventListener('focus', cancelVoiceAutoSubmit, { once: true });
+                });
+            }
+
+            autoSubmitVoiceTimer = setTimeout(() => {
+                cancelVoiceAutoSubmit();
+                submitTechReport(false);
+            }, 3200);
+        };
+        rec.onerror = () => { restoreBtn(); showToast('❌ ไม่ได้ยินเสียงพูด กรุณาแตะลองใหม่อีกครั้ง'); };
+        rec.onend = () => { restoreBtn(); if (activeVoiceRecognition === rec) activeVoiceRecognition = null; };
+        rec.start();
+    }
 
     // ========================================================================
     // 10. ส่งออกฟังก์ชันสู่ Global & เริ่มต้นระบบหน้าช่างอัตโนมัติ
     // ========================================================================
-    Object.assign(window, {
+        Object.assign(window, {
         handleTechLogin, handleTechLogout, checkTechAuth, goBackToMainPage, updateRoleNavigationUI,
         openTechOnlineModal, toggleGpsTracking, toggleSoundAlert, captureCurrentTechGpsForModal,
         syncJobsFromCloud, pushAllJobsToCloud,
@@ -3003,6 +3113,7 @@
         startEquipmentNavigation, stopEquipmentNavigation, getActiveEquipmentNavItems, updateEquipNavFloatingBanner,
         toggleRepairJobsMapCollapse, toggleRepairJobsMapFullscreen, toggleRepairJobTooltips, focusJobOnRepairMap, extractCoordsFromJob,
         openInspectModal, closeInspectModal, submitTechReport, reopenClosedJob, startVoice,
+        quickVoiceCloseJob, cancelVoiceAutoSubmit,
         openTechPhotoLightbox, removeModalPendingPhoto, retryModalPhotoUpload,
         openTechMeterFormByKey, openTechMeterFormFromModal, buildTechMeterFormUrl
     });
