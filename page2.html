@@ -15,9 +15,9 @@
     <meta name="application-name" content="ช่างไฟฟ้า">
     <meta name="theme-color" content="#0f766e">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=130">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=130">
-    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=130">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=134">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=134">
+    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=134">
 
     <script>
         if (window.self !== window.top) document.documentElement.classList.add('is-embedded-frame');
@@ -92,10 +92,14 @@
         /* มาตรฐานลำดับชั้น Z-Index ป้องกันหน้าต่างแจ้งเตือน/แก้ไขข้อความจมหลังป๊อปอัปอื่น */
         #techLoginScreen { z-index: 1100 !important; }
         #inspectModal { z-index: 1200 !important; }
+        #techOnlineModal { z-index: 1250 !important; }
         #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
         #toast { z-index: 1500 !important; }
 
-        body.role-viewer-readonly #inspectModal button[onclick^="submitTechReport"] { display: none !important; }
+        body.role-viewer-readonly #inspectModal button[onclick^="submitTechReport"],
+        body.role-viewer-readonly #modalPhotoUploadSection,
+        body.role-viewer-readonly #modalMeterFormQuickBox,
+        body.role-viewer-readonly button[onclick^="openTechMeterForm"] { display: none !important; }
     </style>
 </head>
 
@@ -365,13 +369,13 @@
     <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=130"></script>
-    <script src="shared-core.js?v=130"></script>
-    <script src="tech-jobs.js?v=130"></script>
-    <script src="scada-engine.js?v=130"></script>
-    <script src="pm-calendar.js?v=130"></script>
-    <script src="scada-fault-locator.js?v=130"></script>
-    <script src="pm-push.js?v=130"></script>
+    <script src="pea-idb-store.js?v=136"></script>
+    <script src="shared-core.js?v=136"></script>
+    <script src="tech-jobs.js?v=136"></script>
+    <script src="scada-engine.js?v=136"></script>
+    <script src="pm-calendar.js?v=136"></script>
+    <script src="scada-fault-locator.js?v=136"></script>
+    <script src="pm-push.js?v=136"></script>
 
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
     <script>
