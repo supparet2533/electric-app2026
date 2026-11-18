@@ -12,9 +12,9 @@
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     <meta name="theme-color" content="#1e3a8a">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=134">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=134">
-    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=134">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=137">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=137">
+    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=137">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -193,7 +193,6 @@
     <div id="peaBootSplash" class="fixed inset-0 flex flex-col items-center justify-between py-12 px-6 select-none overflow-hidden">
         <script>if (window.self !== window.top) document.getElementById('peaBootSplash').style.display = 'none';</script>
 
-        <!-- เส้นกริดพลังงานพื้นหลังจางๆ -->
         <div class="absolute inset-0 pointer-events-none opacity-25" style="background-image: radial-gradient(rgba(250,204,21,0.18) 1px, transparent 1px); background-size: 28px 28px;"></div>
         <div class="pea-gold-aura-pulse absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[58%] w-72 h-72 rounded-full pointer-events-none" style="background: radial-gradient(circle, rgba(245,158,11,0.32) 0%, rgba(59,130,246,0.12) 48%, transparent 72%); filter: blur(18px);"></div>
 
@@ -201,7 +200,6 @@
             <span class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-amber-400/10 border border-amber-300/30 text-amber-300 text-[10px] font-bold tracking-widest uppercase backdrop-blur-sm">⚡ PEA Smart Grid Operations</span>
         </div>
 
-        <!-- เหรียญตราสายฟ้าสีทอง 3 มิติ -->
         <div class="relative z-10 flex flex-col items-center">
             <div class="w-36 h-36 sm:w-40 sm:h-40 drop-shadow-[0_14px_35px_rgba(245,158,11,0.38)]">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="w-full h-full">
@@ -251,7 +249,6 @@
             </div>
         </div>
 
-        <!-- ชื่อแอปพลิเคชันและแถบโหลดสีทองด้านล่าง -->
         <div class="relative z-10 text-center space-y-2.5 pb-[env(safe-area-inset-bottom)]">
             <h1 class="text-lg sm:text-xl font-bold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-400 drop-shadow">ระบบเครื่องมือจัดการงานไฟฟ้า</h1>
             <p class="text-[11px] font-medium text-blue-200/80 tracking-wider">PROVINCIAL ELECTRICITY AUTHORITY</p>
@@ -330,10 +327,10 @@
         <div class="absolute bottom-4 left-0 right-0 z-10 text-center text-[11px] text-white/75 px-4">© Provincial Electricity Authority All Rights Reserved.</div>
     </div>
 
-    <!-- 🌟 กล่องเนื้อหาหลัก (เต็มจอชิดขอบบนมือถือ / แบ่ง 2 ฝั่งบนคอมพิวเตอร์) -->
+    <!-- 🌟 กล่องเนื้อหาหลัก -->
     <div id="mainAppContent" class="hidden w-full max-w-7xl mx-auto grid-cols-1 lg:grid-cols-2 gap-0 sm:gap-8 lg:gap-12 items-start px-0 sm:px-4">
 
-        <!-- ฝั่งซ้าย: แผงโลโก้สายฟ้าสีทอง (คลิกเพื่อเปิดเบราว์เซอร์/ผัง SCADA เทียบเคียง) -->
+        <!-- ฝั่งซ้าย: แผงโลโก้สายฟ้าสีทอง -->
         <div id="leftLogoPanel" class="hidden lg:flex flex-col justify-center sticky top-10 space-y-6">
             <div onclick="openLeftWebBrowser()" title="คลิกเพื่อเปิดเว็บเบราว์เซอร์ฝั่งซ้าย" class="group cursor-pointer relative w-full rounded-3xl overflow-hidden shadow-2xl border border-amber-300/30 transform transition hover:scale-[1.02] duration-300">
                 <div class="absolute top-4 right-4 z-20 bg-slate-900/85 backdrop-blur-md text-amber-300 text-xs font-semibold px-3.5 py-1.5 rounded-full border border-amber-400/40 shadow-lg flex items-center gap-1.5 group-hover:bg-blue-600 group-hover:text-white transition">🌐 <span>คลิกเปิดเว็บเบราว์เซอร์ฝั่งซ้าย</span></div>
@@ -344,7 +341,7 @@
                     </defs>
                     <rect width="600" height="500" fill="url(#bg)" />
                     <g stroke="rgba(250,204,21,0.16)" stroke-width="2">
-                        <line x1="100" y1="150" x2="250" y2="100" /><line x1="250" y1="100" x2="450" y2="180" /><line x1="450" y2="180" x2="350" y2="350" />
+                        <line x1="100" y1="150" x2="250" y2="100" /><line x1="250" y1="100" x2="450" y2="180" /><line x1="450" y1="180" x2="350" y2="350" />
                         <line x1="350" y1="350" x2="150" y2="300" /><line x1="150" y1="300" x2="100" y2="150" /><line x1="250" y1="100" x2="350" y2="350" />
                     </g>
                     <circle cx="100" cy="150" r="6" fill="#38bdf8" /><circle cx="250" cy="100" r="8" fill="#fde047" /><circle cx="450" cy="180" r="6" fill="#38bdf8" />
@@ -632,9 +629,13 @@
 
             <!-- ================= TAB 2: รับแจ้งไฟฟ้าขัดข้อง ================= -->
             <div id="tab2" class="tab-content flex-1 px-4 py-5 sm:p-6 space-y-4">
-                <div class="flex justify-between items-center border-b pb-2 mb-2">
-                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">📞 ฟอร์มรับแจ้งไฟฟ้าขัดข้อง <button type="button" onclick="openMeterLinkModal()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded">⚙️ ลิงก์มิเตอร์</button></h2>
-                    <span class="text-[10px] text-slate-400">ลาก ≡ เพื่อสลับลำดับ</span>
+                <div class="flex flex-wrap justify-between items-center gap-2 border-b pb-2 mb-2">
+                    <h2 class="text-base font-bold text-slate-800">📞 ฟอร์มรับแจ้งไฟฟ้าขัดข้อง</h2>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <button type="button" id="quickOpenMeterFormTab2Btn" onclick="openMeterFormFromCurrentTab2()" class="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2.5 py-1 rounded-lg font-semibold shadow-sm">📄 เปิดใบมิเตอร์</button>
+                        <button type="button" onclick="openMeterLinkModal()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-lg font-semibold">⚙️ ลิงก์มิเตอร์</button>
+                        <span class="text-[10px] text-slate-400">ลาก ≡ สลับ</span>
+                    </div>
                 </div>
 
                 <!-- Gemini Chatbot -->
@@ -913,12 +914,12 @@
 
     <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=136"></script>
-    <script src="shared-core.js?v=136"></script>
-    <script src="main-app.js?v=136"></script>
-    <script src="pm-calendar.js?v=136"></script>
-    <script src="scada-fault-locator.js?v=136"></script>
-    <script src="pm-push.js?v=136"></script>
+    <script src="pea-idb-store.js?v=137"></script>
+    <script src="shared-core.js?v=137"></script>
+    <script src="main-app.js?v=137"></script>
+    <script src="pm-calendar.js?v=137"></script>
+    <script src="scada-fault-locator.js?v=137"></script>
+    <script src="pm-push.js?v=137"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
@@ -1003,7 +1004,7 @@
             window.addEventListener('DOMContentLoaded', attachSuggestFocusGuard);
             window.addEventListener('load', attachSuggestFocusGuard);
 
-                        if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+            if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
                 const hadSwController = Boolean(navigator.serviceWorker.controller);
                 let isSwReloading = false;
 
@@ -1035,6 +1036,7 @@
                     }).catch(function() {});
                 });
             }
+        })();
     </script>
 </body>
 </html>
