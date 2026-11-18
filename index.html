@@ -1003,12 +1003,38 @@
             window.addEventListener('DOMContentLoaded', attachSuggestFocusGuard);
             window.addEventListener('load', attachSuggestFocusGuard);
 
-            if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+                        if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+                const hadSwController = Boolean(navigator.serviceWorker.controller);
+                let isSwReloading = false;
+
+                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                    if (!hadSwController || isSwReloading) return;
+                    const tag = (document.activeElement && document.activeElement.tagName) || '';
+                    const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
+                        Boolean(document.querySelector('#inspectModal:not(.hidden)'));
+
+                    if (!isTypingOrModal) {
+                        isSwReloading = true;
+                        window.location.reload();
+                    } else if (!document.getElementById('swUpdateReadyBar')) {
+                        const bar = document.createElement('button');
+                        bar.type = 'button';
+                        bar.id = 'swUpdateReadyBar';
+                        bar.onclick = function() { isSwReloading = true; window.location.reload(); };
+                        bar.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[1600] bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs px-4 py-2 rounded-full shadow-2xl border-2 border-white';
+                        bar.textContent = '⚡ มีอัปเดตเวอร์ชันใหม่ แตะเพื่อรีเฟรชหลังบันทึกงาน';
+                        document.body.appendChild(bar);
+                    }
+                });
+
                 window.addEventListener('load', function() {
-                    navigator.serviceWorker.register('./sw.js').catch(function() {});
+                    navigator.serviceWorker.register('./sw.js').then(function(reg) {
+                        document.addEventListener('visibilitychange', function() {
+                            if (document.visibilityState === 'visible') reg.update().catch(function() {});
+                        });
+                    }).catch(function() {});
                 });
             }
-        })();
     </script>
 </body>
 </html>
