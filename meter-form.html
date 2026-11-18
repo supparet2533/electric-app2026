@@ -40,6 +40,32 @@
     flex-direction: column;
     gap: 8px;
   }
+  .line-webview-warn {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: #fff7ed;
+    border: 1.5px solid #fb923c;
+    color: #9a3412;
+    padding: 7px 10px;
+    border-radius: 8px;
+    font-family: 'Sarabun', sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+  }
+  .btn-open-ext {
+    background: #ea580c;
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+    border: none;
+    cursor: pointer;
+  }
   .toolbar-row {
     display: flex;
     flex-wrap: wrap;
@@ -58,6 +84,17 @@
     color: #4c1d95;
     font-size: 13.5px;
     white-space: nowrap;
+  }
+  .autosave-pill {
+    font-family: 'Sarabun', sans-serif;
+    font-size: 11px;
+    color: #15803d;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: bold;
+    display: none;
   }
   .office-select, .office-custom-input {
     font-family: 'Sarabun', sans-serif;
@@ -85,7 +122,7 @@
   .btn {
     font-family: 'Sarabun', sans-serif;
     font-size: 13px;
-    padding: 6px 11px;
+    padding: 6px 10px;
     border-radius: 6px;
     border: none;
     cursor: pointer;
@@ -96,6 +133,8 @@
     align-items: center;
     gap: 4px;
   }
+  .btn-cloud-save { background: #0284c7; color: #fff; display: none; }
+  .btn-cloud-save:disabled { background: #7dd3fc; cursor: wait; }
   .btn-share { background: #16a34a; color: #fff; }
   .btn-share:disabled { background: #86efac; cursor: wait; }
   .btn-print { background: #6b21a8; color: #fff; }
@@ -131,12 +170,7 @@
     font-size: 12.5px;
     color: #1e3a8a;
   }
-  .linked-job-badges {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
-  }
+  .linked-job-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
   .job-chip {
     background: #ffffff;
     border: 1px solid #bfdbfe;
@@ -147,36 +181,15 @@
     white-space: nowrap;
     font-size: 12px;
   }
-  .job-chip.ca-chip {
-    border-color: #fca5a5;
-    background: #fef2f2;
-    color: #b91c1c;
-    cursor: pointer;
-  }
-  .linked-job-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
+  .job-chip.ca-chip { border-color: #fca5a5; background: #fef2f2; color: #b91c1c; cursor: pointer; }
+  .linked-job-links { display: flex; flex-wrap: wrap; gap: 6px; }
   .btn-gps-nav {
-    background: #2563eb;
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: bold;
-    text-decoration: none;
-    white-space: nowrap;
+    background: #2563eb; color: #fff; padding: 5px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: bold; text-decoration: none; white-space: nowrap;
   }
   .btn-call-tel {
-    background: #0f766e;
-    color: #fff;
-    padding: 5px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: bold;
-    text-decoration: none;
-    white-space: nowrap;
+    background: #0f766e; color: #fff; padding: 5px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: bold; text-decoration: none; white-space: nowrap;
   }
 
   .status-bar {
@@ -189,135 +202,59 @@
     border: 1px solid #e2e8f0;
   }
   .lamp-item {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 6px 3px;
-    border-radius: 6px;
-    background: #fff;
-    border: 1px solid #cbd5e1;
-    cursor: pointer;
-    user-select: none;
-    transition: all 0.2s ease;
-    font-size: 12px;
-    color: #64748b;
-    font-weight: bold;
-    white-space: nowrap;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 6px 3px; border-radius: 6px; background: #fff; border: 1px solid #cbd5e1;
+    cursor: pointer; user-select: none; transition: all 0.2s ease;
+    font-size: 12px; color: #64748b; font-weight: bold; white-space: nowrap;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis;
   }
   .lamp-bulb {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #cbd5e1;
-    border: 1.5px solid #94a3b8;
-    flex-shrink: 0;
-    transition: all 0.25s ease;
+    width: 12px; height: 12px; border-radius: 50%; background: #cbd5e1;
+    border: 1.5px solid #94a3b8; flex-shrink: 0; transition: all 0.25s ease;
   }
-  .lamp-item.signed {
-    background: #fefce8;
-    border-color: #eab308;
-    color: #15803d;
-  }
+  .lamp-item.signed { background: #fefce8; border-color: #eab308; color: #15803d; }
   .lamp-item.signed .lamp-bulb {
-    background: #facc15;
-    border-color: #ca8a04;
+    background: #facc15; border-color: #ca8a04;
     box-shadow: 0 0 10px 2px rgba(250, 204, 21, 0.9);
   }
 
-  .page-stage {
-    width: 100%;
-    max-width: 175mm;
-    margin: 0 auto;
-    position: relative;
-    overflow: hidden;
-  }
+  .page-stage { width: 100%; max-width: 175mm; margin: 0 auto; position: relative; overflow: hidden; }
   .page {
-    width: 175mm;
-    margin: 0 auto;
-    background: #fff;
-    padding: 10mm 15mm;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    box-sizing: border-box;
+    width: 175mm; margin: 0 auto; background: #fff; padding: 10mm 15mm;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1); box-sizing: border-box;
   }
 
   @media screen and (max-width: 679px) {
     body { padding: 6px 4px 16px; }
     .top-panel { padding: 8px 9px; margin-bottom: 6px; border-radius: 9px; }
-    .btn { font-size: 12px; padding: 6px 9px; }
+    .btn { font-size: 12px; padding: 6px 8px; }
     .lamp-item { font-size: 11px; padding: 5px 2px; }
     .page { margin: 0; padding: 14px 14px 18px 14px; border-radius: 8px; }
   }
 
-  .header-logo {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 6px;
-    cursor: pointer;
-  }
-  .pea-emblem-img {
-    width: 135px !important;
-    height: auto !important;
-    object-fit: contain;
-    display: block;
-  }
+  .header-logo { display: inline-flex; flex-direction: column; align-items: center; margin-bottom: 6px; cursor: pointer; }
+  .pea-emblem-img { width: 135px !important; height: auto !important; object-fit: contain; display: block; }
 
-  .flex-row {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    width: 100%;
-    margin: 2px 0;
-  }
-  .flex-row.indent-row {
-    padding-left: 36px;
-    box-sizing: border-box;
-  }
+  .flex-row { display: flex; align-items: baseline; gap: 6px; width: 100%; margin: 2px 0; }
+  .flex-row.indent-row { padding-left: 36px; box-sizing: border-box; }
   .nowrap { white-space: nowrap; }
 
-  .row-2col {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 15px;
-    margin: 2px 0;
-  }
+  .row-2col { display: flex; justify-content: space-between; align-items: baseline; gap: 15px; margin: 2px 0; }
   .col-left { width: 54%; display: flex; align-items: baseline; gap: 6px; }
   .col-right { width: 46%; display: flex; align-items: baseline; gap: 6px; }
 
   .line-input {
-    flex: 1;
-    min-width: 0;
-    border: none;
-    border-bottom: 1px dotted #000;
-    font-family: inherit;
-    font-size: inherit;
-    color: #000;
-    background: transparent;
-    padding: 0 4px;
-    outline: none;
+    flex: 1; min-width: 0; border: none; border-bottom: 1px dotted #000;
+    font-family: inherit; font-size: inherit; color: #000;
+    background: transparent; padding: 0 4px; outline: none;
   }
   .line-input:focus { background: #fef9c3; }
 
   .pdf-line-span {
-    flex: 1;
-    min-width: 0;
-    display: inline-block;
-    border-bottom: 1px dotted #000;
-    font-family: inherit;
-    font-size: inherit;
-    line-height: 1.38;
-    min-height: 1.32em;
-    color: #000;
-    padding: 0 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    vertical-align: baseline;
-    box-sizing: border-box;
+    flex: 1; min-width: 0; display: inline-block; border-bottom: 1px dotted #000;
+    font-family: inherit; font-size: inherit; line-height: 1.38; min-height: 1.32em;
+    color: #000; padding: 0 4px; white-space: nowrap; overflow: hidden;
+    vertical-align: baseline; box-sizing: border-box;
   }
 
   .checkbox-grid { display: grid; grid-template-columns: 30% 26% 44%; margin: 2.5px 0; }
@@ -330,19 +267,9 @@
   .sig-box { text-align: center; margin-top: 4px; }
   .sig-right { margin-left: auto; width: 50%; text-align: center; margin-top: 6px; }
   .sig-slot {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 200px;
-    height: 46px;
-    border: 1.5px dashed #60a5fa;
-    border-bottom: 1px dotted #000;
-    background: #f8fafc;
-    border-radius: 6px;
-    cursor: pointer;
-    user-select: none;
-    overflow: hidden;
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 200px; height: 46px; border: 1.5px dashed #60a5fa; border-bottom: 1px dotted #000;
+    background: #f8fafc; border-radius: 6px; cursor: pointer; user-select: none; overflow: hidden;
   }
   .sig-slot:active { background: #eff6ff; }
   .sig-placeholder { font-size: 12px; color: #2563eb; font-weight: bold; pointer-events: none; }
@@ -354,91 +281,55 @@
   .bottom-left, .bottom-right { width: 48%; }
 
   .pdf-loading-mask {
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.72);
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-family: 'Sarabun', sans-serif;
-    font-size: 15px;
-    font-weight: bold;
+    position: fixed; inset: 0; background: rgba(15, 23, 42, 0.72); z-index: 10000;
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    font-family: 'Sarabun', sans-serif; font-size: 15px; font-weight: bold;
   }
   .pdf-loading-box {
-    background: #1e293b;
-    border: 1px solid #475569;
-    padding: 16px 22px;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    background: #1e293b; border: 1px solid #475569; padding: 16px 22px;
+    border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);
   }
 
   .sig-modal-backdrop {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.82);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 10px;
-    box-sizing: border-box;
-    overflow: hidden;
-    touch-action: none;
+    position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.82); display: none; align-items: center; justify-content: center;
+    z-index: 9999; padding: 10px; box-sizing: border-box; overflow: hidden; touch-action: none;
   }
   .sig-modal-backdrop.active { display: flex; }
   .sig-modal-card {
-    background: #fff;
-    width: 100%;
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.4);
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    flex-shrink: 0;
+    background: #fff; width: 100%; border-radius: 12px; padding: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.4); box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: space-between; flex-shrink: 0;
   }
   .sig-modal-card.landscape {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%) rotate(90deg);
-    transform-origin: center center;
-    border-radius: 0;
-    padding: 10px 16px;
-    box-shadow: none;
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) rotate(90deg); transform-origin: center center;
+    border-radius: 0; padding: 10px 16px; box-shadow: none;
   }
-  .sig-modal-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-shrink: 0; }
-  .sig-modal-title { font-size: 16px; font-weight: bold; color: #4c1d95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sig-modal-header {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    gap: 6px; margin-bottom: 6px; flex-shrink: 0;
+  }
+  .sig-modal-title { font-size: 15px; font-weight: bold; color: #4c1d95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sig-preset-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .btn-load-preset {
+    font-family: 'Sarabun', sans-serif; font-size: 12px; font-weight: bold;
+    background: #dcfce7; color: #166534; border: 1px solid #86efac;
+    border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; display: none;
+  }
+  .remember-sig-label {
+    font-family: 'Sarabun', sans-serif; font-size: 12px; font-weight: bold;
+    color: #334155; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;
+  }
   .btn-rotate {
-    font-family: 'Sarabun', sans-serif;
-    font-size: 13px;
-    font-weight: bold;
-    background: #ede9fe;
-    color: #5b21b6;
-    border: 1px solid #c4b5fd;
-    border-radius: 6px;
-    padding: 4px 10px;
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
+    font-family: 'Sarabun', sans-serif; font-size: 12.5px; font-weight: bold;
+    background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd;
+    border-radius: 6px; padding: 4px 9px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
   }
   .sig-modal-canvas-wrap {
-    position: relative;
-    width: 100%;
-    height: 180px;
-    border: 2px solid #6b21a8;
-    border-radius: 8px;
-    background: #fafafa;
-    overflow: hidden;
-    touch-action: none;
-    flex: 1;
-    min-height: 110px;
+    position: relative; width: 100%; height: 180px; border: 2px solid #6b21a8;
+    border-radius: 8px; background: #fafafa; overflow: hidden; touch-action: none;
+    flex: 1; min-height: 105px;
   }
   .sig-modal-guide-line { position: absolute; left: 5%; right: 5%; bottom: 26%; border-bottom: 1.5px dashed #cbd5e1; pointer-events: none; }
   #modalCanvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
@@ -446,27 +337,14 @@
   .sig-modal-card.landscape .sig-modal-footer { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
   .sig-modal-name-group { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; flex: 1; }
   .sig-modal-name-input {
-    font-family: 'Sarabun', sans-serif;
-    font-size: 15px;
-    padding: 6px 10px;
-    border: 1.5px solid #cbd5e1;
-    border-radius: 6px;
-    width: 100%;
-    text-align: center;
-    outline: none;
+    font-family: 'Sarabun', sans-serif; font-size: 15px; padding: 6px 10px;
+    border: 1.5px solid #cbd5e1; border-radius: 6px; width: 100%; text-align: center; outline: none;
   }
   .sig-modal-name-input:focus { border-color: #6b21a8; background: #faf5ff; }
   .sig-modal-actions { display: flex; justify-content: space-between; gap: 8px; flex: 1.1; }
   .modal-btn {
-    flex: 1;
-    font-family: 'Sarabun', sans-serif;
-    font-size: 14px;
-    font-weight: bold;
-    padding: 8px 8px;
-    border-radius: 7px;
-    border: none;
-    cursor: pointer;
-    white-space: nowrap;
+    flex: 1; font-family: 'Sarabun', sans-serif; font-size: 14px; font-weight: bold;
+    padding: 8px 8px; border-radius: 7px; border: none; cursor: pointer; white-space: nowrap;
   }
   .modal-btn-clear { background: #fee2e2; color: #dc2626; }
   .modal-btn-cancel { background: #e5e7eb; color: #374151; }
@@ -486,6 +364,12 @@
 <body>
 
 <div class="top-panel no-print">
+  <!-- แจ้งเตือนอัตโนมัติเมื่อเปิดค้างอยู่ในแอป LINE (WebView) -->
+  <div id="lineWebViewWarn" class="line-webview-warn">
+    <span>⚠️ เปิดผ่านแอป LINE อาจส่งไฟล์ PDF ไม่ได้ แนะนำเปิดในเบราว์เซอร์หลัก</span>
+    <button type="button" class="btn-open-ext" onclick="popOutToExternalBrowser()">🌐 เปิด Chrome/Safari ↗</button>
+  </div>
+
   <div class="toolbar-row">
     <div class="office-group">
       <span class="office-label">🏢 หน่วยงาน:</span>
@@ -494,11 +378,13 @@
         <option value="custom">✏️ เปลี่ยนเป็น กฟส. อื่น...</option>
       </select>
       <input type="text" id="customOfficeInput" class="office-custom-input" placeholder="พิมพ์ชื่อ เช่น กฟส.ศรีราชา" oninput="applyCustomOffice()">
+      <span id="autoSavePill" class="autosave-pill">💾 เซฟร่างแล้ว</span>
     </div>
 
     <div class="toolbar-actions">
-      <button type="button" id="refillJobBtn" class="btn btn-refill" onclick="applyIncomingJobPayload(cachedIncomingPayload)">🔄 ดึงข้อมูลใบงานเดิม</button>
+      <button type="button" id="refillJobBtn" class="btn btn-refill" onclick="refillOriginalJobOnly()">🔄 ดึงค่าตั้งต้น</button>
       <button type="button" class="btn btn-reset" onclick="resetAll()">ล้างฟอร์ม</button>
+      <button type="button" id="cloudSaveBtn" class="btn btn-cloud-save" onclick="syncMeterStateToCloud(false)">☁️ บันทึกออนไลน์</button>
       <button type="button" id="sharePdfBtn" class="btn btn-share" onclick="shareAsPDF()">📤 แชร์ PDF</button>
       <button type="button" class="btn btn-print" onclick="window.print()">🖨️ พิมพ์</button>
     </div>
@@ -672,7 +558,13 @@
   <div id="sigModalCard" class="sig-modal-card">
     <div class="sig-modal-header">
       <div id="modalTitle" class="sig-modal-title">ลงลายมือชื่อ</div>
-      <button type="button" id="rotateBtn" class="btn-rotate" onclick="toggleOrientation()">🔄 แนวตั้ง</button>
+      <div class="sig-preset-controls">
+        <button type="button" id="loadPresetSigBtn" class="btn-load-preset" onclick="loadSavedDefaultSignature()">⚡ ดึงลายเซ็นเดิม</button>
+        <label id="rememberSigWrap" class="remember-sig-label">
+          <input type="checkbox" id="rememberSigCheckbox"> จำลายเซ็นประจำตัว
+        </label>
+        <button type="button" id="rotateBtn" class="btn-rotate" onclick="toggleOrientation()">🔄 แนวตั้ง</button>
+      </div>
     </div>
     <div id="canvasWrap" class="sig-modal-canvas-wrap">
       <div class="sig-modal-guide-line"></div>
@@ -694,16 +586,52 @@
 </div>
 
 <script>
-  const THAI_MONTHS_SHORT = [
-    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
-  ];
+  const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   const THAI_COMBINING_MARKS_RE = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
   const CUSTOM_LOGO_STORAGE_KEY = 'pea_custom_logo_override_v3';
   const DEFAULT_LOGO_FILE = './pea-logo.png';
-  let cachedIncomingPayload = null;
 
-  // --- รหัสสั้นอ้างอิงใบงาน 9 หลัก (ตรงกันทั้งระบบ) ---
+  const TEXT_INPUT_IDS = [
+    'docNoInput', 'docDateInput', 'shiftDateInput', 'oldPeaInput', 'addrLine1Input', 'addrLine2Input',
+    'phoneInput', 'causeOtherInput', 'newPeaInput', 'startUnitInput',
+    'name-sig1', 'name-sig2', 'name-sig3', 'name-sig4', 'custDay', 'custMonth', 'custYear'
+  ];
+  const CHECKBOX_IDS = [
+    'shift1', 'shift2', 'shift3', 'causeLightning', 'causeWater', 'causeAccident',
+    'causeTermIn', 'causeTermOut', 'compBoard', 'compBox', 'compWire', 'actDirect', 'actReplace'
+  ];
+
+  let cachedIncomingPayload = null;
+  let activeShortJobId = '';
+  let activeOfficeGroup = 'กฟส.บึง';
+  let activeDraftFingerprint = '';
+  let loadedRawJobRecord = null;
+  let autoSaveTimer = null;
+
+  function isLineInAppBrowser() {
+    return /\bLine\//i.test(navigator.userAgent || '');
+  }
+
+  async function popOutToExternalBrowser() {
+    saveLocalDraftState();
+    if (activeShortJobId && loadedRawJobRecord && navigator.onLine) {
+      await syncMeterStateToCloud(true);
+    }
+    const u = new URL(window.location.href);
+    if (u.searchParams.get('openExternalBrowser') === '1') {
+      u.searchParams.set('_ext', String(Date.now()).slice(-4));
+    } else {
+      u.searchParams.set('openExternalBrowser', '1');
+    }
+    window.location.href = u.href;
+  }
+
+  function makeDraftFingerprint(d) {
+    if (!d) return '';
+    return [d.jobLabel || '', d.ca || '', d.oldPea || '', d.phone || '', String(d.address || '').slice(0, 30)].join('|');
+  }
+
+  // --- รหัสสั้นอ้างอิงใบงาน 9 หลัก ---
   function makeShortJobId(dateTimeSaved) {
     const s = String(dateTimeSaved || '').trim();
     if (!s || s === '-') return '';
@@ -722,6 +650,142 @@
     return 'k' + (h >>> 0).toString(36);
   }
 
+  function getDraftStorageKey() {
+    return 'pea_meter_autosave_' + (activeShortJobId || 'standalone');
+  }
+
+  // --- ระบบ Auto-save ลงเครื่อง & ผสานลายเซ็นจากคลาวด์ (รองรับการลบลายเซ็น) ---
+  function collectCurrentFormState() {
+    const fields = {};
+    TEXT_INPUT_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) fields[id] = el.value || '';
+    });
+    const checks = {};
+    CHECKBOX_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) checks[id] = Boolean(el.checked);
+    });
+    const sigs = {};
+    ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
+      const imgEl = document.getElementById('img-' + id);
+      const nameEl = document.getElementById('name-' + id);
+      if (!imgEl) return;
+      const signedTs = Number(imgEl.dataset.signedTs || 0);
+      if (imgEl.dataset.signed === 'true' && imgEl.src) {
+        sigs[id] = {
+          src: imgEl.src,
+          name: nameEl ? nameEl.value : '',
+          ts: signedTs || Date.now()
+        };
+      } else if (imgEl.dataset.explicitCleared === 'true' && signedTs > 0) {
+        sigs[id] = {
+          src: '',
+          name: nameEl ? nameEl.value : '',
+          cleared: true,
+          ts: signedTs
+        };
+      }
+    });
+    return {
+      office: document.querySelector('.pea-office-name')?.textContent?.trim() || 'กฟส.บึง',
+      jobFingerprint: activeDraftFingerprint || '',
+      fields,
+      checks,
+      sigs,
+      updatedAt: Date.now()
+    };
+  }
+
+  function applySavedFormState(saved, mergeOnlyNewerSigs = false) {
+    if (!saved || typeof saved !== 'object') return;
+
+    if (!mergeOnlyNewerSigs) {
+      if (saved.office) {
+        const sel = document.getElementById('officeSelect');
+        const customInp = document.getElementById('customOfficeInput');
+        if (saved.office === 'กฟส.บึง') {
+          sel.value = 'กฟส.บึง';
+          customInp.style.display = 'none';
+        } else {
+          sel.value = 'custom';
+          customInp.value = saved.office;
+          customInp.style.display = 'inline-block';
+        }
+        updateOfficeTexts(saved.office);
+      }
+      if (saved.fields) {
+        Object.entries(saved.fields).forEach(([id, val]) => {
+          const el = document.getElementById(id);
+          if (el && val !== undefined && val !== null) el.value = val;
+        });
+      }
+      if (saved.checks) {
+        Object.entries(saved.checks).forEach(([id, boolVal]) => {
+          const el = document.getElementById(id);
+          if (el) el.checked = Boolean(boolVal);
+        });
+      }
+    } else if (saved.fields) {
+      ['newPeaInput', 'startUnitInput', 'causeOtherInput', 'name-sig1', 'name-sig2', 'name-sig3', 'name-sig4'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !el.value.trim() && saved.fields[id]) el.value = saved.fields[id];
+      });
+    }
+
+    if (saved.sigs) {
+      ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
+        const incoming = saved.sigs[id];
+        if (!incoming) return;
+        const imgEl = document.getElementById('img-' + id);
+        const placeEl = document.getElementById('place-' + id);
+        const nameEl = document.getElementById('name-' + id);
+        if (!imgEl) return;
+        const curTs = Number(imgEl.dataset.signedTs || 0);
+        const incTs = Number(incoming.ts || 0);
+
+        if (incoming.cleared || !incoming.src) {
+          if (incTs > curTs) {
+            imgEl.removeAttribute('src');
+            imgEl.style.display = 'none';
+            imgEl.dataset.signed = 'false';
+            imgEl.dataset.explicitCleared = 'true';
+            imgEl.dataset.signedTs = String(incTs);
+            if (placeEl) placeEl.style.display = 'inline';
+          }
+        } else if (imgEl.dataset.signed !== 'true' || incTs >= curTs) {
+          if (imgEl.dataset.explicitCleared === 'true' && curTs > incTs) return;
+          imgEl.src = incoming.src;
+          imgEl.style.display = 'block';
+          imgEl.dataset.signed = 'true';
+          imgEl.dataset.explicitCleared = 'false';
+          imgEl.dataset.signedTs = String(incTs || Date.now());
+          if (placeEl) placeEl.style.display = 'none';
+          if (nameEl && incoming.name && !nameEl.value.trim()) nameEl.value = incoming.name;
+        }
+      });
+    }
+    updateStatusLamps();
+    fitPaperToScreen();
+  }
+
+  function saveLocalDraftState() {
+    try {
+      const state = collectCurrentFormState();
+      localStorage.setItem(getDraftStorageKey(), JSON.stringify(state));
+      const pill = document.getElementById('autoSavePill');
+      if (pill) {
+        pill.textContent = '💾 เซฟอัตโนมัติแล้ว';
+        pill.style.display = 'inline-block';
+      }
+    } catch (e) {}
+  }
+
+  function scheduleAutoSave() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(saveLocalDraftState, 300);
+  }
+
   function decodeBase64UrlUtf8(rawB64) {
     try {
       let s = String(rawB64 || '').trim().replace(/-/g, '+').replace(/_/g, '/');
@@ -730,18 +794,14 @@
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       return new TextDecoder('utf-8').decode(bytes);
-    } catch (e) {
-      return '';
-    }
+    } catch (e) { return ''; }
   }
 
   function decodeBase64UrlJson(rawB64) {
     try {
       const txt = decodeBase64UrlUtf8(rawB64);
       return txt ? JSON.parse(txt) : null;
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   }
 
   function resolveWorkerDisplayName(rawWorker, rawUsersList) {
@@ -807,21 +867,114 @@
     return '';
   }
 
-  async function loadJobByShortId(shortId, officeHint) {
+  // --- ซิงค์ข้อมูลใบมิเตอร์และลายเซ็นขึ้น Google Sheets (ให้ หผ.ปบ. / ผมต. เปิดลิงก์เดิมเซ็นต่อได้) ---
+  async function syncMeterStateToCloud(isSilent = true) {
+    saveLocalDraftState();
+    if (!activeShortJobId || activeShortJobId === 'draft_preview' || !loadedRawJobRecord || !navigator.onLine) return false;
+    const baseUrl = await resolveCloudApiBaseUrl();
+    if (!baseUrl) return false;
+
+    const cloudBtn = document.getElementById('cloudSaveBtn');
+    const origTxt = cloudBtn ? cloudBtn.textContent : '';
+    if (cloudBtn && !isSilent) {
+      cloudBtn.disabled = true;
+      cloudBtn.textContent = '⏳ กำลังบันทึก...';
+    }
+
+    try {
+      const curState = collectCurrentFormState();
+      const updatedJob = {
+        ...loadedRawJobRecord,
+        jobType: 'outage',
+        ownerGroup: loadedRawJobRecord.ownerGroup || activeOfficeGroup || 'กฟส.บึง',
+        meterFormState: curState
+      };
+      delete updatedJob.pendingInitialUpload;
+
+      try {
+        const localList = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+        const idx = localList.findIndex(it => it && it.dateTimeSaved === updatedJob.dateTimeSaved);
+        if (idx !== -1) {
+          localList[idx].meterFormState = updatedJob.meterFormState;
+          localStorage.setItem('elecReportsComplete_all', JSON.stringify(localList));
+        }
+      } catch (e) {}
+
+      const bodyStr = JSON.stringify({
+        action: 'patchDelta',
+        group: updatedJob.ownerGroup,
+        forceSheetWrite: true,
+        upsertedJobs: [updatedJob],
+        removedJobKeys: []
+      });
+
+      const res = await fetch(baseUrl, {
+        method: 'POST',
+        keepalive: new Blob([bodyStr]).size < 55000,
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: bodyStr
+      });
+      const data = await res.json();
+      if (data?.status === 'ok') {
+        loadedRawJobRecord = updatedJob;
+        const pill = document.getElementById('autoSavePill');
+        if (pill) {
+          pill.textContent = '☁️ ซิงค์ออนไลน์แล้ว';
+          pill.style.display = 'inline-block';
+        }
+        return true;
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (cloudBtn && !isSilent) {
+        cloudBtn.disabled = false;
+        cloudBtn.textContent = origTxt;
+      }
+    }
+    return false;
+  }
+
+  // --- ดึงข้อมูลใบงานด้วยรหัสสั้น (รองรับทั้งโหมดดึงใบเดียวความเร็วสูง getJob และโหมดพรีวิวจากโมดอลหน้าช่าง) ---
+  async function loadJobByShortId(shortId, officeHint, alreadyAppliedLiveDraft = false) {
+    activeShortJobId = shortId;
+    activeOfficeGroup = officeHint || 'กฟส.บึง';
     let foundLocally = false;
+
+    const savedLocalDraft = (() => {
+      try { return JSON.parse(localStorage.getItem(getDraftStorageKey()) || 'null'); } catch (e) { return null; }
+    })();
+
     try {
       const localList = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
       const closedReg = JSON.parse(localStorage.getItem('elec_closed_jobs_registry') || '{}');
       const hit = localList.find(it => it && (makeShortJobId(it.dateTimeSaved) === shortId || it.dateTimeSaved === shortId));
       if (hit) {
-        cachedIncomingPayload = convertJobRecordToMeterPayload(hit, closedReg);
-        applyIncomingJobPayload(cachedIncomingPayload);
+        loadedRawJobRecord = hit;
+        const basePayload = convertJobRecordToMeterPayload(hit, closedReg);
+        if (!alreadyAppliedLiveDraft) {
+          cachedIncomingPayload = basePayload;
+          applyIncomingJobPayload(cachedIncomingPayload);
+        } else {
+          cachedIncomingPayload = cachedIncomingPayload || basePayload;
+          renderTopJobBadgesOnly(cachedIncomingPayload);
+        }
+        if (hit.meterFormState) applySavedFormState(hit.meterFormState, alreadyAppliedLiveDraft);
+        if (savedLocalDraft) {
+          const mergeOnly = alreadyAppliedLiveDraft || Boolean(hit.meterFormState && hit.meterFormState.updatedAt > savedLocalDraft.updatedAt);
+          applySavedFormState(savedLocalDraft, mergeOnly);
+        }
+        document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
         foundLocally = true;
       }
     } catch (e) {}
 
+    if (!foundLocally && savedLocalDraft) {
+      applySavedFormState(savedLocalDraft, alreadyAppliedLiveDraft);
+    }
+
     const fetchBar = document.getElementById('cloudFetchBar');
-    if (!foundLocally && fetchBar) {
+    if (!foundLocally && !alreadyAppliedLiveDraft && fetchBar) {
       fetchBar.textContent = '⏳ กำลังดึงข้อมูลใบงานจากระบบคลาวด์...';
       fetchBar.style.display = 'flex';
     }
@@ -832,30 +985,60 @@
       return;
     }
 
-    const targetGroup = officeHint || 'กฟส.บึง';
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const url = `${baseUrl}?group=${encodeURIComponent(targetGroup)}&t=${Date.now()}`;
+        const url = `${baseUrl}?action=getJob&i=${encodeURIComponent(shortId)}&group=${encodeURIComponent(activeOfficeGroup)}&t=${Date.now()}`;
         const res = await fetch(url, { cache: 'no-store' });
         const data = await res.json();
-        if (Array.isArray(data?.jobs)) {
+
+        let hit = null;
+        let closedMap = {};
+        const usersList = data?.users || null;
+
+        if (data?.job && typeof data.job === 'object') {
+          hit = data.job;
+          if (data.closedReport && hit.dateTimeSaved) closedMap[hit.dateTimeSaved] = data.closedReport;
+        } else if (Array.isArray(data?.jobs)) {
           const locEntry = data.jobs.find(x => x && x.jobType === 'tech_loc') || {};
-          const closedMap = { ...(locEntry.closedJobsMap || {}), ...(locEntry.closedReports || {}) };
-          const hit = data.jobs.find(x => x && x.jobType !== 'tech_loc' && (makeShortJobId(x.dateTimeSaved) === shortId || x.dateTimeSaved === shortId));
-          if (hit) {
-            cachedIncomingPayload = convertJobRecordToMeterPayload(hit, closedMap, data.users);
-            applyIncomingJobPayload(cachedIncomingPayload);
-            if (fetchBar) fetchBar.style.display = 'none';
-            return;
+          closedMap = { ...(locEntry.closedJobsMap || {}), ...(locEntry.closedReports || {}) };
+          hit = data.jobs.find(x => x && x.jobType !== 'tech_loc' && (makeShortJobId(x.dateTimeSaved) === shortId || x.dateTimeSaved === shortId));
+        }
+
+        if (hit) {
+          loadedRawJobRecord = hit;
+          const cloudPayload = convertJobRecordToMeterPayload(hit, closedMap, usersList);
+          if (!alreadyAppliedLiveDraft) {
+            cachedIncomingPayload = cloudPayload;
+            if (!foundLocally && !savedLocalDraft) {
+              applyIncomingJobPayload(cachedIncomingPayload);
+            } else if (!foundLocally) {
+              renderTopJobBadgesOnly(cachedIncomingPayload);
+            }
+          } else {
+            cachedIncomingPayload = cachedIncomingPayload || cloudPayload;
+            renderTopJobBadgesOnly(cachedIncomingPayload);
           }
+
+          if (hit.meterFormState) {
+            const cloudNewer = !savedLocalDraft || Number(hit.meterFormState.updatedAt || 0) >= Number(savedLocalDraft.updatedAt || 0);
+            applySavedFormState(hit.meterFormState, alreadyAppliedLiveDraft || !cloudNewer);
+          }
+          if (savedLocalDraft) {
+            const localNewer = !hit.meterFormState || Number(savedLocalDraft.updatedAt || 0) >= Number(hit.meterFormState.updatedAt || 0);
+            applySavedFormState(savedLocalDraft, alreadyAppliedLiveDraft || !localNewer);
+          }
+          document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
+          if (fetchBar) fetchBar.style.display = 'none';
+          saveLocalDraftState();
+          return;
         }
       } catch (err) {}
       if (foundLocally) break;
-      if (attempt === 0) await new Promise(r => setTimeout(r, 1800));
+      if (attempt === 0) await new Promise(r => setTimeout(r, 1600));
     }
 
     if (fetchBar) {
-      if (foundLocally) {
+      if (foundLocally || savedLocalDraft || alreadyAppliedLiveDraft) {
         fetchBar.style.display = 'none';
       } else {
         fetchBar.textContent = '⚠️ ไม่พบข้อมูลใบงานในคลาวด์ (สามารถกรอกข้อมูลในฟอร์มได้โดยตรง)';
@@ -883,9 +1066,7 @@
           c.height = h;
           c.getContext('2d').drawImage(img, 0, 0, w, h);
           resolve(c.toDataURL('image/png'));
-        } catch (e) {
-          resolve(srcUrl);
-        }
+        } catch (e) { resolve(srcUrl); }
       };
       img.onerror = () => resolve('');
       img.src = srcUrl;
@@ -895,7 +1076,6 @@
   async function initPeaLogoPng() {
     const logoEl = document.getElementById('peaLogoImg');
     if (!logoEl) return;
-
     logoEl.onload = fitPaperToScreen;
     const savedLogo = localStorage.getItem(CUSTOM_LOGO_STORAGE_KEY);
     const targetSrc = savedLogo || DEFAULT_LOGO_FILE;
@@ -920,7 +1100,6 @@
       stage.style.height = 'auto';
       return;
     }
-
     const availW = stage.clientWidth;
     if (availW <= 0) return;
 
@@ -950,28 +1129,23 @@
     if (custYearEl) custYearEl.value = buddhistYear;
 
     const totalMinutes = now.getHours() * 60 + now.getMinutes();
-    const s1 = document.getElementById('shift1');
-    const s2 = document.getElementById('shift2');
-    const s3 = document.getElementById('shift3');
-    if (s1) s1.checked = false;
-    if (s2) s2.checked = false;
-    if (s3) s3.checked = false;
+    ['shift1', 'shift2', 'shift3'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.checked = false;
+    });
 
     let shiftDateObj = new Date(now);
     if (totalMinutes >= 30 && totalMinutes < 510) {
-      if (s1) s1.checked = true;
+      document.getElementById('shift1').checked = true;
     } else if (totalMinutes >= 510 && totalMinutes < 990) {
-      if (s2) s2.checked = true;
+      document.getElementById('shift2').checked = true;
     } else {
-      if (s3) s3.checked = true;
-      if (totalMinutes < 30) {
-        shiftDateObj.setDate(shiftDateObj.getDate() - 1);
-      }
+      document.getElementById('shift3').checked = true;
+      if (totalMinutes < 30) shiftDateObj.setDate(shiftDateObj.getDate() - 1);
     }
 
     const shiftDateStr = `${shiftDateObj.getDate()} ${THAI_MONTHS_SHORT[shiftDateObj.getMonth()]} ${shiftDateObj.getFullYear() + 543}`;
-    const shiftDateEl = document.getElementById('shiftDateInput');
-    if (shiftDateEl) shiftDateEl.value = shiftDateStr;
+    document.getElementById('shiftDateInput').value = shiftDateStr;
   }
 
   function formatIncomingThaiDate(rawStr) {
@@ -1031,9 +1205,7 @@
       if (visualCharCount(candidate) <= MAX_VISUAL_LINE1 || !line1) {
         line1 = candidate;
         restStartIdx = i + 1;
-      } else {
-        break;
-      }
+      } else break;
     }
 
     if (visualCharCount(line1) > MAX_VISUAL_LINE1 + 4) {
@@ -1053,8 +1225,7 @@
     }
 
     const rest = words.slice(restStartIdx).join(' ').trim();
-    const line2 = [rest, caTag].filter(Boolean).join(' • ');
-    return { line1, line2 };
+    return { line1, line2: [rest, caTag].filter(Boolean).join(' • ') };
   }
 
   function parseLegacyUrlJobPayload() {
@@ -1089,8 +1260,7 @@
       startUnit: pick('un', 'unit', 'startUnit')
     };
 
-    const hasAny = Object.values(payload).some(v => v && v !== '-');
-    return hasAny ? payload : null;
+    return Object.values(payload).some(v => v && v !== '-') ? payload : null;
   }
 
   function escapeSafeHtml(str) {
@@ -1106,6 +1276,41 @@
       chipEl.textContent = '✅ คัดลอก CA แล้ว!';
       setTimeout(() => { chipEl.textContent = old; }, 1400);
     }).catch(() => {});
+  }
+
+  function renderTopJobBadgesOnly(data) {
+    if (!data) return;
+    const cl = v => (v && v !== '-') ? String(v).trim() : '';
+    const rawAddr = cl(data.address);
+    const mPea = rawAddr.match(/(?:มิเตอร์\s*-\s*PEA\s*No\.?|PEA\s*No\.?|หมายเลขมิเตอร์)\s*[:：=]?\s*([A-Za-z0-9-]+)/i);
+    const mCa = rawAddr.match(/CA\s*(?:No\.?)?\s*[:：=]?\s*(\d{9,15})/i) || rawAddr.match(/\b(02\d{10})\b/);
+    const oldPea = cl(data.oldPea) || (mPea ? mPea[1].trim() : '');
+    const ca = cl(data.ca) || (mCa ? mCa[1].trim() : '');
+    const phone = cl(data.phone);
+    const gpsUrl = normalizeGpsNavUrl(cl(data.gps));
+    const dialTel = phone.replace(/[^\d+]/g, '');
+
+    const chips = [];
+    if (cl(data.jobLabel)) chips.push(`<span class="job-chip">📋 ${escapeSafeHtml(cl(data.jobLabel))}</span>`);
+    if (ca) chips.push(`<span class="job-chip ca-chip" title="แตะเพื่อคัดลอกเลข CA" onclick="copyCaText('${escapeSafeHtml(ca)}', this)">💳 CA: ${escapeSafeHtml(ca)}</span>`);
+    if (oldPea) chips.push(`<span class="job-chip">📟 PEA เก่า: ${escapeSafeHtml(oldPea)}</span>`);
+
+    const actionLinks = [];
+    if (dialTel.length >= 9) actionLinks.push(`<a class="btn-call-tel" href="tel:${escapeSafeHtml(dialTel)}">📞 โทร ${escapeSafeHtml(phone)}</a>`);
+    if (gpsUrl) actionLinks.push(`<a class="btn-gps-nav" href="${escapeSafeHtml(gpsUrl)}" target="_blank" rel="noopener noreferrer">🗺️ นำทางพิกัด GPS ↗</a>`);
+
+    if (chips.length || actionLinks.length) {
+      document.getElementById('linkedJobBadges').innerHTML = chips.join('');
+      document.getElementById('linkedJobLinks').innerHTML = actionLinks.join('');
+      document.getElementById('linkedJobInfoBar').style.display = 'flex';
+    }
+    document.getElementById('refillJobBtn').style.display = 'inline-flex';
+  }
+
+  function refillOriginalJobOnly() {
+    if (!cachedIncomingPayload) return;
+    applyIncomingJobPayload(cachedIncomingPayload);
+    saveLocalDraftState();
   }
 
   function applyIncomingJobPayload(data) {
@@ -1127,8 +1332,8 @@
       updateOfficeTexts(office);
     }
 
-    const docNoEl = document.getElementById('docNoInput');
-    if (docNoEl) docNoEl.value = '';
+    // ช่อง "เลขที่" เว้นว่างไว้เสมอ
+    document.getElementById('docNoInput').value = '';
 
     const shiftDateFormatted = formatIncomingThaiDate(cl(data.reportDate));
     if (shiftDateFormatted) document.getElementById('shiftDateInput').value = shiftDateFormatted;
@@ -1198,8 +1403,13 @@
     }
     if (custName) document.getElementById('name-sig2').value = custName;
 
-    const causeOtherEl = document.getElementById('causeOtherInput');
-    if (causeOtherEl) causeOtherEl.value = '';
+    // ช่อง "สาเหตุอื่น ๆ ระบุ" เว้นว่างไว้เสมอตอนดึงข้อมูลใบงาน
+    document.getElementById('causeOtherInput').value = '';
+
+    ['causeLightning', 'causeWater', 'causeAccident', 'causeTermIn', 'causeTermOut', 'compWire', 'actDirect', 'actReplace'].forEach(id => {
+      const cb = document.getElementById(id);
+      if (cb) cb.checked = false;
+    });
 
     const symptomText = `${cl(data.issue)} ${cl(data.realCause)}`.trim();
     if (symptomText) {
@@ -1208,9 +1418,7 @@
       if (/รถชน|อุบัติเหตุ|เสาล้ม|เสาหัก|มิเตอร์แตก|แตกร้าว/.test(symptomText)) document.getElementById('causeAccident').checked = true;
       if (/ด้านเข้า|สายเข้า/.test(symptomText)) document.getElementById('causeTermIn').checked = true;
       if (/ด้านออก|สายออก|ตูดมิเตอร์|ขั้วมิเตอร์/.test(symptomText)) document.getElementById('causeTermOut').checked = true;
-      if (/สายเข้า|สายออก|ขั้วสาย|สายเมน/.test(symptomText)) {
-        document.getElementById('compWire').checked = true;
-      }
+      if (/สายเข้า|สายออก|ขั้วสาย|สายเมน/.test(symptomText)) document.getElementById('compWire').checked = true;
     }
 
     const actionTxt = cl(data.actionTaken);
@@ -1221,29 +1429,7 @@
     if (cl(data.newPea)) document.getElementById('newPeaInput').value = cl(data.newPea);
     if (cl(data.startUnit)) document.getElementById('startUnitInput').value = cl(data.startUnit);
 
-    const infoBar = document.getElementById('linkedJobInfoBar');
-    const badgesEl = document.getElementById('linkedJobBadges');
-    const linksEl = document.getElementById('linkedJobLinks');
-    const refillBtn = document.getElementById('refillJobBtn');
-    const jobLbl = cl(data.jobLabel);
-    const gpsUrl = normalizeGpsNavUrl(cl(data.gps) || inlineGpsFallback);
-    const dialTel = phone.replace(/[^\d+]/g, '');
-
-    const chips = [];
-    if (jobLbl) chips.push(`<span class="job-chip">📋 ${escapeSafeHtml(jobLbl)}</span>`);
-    if (ca) chips.push(`<span class="job-chip ca-chip" title="แตะเพื่อคัดลอกเลข CA" onclick="copyCaText('${escapeSafeHtml(ca)}', this)">💳 CA: ${escapeSafeHtml(ca)}</span>`);
-    if (oldPea) chips.push(`<span class="job-chip">📟 PEA เก่า: ${escapeSafeHtml(oldPea)}</span>`);
-
-    const actionLinks = [];
-    if (dialTel.length >= 9) actionLinks.push(`<a class="btn-call-tel" href="tel:${escapeSafeHtml(dialTel)}">📞 โทร ${escapeSafeHtml(phone)}</a>`);
-    if (gpsUrl) actionLinks.push(`<a class="btn-gps-nav" href="${escapeSafeHtml(gpsUrl)}" target="_blank" rel="noopener noreferrer">🗺️ นำทางพิกัด GPS ↗</a>`);
-
-    if (chips.length || actionLinks.length) {
-      badgesEl.innerHTML = chips.join('');
-      linksEl.innerHTML = actionLinks.join('');
-      infoBar.style.display = 'flex';
-    }
-    if (refillBtn) refillBtn.style.display = 'inline-flex';
+    renderTopJobBadgesOnly({ ...data, oldPea, ca, gps: cl(data.gps) || inlineGpsFallback });
     fitPaperToScreen();
   }
 
@@ -1264,6 +1450,7 @@
       customInput.style.display = 'none';
       updateOfficeTexts('กฟส.บึง');
       localStorage.setItem('pea_selected_office', 'กฟส.บึง');
+      scheduleAutoSave();
     }
   }
 
@@ -1272,6 +1459,7 @@
     updateOfficeTexts(val || 'กฟส............');
     localStorage.setItem('pea_selected_office', 'custom');
     localStorage.setItem('pea_custom_office_name', val);
+    scheduleAutoSave();
   }
 
   function changeLogoFile(e) {
@@ -1290,6 +1478,10 @@
   }
 
   window.addEventListener('DOMContentLoaded', () => {
+    if (isLineInAppBrowser()) {
+      document.getElementById('lineWebViewWarn').style.display = 'flex';
+    }
+
     initPeaLogoPng();
 
     const savedOffice = localStorage.getItem('pea_selected_office');
@@ -1302,29 +1494,50 @@
 
     autoFillDateAndShift();
 
+    document.querySelectorAll('#formPage input').forEach(el => {
+      el.addEventListener('input', scheduleAutoSave);
+      el.addEventListener('change', scheduleAutoSave);
+    });
+
     const params = new URLSearchParams(window.location.search);
     const shortId = (params.get('i') || params.get('id') || '').trim();
     const isDraft = params.get('draft') === '1';
+    const rawGrp = params.get('grp') ? decodeBase64UrlUtf8(params.get('grp')) : (params.get('o') || '');
 
+    let appliedLiveDraft = false;
     if (isDraft) {
+      activeShortJobId = shortId || 'draft_preview';
       try {
         const draftObj = JSON.parse(localStorage.getItem('pea_meter_live_draft') || 'null');
         if (draftObj) {
+          activeDraftFingerprint = makeDraftFingerprint(draftObj);
           cachedIncomingPayload = draftObj;
           applyIncomingJobPayload(draftObj);
-          fitPaperToScreen();
-          return;
+          appliedLiveDraft = true;
+        }
+        if (!shortId) {
+          const savedAuto = JSON.parse(localStorage.getItem(getDraftStorageKey()) || 'null');
+          if (savedAuto && (!activeDraftFingerprint || savedAuto.jobFingerprint === activeDraftFingerprint)) {
+            applySavedFormState(savedAuto, true);
+          } else if (savedAuto) {
+            localStorage.removeItem(getDraftStorageKey());
+          }
         }
       } catch (e) {}
     }
 
+    // หากมีรหัสใบงาน shortId ให้เชื่อมต่อข้อมูลคลาวด์เสมอ (แม้เปิดมาพร้อม &draft=1 จากหน้าต่างแจ้งผลของช่าง)
     if (shortId) {
-      const rawGrp = params.get('grp') ? decodeBase64UrlUtf8(params.get('grp')) : (params.get('o') || '');
-      loadJobByShortId(shortId, rawGrp || 'กฟส.บึง');
-    } else {
+      loadJobByShortId(shortId, rawGrp || cachedIncomingPayload?.office || 'กฟส.บึง', appliedLiveDraft);
+    } else if (!isDraft) {
       cachedIncomingPayload = parseLegacyUrlJobPayload();
       if (cachedIncomingPayload) {
         applyIncomingJobPayload(cachedIncomingPayload);
+      } else {
+        try {
+          const savedStandalone = JSON.parse(localStorage.getItem(getDraftStorageKey()) || 'null');
+          if (savedStandalone) applySavedFormState(savedStandalone, false);
+        } catch (e) {}
       }
     }
 
@@ -1376,9 +1589,7 @@
         logoCanvas.getContext('2d').drawImage(origLogo, 0, 0, lw, lh);
         logoCanvas.toDataURL('image/png');
         cloneLogo.replaceWith(logoCanvas);
-      } catch (e) {
-        cloneLogo.src = origLogo.src;
-      }
+      } catch (e) { cloneLogo.src = origLogo.src; }
     }
 
     const origCbs = origPage.querySelectorAll('input[type="checkbox"]');
@@ -1425,6 +1636,11 @@
   }
 
   async function shareAsPDF() {
+    saveLocalDraftState();
+    if (activeShortJobId && loadedRawJobRecord && navigator.onLine) {
+      syncMeterStateToCloud(true);
+    }
+
     const shareBtn = document.getElementById('sharePdfBtn');
     const originalText = shareBtn.textContent;
     shareBtn.disabled = true;
@@ -1508,6 +1724,10 @@
           title: `รายงานเหตุการณ์มิเตอร์ชำรุด (${officeName})`,
           text: `ใบรายงานเหตุการณ์มิเตอร์ชำรุด PEA: ${peaNo}${docNo ? ' (' + docNo + ')' : ''}`
         });
+      } else if (isLineInAppBrowser()) {
+        if (confirm('เบราว์เซอร์ภายใน LINE บล็อกการส่งไฟล์ PDF\nระบบบันทึกข้อมูลและลายเซ็นของคุณไว้แล้ว ต้องการสลับไปเปิดใน Chrome/Safari เพื่อแชร์ PDF ทันทีหรือไม่?')) {
+          popOutToExternalBrowser();
+        }
       } else {
         const url = URL.createObjectURL(pdfBlob);
         const a = document.createElement('a');
@@ -1523,6 +1743,7 @@
     }
   }
 
+  // --- ระบบกระดานเซ็นชื่อ + จำลายเซ็นประจำตัวพนักงาน + บีบอัดภาพคมชัด ---
   let currentSlotId = null;
   let isDrawing = false;
   let hasDrawn = false;
@@ -1534,6 +1755,39 @@
   const ctx = modalCanvas.getContext('2d');
   const modalNameInput = document.getElementById('modalNameInput');
   const rotateBtn = document.getElementById('rotateBtn');
+
+  function exportCompactSignaturePng(sourceCanvas, targetW = 420, targetH = 96) {
+    try {
+      const c = document.createElement('canvas');
+      c.width = targetW;
+      c.height = targetH;
+      const cctx = c.getContext('2d');
+      cctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
+      return c.toDataURL('image/png');
+    } catch (e) {
+      return sourceCanvas.toDataURL('image/png');
+    }
+  }
+
+  function getSavedPresetKey(slotId) {
+    return 'pea_default_sig_preset_' + slotId;
+  }
+
+  function loadSavedDefaultSignature() {
+    if (!currentSlotId || currentSlotId === 'sig2') return;
+    try {
+      const preset = JSON.parse(localStorage.getItem(getSavedPresetKey(currentSlotId)) || 'null');
+      if (!preset || !preset.src) return;
+      clearModalCanvas();
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, modalCanvas.offsetWidth, modalCanvas.offsetHeight);
+        hasDrawn = true;
+      };
+      img.src = preset.src;
+      if (preset.name) modalNameInput.value = preset.name;
+    } catch (e) {}
+  }
 
   function syncModalToViewport() {
     if (!modal.classList.contains('active')) return;
@@ -1603,13 +1857,29 @@
     const formNameInput = document.getElementById('name-' + slotId);
     modalNameInput.value = formNameInput ? formNameInput.value : '';
 
+    const isStaffSlot = slotId !== 'sig2';
+    const rememberWrap = document.getElementById('rememberSigWrap');
+    const rememberCb = document.getElementById('rememberSigCheckbox');
+    const loadBtn = document.getElementById('loadPresetSigBtn');
+    rememberWrap.style.display = isStaffSlot ? 'inline-flex' : 'none';
+
+    let hasPreset = false;
+    if (isStaffSlot) {
+      try {
+        const preset = JSON.parse(localStorage.getItem(getSavedPresetKey(slotId)) || 'null');
+        hasPreset = Boolean(preset && preset.src);
+      } catch (e) {}
+    }
+    loadBtn.style.display = (isStaffSlot && hasPreset) ? 'inline-block' : 'none';
+    rememberCb.checked = Boolean(isStaffSlot && hasPreset);
+
     modal.classList.add('active');
     syncModalToViewport();
     resizeModalCanvas(false);
     clearModalCanvas();
 
     const existingImg = document.getElementById('img-' + slotId);
-    if (existingImg && existingImg.dataset.signed === 'true') {
+    if (existingImg && existingImg.dataset.signed === 'true' && existingImg.src) {
       const img = new Image();
       img.onload = () => {
         ctx.drawImage(img, 0, 0, modalCanvas.offsetWidth, modalCanvas.offsetHeight);
@@ -1635,26 +1905,46 @@
     const imgEl = document.getElementById('img-' + currentSlotId);
     const placeEl = document.getElementById('place-' + currentSlotId);
     const formNameInput = document.getElementById('name-' + currentSlotId);
+    const rememberCb = document.getElementById('rememberSigCheckbox');
+    const nowTs = Date.now();
 
     if (formNameInput) {
       formNameInput.value = modalNameInput.value;
     }
 
     if (hasDrawn) {
-      imgEl.src = modalCanvas.toDataURL('image/png');
+      const compactUrl = exportCompactSignaturePng(modalCanvas, 420, 96);
+      imgEl.src = compactUrl;
       imgEl.style.display = 'block';
       imgEl.dataset.signed = 'true';
+      imgEl.dataset.explicitCleared = 'false';
+      imgEl.dataset.signedTs = String(nowTs);
       placeEl.style.display = 'none';
+
+      if (currentSlotId !== 'sig2' && rememberCb && rememberCb.checked) {
+        try {
+          localStorage.setItem(getSavedPresetKey(currentSlotId), JSON.stringify({
+            src: compactUrl,
+            name: modalNameInput.value || ''
+          }));
+        } catch (e) {}
+      }
     } else {
       imgEl.removeAttribute('src');
       imgEl.style.display = 'none';
       imgEl.dataset.signed = 'false';
+      imgEl.dataset.explicitCleared = 'true';
+      imgEl.dataset.signedTs = String(nowTs);
       placeEl.style.display = 'inline';
     }
 
     updateStatusLamps();
     closeSigModal();
     fitPaperToScreen();
+    saveLocalDraftState();
+    if (activeShortJobId && loadedRawJobRecord && navigator.onLine) {
+      syncMeterStateToCloud(true);
+    }
   }
 
   function getPointerPos(e) {
@@ -1669,12 +1959,11 @@
         x: (clientY - rect.top) * (cw / rect.height),
         y: (rect.right - clientX) * (ch / rect.width)
       };
-    } else {
-      return {
-        x: (clientX - rect.left) * (cw / rect.width),
-        y: (clientY - rect.top) * (ch / rect.height)
-      };
     }
+    return {
+      x: (clientX - rect.left) * (cw / rect.width),
+      y: (clientY - rect.top) * (ch / rect.height)
+    };
   }
 
   function startDraw(e) {
@@ -1714,16 +2003,22 @@
   });
 
   function resetAll() {
+    if (!confirm('ต้องการล้างข้อมูลและลายเซ็นในหน้านี้ทั้งหมดใช่หรือไม่?')) return;
+    const clearTs = String(Date.now());
     document.querySelectorAll('.line-input').forEach(inp => inp.value = '');
-    document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.querySelectorAll('#formPage input[type="checkbox"]').forEach(cb => cb.checked = false);
     ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
       const imgEl = document.getElementById('img-' + id);
       const placeEl = document.getElementById('place-' + id);
       imgEl.removeAttribute('src');
       imgEl.style.display = 'none';
       imgEl.dataset.signed = 'false';
+      imgEl.dataset.explicitCleared = 'true';
+      imgEl.dataset.signedTs = clearTs;
       placeEl.style.display = 'inline';
     });
+    try { localStorage.removeItem(getDraftStorageKey()); } catch (e) {}
+    document.getElementById('autoSavePill').style.display = 'none';
     updateStatusLamps();
     autoFillDateAndShift();
     fitPaperToScreen();
