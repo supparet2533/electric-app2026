@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v129 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v134 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v133';
+const CACHE_NAME = 'pea-smart-tools-v134';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -10,6 +10,8 @@ const APP_SHELL_ASSETS = [
     './',
     './index.html',
     './page2.html',
+    './meter-form.html',
+    './pea-logo.png',
     './pea-idb-store.js',
     './shared-core.js',
     './main-app.js',
@@ -20,6 +22,14 @@ const APP_SHELL_ASSETS = [
     './pm-push.js',
     './manifest.json',
     './manifest-main.json',
+    './icon-main-192.png',
+    './icon-main-512.png',
+    './icon-main-maskable-192.png',
+    './icon-main-maskable-512.png',
+    './icon-tech-192.png',
+    './icon-tech-512.png',
+    './icon-tech-maskable-192.png',
+    './icon-tech-maskable-512.png',
     'https://cdn.tailwindcss.com',
     'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
     'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
@@ -29,7 +39,8 @@ const APP_SHELL_ASSETS = [
     'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js',
     'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
     'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js',
-    'https://cdn.jsdelivr.net/npm/chart.js'
+    'https://cdn.jsdelivr.net/npm/chart.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
 ];
 
 const REQUIRED_LOCAL_SHELL = new Set([
@@ -289,7 +300,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2) + Timeout 5 วิ
+    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2, /meter-form) + Timeout 5 วิ
     const isAppShellFile = url.origin === self.location.origin &&
         (req.mode === 'navigate' || /\.(?:html|js|mjs|css|json|webmanifest)$/i.test(url.pathname) || url.pathname.endsWith('/'));
 
@@ -297,10 +308,13 @@ self.addEventListener('fetch', (event) => {
         const baseDirPath = self.location.pathname.replace(/[^/]*$/, '');
         const cleanCacheKey = url.origin + url.pathname;
         const isPage2Route = /\/page2(?:\.html)?$/i.test(url.pathname);
+        const isMeterFormRoute = /\/meter-form(?:\.html)?$/i.test(url.pathname);
         const isRootOrIndex = url.pathname === baseDirPath || /\/index(?:\.html)?$/i.test(url.pathname);
         const mirrorKey = isRootOrIndex
             ? url.origin + (url.pathname === baseDirPath ? baseDirPath + 'index.html' : baseDirPath)
-            : (isPage2Route ? url.origin + baseDirPath + 'page2.html' : '');
+            : (isPage2Route
+                ? url.origin + baseDirPath + 'page2.html'
+                : (isMeterFormRoute ? url.origin + baseDirPath + 'meter-form.html' : ''));
 
         event.respondWith(
             (async () => {
@@ -375,10 +389,12 @@ self.addEventListener('fetch', (event) => {
                     if (timer) clearTimeout(timer);
                     if (cachedFallback) return cachedFallback;
                     if (req.mode === 'navigate' && cache) {
-                        const fallbackPage = isPage2Route
-                            ? await cache.match('./page2.html', { ignoreSearch: true, ignoreVary: true })
-                            : (await cache.match('./index.html', { ignoreSearch: true, ignoreVary: true }) ||
-                               await cache.match('./', { ignoreSearch: true, ignoreVary: true }));
+                        const fallbackPage = isMeterFormRoute
+                            ? await cache.match('./meter-form.html', { ignoreSearch: true, ignoreVary: true })
+                            : (isPage2Route
+                                ? await cache.match('./page2.html', { ignoreSearch: true, ignoreVary: true })
+                                : (await cache.match('./index.html', { ignoreSearch: true, ignoreVary: true }) ||
+                                   await cache.match('./', { ignoreSearch: true, ignoreVary: true })));
                         return fallbackPage || Response.error();
                     }
                     return Response.error();
