@@ -720,7 +720,12 @@
         }
     };
 
-    Storage.prototype.removeItem = function (key) {
+        Storage.prototype.removeItem = function (key) {
+        if (this === localStorage && (key === 'elec_app_current_user' || key === 'elec_app_session_token')) {
+            const u = (rawStorageGet('elec_app_current_user') || recentLogoutAuthCache.user || '').trim();
+            const t = (rawStorageGet('elec_app_session_token') || recentLogoutAuthCache.token || '').trim();
+            if (u && t) recentLogoutAuthCache = { user: u, token: t, ts: Date.now() };
+        }
         const res = nativeRemoveItem.apply(this, arguments);
         if (key === 'elec_labeled_places_list') { ramIndex.pinsRaw = null; refreshRamPinsIndex(); }
         else if (key === 'elec_deleted_labeled_places_map') { ramIndex.delPinsRaw = null; refreshRamDelPinsIndex(); }
@@ -1452,15 +1457,42 @@
         lastSyncedLocalPinsStr = null; lastSyncedLocalDelPinsStr = null; lastSyncedLocalAuditStr = null; lastSyncedLocalBackupsStr = null;
     }
 
+        let recentLogoutAuthCache = { user: '', token: '', ts: 0 };
+
+    function getActiveAuthCredentialsForFetch() {
+        const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
+        const curTok = (rawStorageGet('elec_app_session_token') || '').trim();
+        if (curUser && curTok) {
+            recentLogoutAuthCache = { user: curUser, token: curTok, ts: Date.now() };
+            return { user: curUser, token: curTok };
+        }
+        if (recentLogoutAuthCache.user && recentLogoutAuthCache.token && (Date.now() - recentLogoutAuthCache.ts < 5000)) {
+            return { user: recentLogoutAuthCache.user, token: recentLogoutAuthCache.token };
+        }
+        return { user: '', token: '' };
+    }
+
+    function handleServerUnauthorizedIfNeeded(parsedJson) {
+        if (!parsedJson || parsedJson.unauthorized !== true) return;
+        if (rawStorageGet('elec_app_logged_in') !== 'true') return;
+        ['elec_app_logged_in', 'elec_app_session_token'].forEach(k => nativeRemoveItem.call(localStorage, k));
+        if (typeof window.checkLoginStatus === 'function') window.checkLoginStatus();
+        if (typeof window.checkTechAuth === 'function') window.checkTechAuth();
+        showToast('🔒 เซสชันหมดอายุหรือรหัสผ่านมีการเปลี่ยนแปลง กรุณาเข้าสู่ระบบใหม่');
+    }
+
     function buildScopedSheetUrl(rawUrl) {
         ensureSyncScopeFresh();
         const u = String(rawUrl || '');
         const role = (rawStorageGet('elec_app_current_role') || 'user').trim();
         const grp = getCurrentUserGroup();
+        const auth = getActiveAuthCredentialsForFetch();
         const sep = u.includes('?') ? '&' : '?';
         const extras = [];
         if (!/[?&]group=/.test(u)) extras.push(`group=${encodeURIComponent(grp)}`);
         if (!/[?&]role=/.test(u)) extras.push(`role=${encodeURIComponent(role)}`);
+        if (auth.user && !/[?&]authUser=/.test(u)) extras.push(`authUser=${encodeURIComponent(auth.user)}`);
+        if (auth.token && !/[?&]authToken=/.test(u)) extras.push(`authToken=${encodeURIComponent(auth.token)}`);
         return extras.length ? `${u}${sep}${extras.join('&')}` : u;
     }
 
@@ -1568,7 +1600,7 @@
                     const resText = await res.text();
                     let ok = res.ok;
                     try {
-                        const j = JSON.parse(resText);
+                        const j = JSON.parse(resText);handleServerUnauthorizedIfNeeded(j);
                         if (j?.status === 'ok' && j?.ok !== false && !j?.skippedQuota && !j?.skippedBusyRam) ok = true;
                         else if (j?.status === 'error' || j?.ok === false || j?.skippedBusyRam) ok = false;
                     } catch (e) {}
@@ -1615,8 +1647,8 @@
             try {
                 const res = await nativeFetch.call(window, scopedUrl, init);
                 const text = await res.text();
-                try {
-                    const data = JSON.parse(text);
+                try {                                      const data = JSON.parse(text);
+                    handleServerUnauthorizedIfNeeded(data);
                     if (data?.status === 'ok' && Array.isArray(data.jobs)) {
                         data.jobs.forEach(j => {
                             if (!j || j.jobType === 'tech_loc') return;
@@ -1804,7 +1836,7 @@
         return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
     }
 
-    function deepParseCoords(rawStr) {
+        function deepParseCoords(rawStr) {
         if (!rawStr) return null;
         let s = String(rawStr).trim();
         try { s = decodeURIComponent(s); } catch (e) {}
@@ -1817,6 +1849,7 @@
         const m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/i) ||
             s.match(/[?&](?:q|ll|destination|query|center|daddr)=(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)/i) ||
             s.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/) ||
+            s.match(/(?:lat(?:itude)?|ละติจูด)\s*[:：=]?\s*(-?\d{1,3}\.\d{3,})[\s,;\/|]*(?:long(?:itude)?|lon|lng|ลองจิจูด)\s*[:：=]?\s*\+?(-?\d{1,3}\.\d{3,})/i) ||
             s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
         if (!m) return null;
         let la = parseFloat(m[1]), lo = parseFloat(m[2]);
