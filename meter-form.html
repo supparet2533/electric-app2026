@@ -1173,12 +1173,13 @@
     return s;
   }
 
-  function normalizeGpsNavUrl(rawGps) {
+    function normalizeGpsNavUrl(rawGps) {
     const s = String(rawGps || '').trim();
     if (!s || s === '-') return '';
     if (/^https?:\/\//i.test(s)) return s;
     if (/^(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)) return 'https://' + s;
-    const m = s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+    const m = s.match(/(?:lat(?:itude)?|ละติจูด)\s*[:：=]?\s*(-?\d{1,3}\.\d{3,})[\s,;\/|]*(?:long(?:itude)?|lon|lng|ลองจิจูด)\s*[:：=]?\s*\+?(-?\d{1,3}\.\d{3,})/i) ||
+              s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
     if (m) return `https://www.google.com/maps?q=${m[1]},${m[2]}`;
     return '';
   }
