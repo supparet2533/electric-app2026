@@ -513,7 +513,7 @@
     }
 
     async function pullPmPlansWhileLoggedOut() {
-        if (isUserCurrentlyLoggedIn() || !hasRememberedPmSession() || (Core && Core.isEmbeddedIframe) || !navigator.onLine) return false;
+    if (isUserCurrentlyLoggedIn() || !(rawGet('elec_app_session_token') || '').trim()) return false;
         const baseApiUrl = (rawGet(PM_LAST_API_URL_KEY) || (typeof window.getActiveCloudApiUrl === 'function' ? window.getActiveCloudApiUrl() : '')).trim();
         if (!baseApiUrl) return false;
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -574,7 +574,7 @@
         let attachedSyncSeq = 0;
         
         if (isGas && init && init.method === 'POST' && typeof init.body === 'string' && (isUserCurrentlyLoggedIn() || hasPendingPmCloudSync)) {
-            if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
+                        if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
                 try {
                     loadPmPlansFromStorage();
                     const bodyObj = JSON.parse(init.body);
@@ -585,7 +585,8 @@
                             bodyObj.jobs.push(targetReg);
                         }
                         targetReg.techLocations = writePmShardsIntoLocMap(targetReg.techLocations || safeGetLocMap());
-                        init = { ...init, body: JSON.stringify(bodyObj) };
+                        const nextBodyStr = JSON.stringify(bodyObj);
+                        init = { ...init, body: nextBodyStr, ...(init.keepalive && new Blob([nextBodyStr]).size > 55000 ? { keepalive: false } : {}) };
                         didAttachPmWrite = true;
                         attachedSyncSeq = pendingPmSyncSeq;
                     } else if (bodyObj.action === 'patchDelta' && (bodyObj.techLocDelta || hasPendingPmCloudSync)) {
@@ -593,7 +594,8 @@
                             bodyObj.techLocDelta = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', techLocations: safeGetLocMap(), updatedAt: new Date().toISOString() };
                         }
                         bodyObj.techLocDelta.techLocations = writePmShardsIntoLocMap(bodyObj.techLocDelta.techLocations || safeGetLocMap());
-                        init = { ...init, body: JSON.stringify(bodyObj) };
+                        const nextBodyStr = JSON.stringify(bodyObj);
+                        init = { ...init, body: nextBodyStr, ...(init.keepalive && new Blob([nextBodyStr]).size > 55000 ? { keepalive: false } : {}) };
                         didAttachPmWrite = true;
                         attachedSyncSeq = pendingPmSyncSeq;
                     }
@@ -1072,7 +1074,7 @@
         if (jobCardsEl?.parentElement && !document.getElementById('pmTechQueueBannerWrap')) {
             const wrap = document.createElement('div');
             wrap.id = 'pmTechQueueBannerWrap'; wrap.className = 'hidden px-4 pt-2 pb-1';
-            jobCardsEl.parentElement.insertBefore(wrap, document.getElementById('repairJobsMapSection') || jobCardsEl);
+            jobCardsEl.parentElement.insertBefore(wrap, document.getElementById('repairJobsMapWrapper') || document.getElementById('repairJobsMapSection') || jobCardsEl);
         }
         injectPmButtonsIntoScadaToolbar();
     }
@@ -1236,9 +1238,11 @@
     }
 
     function bindSingleLeafletMapEvents(map) {
-        if (!map || map.__pmHookBound) return;
-        const mapDom = map.getContainer?.(), containerId = mapDom?.id || '';
-        if (containerId !== 'labeledInteractiveMap' && containerId !== 'repairJobsLeafletMap') return;
+    if (!map || map.__pmHookBound) return;
+    const mapDom = map.getContainer?.(),
+        containerId = mapDom?.id || '';
+    const isRepairMap = (containerId === 'repairJobsLeafletMap' || containerId === 'repairJobsMapCanvas');
+    if (containerId !== 'labeledInteractiveMap' && !isRepairMap) return;
         map.__pmHookBound = true;
         if (mapDom && !mapDom.__pmCtxGuardBound) {
             mapDom.__pmCtxGuardBound = true;
@@ -1273,36 +1277,41 @@
 
     const probedLeafletContainerIds = new Set();
         function discoverExistingLeafletMaps() {
-        if (typeof L === 'undefined' || !L.Map) return;
-        if (!scadaMapRef && window.__labeledLeafletMap) bindSingleLeafletMapEvents(window.__labeledLeafletMap);
-        if (scadaMapRef && repairMapRef) return;
-        let needResize = false;
-        [['labeledInteractiveMap', scadaMapRef], ['repairJobsLeafletMap', repairMapRef]].forEach(([id, ref]) => {
-            if (ref || probedLeafletContainerIds.has(id)) return;
-            const el = document.getElementById(id);
-            if (el && (el._leaflet_id || el.classList.contains('leaflet-container'))) { probedLeafletContainerIds.add(id); needResize = true; }
-        });
-        if (needResize) setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
-    }
+    if (typeof L === 'undefined' || !L.Map) return;
+    if (!scadaMapRef && window.__labeledLeafletMap) bindSingleLeafletMapEvents(window.__labeledLeafletMap);
+    if (scadaMapRef && repairMapRef) return;
+    let needResize = false;
+    [['labeledInteractiveMap', scadaMapRef], ['repairJobsMapCanvas', repairMapRef], ['repairJobsLeafletMap', repairMapRef]].forEach(([id, ref]) => {
+        if (ref || probedLeafletContainerIds.has(id)) return;
+        const el = document.getElementById(id);
+        if (el && (el._leaflet_id || el.classList.contains('leaflet-container'))) { probedLeafletContainerIds.add(id); needResize = true; }
+    });
+    if (needResize) setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
+}
 
-    function bindLeafletMapHooks() {
-        if (typeof L === 'undefined' || !L.Map) return;
-        if (!L.Map.__pmInitHookAdded) {
-            L.Map.__pmInitHookAdded = true;
-            L.Map.addInitHook(function () { setTimeout(() => bindSingleLeafletMapEvents(this), 50); });
-            ['invalidateSize', 'setView', 'addLayer'].forEach(fnName => {
-                const orig = L.Map.prototype[fnName];
-                if (typeof orig === 'function' && !orig.__pmWrapped) {
-                    const wrapped = function (...args) {
-                        if (!this.__pmHookBound) { const cid = this._container?.id || ''; if (cid === 'labeledInteractiveMap' || cid === 'repairJobsLeafletMap') setTimeout(() => bindSingleLeafletMapEvents(this), 0); }
-                        return orig.apply(this, args);
-                    };
-                    wrapped.__pmWrapped = true; L.Map.prototype[fnName] = wrapped;
-                }
-            });
-        }
-        discoverExistingLeafletMaps();
+function bindLeafletMapHooks() {
+    if (typeof L === 'undefined' || !L.Map) return;
+    if (!L.Map.__pmInitHookAdded) {
+        L.Map.__pmInitHookAdded = true;
+        L.Map.addInitHook(function () { setTimeout(() => bindSingleLeafletMapEvents(this), 50); });
+        ['invalidateSize', 'setView', 'addLayer'].forEach(fnName => {
+            const orig = L.Map.prototype[fnName];
+            if (typeof orig === 'function' && !orig.__pmWrapped) {
+                const wrapped = function (...args) {
+                    if (!this.__pmHookBound) {
+                        const cid = this._container?.id || '';
+                        if (cid === 'labeledInteractiveMap' || cid === 'repairJobsMapCanvas' || cid === 'repairJobsLeafletMap') {
+                            setTimeout(() => bindSingleLeafletMapEvents(this), 0);
+                        }
+                    }
+                    return orig.apply(this, args);
+                };
+                wrapped.__pmWrapped = true; L.Map.prototype[fnName] = wrapped;
+            }
+        });
     }
+    discoverExistingLeafletMaps();
+}
     // ===== จบพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
     // ===== เริ่มพาทที่ 5 / 6 ของไฟล์ pm-calendar.js (วางทับพาทที่ 5 / 6 เดิม) =====
     // ========================================================================
