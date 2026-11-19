@@ -606,8 +606,9 @@
         try { localStorage.setItem(STORAGE_KEY_LABELS, jsonStr); } catch (e) {}
     }
 
-    function markEquipCloudPushPending() {
+        function markEquipCloudPushPending() {
         if (simState.active || isViewerRole()) return;
+        localStorage.setItem('elec_scada_pins_dirty', 'true');
         localStorage.setItem('elec_tech_has_pending_push', 'true');
         Core?.unlockCloudWrite?.(25000);
     }
@@ -1017,8 +1018,8 @@
             mapWrap.classList.add('hidden');
             mapWrap.classList.remove('flex', 'lg:grid');
             jobsWrap.classList.remove('hidden');
-            if (typeof window.renderRepairJobsMapMarkers === 'function') {
-                setTimeout(() => window.renderRepairJobsMapMarkers(false), 120);
+            if (typeof window.renderJobCards === 'function') {
+                setTimeout(() => window.renderJobCards(true), 120);
             }
         }
     }
@@ -1889,14 +1890,78 @@
         if (typeof window.releaseScreenWakeLockIfIdle === 'function') window.releaseScreenWakeLockIfIdle();
         renderLabeledPlacesList(false);
     }
+        function syncEquipNavToSharedRegistry(place, routeOrNav) {
+        if (isViewerRole() || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+        const curUser = normalizeUsernameFormat(localStorage.getItem('elec_app_current_user') || 'ช่างหน้างาน');
+        const grp = normScadaGrp(place?.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง');
+        const baseId = (getUserBaseId(curUser) || 'guest').replace(/\s+/g, '_');
+        const scopedKey = `equip_nav_${grp.replace(/\s+/g, '_')}_${baseId}`;
+        const legacyKey = `equip_nav_${baseId}`;
+
+        const cancelMap = safeJsonParse(localStorage.getItem('elec_cancelled_equip_nav_map'), {});
+        const prevCancelMs = Math.max(Number(cancelMap[scopedKey] || 0), Number(cancelMap[legacyKey] || 0), Number(cancelMap[curUser] || 0));
+        [scopedKey, legacyKey, curUser].forEach(k => delete cancelMap[k]);
+        localStorage.setItem('elec_cancelled_equip_nav_map', JSON.stringify(cancelMap));
+
+        const now = new Date();
+        const safeStartMs = Math.max(Number(activeMapNav?.departTimestamp || now.getTime()), prevCancelMs + 2000);
+        const durMin = Number(routeOrNav?.durationMin ?? activeMapNav?.durationMin ?? 5);
+        const etaMs = Number(routeOrNav?.etaTimestamp || (safeStartMs + durMin * 60000));
+        const etaD = new Date(etaMs);
+        const etaStr = routeOrNav?.isArrived ? 'ถึงจุดหมายแล้ว' : (routeOrNav?.etaTime || `${String(etaD.getHours()).padStart(2, '0')}.${String(etaD.getMinutes()).padStart(2, '0')} น.`);
+        const departStr = activeMapNav?.departTime || `${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')} น.`;
+        const title = place?.name || routeOrNav?.placeName || 'หมุดอุปกรณ์ไฟฟ้า';
+
+        const navObj = {
+            id: scopedKey,
+            placeId: place?.id || routeOrNav?.placeId || '',
+            placeTitle: title,
+            placeName: title,
+            techName: curUser,
+            ownerGroup: grp,
+            isTraveling: true,
+            destLat: !isNaN(parseFloat(place?.lat ?? routeOrNav?.destLat)) ? parseFloat(place?.lat ?? routeOrNav?.destLat) : null,
+            destLon: !isNaN(parseFloat(place?.lon ?? routeOrNav?.destLon)) ? parseFloat(place?.lon ?? routeOrNav?.destLon) : null,
+            distanceKm: String(routeOrNav?.distanceKm ?? activeMapNav?.distanceKm ?? '2.0'),
+            initialDistanceKm: String(activeMapNav?.initialDistanceKm ?? routeOrNav?.distanceKm ?? '2.0'),
+            durationMin: durMin,
+            departTime: departStr,
+            departTimestamp: safeStartMs,
+            etaTime: etaStr,
+            etaTimestamp: etaMs,
+            isArrived: Boolean(routeOrNav?.isArrived),
+            updatedAt: new Date(Math.max(Date.now(), safeStartMs)).toISOString()
+        };
+
+        const navMap = safeJsonParse(localStorage.getItem('elec_active_equip_nav_map_v2'), {});
+        navMap[scopedKey] = navObj;
+        localStorage.setItem('elec_active_equip_nav_map_v2', JSON.stringify(navMap));
+
+        const locMap = typeof window.getTechLocationsMap === 'function' ? window.getTechLocationsMap() : safeJsonParse(localStorage.getItem('elec_tech_locations_map'), {});
+        if (!locMap[curUser]) locMap[curUser] = { username: curUser, group: grp, isOnline: true };
+        locMap[curUser].activeEquipNav = navObj;
+        locMap[curUser].updatedAt = navObj.updatedAt;
+        if (Core?.REGISTRY_LOC_KEY && locMap[Core.REGISTRY_LOC_KEY]?.equipCancelMap) {
+            [scopedKey, legacyKey, curUser].forEach(k => delete locMap[Core.REGISTRY_LOC_KEY].equipCancelMap[k]);
+        }
+        localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
+        localStorage.setItem('elec_tech_has_pending_push', 'true');
+        Core?.unlockCloudWrite?.(20000);
+        if (typeof window.updateEquipNavFloatingBanner === 'function') window.updateEquipNavFloatingBanner();
+        if (typeof window.pushAllJobsToCloud === 'function') window.pushAllJobsToCloud(true);
+    }
+    window.recordEquipmentNavStart = (place, route) => syncEquipNavToSharedRegistry(place, route);
+    window.updateEquipmentNavRouteInfo = (navState) => syncEquipNavToSharedRegistry({ id: navState?.placeId, name: navState?.placeName, lat: navState?.destLat, lon: navState?.destLon }, navState);
     window.__stopScadaMapRoute = clearLocalMapRouteOnly;
 
     function stopLabeledPlaceNavigation(silent = false) {
         const wasNav = Boolean(activeMapNav);
         clearLocalMapRouteOnly();
-        if (!silent && typeof window.finishMyEquipmentNavigation === 'function') window.finishMyEquipmentNavigation(false);
+        if (!silent && typeof window.stopEquipmentNavigation === 'function') window.stopEquipmentNavigation(null, false);
+        else if (!silent && typeof window.finishMyEquipmentNavigation === 'function') window.finishMyEquipmentNavigation(false);
         else if (wasNav && !silent) showToast('↩️ ยกเลิกการนำทางไปยังอุปกรณ์ไฟฟ้าแล้ว');
     }
+
 
     // ========================================================================
     // 8. แผนที่ Leaflet, กันล้างเลเยอร์ขณะลากนิ้ว, คงตำแหน่งเลื่อน Popup & Smart LOD
@@ -3980,10 +4045,23 @@
         }
     };
 
+        window.__onScadaPinsSynced = () => {
+        if (simState.active) return;
+        if (activeDragCleanupFn) pendingRefreshAfterDrag = true;
+        else { renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+    };
+
     Core?.onRealtimeChange?.(keys => {
         if (!simState.active && Array.isArray(keys) && keys.some(k => k.includes('labeled') || k.includes('audit'))) {
             if (activeDragCleanupFn) pendingRefreshAfterDrag = true;
             else { renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+        }
+        if (activeMapNav && Array.isArray(keys) && keys.some(k => k.includes('equip_nav') || k === 'elec_tech_locations_map')) {
+            if (typeof window.getActiveEquipmentNavItems === 'function') {
+                const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+                const stillActive = window.getActiveEquipmentNavItems().some(it => it && isSameTechPerson(it.techName, curUser));
+                if (!stillActive) clearLocalMapRouteOnly();
+            }
         }
     });
     document.addEventListener('visibilitychange', () => { if (!document.hidden && localStorage.getItem('elec_app_logged_in') === 'true') resumeActiveEquipMapNavIfNeeded(false); });
