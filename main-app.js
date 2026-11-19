@@ -187,7 +187,16 @@
         } catch (e) { return ''; }
     }
 
-        function buildShortMeterUrl(dateTimeSaved, ownerGroup, forExternalLine = false) {
+            function generateRandomMeterKey() {
+        const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const arr = new Uint8Array(6);
+        if (window.crypto?.getRandomValues) window.crypto.getRandomValues(arr);
+        else
+            for (let i = 0; i < 6; i++) arr[i] = Math.floor(Math.random() * 256);
+        return Array.from(arr, b => chars[b % chars.length]).join('');
+    }
+    
+    function buildShortMeterUrl(dateTimeSaved, ownerGroup, forExternalLine = false, meterKey = '') {
         const baseUrl = getConfiguredMeterFormBaseUrl();
         if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl;
         const cleanBase = baseUrl.split('?')[0];
@@ -195,13 +204,14 @@
         if (!shortId) return cleanBase;
         const grp = normGrp(ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
         const grpParam = (grp !== 'กฟส.บึง') ? `&grp=${encodeUtf8Base64Url(grp)}` : '';
+        const keyParam = meterKey ? `&k=${encodeURIComponent(meterKey)}` : '';
         const extParam = forExternalLine ? '&openExternalBrowser=1' : '';
-        return `${cleanBase}?i=${shortId}${grpParam}${extParam}`;
+        return `${cleanBase}?i=${shortId}${keyParam}${grpParam}${extParam}`;
     }
-
+    
     function buildMeterFormUrlFromData(info) {
         if (info?.dateTimeSaved) {
-            return buildShortMeterUrl(info.dateTimeSaved, info.ownerGroup);
+            return buildShortMeterUrl(info.dateTimeSaved, info.ownerGroup, false, info.meterKey || '');
         }
         const baseUrl = getConfiguredMeterFormBaseUrl();
         if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl || 'meter-form.html';
@@ -2383,12 +2393,11 @@
         window.open(url, '_blank');
     }
 
-        function openMeterFormForOutageItem(dateTimeSaved) {
+            function openMeterFormForOutageItem(dateTimeSaved) {
         const item = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]').find(h => h.dateTimeSaved === dateTimeSaved);
         if (!item) return;
-        window.open(buildShortMeterUrl(dateTimeSaved, getJobGroupName(item)), '_blank');
+        window.open(buildShortMeterUrl(dateTimeSaved, getJobGroupName(item), false, item.meterKey || ''), '_blank');
     }
-
 
     function saveAndCopyFault(sendToLine = false) {
         if (!guardNotViewer()) return;
@@ -2441,7 +2450,7 @@
         syncJobsWithFieldPage();
     }
 
-        function generateOutageMessage(sendToLine = false) {
+    function generateOutageMessage(sendToLine = false) {
         if (!guardNotViewer()) return;
         const rt = getRealTimeShiftAndDate();
         const dateEl = document.getElementById('reportDate'), shiftEl = document.getElementById('shift'), jobNoEl = document.getElementById('jobNo');
@@ -2476,6 +2485,7 @@
         if (existingKeys.has(dateTimeSaved)) dateTimeSaved += `.${Date.now() % 1000}`;
         const finalJobKey = editingOutageId || dateTimeSaved;
         const ownerGrp = normGrp(editingExistingItem?.ownerGroup || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        const jobMeterKey = editingExistingItem?.meterKey || generateRandomMeterKey();
 
         const pasteMeta = extractMeterMetaFromText(document.getElementById('rawCustomerPasteInput')?.value || '');
         const addrMeta = extractMeterMetaFromText(address);
@@ -2486,7 +2496,7 @@
         let message = `${pInfo.emoji} งานที่${jobNo} กะ${shift}  รับแจ้งไฟฟ้าขัดข้อง วันที่${reportDate}\n🛠️***อย่าลืมทำ*** We safe \n⚡ลักษณะอาการ :  ${issueType}\n👷ผู้ปฏิบัติงาน ${workerName}\n🗺️ บริเวณ :  ${area}\n\n🏠ที่อยู่ : ${address}\n📞เบอร์โทร : ${phone}\n\n📌พิกัด  : ${gps}`;
         const normIssue = issueType.toLowerCase().replace(/\s+/g, '');
         if (normIssue.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => normIssue.includes(kw))) {
-         const shortMeterUrl = buildShortMeterUrl(finalJobKey, ownerGrp, true);
+            const shortMeterUrl = buildShortMeterUrl(finalJobKey, ownerGrp, true, jobMeterKey);
             message += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${shortMeterUrl}`;
         }
 
@@ -2494,7 +2504,8 @@
         saveOutageData(finalJobKey, reportDate, jobNo, shift, issueType, workerName, area, address, phone, gps, message, pInfo.level, {
             customerName: metaCustName,
             peaMeterNo: metaPeaNo,
-            caNo: metaCaNo
+            caNo: metaCaNo,
+            meterKey: jobMeterKey
         });
         if (sendToLine) openLineAppWithFallback(message);
         else copyTextToClipboard(message, isEditing ? '✅ อัปเดตทับรายการเดิมและคัดลอกสำเร็จ!' : `บันทึกงานที่ ${jobNo} (กะ ${shift}) และคัดลอกสำเร็จ!`);
@@ -2512,6 +2523,8 @@
         if (extraMeterMeta?.customerName) meterFields.customerName = extraMeterMeta.customerName;
         if (extraMeterMeta?.peaMeterNo) meterFields.peaMeterNo = extraMeterMeta.peaMeterNo;
         if (extraMeterMeta?.caNo) meterFields.caNo = extraMeterMeta.caNo;
+        if (extraMeterMeta?.meterKey) meterFields.meterKey = extraMeterMeta.meterKey;
+
 
         const history = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]');
         const curUser = (Core.rawStorageGet('elec_app_current_user') || '').trim();
@@ -3884,7 +3897,9 @@
 
         renderMainHomeIconPng(); clearStuckEditModes();
         initStations(); initTambonData(); initIssues(); initOverdueCaAndStripSettings();
-        checkLoginStatus(); fetchUserAccountsFromCloud(true); startRealtimeWeatherStream();
+        checkLoginStatus();
+if (Core.rawStorageGet('elec_app_logged_in') === 'true') fetchUserAccountsFromCloud(true);
+ startRealtimeWeatherStream();
 
         const savedMult = Core.rawStorageGet('fuse_multiplier');
         if (savedMult && document.getElementById('multiplier-input')) document.getElementById('multiplier-input').value = savedMult;
