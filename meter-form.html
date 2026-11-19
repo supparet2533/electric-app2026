@@ -603,6 +603,7 @@
 
   let cachedIncomingPayload = null;
   let activeShortJobId = '';
+  let activeMeterKey = '';
   let activeOfficeGroup = 'กฟส.บึง';
   let activeDraftFingerprint = '';
   let loadedRawJobRecord = null;
@@ -618,6 +619,9 @@
       await syncMeterStateToCloud(true);
     }
     const u = new URL(window.location.href);
+    if (activeMeterKey && !u.searchParams.get('k')) {
+      u.searchParams.set('k', activeMeterKey);
+    }
     if (u.searchParams.get('openExternalBrowser') === '1') {
       u.searchParams.set('_ext', String(Date.now()).slice(-4));
     } else {
@@ -867,10 +871,19 @@
     return '';
   }
 
-  // --- ซิงค์ข้อมูลใบมิเตอร์และลายเซ็นขึ้น Google Sheets (ให้ หผ.ปบ. / ผมต. เปิดลิงก์เดิมเซ็นต่อได้) ---
+  function getStoredStaffAuthQuery() {
+    try {
+      const u = (localStorage.getItem('elec_app_current_user') || '').trim();
+      const t = (localStorage.getItem('elec_app_session_token') || '').trim();
+      if (u && t) return `&authUser=${encodeURIComponent(u)}&authToken=${encodeURIComponent(t)}`;
+    } catch (e) {}
+    return '';
+  }
+
+  // --- ซิงค์ข้อมูลใบมิเตอร์และลายเซ็นขึ้น Google Sheets (จำกัดเฉพาะฟิลด์ meterFormState ผ่านรหัส k) ---
   async function syncMeterStateToCloud(isSilent = true) {
     saveLocalDraftState();
-    if (!activeShortJobId || activeShortJobId === 'draft_preview' || !loadedRawJobRecord || !navigator.onLine) return false;
+    if (!activeShortJobId || activeShortJobId === 'draft_preview' || !navigator.onLine) return false;
     const baseUrl = await resolveCloudApiBaseUrl();
     if (!baseUrl) return false;
 
@@ -883,32 +896,29 @@
 
     try {
       const curState = collectCurrentFormState();
-      const updatedJob = {
-        ...loadedRawJobRecord,
-        jobType: 'outage',
-        ownerGroup: loadedRawJobRecord.ownerGroup || activeOfficeGroup || 'กฟส.บึง',
-        meterFormState: curState
-      };
-      delete updatedJob.pendingInitialUpload;
+      const targetGroup = loadedRawJobRecord?.ownerGroup || activeOfficeGroup || 'กฟส.บึง';
 
-      try {
-        const localList = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
-        const idx = localList.findIndex(it => it && it.dateTimeSaved === updatedJob.dateTimeSaved);
-        if (idx !== -1) {
-          localList[idx].meterFormState = updatedJob.meterFormState;
-          localStorage.setItem('elecReportsComplete_all', JSON.stringify(localList));
-        }
-      } catch (e) {}
+      if (loadedRawJobRecord) {
+        loadedRawJobRecord.meterFormState = curState;
+        try {
+          const localList = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+          const idx = localList.findIndex(it => it && it.dateTimeSaved === loadedRawJobRecord.dateTimeSaved);
+          if (idx !== -1) {
+            localList[idx].meterFormState = curState;
+            localStorage.setItem('elecReportsComplete_all', JSON.stringify(localList));
+          }
+        } catch (e) {}
+      }
 
       const bodyStr = JSON.stringify({
-        action: 'patchDelta',
-        group: updatedJob.ownerGroup,
-        forceSheetWrite: true,
-        upsertedJobs: [updatedJob],
-        removedJobKeys: []
+        action: 'saveMeterState',
+        i: activeShortJobId,
+        k: activeMeterKey,
+        group: targetGroup,
+        meterFormState: curState
       });
 
-      const res = await fetch(baseUrl, {
+      const res = await fetch(`${baseUrl}?group=${encodeURIComponent(targetGroup)}${getStoredStaffAuthQuery()}`, {
         method: 'POST',
         keepalive: new Blob([bodyStr]).size < 55000,
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -916,7 +926,6 @@
       });
       const data = await res.json();
       if (data?.status === 'ok') {
-        loadedRawJobRecord = updatedJob;
         const pill = document.getElementById('autoSavePill');
         if (pill) {
           pill.textContent = '☁️ ซิงค์ออนไลน์แล้ว';
@@ -935,7 +944,7 @@
     return false;
   }
 
-  // --- ดึงข้อมูลใบงานด้วยรหัสสั้น (รองรับทั้งโหมดดึงใบเดียวความเร็วสูง getJob และโหมดพรีวิวจากโมดอลหน้าช่าง) ---
+  // --- ดึงข้อมูลใบงานด้วยรหัสสั้นคู่กับรหัสลับ k (ป้องกันคนนอกสุ่มเดาลิงก์) ---
   async function loadJobByShortId(shortId, officeHint, alreadyAppliedLiveDraft = false) {
     activeShortJobId = shortId;
     activeOfficeGroup = officeHint || 'กฟส.บึง';
@@ -951,6 +960,7 @@
       const hit = localList.find(it => it && (makeShortJobId(it.dateTimeSaved) === shortId || it.dateTimeSaved === shortId));
       if (hit) {
         loadedRawJobRecord = hit;
+        if (hit.meterKey && !activeMeterKey) activeMeterKey = String(hit.meterKey).trim();
         const basePayload = convertJobRecordToMeterPayload(hit, closedReg);
         if (!alreadyAppliedLiveDraft) {
           cachedIncomingPayload = basePayload;
@@ -987,9 +997,18 @@
 
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const url = `${baseUrl}?action=getJob&i=${encodeURIComponent(shortId)}&group=${encodeURIComponent(activeOfficeGroup)}&t=${Date.now()}`;
+        const keyParam = activeMeterKey ? `&k=${encodeURIComponent(activeMeterKey)}` : '';
+        const url = `${baseUrl}?action=getJob&i=${encodeURIComponent(shortId)}${keyParam}&group=${encodeURIComponent(activeOfficeGroup)}${getStoredStaffAuthQuery()}&t=${Date.now()}`;
         const res = await fetch(url, { cache: 'no-store' });
         const data = await res.json();
+
+        if (data?.forbiddenMeterKey) {
+          if (fetchBar) {
+            fetchBar.textContent = '🔒 รหัสเข้าถึงใบรายงานไม่ถูกต้อง กรุณาเปิดจากลิงก์ในข้อความใบงาน';
+            fetchBar.style.display = 'flex';
+          }
+          return;
+        }
 
         let hit = null;
         let closedMap = {};
@@ -1006,6 +1025,7 @@
 
         if (hit) {
           loadedRawJobRecord = hit;
+          if (hit.meterKey && !activeMeterKey) activeMeterKey = String(hit.meterKey).trim();
           const cloudPayload = convertJobRecordToMeterPayload(hit, closedMap, usersList);
           if (!alreadyAppliedLiveDraft) {
             cachedIncomingPayload = cloudPayload;
@@ -1173,7 +1193,7 @@
     return s;
   }
 
-    function normalizeGpsNavUrl(rawGps) {
+  function normalizeGpsNavUrl(rawGps) {
     const s = String(rawGps || '').trim();
     if (!s || s === '-') return '';
     if (/^https?:\/\//i.test(s)) return s;
@@ -1333,7 +1353,6 @@
       updateOfficeTexts(office);
     }
 
-    // ช่อง "เลขที่" เว้นว่างไว้เสมอ
     document.getElementById('docNoInput').value = '';
 
     const shiftDateFormatted = formatIncomingThaiDate(cl(data.reportDate));
@@ -1404,7 +1423,6 @@
     }
     if (custName) document.getElementById('name-sig2').value = custName;
 
-    // ช่อง "สาเหตุอื่น ๆ ระบุ" เว้นว่างไว้เสมอตอนดึงข้อมูลใบงาน
     document.getElementById('causeOtherInput').value = '';
 
     ['causeLightning', 'causeWater', 'causeAccident', 'causeTermIn', 'causeTermOut', 'compWire', 'actDirect', 'actReplace'].forEach(id => {
@@ -1502,6 +1520,7 @@
 
     const params = new URLSearchParams(window.location.search);
     const shortId = (params.get('i') || params.get('id') || '').trim();
+    activeMeterKey = (params.get('k') || '').trim();
     const isDraft = params.get('draft') === '1';
     const rawGrp = params.get('grp') ? decodeBase64UrlUtf8(params.get('grp')) : (params.get('o') || '');
 
@@ -1527,7 +1546,6 @@
       } catch (e) {}
     }
 
-    // หากมีรหัสใบงาน shortId ให้เชื่อมต่อข้อมูลคลาวด์เสมอ (แม้เปิดมาพร้อม &draft=1 จากหน้าต่างแจ้งผลของช่าง)
     if (shortId) {
       loadJobByShortId(shortId, rawGrp || cachedIncomingPayload?.office || 'กฟส.บึง', appliedLiveDraft);
     } else if (!isDraft) {
