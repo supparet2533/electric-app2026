@@ -1,5 +1,5 @@
 // ============================================================================
-// 📲 PEA SMART GRID — FIREBASE WEB PUSH CLIENT MODULE v1.2 (pm-push.js)
+// 📲 PEA SMART GRID — FIREBASE WEB PUSH CLIENT MODULE v1.2.1 (pm-push.js)
 // ผูกเครื่องรับแจ้งเตือนแม้ปัดปิดแอป + ปลอดการชนกับ IndexedDB / โหมดซ้อม SCADA 100%
 // โปรเจกต์: SamSrikacha (samsrikacha-da210)
 // ============================================================================
@@ -199,6 +199,10 @@
 
     async function enableBackgroundPushAlerts() {
         if (isEnablingPush) return;
+        if (isViewerOnly()) {
+            notifyMsg('🔒 บัญชีผู้สำรวจไม่สามารถผูกระบบแจ้งเตือนขณะปิดแอปหลังบ้านได้');
+            return;
+        }
         if (!('Notification' in window) || !('serviceWorker' in navigator)) {
             notifyMsg('⚠️ บน iPhone กรุณากดปุ่มแชร์ -> "เพิ่มไปยังหน้าจอโฮม" ก่อนเปิดแจ้งเตือนครับ');
             return;
@@ -217,8 +221,8 @@
             }
 
             let swReg = await navigator.serviceWorker.getRegistration();
-            if (!swReg) swReg = await navigator.serviceWorker.register('./sw.js');
-            await navigator.serviceWorker.ready;
+            if (!swReg) await navigator.serviceWorker.register('./sw.js');
+            swReg = await navigator.serviceWorker.ready;
 
             const messaging = await ensureFirebaseMessaging();
             const token = await messaging.getToken({
@@ -232,11 +236,11 @@
             const pageFile = location.pathname.includes('page2') ? './page2.html?openPm=1' : './index.html?openPm=1';
 
             const regRes = await postToGas({ action: 'pmPushRegister', token, group: grp, pageUrl: pageFile });
-            if (regRes && regRes.ok === false) {
+            if (regRes && (regRes.ok === false || regRes.skippedViewer)) {
                 throw new Error(regRes.error || 'บันทึก Token หลังบ้านไม่สำเร็จ');
             }
 
-            if (!isViewerOnly()) await syncStrippedScheduleToBackend(true);
+            await syncStrippedScheduleToBackend(true);
             localStorage.setItem(PUSH_TOKEN_KEY, token);
             localStorage.setItem(PUSH_TOKEN_GRP_KEY, grp);
             updatePushBtnUI();
@@ -257,10 +261,26 @@
         }
     }
 
+    function hookOpenPmModalButtonSync() {
+        if (typeof window.openPmCalendarModal === 'function' && !window.openPmCalendarModal.__pushUiHooked) {
+            const origOpen = window.openPmCalendarModal;
+            window.openPmCalendarModal = Object.assign(function () {
+                const res = origOpen.apply(this, arguments);
+                updatePushBtnUI();
+                return res;
+            }, { __pushUiHooked: true });
+        }
+    }
+
     function updatePushBtnUI() {
         window.requestPmBrowserNotificationPermission = enableBackgroundPushAlerts;
+        hookOpenPmModalButtonSync();
         const permBtn = document.getElementById('pmNotifPermBtn');
         if (!permBtn || isEnablingPush) return;
+
+        const viewer = isViewerOnly();
+        permBtn.classList.toggle('hidden', viewer);
+        if (viewer) return;
 
         const savedToken = localStorage.getItem(PUSH_TOKEN_KEY);
         const granted = ('Notification' in window) && Notification.permission === 'granted';
@@ -313,6 +333,8 @@
         window.requestPmBrowserNotificationPermission = enableBackgroundPushAlerts;
         if (isEmbeddedFrame) return;
 
+        let wasLoggedIn = localStorage.getItem('elec_app_logged_in') === 'true';
+
         setTimeout(() => {
             updatePushBtnUI();
             if (location.search.includes('openPm=1')) {
@@ -326,19 +348,28 @@
         }, 1000);
 
         setTimeout(() => {
-            syncStrippedScheduleToBackend(false);
-            const savedToken = localStorage.getItem(PUSH_TOKEN_KEY);
-            const savedGrp = normPushGrp(localStorage.getItem(PUSH_TOKEN_GRP_KEY));
-            const curGrp = getUserGroup();
-            if (savedToken && localStorage.getItem('elec_app_logged_in') === 'true' && savedGrp !== curGrp) {
-                const pageFile = location.pathname.includes('page2') ? './page2.html?openPm=1' : './index.html?openPm=1';
-                postToGas({ action: 'pmPushRegister', token: savedToken, group: curGrp, pageUrl: pageFile })
-                    .then(() => localStorage.setItem(PUSH_TOKEN_GRP_KEY, curGrp))
-                    .catch(() => {});
+            if (localStorage.getItem('elec_app_logged_in') === 'true' && !isViewerOnly()) {
+                syncStrippedScheduleToBackend(false);
             }
         }, 6000);
 
-        setInterval(updatePushBtnUI, 3000);
+        setInterval(() => {
+            updatePushBtnUI();
+            const nowLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+            if (nowLogged && !isViewerOnly()) {
+                if (!wasLoggedIn) scheduleDebouncedPushSync();
+                const savedToken = localStorage.getItem(PUSH_TOKEN_KEY);
+                const savedGrp = normPushGrp(localStorage.getItem(PUSH_TOKEN_GRP_KEY));
+                const curGrp = getUserGroup();
+                if (savedToken && savedGrp !== curGrp) {
+                    localStorage.setItem(PUSH_TOKEN_GRP_KEY, curGrp);
+                    const pageFile = location.pathname.includes('page2') ? './page2.html?openPm=1' : './index.html?openPm=1';
+                    postToGas({ action: 'pmPushRegister', token: savedToken, group: curGrp, pageUrl: pageFile })
+                        .catch(() => localStorage.setItem(PUSH_TOKEN_GRP_KEY, savedGrp));
+                }
+            }
+            wasLoggedIn = nowLogged;
+        }, 3000);
     }
 
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootPmPushClient);
