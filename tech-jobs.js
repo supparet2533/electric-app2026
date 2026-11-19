@@ -190,12 +190,23 @@
         return 'k' + (h >>> 0).toString(36);
     }
     
+        function generateRandomTechMeterKey() {
+        const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const arr = new Uint8Array(6);
+        if (window.crypto?.getRandomValues) window.crypto.getRandomValues(arr);
+        else
+            for (let i = 0; i < 6; i++) arr[i] = Math.floor(Math.random() * 256);
+        return Array.from(arr, b => chars[b % chars.length]).join('');
+    }
+    
     function buildTechMeterFormUrl(item, jobKey, liveOverrides = null, forExternalLine = false) {
         const baseUrl = getTechMeterFormBaseUrl();
         if (!baseUrl || /docs\.google\.com\/forms/i.test(baseUrl)) return baseUrl || 'meter-form.html';
         const cleanBase = baseUrl.split('?')[0];
         const shortId = makeTechShortJobId(jobKey || item?.dateTimeSaved);
         const grp = normTechGrp(getJobGroupName(item) || getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        const mKey = (item?.meterKey && item.meterKey !== '-') ? String(item.meterKey).trim() : '';
+        const keyParam = mKey ? `&k=${encodeURIComponent(mKey)}` : '';
         
         let grpParam = '';
         if (grp !== 'กฟส.บึง') {
@@ -234,10 +245,10 @@
                 workerName: liveOverrides.inspector || formatTechDisplayName(localStorage.getItem('elec_app_current_user') || '')
             };
             try { localStorage.setItem('pea_meter_live_draft', JSON.stringify(draftObj)); } catch (e) {}
-            return shortId ? `${cleanBase}?i=${shortId}${grpParam}&draft=1` : `${cleanBase}?draft=1`;
+            return shortId ? `${cleanBase}?i=${shortId}${keyParam}${grpParam}&draft=1` : `${cleanBase}?draft=1`;
         }
-                const extParam = forExternalLine ? '&openExternalBrowser=1' : '';
-        return shortId ? `${cleanBase}?i=${shortId}${grpParam}${extParam}` : cleanBase;
+        const extParam = forExternalLine ? '&openExternalBrowser=1' : '';
+        return shortId ? `${cleanBase}?i=${shortId}${keyParam}${grpParam}${extParam}` : cleanBase;
     }
     
     function openTechMeterFormByKey(key, jobType = 'outage') {
@@ -2902,18 +2913,21 @@
             }
 
             // หากเป็นงานสับเปลี่ยนมิเตอร์ที่เพิ่งตรวจพบหน้างาน ให้แนบลิงก์ใบมิเตอร์พร้อมข้อมูลอัตโนมัติไว้ท้ายข้อความต้นฉบับด้วย
-                                    let baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
+            let baseText = (item.formattedText || '').split('\n\n--- 🛠️ ผลตรวจสอบหน้างาน ---')[0];
             if (jobType === 'outage') {
-                const shortMeterLink = buildTechMeterFormUrl(item, key, null, true);
                 if (baseText.includes('meter-form.html?')) {
+                    const shortMeterLink = buildTechMeterFormUrl(item, key, null, true);
                     baseText = baseText.replace(/https?:\/\/[^\s]+meter-form\.html\?[^\s]+/g, shortMeterLink);
                 } else if (!baseText.includes('ใบแจ้งสับเปลี่ยนมิเตอร์')) {
                     const checkMeterBlob = `${item.issueType || ''} ${realCause} ${actionTaken}`.toLowerCase().replace(/\s+/g, '');
                     if (checkMeterBlob.includes('มิเตอร์') && !['ต่อสายมิเตอร์', 'ต่อมิเตอร์', 'ต่อกลับมิเตอร์', 'ติดมิเตอร์', 'ใส่มิเตอร์'].some(kw => checkMeterBlob.includes(kw))) {
+                        if (!item.meterKey) item.meterKey = generateRandomTechMeterKey();
+                        const shortMeterLink = buildTechMeterFormUrl(item, key, null, true);
                         baseText += `\n\n📄***ใบแจ้งสับเปลี่ยนมิเตอร์ชำรุดมิเตอร์***   \n${shortMeterLink}`;
                     }
                 }
             }
+
             const urg = getJobUrgencyInfo(item, jobType);
             const hdr = jobType === 'outage'
                 ? `${urg.dot} งานที่ ${item.jobNo || '-'} กะ ${getEffectiveJobShift(item)} (${item.issueType || '-'})`
