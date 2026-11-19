@@ -2940,10 +2940,7 @@
             localStorage.setItem(sk, JSON.stringify(list));
             markJobDirtyForPush(key);
             closeInspectModal();
-
-            if (isDone) switchStatusTab('done');
-            else renderJobCards(true);
-
+            renderJobCards(true);
             copyTextToClipboard(fullText, '✅ บันทึกผลตรวจสอบและคัดลอกข้อความสำเร็จ!');
             if (sendToLine) {
                 window.open('https://line.me/R/share?text=' + encodeURIComponent(fullText), '_blank');
