@@ -1940,18 +1940,54 @@
         return { level: 'normal', label: 'ปกติ', color: 'text-emerald-600 bg-emerald-50 border-emerald-200', emoji: '🟢' };
     }
 
-    function extractCoordsFromInput(input) {
-        return input ? deepParseCoords(String(input), false) : null;
+        function extractCoordsFromInput(input) {
+        if (!input) return null;
+        const s = String(input).trim();
+        if (!s || s === '-') return null;
+
+        if (typeof deepParseCoords === 'function') {
+            const d = deepParseCoords(s, false);
+            if (d && !isNaN(parseFloat(d.lat)) && !isNaN(parseFloat(d.lon))) {
+                return { lat: Number(parseFloat(d.lat).toFixed(6)), lon: Number(parseFloat(d.lon).toFixed(6)) };
+            }
+        }
+
+        // รองรับรูปแบบ "Lat: 13.087838 Long: 100.987892" หรือ "ละติจูด ... ลองจิจูด ..."
+        const mLabel = s.match(/(?:lat(?:itude)?|ละติจูด)\s*[:：=]?\s*(-?\d{1,3}\.\d{3,})[\s,;\/|]*(?:long(?:itude)?|lon|lng|ลองจิจูด)\s*[:：=]?\s*\+?(-?\d{1,3}\.\d{3,})/i) ||
+                       s.match(/(?:long(?:itude)?|lon|lng|ลองจิจูด)\s*[:：=]?\s*\+?(-?\d{1,3}\.\d{3,})[\s,;\/|]*(?:lat(?:itude)?|ละติจูด)\s*[:：=]?\s*(-?\d{1,3}\.\d{3,})/i);
+        if (mLabel) {
+            const lonFirst = /^(?:long|lon|lng|ลองจิจูด)/i.test(mLabel[0]);
+            let lat = parseFloat(lonFirst ? mLabel[2] : mLabel[1]);
+            let lon = parseFloat(lonFirst ? mLabel[1] : mLabel[2]);
+            if (lat >= 95 && lat <= 108 && lon >= 4 && lon <= 23) { const tmp = lat; lat = lon; lon = tmp; }
+            if (Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+                return { lat: Number(lat.toFixed(6)), lon: Number(lon.toFixed(6)) };
+            }
+        }
+
+        // รองรับตัวเลขพิกัดคั่นด้วยเว้นวรรคหรือลูกน้ำ เช่น "13.087838 100.987892"
+        const mPair = s.match(/(?:^|[^\d.])(-?\d{1,3}\.\d{4,})\s*(?:,|\s+)\s*\+?(-?\d{1,3}\.\d{4,})(?!\d)/);
+        if (mPair) {
+            let lat = parseFloat(mPair[1]), lon = parseFloat(mPair[2]);
+            if (lat >= 95 && lat <= 108 && lon >= 4 && lon <= 23) { const tmp = lat; lat = lon; lon = tmp; }
+            if (lat >= 4 && lat <= 23 && lon >= 95 && lon <= 108) {
+                return { lat: Number(lat.toFixed(6)), lon: Number(lon.toFixed(6)) };
+            }
+        }
+        return null;
     }
 
     function formatGpsInput(inputVal) {
         if (!inputVal) return '-';
         const val = String(inputVal).trim();
-        if (val.startsWith('http://') || val.startsWith('https://') || val.includes('maps.app.goo.gl')) return val;
+        if (!val || val === '-') return '-';
+        if (/^https?:\/\//i.test(val)) return val;
+        if (/^(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.|maps\.)?google\.[a-z.]+\/maps)/i.test(val)) {
+            return 'https://' + val;
+        }
         const coords = extractCoordsFromInput(val);
         return (coords?.lat && coords?.lon) ? `https://www.google.com/maps?q=${coords.lat},${coords.lon}` : val;
     }
-
     async function fetchPlaceNameFromCoords(lat, lon) {
         try {
             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=th`);
