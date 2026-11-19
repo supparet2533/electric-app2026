@@ -15,9 +15,9 @@
     <meta name="application-name" content="ช่างไฟฟ้า">
     <meta name="theme-color" content="#0f766e">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=134">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=134">
-    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=134">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=139">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=139">
+    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=139">
 
     <script>
         if (window.self !== window.top) document.documentElement.classList.add('is-embedded-frame');
@@ -369,13 +369,13 @@
     <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=136"></script>
-    <script src="shared-core.js?v=136"></script>
-    <script src="tech-jobs.js?v=136"></script>
-    <script src="scada-engine.js?v=136"></script>
-    <script src="pm-calendar.js?v=136"></script>
-    <script src="scada-fault-locator.js?v=136"></script>
-    <script src="pm-push.js?v=136"></script>
+    <script src="pea-idb-store.js?v=145"></script>
+    <script src="shared-core.js?v=145"></script>
+    <script src="tech-jobs.js?v=145"></script>
+    <script src="scada-engine.js?v=145"></script>
+    <script src="pm-calendar.js?v=145"></script>
+    <script src="scada-fault-locator.js?v=145"></script>
+    <script src="pm-push.js?v=145"></script>
 
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
     <script>
@@ -387,7 +387,7 @@
                 }
             }, { passive: true });
 
-                        if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+            if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
                 const hadSwController = Boolean(navigator.serviceWorker.controller);
                 let isSwReloading = false;
 
@@ -419,6 +419,7 @@
                     }).catch(function() {});
                 });
             }
+        })();
     </script>
 </body>
 </html>
