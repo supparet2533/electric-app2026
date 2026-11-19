@@ -2,7 +2,7 @@
 // ⚡ PEA SMART GRID — SERVICE WORKER v134 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v142';
+const CACHE_NAME = 'pea-smart-tools-v144';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
