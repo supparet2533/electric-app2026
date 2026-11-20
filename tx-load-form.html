@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ระบบวัดโหลดหม้อแปลง — PEA Smart Grid</title>
     <meta name="theme-color" content="#1e3a8a">
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=147">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=148">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
@@ -24,11 +24,31 @@
             border-radius: 0.75rem;
             transition: all 0.18s ease;
         }
-        input:where(:not([type="radio"]):not([type="checkbox"])):focus, select:focus, textarea:focus {
+        input:where(:not([type="radio"]):not([type="checkbox"])):where(:focus),
+        select:where(:focus),
+        textarea:where(:focus) {
             background-color: #ffffff;
             border-color: #2563eb !important;
             outline: none;
             box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+        }
+        /* ป้องกันช่องเลือกผลติดตั้งในกล่องพื้นหลังสีเข้มกลายเป็นสีขาวเมื่อกดเลือก */
+        select.tx-dark-select,
+        select.tx-dark-select:focus {
+            background-color: #1e293b !important;
+            color: #ffffff !important;
+            border: 1.5px solid #475569 !important;
+            color-scheme: dark;
+        }
+        select.tx-dark-select:focus {
+            background-color: #0f172a !important;
+            border-color: #38bdf8 !important;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.28) !important;
+        }
+        select.tx-dark-select option {
+            background-color: #0f172a;
+            color: #ffffff;
         }
         /* กระดาษรายงานมาตรฐาน กฟภ. สำหรับพรีวิวและออก PDF A4 */
         .pea-report-paper {
@@ -58,7 +78,7 @@
         }
         @media print {
             body { background: #ffffff !important; padding: 0 !important; }
-            .no-print { display: none !important; }
+            .no-print, .print-hide { display: none !important; }
             #officialReportWrapper { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
             #officialReportSheet {
                 max-width: 100% !important;
@@ -71,7 +91,21 @@
 </head>
 <body class="min-h-[100dvh] pb-10">
 
-    <!-- แถบหัวระบบ -->
+    <!-- แถบโหมดเปิดดูใบรายงาน PDF จากลิงก์แชร์ LINE (แสดงเฉพาะโหมดลิงก์สาธารณะ) -->
+    <div id="publicPdfViewerBar" class="print-hide hidden bg-gradient-to-r from-slate-900 via-indigo-900 to-teal-800 text-white px-4 pt-[max(0.9rem,env(safe-area-inset-top))] pb-3.5 shadow-lg">
+        <div class="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <div>
+                <h1 class="text-sm sm:text-base font-bold flex items-center gap-2">📄 ใบรายงานการวัดโหลดหม้อแปลง (A4)</h1>
+                <p class="text-[11px] text-blue-200">สามารถกดดาวน์โหลดเป็นไฟล์ .PDF หรือสั่งพิมพ์ได้ทันที</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="exportReportPdf()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2 rounded-xl text-xs font-extrabold shadow">📥 ดาวน์โหลด .PDF</button>
+                <button type="button" onclick="window.print()" class="bg-white/20 hover:bg-white/30 text-white px-3 py-2 rounded-xl text-xs font-bold">🖨️ พิมพ์</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- แถบหัวระบบหลัก -->
     <div class="no-print bg-gradient-to-r from-blue-900 via-indigo-800 to-teal-700 text-white px-4 pt-[max(0.9rem,env(safe-area-inset-top))] pb-4 shadow-lg">
         <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -101,11 +135,11 @@
             <div id="wiringGuideBody" class="p-3 sm:p-4 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/60">
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบนั่งร้าน / เสาคู่)</div>
-                    <img src="./tx-circuit-1.jpg?v=147" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-1.jpg?v=148" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบแขวนเสาเดี่ยว)</div>
-                    <img src="./tx-circuit-2.jpg?v=147" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-2.jpg?v=148" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
             </div>
         </div>
@@ -115,7 +149,7 @@
             <img id="diagramZoomImg" src="" alt="ขยายผังวงจร" class="max-w-full max-h-[92dvh] bg-white rounded-xl p-2 shadow-2xl object-contain">
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+        <div id="mainWorkspaceGrid" class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
 
             <!-- ฝั่งซ้าย: ฟอร์มบันทึกค่าหน้างาน -->
             <div class="no-print lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
@@ -272,11 +306,11 @@
                     </div>
                     <div id="liveSummaryCards" class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs"></div>
 
-                    <!-- ตัวเลือกปรับผลการพิจารณาติดตั้งมิเตอร์ (ค่าเริ่มต้น = คำนวณตามเกณฑ์ 80%) -->
+                    <!-- ตัวเลือกปรับผลการพิจารณาติดตั้งมิเตอร์ (ใช้คลาส tx-dark-select ไม่กลายเป็นกล่องสีขาวเมื่อโฟกัส) -->
                     <div class="pt-2 border-t border-slate-700 grid grid-cols-3 gap-2 text-[11px]">
                         <div>
                             <span class="text-slate-300 block mb-0.5">ผลติดตั้ง เฟส A:</span>
-                            <select id="overrideResA" onchange="recalcAndRender()" class="w-full px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-600 font-bold">
+                            <select id="overrideResA" onchange="recalcAndRender()" class="tx-dark-select w-full px-2 py-1.5 rounded-lg font-bold">
                                 <option value="auto">อัตโนมัติ (≤80%)</option>
                                 <option value="ได้">ได้ (อนุมัติ)</option>
                                 <option value="ไม่ได้">ไม่ได้ (งดติดตั้ง)</option>
@@ -284,7 +318,7 @@
                         </div>
                         <div id="overrideWrapB">
                             <span class="text-slate-300 block mb-0.5">ผลติดตั้ง เฟส B:</span>
-                            <select id="overrideResB" onchange="recalcAndRender()" class="w-full px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-600 font-bold">
+                            <select id="overrideResB" onchange="recalcAndRender()" class="tx-dark-select w-full px-2 py-1.5 rounded-lg font-bold">
                                 <option value="auto">อัตโนมัติ (≤80%)</option>
                                 <option value="ได้">ได้ (อนุมัติ)</option>
                                 <option value="ไม่ได้">ไม่ได้ (งดติดตั้ง)</option>
@@ -292,7 +326,7 @@
                         </div>
                         <div id="overrideWrapC">
                             <span class="text-slate-300 block mb-0.5">ผลติดตั้ง เฟส C:</span>
-                            <select id="overrideResC" onchange="recalcAndRender()" class="w-full px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-600 font-bold">
+                            <select id="overrideResC" onchange="recalcAndRender()" class="tx-dark-select w-full px-2 py-1.5 rounded-lg font-bold">
                                 <option value="auto">อัตโนมัติ (≤80%)</option>
                                 <option value="ได้">ได้ (อนุมัติ)</option>
                                 <option value="ไม่ได้">ไม่ได้ (งดติดตั้ง)</option>
@@ -328,12 +362,12 @@
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                     <button type="button" id="saveTxRecordBtn" onclick="saveTxLoadRecord()" class="tx-edit-only bg-teal-600 hover:bg-teal-700 text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">💾 บันทึกเข้าระบบสาขา</button>
                     <button type="button" onclick="exportReportPdf()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">📄 ออกใบรายงาน PDF</button>
-                    <button type="button" onclick="shareTxSummaryToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">💬 ส่งสรุปเข้า LINE</button>
+                    <button type="button" id="shareTxLineBtn" onclick="shareTxSummaryToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">💬 ส่งสรุป + PDF เข้า LINE</button>
                 </div>
             </div>
 
             <!-- ฝั่งขวา: ตัวอย่างใบรายงานมาตรฐาน กฟภ. (A4 Preview) -->
-            <div class="lg:col-span-5 space-y-3">
+            <div id="previewColumnWrap" class="lg:col-span-5 space-y-3">
                 <div id="officialReportWrapper" class="bg-white rounded-2xl border border-slate-300 shadow-md p-5 sm:p-7 overflow-x-auto">
                     <div id="officialReportSheet" class="pea-report-paper text-[13px] sm:text-[13.5px] max-w-[680px] mx-auto space-y-2.5"></div>
                 </div>
@@ -393,11 +427,11 @@
         </div>
     </div>
 
-    <div id="toast" class="no-print fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
+    <div id="toast" class="no-print print-hide fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
 
     <!-- โหลดแกนกลางระบบเพื่อแชร์บัญชีผู้ใช้ สิทธิ์ และสาขา กฟส. -->
-    <script src="pea-idb-store.js?v=147"></script>
-    <script src="shared-core.js?v=147"></script>
+    <script src="pea-idb-store.js?v=148"></script>
+    <script src="shared-core.js?v=148"></script>
 
     <script>
     (function () {
@@ -412,6 +446,8 @@
         let sigCtx = null;
         let isDrawingSig = false;
         let hasSigStroke = false;
+        let isSharingLine = false;
+        let lastPdfCache = { fp: '', url: '' };
 
         window.openDiagramZoom = function (src) {
             const modal = document.getElementById('diagramZoomModal');
@@ -590,6 +626,14 @@
                 signature: signatureDataUrl || '',
                 ownerGroup: getActiveBranch()
             };
+        }
+
+        function computeReportPdfFingerprint(st) {
+            return JSON.stringify([
+                st.reqNo, st.measureDate, st.officeName, st.peaNo, st.sysType, st.kva, st.flAmp,
+                st.circuits, st.vEnd, st.streetPhase, st.streetAmp, st.totals,
+                st.remark, st.inspector, (st.signature || '').length, (st.signature || '').slice(-48)
+            ]);
         }
 
         window.recalcAndRender = function () {
@@ -849,8 +893,17 @@
             const nowIso = new Date().toISOString();
             const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
             const recId = st.id || ('tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
+            const fp = computeReportPdfFingerprint(st);
+            const matchedPdfUrl = (lastPdfCache.fp === fp && lastPdfCache.url) ? lastPdfCache.url : '';
 
-            const record = { ...st, id: recId, ownerUser: curUser, ownerGroup: getActiveBranch(), updatedAt: nowIso };
+            const record = {
+                ...st,
+                id: recId,
+                ownerUser: curUser,
+                ownerGroup: getActiveBranch(),
+                ...(matchedPdfUrl ? { pdfUrl: matchedPdfUrl, pdfFp: fp } : {}),
+                updatedAt: nowIso
+            };
             loadLocalTxRecords();
             const idx = txRecords.findIndex(r => r.id === recId);
             if (idx !== -1) txRecords[idx] = record; else txRecords.unshift(record);
@@ -952,6 +1005,10 @@
             signatureDataUrl = r.signature || '';
             updateSigIndicator();
             recalcAndRender();
+
+            if (r.pdfUrl) {
+                lastPdfCache = { fp: r.pdfFp || computeReportPdfFingerprint(collectFormState()), url: r.pdfUrl };
+            }
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
@@ -986,6 +1043,7 @@
         };
 
         window.resetTxLoadForm = function (showMsg = false) {
+            lastPdfCache = { fp: '', url: '' };
             document.getElementById('editingRecordId').value = '';
             document.getElementById('formModeTitle').textContent = '📝 กรอกผลวัดโหลดหม้อแปลง';
             document.getElementById('reqNoInput').value = '';
@@ -1049,6 +1107,7 @@
                     <div class="pt-1.5 border-t border-slate-200/80 flex items-center justify-between">
                         <span class="text-[10px] text-slate-500">👷 ${esc(r.inspector || '-')}</span>
                         <div class="flex gap-1.5">
+                            ${r.pdfUrl ? `<a href="${esc(r.pdfUrl)}" target="_blank" rel="noopener noreferrer" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[11px] font-bold">📄 PDF</a>` : ''}
                             <button type="button" onclick="loadRecordIntoForm('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📂 เปิดดู / พิมพ์</button>
                             <button type="button" onclick="deleteTxRecord('${safeId}')" class="tx-edit-only bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg text-[11px] font-bold">🗑️</button>
                         </div>
@@ -1097,266 +1156,409 @@
             }
         }
 
-        window.exportReportPdf = async function () {
-            const st = collectFormState();
+        // สร้างตัววาดกระดาษ A4 มาตรฐาน ใช้ร่วมกันทั้งปุ่มดาวน์โหลด PDF และปุ่มส่งลิงก์ PDF เข้า LINE
+        async function buildOfficialReportPdfWorker(st) {
             const fn = `ใบวัดโหลด_${(st.peaNo || 'TR').replace(/\s+/g, '_')}_${st.measureDate.replace(/\//g, '-')}.pdf`;
-            if (typeof html2pdf === 'undefined') { window.print(); return; }
-            window.showToast?.('⏳ กำลังสร้างไฟล์ PDF มาตรฐาน A4...');
+            if (document.fonts && document.fonts.ready) {
+                await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 900))]);
+            }
 
-            try {
-                if (document.fonts && document.fonts.ready) {
-                    await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 900))]);
+            const rawSigImg = await new Promise((resolve) => {
+                if (!st.signature) return resolve(null);
+                const im = new Image();
+                im.crossOrigin = 'anonymous';
+                im.onload = () => resolve(im);
+                im.onerror = () => resolve(null);
+                im.src = st.signature;
+            });
+            const sigSource = trimSignatureImageToCanvas(rawSigImg);
+
+            const W = 1600, H = 2258, cx = W / 2, maxContentW = 1280;
+            const pdfCanvas = document.createElement('canvas');
+            pdfCanvas.width = W;
+            pdfCanvas.height = H;
+            const ctx = pdfCanvas.getContext('2d');
+            const fontStack = "'Sarabun', 'Prompt', sans-serif";
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, W, H);
+            ctx.textBaseline = 'alphabetic';
+
+            const drawCenteredRow = (y, tokens, baseSize = 33) => {
+                const measureWithScale = (sc) => tokens.map(tk => {
+                    const fWeight = tk.t === 'dot' ? (tk.bold === false ? '400' : '700') : (tk.bold ? '700' : '400');
+                    const fSize = Math.round((tk.size || baseSize) * sc);
+                    ctx.font = `${fWeight} ${fSize}px ${fontStack}`;
+                    const txt = String(tk.text ?? '');
+                    const tw = ctx.measureText(txt).width;
+                    const minBox = (tk.minW || 140) * sc;
+                    const w = tk.t === 'dot' ? Math.max(minBox, tw + 34 * sc) : Math.max((tk.fixedW || 0) * sc, tw);
+                    return { ...tk, txt, fWeight, fSize, w };
+                });
+
+                let measured = measureWithScale(1);
+                let totalW = measured.reduce((s, m) => s + m.w, 0);
+                const sc = totalW > maxContentW ? (maxContentW / totalW) : 1;
+                if (sc < 1) {
+                    measured = measureWithScale(sc);
+                    totalW = measured.reduce((s, m) => s + m.w, 0);
                 }
 
-                const rawSigImg = await new Promise((resolve) => {
-                    if (!st.signature) return resolve(null);
-                    const im = new Image();
-                    im.crossOrigin = 'anonymous';
-                    im.onload = () => resolve(im);
-                    im.onerror = () => resolve(null);
-                    im.src = st.signature;
-                });
-                const sigSource = trimSignatureImageToCanvas(rawSigImg);
+                let curX = cx - totalW / 2;
+                measured.forEach(m => {
+                    ctx.font = `${m.fWeight} ${m.fSize}px ${fontStack}`;
+                    if (m.t === 'dot') {
+                        ctx.save();
+                        ctx.strokeStyle = '#334155';
+                        ctx.lineWidth = 2.2;
+                        ctx.setLineDash([3, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(curX + 5, y + 10);
+                        ctx.lineTo(curX + m.w - 5, y + 10);
+                        ctx.stroke();
+                        ctx.restore();
 
-                // ขนาด A4 แท้ความละเอียดสูง (210 × 296.4 mm, margin 0 การันตี 1 หน้าเต็ม 100%)
-                const W = 1600, H = 2258, cx = W / 2, maxContentW = 1280;
-                const pdfCanvas = document.createElement('canvas');
-                pdfCanvas.width = W;
-                pdfCanvas.height = H;
-                const ctx = pdfCanvas.getContext('2d');
-                const fontStack = "'Sarabun', 'Prompt', sans-serif";
-
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, W, H);
-                ctx.textBaseline = 'alphabetic';
-
-                const drawCenteredRow = (y, tokens, baseSize = 33) => {
-                    const measureWithScale = (sc) => tokens.map(tk => {
-                        const fWeight = tk.t === 'dot' ? (tk.bold === false ? '400' : '700') : (tk.bold ? '700' : '400');
-                        const fSize = Math.round((tk.size || baseSize) * sc);
-                        ctx.font = `${fWeight} ${fSize}px ${fontStack}`;
-                        const txt = String(tk.text ?? '');
-                        const tw = ctx.measureText(txt).width;
-                        const minBox = (tk.minW || 140) * sc;
-                        const w = tk.t === 'dot' ? Math.max(minBox, tw + 34 * sc) : Math.max((tk.fixedW || 0) * sc, tw);
-                        return { ...tk, txt, fWeight, fSize, w };
-                    });
-
-                    let measured = measureWithScale(1);
-                    let totalW = measured.reduce((s, m) => s + m.w, 0);
-                    const sc = totalW > maxContentW ? (maxContentW / totalW) : 1;
-                    if (sc < 1) {
-                        measured = measureWithScale(sc);
-                        totalW = measured.reduce((s, m) => s + m.w, 0);
+                        ctx.fillStyle = m.color || '#0f172a';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(m.txt, curX + m.w / 2, y - 2);
+                    } else {
+                        ctx.fillStyle = m.color || '#0f172a';
+                        ctx.textAlign = 'left';
+                        ctx.fillText(m.txt, curX, y);
                     }
-
-                    let curX = cx - totalW / 2;
-                    measured.forEach(m => {
-                        ctx.font = `${m.fWeight} ${m.fSize}px ${fontStack}`;
-                        if (m.t === 'dot') {
-                            ctx.save();
-                            ctx.strokeStyle = '#334155';
-                            ctx.lineWidth = 2.2;
-                            ctx.setLineDash([3, 5]);
-                            ctx.beginPath();
-                            ctx.moveTo(curX + 5, y + 10);
-                            ctx.lineTo(curX + m.w - 5, y + 10);
-                            ctx.stroke();
-                            ctx.restore();
-
-                            ctx.fillStyle = m.color || '#0f172a';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(m.txt, curX + m.w / 2, y - 2);
-                        } else {
-                            ctx.fillStyle = m.color || '#0f172a';
-                            ctx.textAlign = 'left';
-                            ctx.fillText(m.txt, curX, y);
-                        }
-                        curX += m.w;
-                    });
-                };
-
-                const loadPhases = [
-                    { ph: 'A', sum: st.totals.sumA, pct: st.totals.pctA, res: st.totals.resA, show: true },
-                    { ph: 'B', sum: st.totals.sumB, pct: st.totals.pctB, res: st.totals.resB, show: st.sysType !== '1P2W' },
-                    { ph: 'C', sum: st.totals.sumC, pct: st.totals.pctC, res: st.totals.resC, show: st.sysType === '3P' }
-                ].filter(x => x.show);
-
-                // ปรับระยะบรรทัดยืดหยุ่นเล็กน้อยให้เต็มหน้า A4 พอดีทั้งหม้อแปลง 3 เฟส และ 1 เฟส
-                const vScale = loadPhases.length === 1 ? 1.08 : (loadPhases.length === 2 ? 1.04 : 1.0);
-                const rowGap = Math.round(64 * vScale);
-                const secGap = Math.round(82 * vScale);
-
-                // ขอบบน ~2.4 ซม.
-                let y = 185;
-                const titleTxt = `รายงานการวัดโหลดหม้อแปลง ${st.officeName}${st.reqNo ? ` เลขที่คำร้อง ${st.reqNo}` : ''}`;
-                drawCenteredRow(y, [{ t: 'text', text: titleTxt, bold: true, size: 42 }]);
-
-                y += secGap;
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'วันที่  ', bold: true },
-                    { t: 'dot', text: st.measureDate, minW: 215 },
-                    { t: 'text', text: '    หม้อแปลงขนาด  ', bold: true },
-                    { t: 'dot', text: String(st.kva), minW: 125 },
-                    { t: 'text', text: '  kVA    PEA  ', bold: true },
-                    { t: 'dot', text: st.peaNo || '-', minW: 255 }
-                ], 33);
-
-                y += secGap;
-                drawCenteredRow(y, [{ t: 'text', text: 'วัดกระแสแต่ละวงจร', bold: true, size: 36 }]);
-                st.circuits.forEach(r => {
-                    y += rowGap;
-                    drawCenteredRow(y, [
-                        { t: 'text', text: `วงจร ${r.c}.    เฟส A  `, fixedW: 220 },
-                        { t: 'dot', text: fmtNum(r.iA), minW: 160 },
-                        { t: 'text', text: '  A.     เฟส B  ' },
-                        { t: 'dot', text: fmtNum(r.iB), minW: 160 },
-                        { t: 'text', text: '  A.     เฟส C  ' },
-                        { t: 'dot', text: fmtNum(r.iC), minW: 160 },
-                        { t: 'text', text: '  A.' }
-                    ], 32);
+                    curX += m.w;
                 });
+            };
 
-                y += secGap;
-                drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นทาง', bold: true, size: 36 }]);
-                st.circuits.forEach(r => {
-                    y += rowGap;
-                    drawCenteredRow(y, [
-                        { t: 'text', text: `วงจร ${r.c}.    เฟส A  `, fixedW: 220 },
-                        { t: 'dot', text: fmtNum(r.vA, 1), minW: 160 },
-                        { t: 'text', text: '  V.     เฟส B  ' },
-                        { t: 'dot', text: fmtNum(r.vB, 1), minW: 160 },
-                        { t: 'text', text: '  V.     เฟส C  ' },
-                        { t: 'dot', text: fmtNum(r.vC, 1), minW: 160 },
-                        { t: 'text', text: '  V.' }
-                    ], 32);
-                });
+            const loadPhases = [
+                { ph: 'A', sum: st.totals.sumA, pct: st.totals.pctA, res: st.totals.resA, show: true },
+                { ph: 'B', sum: st.totals.sumB, pct: st.totals.pctB, res: st.totals.resB, show: st.sysType !== '1P2W' },
+                { ph: 'C', sum: st.totals.sumC, pct: st.totals.pctC, res: st.totals.resC, show: st.sysType === '3P' }
+            ].filter(x => x.show);
 
-                y += secGap;
-                drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นปลายสาย จุดขอมิเตอร์', bold: true, size: 36 }]);
+            const vScale = loadPhases.length === 1 ? 1.08 : (loadPhases.length === 2 ? 1.04 : 1.0);
+            const rowGap = Math.round(64 * vScale);
+            const secGap = Math.round(82 * vScale);
+
+            let y = 185;
+            const titleTxt = `รายงานการวัดโหลดหม้อแปลง ${st.officeName}${st.reqNo ? ` เลขที่คำร้อง ${st.reqNo}` : ''}`;
+            drawCenteredRow(y, [{ t: 'text', text: titleTxt, bold: true, size: 42 }]);
+
+            y += secGap;
+            drawCenteredRow(y, [
+                { t: 'text', text: 'วันที่  ', bold: true },
+                { t: 'dot', text: st.measureDate, minW: 215 },
+                { t: 'text', text: '    หม้อแปลงขนาด  ', bold: true },
+                { t: 'dot', text: String(st.kva), minW: 125 },
+                { t: 'text', text: '  kVA    PEA  ', bold: true },
+                { t: 'dot', text: st.peaNo || '-', minW: 255 }
+            ], 33);
+
+            y += secGap;
+            drawCenteredRow(y, [{ t: 'text', text: 'วัดกระแสแต่ละวงจร', bold: true, size: 36 }]);
+            st.circuits.forEach(r => {
                 y += rowGap;
                 drawCenteredRow(y, [
-                    { t: 'text', text: 'เฟส A  ' },
-                    { t: 'dot', text: fmtNum(st.vEnd.A, 1), minW: 170 },
+                    { t: 'text', text: `วงจร ${r.c}.    เฟส A  `, fixedW: 220 },
+                    { t: 'dot', text: fmtNum(r.iA), minW: 160 },
+                    { t: 'text', text: '  A.     เฟส B  ' },
+                    { t: 'dot', text: fmtNum(r.iB), minW: 160 },
+                    { t: 'text', text: '  A.     เฟส C  ' },
+                    { t: 'dot', text: fmtNum(r.iC), minW: 160 },
+                    { t: 'text', text: '  A.' }
+                ], 32);
+            });
+
+            y += secGap;
+            drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นทาง', bold: true, size: 36 }]);
+            st.circuits.forEach(r => {
+                y += rowGap;
+                drawCenteredRow(y, [
+                    { t: 'text', text: `วงจร ${r.c}.    เฟส A  `, fixedW: 220 },
+                    { t: 'dot', text: fmtNum(r.vA, 1), minW: 160 },
                     { t: 'text', text: '  V.     เฟส B  ' },
-                    { t: 'dot', text: fmtNum(st.vEnd.B, 1), minW: 170 },
+                    { t: 'dot', text: fmtNum(r.vB, 1), minW: 160 },
                     { t: 'text', text: '  V.     เฟส C  ' },
-                    { t: 'dot', text: fmtNum(st.vEnd.C, 1), minW: 170 },
+                    { t: 'dot', text: fmtNum(r.vC, 1), minW: 160 },
                     { t: 'text', text: '  V.' }
                 ], 32);
+            });
 
-                y += Math.round(76 * vScale);
+            y += secGap;
+            drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นปลายสาย จุดขอมิเตอร์', bold: true, size: 36 }]);
+            y += rowGap;
+            drawCenteredRow(y, [
+                { t: 'text', text: 'เฟส A  ' },
+                { t: 'dot', text: fmtNum(st.vEnd.A, 1), minW: 170 },
+                { t: 'text', text: '  V.     เฟส B  ' },
+                { t: 'dot', text: fmtNum(st.vEnd.B, 1), minW: 170 },
+                { t: 'text', text: '  V.     เฟส C  ' },
+                { t: 'dot', text: fmtNum(st.vEnd.C, 1), minW: 170 },
+                { t: 'text', text: '  V.' }
+            ], 32);
+
+            y += Math.round(76 * vScale);
+            drawCenteredRow(y, [
+                { t: 'text', text: 'ไฟทางพ่วงวงจรเฟส  ', bold: true },
+                { t: 'dot', text: st.streetPhase, minW: 170 },
+                { t: 'text', text: '     กระแสไฟทาง  ', bold: true },
+                { t: 'dot', text: fmtNum(st.streetAmp), minW: 165 },
+                { t: 'text', text: '  A.' }
+            ], 33);
+
+            y += Math.round(68 * vScale);
+            drawCenteredRow(y, [
+                { t: 'text', text: 'พิกัดกระแสหม้อแปลงขนาด  ', bold: true },
+                { t: 'dot', text: String(st.kva), minW: 145 },
+                { t: 'text', text: '  KVA.     F/L 100 %  ', bold: true },
+                { t: 'dot', text: String(st.flAmp), minW: 175 },
+                { t: 'text', text: '  A.' }
+            ], 33);
+
+            y += secGap;
+            drawCenteredRow(y, [{ t: 'text', text: 'กระแสโหลดรวม (เกณฑ์พิจารณา ≤ 80%)', bold: true, size: 36 }]);
+
+            loadPhases.forEach(lp => {
+                y += rowGap;
                 drawCenteredRow(y, [
-                    { t: 'text', text: 'ไฟทางพ่วงวงจรเฟส  ', bold: true },
-                    { t: 'dot', text: st.streetPhase, minW: 170 },
-                    { t: 'text', text: '     กระแสไฟทาง  ', bold: true },
-                    { t: 'dot', text: fmtNum(st.streetAmp), minW: 165 },
-                    { t: 'text', text: '  A.' }
-                ], 33);
+                    { t: 'text', text: `เฟส ${lp.ph}  `, fixedW: 92 },
+                    { t: 'dot', text: lp.sum.toFixed(2), minW: 175 },
+                    { t: 'text', text: '  A.     คิดเป็น  ' },
+                    { t: 'dot', text: lp.pct.toFixed(2), minW: 175 },
+                    { t: 'text', text: '  % ของพิกัดหม้อแปลง' }
+                ], 32);
+            });
 
-                y += Math.round(68 * vScale);
+            y += Math.round(18 * vScale);
+            const getResHex = r => r === 'ไม่ได้' ? '#be123c' : (r === 'ได้' ? '#047857' : '#0f172a');
+            loadPhases.forEach(lp => {
+                y += rowGap;
                 drawCenteredRow(y, [
-                    { t: 'text', text: 'พิกัดกระแสหม้อแปลงขนาด  ', bold: true },
-                    { t: 'dot', text: String(st.kva), minW: 145 },
-                    { t: 'text', text: '  KVA.     F/L 100 %  ', bold: true },
-                    { t: 'dot', text: String(st.flAmp), minW: 175 },
-                    { t: 'text', text: '  A.' }
+                    { t: 'text', text: `เฟส ${lp.ph} สามารถติดตั้งมิเตอร์  `, fixedW: 390 },
+                    { t: 'dot', text: lp.res, minW: 185, color: getResHex(lp.res) }
                 ], 33);
+            });
 
-                y += secGap;
-                drawCenteredRow(y, [{ t: 'text', text: 'กระแสโหลดรวม (เกณฑ์พิจารณา ≤ 80%)', bold: true, size: 36 }]);
+            y += Math.round(78 * vScale);
+            drawCenteredRow(y, [
+                { t: 'text', text: 'หมายเหตุ  ' },
+                { t: 'dot', text: st.remark || '-', minW: 860 }
+            ], 33);
 
-                loadPhases.forEach(lp => {
-                    y += rowGap;
-                    drawCenteredRow(y, [
-                        { t: 'text', text: `เฟส ${lp.ph}  `, fixedW: 92 },
-                        { t: 'dot', text: lp.sum.toFixed(2), minW: 175 },
-                        { t: 'text', text: '  A.     คิดเป็น  ' },
-                        { t: 'dot', text: lp.pct.toFixed(2), minW: 175 },
-                        { t: 'text', text: '  % ของพิกัดหม้อแปลง' }
-                    ], 32);
-                });
+            if (sigSource) {
+                y += Math.round(38 * vScale);
+                const sw = sigSource.width || 360;
+                const sh = sigSource.height || 120;
+                const maxSigW = 460, maxSigH = 135;
+                const ratio = Math.min(maxSigW / sw, maxSigH / sh);
+                const drawW = sw * ratio;
+                const drawH = sh * ratio;
+                const boxH = 140;
+                ctx.drawImage(sigSource, cx - drawW / 2, y + (boxH - drawH), drawW, drawH);
+                y += boxH + 38;
+            } else {
+                y += Math.round(155 * vScale);
+            }
 
-                y += Math.round(18 * vScale);
-                const getResHex = r => r === 'ไม่ได้' ? '#be123c' : (r === 'ได้' ? '#047857' : '#0f172a');
-                loadPhases.forEach(lp => {
-                    y += rowGap;
-                    drawCenteredRow(y, [
-                        { t: 'text', text: `เฟส ${lp.ph} สามารถติดตั้งมิเตอร์  `, fixedW: 390 },
-                        { t: 'dot', text: lp.res, minW: 185, color: getResHex(lp.res) }
-                    ], 33);
-                });
+            drawCenteredRow(y, [
+                { t: 'text', text: 'ลงชื่อ  ' },
+                { t: 'dot', text: st.inspector || '', minW: 390 },
+                { t: 'text', text: '  ผู้ดำเนินการวัดโหลด' }
+            ], 33);
 
-                y += Math.round(78 * vScale);
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'หมายเหตุ  ' },
-                    { t: 'dot', text: st.remark || '-', minW: 860 }
-                ], 33);
+            const worker = html2pdf().set({
+                margin: 0,
+                filename: fn,
+                image: { type: 'jpeg', quality: 0.93 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            }).from(pdfCanvas, 'canvas');
 
-                if (sigSource) {
-                    y += Math.round(38 * vScale);
-                    const sw = sigSource.width || 360;
-                    const sh = sigSource.height || 120;
-                    const maxSigW = 460, maxSigH = 135;
-                    const ratio = Math.min(maxSigW / sw, maxSigH / sh);
-                    const drawW = sw * ratio;
-                    const drawH = sh * ratio;
-                    const boxH = 140;
-                    ctx.drawImage(sigSource, cx - drawW / 2, y + (boxH - drawH), drawW, drawH);
-                    y += boxH + 38;
-                } else {
-                    y += Math.round(155 * vScale);
-                }
+            return { fn, pdfCanvas, worker };
+        }
 
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'ลงชื่อ  ' },
-                    { t: 'dot', text: st.inspector || '', minW: 390 },
-                    { t: 'text', text: '  ผู้ดำเนินการวัดโหลด' }
-                ], 33);
-
-                await html2pdf().set({
-                    margin: 0,
-                    filename: fn,
-                    image: { type: 'jpeg', quality: 0.99 },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                }).from(pdfCanvas, 'canvas').save();
-
+        window.exportReportPdf = async function () {
+            const st = collectFormState();
+            if (typeof html2pdf === 'undefined') { window.print(); return; }
+            window.showToast?.('⏳ กำลังสร้างไฟล์ PDF มาตรฐาน A4...');
+            try {
+                const { worker } = await buildOfficialReportPdfWorker(st);
+                await worker.save();
                 window.showToast?.('📄 ดาวน์โหลดไฟล์ PDF เรียบร้อย!');
             } catch (err) {
                 window.print();
             }
         };
 
-        window.shareTxSummaryToLine = function () {
-            const st = collectFormState();
-            const lines = [
-                `📊 รายงานวัดโหลดหม้อแปลง (${st.officeName})`,
-                `📄 เลขที่คำร้อง: ${st.reqNo || '-'} • วันที่: ${st.measureDate}`,
-                `⚡ หม้อแปลง PEA: ${st.peaNo || '-'} (${st.kva} kVA • F/L ${st.flAmp} A)`,
-                st.locationNote ? `📍 บริเวณ: ${st.locationNote}` : '',
-                `━━━━━━━━━━━━━━━━━━`,
-                `• เฟส A: ${st.totals.sumA.toFixed(2)} A (${st.totals.pctA.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resA}`,
-                st.sysType !== '1P2W' ? `• เฟส B: ${st.totals.sumB.toFixed(2)} A (${st.totals.pctB.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resB}` : '',
-                st.sysType === '3P' ? `• เฟส C: ${st.totals.sumC.toFixed(2)} A (${st.totals.pctC.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resC}` : '',
-                st.remark ? `📝 หมายเหตุ: ${st.remark}` : '',
-                `👷 ผู้วัดโหลด: ${st.inspector || '-'}`
-            ].filter(Boolean).join('\n');
+        // เข้ารหัส/ถอดรหัสลิงก์เปิดใบรายงาน PDF สำรองกรณีออฟไลน์หรือยังไม่ได้อัปเดต Code.gs
+        function encodePdfShareParam(st) {
+            try {
+                const compact = [
+                    st.reqNo || '', st.measureDate || '', st.officeName || '', st.peaNo || '',
+                    st.sysType || '3P', st.kva || 160, st.flAmp || 230.9,
+                    (st.circuits || []).map(r => [r.iA, r.iB, r.iC, r.vA, r.vB, r.vC]),
+                    [st.vEnd?.A ?? null, st.vEnd?.B ?? null, st.vEnd?.C ?? null],
+                    st.streetPhase || 'ไม่มี', st.streetAmp || 0,
+                    [st.overrides?.A || 'auto', st.overrides?.B || 'auto', st.overrides?.C || 'auto'],
+                    st.remark || '', st.inspector || ''
+                ];
+                const bytes = new TextEncoder().encode(JSON.stringify(compact));
+                let bin = '';
+                for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            } catch (e) { return ''; }
+        }
 
-            window.copyTextToClipboard?.(lines, '💬 คัดลอกผลวัดโหลดและกำลังเปิด LINE...');
-            window.open('https://line.me/R/share?text=' + encodeURIComponent(lines), '_blank');
+        function decodePdfShareParam(rawD) {
+            try {
+                let b64 = String(rawD || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+                while (b64.length % 4) b64 += '=';
+                const bin = atob(b64);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                const a = JSON.parse(new TextDecoder('utf-8').decode(bytes));
+                if (!Array.isArray(a) || a.length < 14) return null;
+                return {
+                    reqNo: a[0], measureDate: a[1], officeName: a[2], peaNo: a[3],
+                    sysType: a[4], kva: a[5], flAmp: a[6], circuits: a[7], vEnd: a[8],
+                    streetPhase: a[9], streetAmp: a[10], overrides: a[11], remark: a[12], inspector: a[13]
+                };
+            } catch (e) { return null; }
+        }
+
+        function buildWebFallbackPdfUrl(st) {
+            if (!/^https?:$/i.test(window.location.protocol)) return '';
+            const dParam = encodePdfShareParam(st);
+            if (!dParam) return '';
+            const u = new URL('./tx-load-form.html', window.location.href);
+            u.searchParams.set('pdfview', '1');
+            u.searchParams.set('d', dParam);
+            return u.href;
+        }
+
+        async function getOrUploadReportPdfLink(st, fp) {
+            if (lastPdfCache.fp === fp && lastPdfCache.url) return lastPdfCache.url;
+
+            const apiUrl = window.getActiveCloudApiUrl?.();
+            const canUploadDrive = Boolean(
+                apiUrl &&
+                localStorage.getItem('elec_app_logged_in') === 'true' &&
+                !window.isViewerRole?.() &&
+                typeof html2pdf !== 'undefined' &&
+                navigator.onLine !== false
+            );
+
+            if (canUploadDrive) {
+                try {
+                    const { worker } = await buildOfficialReportPdfWorker(st);
+                    const pdfObj = await worker.toPdf().get('pdf');
+                    const pdfDataUri = pdfObj.output('datauristring');
+
+                    window.PeaCore?.unlockCloudWrite?.(25000);
+                    const res = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'uploadTxPdf',
+                            group: st.ownerGroup,
+                            jobLabel: 'ใบวัดโหลด_' + (st.peaNo || 'TR'),
+                            mimeType: 'application/pdf',
+                            base64Data: pdfDataUri
+                        })
+                    });
+                    const resJson = await res.json();
+                    if (resJson?.status === 'ok' && resJson.viewUrl) {
+                        lastPdfCache = { fp, url: resJson.viewUrl };
+                        if (st.id) {
+                            loadLocalTxRecords();
+                            const idx = txRecords.findIndex(r => r.id === st.id);
+                            if (idx !== -1) {
+                                txRecords[idx].pdfUrl = resJson.viewUrl;
+                                txRecords[idx].pdfFp = fp;
+                                saveLocalTxRecords();
+                                renderTxHistoryList();
+                            }
+                        }
+                        return resJson.viewUrl;
+                    }
+                } catch (e) {}
+            }
+            return buildWebFallbackPdfUrl(st);
+        }
+
+        window.shareTxSummaryToLine = async function () {
+            if (isSharingLine) return;
+            const st = collectFormState();
+            const btn = document.getElementById('shareTxLineBtn');
+            const fp = computeReportPdfFingerprint(st);
+            const hasCachedUrl = Boolean(lastPdfCache.fp === fp && lastPdfCache.url);
+            const isMobile = /Android|iPhone|iPad|iPod|Mobile|Line/i.test(navigator.userAgent || '');
+
+            // บนคอมพิวเตอร์ เปิดแท็บรอไว้ล่วงหน้าเพื่อกัน Popup Blocker บล็อกหลังอัปโหลด PDF
+            let pendingWin = null;
+            if (!isMobile && !hasCachedUrl) {
+                pendingWin = window.open('about:blank', '_blank');
+                if (pendingWin && pendingWin.document) {
+                    pendingWin.document.write('<!DOCTYPE html><meta charset="utf-8"><title>กำลังเตรียมลิงก์ PDF ส่ง LINE...</title><body style="margin:0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#0f172a;color:#fff;"><h3>⏳ กำลังสร้างลิงก์ใบรายงาน PDF และเปิด LINE...</h3></body>');
+                }
+            }
+
+            isSharingLine = true;
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '⏳ กำลังสร้างลิงก์ PDF...';
+            }
+            if (!hasCachedUrl) {
+                window.showToast?.('⏳ กำลังสร้างลิงก์ใบรายงาน PDF เพื่อแนบส่ง LINE...');
+            }
+
+            try {
+                const pdfUrl = await getOrUploadReportPdfLink(st, fp);
+                const lines = [
+                    `📊 รายงานวัดโหลดหม้อแปลง (${st.officeName})`,
+                    `📄 เลขที่คำร้อง: ${st.reqNo || '-'} • วันที่: ${st.measureDate}`,
+                    `⚡ หม้อแปลง PEA: ${st.peaNo || '-'} (${st.kva} kVA • F/L ${st.flAmp} A)`,
+                    st.locationNote ? `📍 บริเวณ: ${st.locationNote}` : '',
+                    `━━━━━━━━━━━━━━━━━━`,
+                    `• เฟส A: ${st.totals.sumA.toFixed(2)} A (${st.totals.pctA.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resA}`,
+                    st.sysType !== '1P2W' ? `• เฟส B: ${st.totals.sumB.toFixed(2)} A (${st.totals.pctB.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resB}` : '',
+                    st.sysType === '3P' ? `• เฟส C: ${st.totals.sumC.toFixed(2)} A (${st.totals.pctC.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resC}` : '',
+                    st.remark ? `📝 หมายเหตุ: ${st.remark}` : '',
+                    `👷 ผู้วัดโหลด: ${st.inspector || '-'}`,
+                    pdfUrl ? `📄 ใบรายงาน PDF:\n${pdfUrl}` : ''
+                ].filter(Boolean).join('\n');
+
+                window.copyTextToClipboard?.(lines, '💬 คัดลอกผลวัดโหลดพร้อมลิงก์ PDF แล้ว!');
+                const lineShareUrl = 'https://line.me/R/share?text=' + encodeURIComponent(lines);
+
+                if (pendingWin && !pendingWin.closed) {
+                    pendingWin.location.href = lineShareUrl;
+                } else {
+                    const win = window.open(lineShareUrl, '_blank');
+                    if (!win) window.location.href = lineShareUrl;
+                }
+            } catch (err) {
+                if (pendingWin && !pendingWin.closed) pendingWin.close();
+                window.showToast?.('⚠️ ไม่สามารถสร้างลิงก์แชร์ได้ กรุณาลองอีกครั้ง');
+            } finally {
+                isSharingLine = false;
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = '💬 ส่งสรุป + PDF เข้า LINE';
+                }
+            }
         };
 
         window.exportTxHistoryExcel = async function () {
             loadLocalTxRecords();
             const list = txRecords.filter(canSeeTxRecord);
             if (!list.length) return window.showToast?.('⚠️ ยังไม่มีประวัติสำหรับส่งออก');
-            const headers = ['วันที่', 'สาขา', 'เลขที่คำร้อง', 'PEA หม้อแปลง', 'ขนาด(kVA)', 'F/L(A)', 'รวมเฟส A(A)', '%เฟส A', 'ผลเฟส A', 'รวมเฟส B(A)', '%เฟส B', 'ผลเฟส B', 'รวมเฟส C(A)', '%เฟส C', 'ผลเฟส C', 'สถานที่', 'หมายเหตุ', 'ผู้วัดโหลด'];
+            const headers = ['วันที่', 'สาขา', 'เลขที่คำร้อง', 'PEA หม้อแปลง', 'ขนาด(kVA)', 'F/L(A)', 'รวมเฟส A(A)', '%เฟส A', 'ผลเฟส A', 'รวมเฟส B(A)', '%เฟส B', 'ผลเฟส B', 'รวมเฟส C(A)', '%เฟส C', 'ผลเฟส C', 'สถานที่', 'หมายเหตุ', 'ผู้วัดโหลด', 'ลิงก์ PDF'];
             const rows = list.map(r => [
                 r.measureDate, r.ownerGroup, r.reqNo || '-', r.peaNo, r.kva, r.flAmp,
                 r.totals?.sumA ?? 0, r.totals?.pctA ?? 0, r.totals?.resA || '-',
                 r.totals?.sumB ?? 0, r.totals?.pctB ?? 0, r.totals?.resB || '-',
                 r.totals?.sumC ?? 0, r.totals?.pctC ?? 0, r.totals?.resC || '-',
-                r.locationNote || '-', r.remark || '-', r.inspector || '-'
+                r.locationNote || '-', r.remark || '-', r.inspector || '-', r.pdfUrl || '-'
             ]);
             const fn = `TxLoad_${getActiveBranch()}_${getTodayThaiDate().replace(/\//g, '-')}.xlsx`;
             if ((await window.ensureXlsxLibraryLoaded?.()) && typeof XLSX !== 'undefined') {
@@ -1392,7 +1594,55 @@
             recalcAndRender();
         }
 
+        function enterPublicPdfViewerMode(d) {
+            buildCircuitRowsDOM();
+            document.getElementById('reqNoInput').value = d.reqNo || '';
+            document.getElementById('measureDateInput').value = d.measureDate || getTodayThaiDate();
+            document.getElementById('officeNameInput').value = d.officeName || '';
+            document.getElementById('peaNoInput').value = d.peaNo || '';
+            const selVal = `${d.sysType || '3P'}:${d.kva || 160}`;
+            const kvaSel = document.getElementById('txKvaSelect');
+            if (Array.from(kvaSel.options).some(o => o.value === selVal)) kvaSel.value = selVal;
+            applySystemPhaseVisibility(d.sysType || '3P');
+            document.getElementById('flAmpInput').value = d.flAmp || calcDefaultFullLoadAmp(d.sysType || '3P', d.kva || 160);
+
+            for (let c = 1; c <= 4; c++) {
+                const row = (d.circuits && d.circuits[c - 1]) || [];
+                const fields = ['iA', 'iB', 'iC', 'vA', 'vB', 'vC'];
+                fields.forEach((f, idx) => {
+                    const el = document.getElementById(f[0] + 'C' + c + f[1]);
+                    if (el) el.value = row[idx] ?? '';
+                });
+            }
+            document.getElementById('vEndA').value = d.vEnd?.[0] ?? '';
+            document.getElementById('vEndB').value = d.vEnd?.[1] ?? '';
+            document.getElementById('vEndC').value = d.vEnd?.[2] ?? '';
+            document.getElementById('streetPhaseSelect').value = d.streetPhase || 'ไม่มี';
+            document.getElementById('streetAmpInput').value = d.streetAmp ?? 0;
+            document.getElementById('overrideResA').value = d.overrides?.[0] || 'auto';
+            document.getElementById('overrideResB').value = d.overrides?.[1] || 'auto';
+            document.getElementById('overrideResC').value = d.overrides?.[2] || 'auto';
+            document.getElementById('remarkInput').value = d.remark || '';
+            document.getElementById('inspectorNameInput').value = d.inspector || '';
+            recalcAndRender();
+
+            document.querySelectorAll('.no-print').forEach(el => el.classList.add('hidden'));
+            document.getElementById('publicPdfViewerBar')?.classList.remove('hidden');
+            const col = document.getElementById('previewColumnWrap');
+            if (col) col.className = 'lg:col-span-12 max-w-2xl mx-auto w-full space-y-3';
+            setTimeout(() => window.exportReportPdf(), 450);
+        }
+
         function bootTxLoadApp() {
+            const q = new URLSearchParams(window.location.search);
+            if (q.get('pdfview') === '1' && q.get('d')) {
+                const sharedData = decodePdfShareParam(q.get('d'));
+                if (sharedData) {
+                    enterPublicPdfViewerMode(sharedData);
+                    return;
+                }
+            }
+
             if (localStorage.getItem('elec_app_logged_in') !== 'true') {
                 window.location.href = './index.html';
                 return;
@@ -1413,7 +1663,6 @@
             document.getElementById('inspectorNameInput').value = cleanUser.replace(/\s*กฟ[สฟจตอ]\..*$/, '').trim();
             document.getElementById('flAmpInput').value = calcDefaultFullLoadAmp('3P', 160);
 
-            const q = new URLSearchParams(window.location.search);
             if (q.has('pea') || q.has('kva') || q.has('req')) {
                 applyExternalParamsToForm({
                     pea: q.get('pea') || '', kva: q.get('kva') || '',
