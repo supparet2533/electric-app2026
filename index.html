@@ -12,9 +12,9 @@
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     <meta name="theme-color" content="#1e3a8a">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=137">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=137">
-    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=137">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=147">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=147">
+    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=147">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -411,9 +411,10 @@
                         </div>
                     </div>
 
-                    <div class="flex items-center gap-1.5 shrink-0 flex-wrap w-full justify-start sm:justify-end">
+                                       <div class="flex items-center gap-1.5 shrink-0 flex-wrap w-full justify-start sm:justify-end">
                         <button type="button" id="adminUserManageBtn" onclick="openUserManageModal()" class="hidden bg-amber-500/90 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm items-center gap-1 font-semibold">👤 <span>ผู้ใช้</span></button>
                         <a href="page2.html" class="bg-teal-500/90 hover:bg-teal-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold">🛠️ <span>หน้าช่าง</span></a>
+                        <a href="tx-load-form.html" class="bg-emerald-500/90 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold">📊 <span>วัดโหลด</span></a>
                         <button type="button" onclick="openBackupModal()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold">💾 <span>สำรอง</span></button>
                         <button type="button" onclick="handleLogout()" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold">🚪 <span>ออก</span></button>
                     </div>
@@ -914,12 +915,12 @@
 
     <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=145"></script>
-    <script src="shared-core.js?v=145"></script>
-    <script src="main-app.js?v=145"></script>
-    <script src="pm-calendar.js?v=145"></script>
-    <script src="scada-fault-locator.js?v=145"></script>
-    <script src="pm-push.js?v=145"></script>
+    <script src="pea-idb-store.js?v=147"></script>
+    <script src="shared-core.js?v=147"></script>
+    <script src="main-app.js?v=147"></script>
+    <script src="pm-calendar.js?v=147"></script>
+    <script src="scada-fault-locator.js?v=147"></script>
+    <script src="pm-push.js?v=147"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
