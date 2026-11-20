@@ -492,10 +492,63 @@
         return true;
     }
 
-    function canCurrentUserSeeEquipPin(pin) {
+        function canCurrentUserSeeEquipPin(pin) {
         if (!pin || !pin.id || isPinDeletedRecordActive(pin.id, pin.updatedAt)) return false;
         if (isAdminGlobalScope()) return true;
         return getActiveEquipUserGroup() === getPinOwnerGroup(pin);
+    }
+
+    function getFeederMatchedPinIdsSet(branchPins, topoOpt = null, rawFilterOpt = null) {
+        const activeFilter = rawFilterOpt !== null ? rawFilterOpt : scadaSettings.feederFilter;
+        if (!activeFilter || activeFilter === 'ALL') return null;
+        const targetFd = normFd(activeFilter);
+        if (!targetFd) return null;
+
+        const pins = Array.isArray(branchPins) ? branchPins : labeledPlaces.filter(canCurrentUserSeeEquipPin);
+        const topo = topoOpt || cachedTopology || computeUnifiedTopology(pins);
+        const matched = new Set();
+        const wiredPinIds = new Set();
+
+        topo.edgesList.forEach(entry => {
+            wiredPinIds.add(entry.fromId);
+            wiredPinIds.add(entry.toId);
+            const eState = topo.edgeStates.get(entry.edgeKey);
+            if (normFd(entry.edge.fd) === targetFd || normFd(eState?.primarySource?.feeder) === targetFd) {
+                matched.add(entry.fromId);
+                matched.add(entry.toId);
+            }
+        });
+
+        const escapedFd = targetFd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const codePrefixRe = targetFd.length >= 2 ? new RegExp(`^${escapedFd}(?![0-9])`, 'i') : null;
+
+        pins.forEach(p => {
+            if (!p?.id || matched.has(p.id)) return;
+            const nodeFd = normFd(p.scadaNode?.fd);
+            if (nodeFd === targetFd) {
+                matched.add(p.id);
+                return;
+            }
+            const nSt = topo.nodeStates.get(p.id);
+            if (normFd(nSt?.primarySource?.feeder) === targetFd ||
+                (Array.isArray(nSt?.conductingSources) && nSt.conductingSources.some(s => normFd(s.feeder) === targetFd))) {
+                matched.add(p.id);
+                return;
+            }
+            if (!nodeFd && !wiredPinIds.has(p.id) && codePrefixRe) {
+                const cleanCode = String(p.name || '').replace(/^[^A-Za-z0-9ก-๙]+/, '').replace(/\s+/g, '');
+                if (codePrefixRe.test(cleanCode)) matched.add(p.id);
+            }
+        });
+
+        return matched;
+    }
+
+    function filterBranchPinsByActiveFeeder(branchPins, topoOpt = null) {
+        const pins = Array.isArray(branchPins) ? branchPins : labeledPlaces.filter(canCurrentUserSeeEquipPin);
+        if (!scadaSettings.feederFilter || scadaSettings.feederFilter === 'ALL') return pins;
+        const matchedSet = getFeederMatchedPinIdsSet(pins, topoOpt, scadaSettings.feederFilter);
+        return matchedSet ? pins.filter(p => matchedSet.has(p.id)) : pins;
     }
 
     function getPinSavedColorHex(pin) {
@@ -1067,7 +1120,7 @@
         const dd = document.getElementById('searchEquipDropdown');
         if (!dd) return;
         const kw = String(rawVal || '').trim().toLowerCase();
-        const visible = labeledPlaces.filter(p => canCurrentUserSeeEquipPin(p) && (currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter));
+        const visible = filterBranchPinsByActiveFeeder(labeledPlaces.filter(canCurrentUserSeeEquipPin)).filter(p => currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter);
         if (!kw || visible.length === 0) { dd.classList.add('hidden'); dd.innerHTML = ''; return; }
 
         const startCoord = (window.isGpsTrackingEnabled && window.lastKnownTechCoords) ? window.lastKnownTechCoords : null;
@@ -2011,7 +2064,7 @@
         if (!marker || !pin) return { mount: false, hiddenByLod: false };
         if (marker.isPopupOpen?.() || pin.id === currentlyOpenPopupPinId || pin.id === scadaSettings.fromPinId || pin.id === pinMoveState.selectedPinId) return { mount: true, hiddenByLod: false };
         if (paddedBounds && !paddedBounds.contains(marker.getLatLng())) return { mount: false, hiddenByLod: false };
-        if (lodMode === 'all' || hasSearchKw || simState.active || totalPins < ADAPTIVE_LOD_MIN_PINS || (editModeOn && zoom >= 12)) return { mount: true, hiddenByLod: false };
+   if (lodMode === 'all' || hasSearchKw || scadaSettings.feederFilter !== 'ALL' || simState.active || totalPins < ADAPTIVE_LOD_MIN_PINS || (editModeOn && zoom >= 12)) return { mount: true, hiddenByLod: false };
         const eqType = pin.scadaNode?.t || (isPinTTap(pin, labeledPlaces) ? 'TAP' : 'PIN'), st = pin.scadaNode?.st || 'C';
         if (['RC', 'CB', 'VB', 'VS', 'VSC', 'S', 'GEN'].includes(eqType) || st === 'F') return { mount: true, hiddenByLod: false };
         const isTap = isPinTTap(pin, labeledPlaces);
@@ -2217,11 +2270,13 @@
         if (nextEl && prevScroll > 0) nextEl.scrollTop = prevScroll;
     }
 
-    function renderMarkersOnMap(filteredItems, autoFit = false, forceRedraw = false) {
+        function renderMarkersOnMap(filteredItems, autoFit = false, forceRedraw = false) {
         if (!leafletMap || !markersLayer) return;
         if (activeDragCleanupFn) { pendingRefreshAfterDrag = true; return; }
-        const list = Array.isArray(filteredItems) ? filteredItems : labeledPlaces.filter(canCurrentUserSeeEquipPin);
-        const newSig = list.map(p => `${p.id}:${p.name}:${Number(p.lat).toFixed(6)}:${Number(p.lon).toFixed(6)}:${getEffectivePinColorKey(p)}:${getPinEffectiveDisplayHex(p)}:${p.dueDate || ''}:${p.dueColor || ''}:${p.note || ''}:${JSON.stringify(p.scadaNode || null)}`).join('|');
+        const allBranchPins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+        cachedTopology = computeUnifiedTopology(allBranchPins);
+        const list = Array.isArray(filteredItems) ? filteredItems : filterBranchPinsByActiveFeeder(allBranchPins, cachedTopology);
+        const newSig = `${scadaSettings.feederFilter}||` + list.map(p => `${p.id}:${p.name}:${Number(p.lat).toFixed(6)}:${Number(p.lon).toFixed(6)}:${getEffectivePinColorKey(p)}:${getPinEffectiveDisplayHex(p)}:${p.dueDate || ''}:${p.dueColor || ''}:${p.note || ''}:${JSON.stringify(p.scadaNode || null)}`).join('|');
 
         if (!forceRedraw && !autoFit && newSig === lastRenderedMarkersSig) {
             updatePinTooltipsVisibilityByZoom(); syncLodAndViewportMarkersNow();
@@ -2229,7 +2284,6 @@
             return;
         }
         lastRenderedMarkersSig = newSig;
-        cachedTopology = computeUnifiedTopology(labeledPlaces.filter(canCurrentUserSeeEquipPin));
 
         const savedPopupId = currentlyOpenPopupPinId;
         isRebuildingUnifiedLines = true; markersLayer.clearLayers(); isRebuildingUnifiedLines = false;
@@ -2266,19 +2320,36 @@
     function fitAllLabeledPinsOnMap() {
         const searchInp = document.getElementById('searchLabeledPinInput');
         if (searchInp && searchInp.value.trim()) { searchInp.value = ''; hideSearchEquipDropdown(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
-        const visible = labeledPlaces.filter(p => canCurrentUserSeeEquipPin(p) && (currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter));
-        if (!leafletMap || visible.length === 0) return showToast('⚠️ ไม่มีหมุดอุปกรณ์ไฟฟ้าในหมวดที่เลือก');
+        const branchPins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+        const visible = filterBranchPinsByActiveFeeder(branchPins).filter(p => currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter);
+        if (!leafletMap || visible.length === 0) return showToast('⚠️ ไม่มีหมุดอุปกรณ์ไฟฟ้าในวงจร/หมวดที่เลือก');
         renderMarkersOnMap(visible, false, false);
         const bounds = visible.map(p => [p.lat, p.lon]);
-        if (window.lastKnownTechCoords && window.isGpsTrackingEnabled) bounds.push([window.lastKnownTechCoords.lat, window.lastKnownTechCoords.lon]);
+        if (scadaSettings.feederFilter === 'ALL' && window.lastKnownTechCoords && window.isGpsTrackingEnabled) bounds.push([window.lastKnownTechCoords.lat, window.lastKnownTechCoords.lon]);
         leafletMap.invalidateSize();
         leafletMap.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 });
     }
 
     function ensurePinVisibleThroughColorFilter(place) {
-        if (!place || currentPinColorFilter === 'all') return;
-        if (getEffectivePinColorKey(place) !== currentPinColorFilter) {
-            currentPinColorFilter = 'all'; updateEquipColorFilterPillsUI(); renderLabeledPlacesList(true);
+        if (!place) return;
+        let needRefresh = false;
+        if (scadaSettings.feederFilter !== 'ALL') {
+            const matched = getFeederMatchedPinIdsSet(labeledPlaces.filter(canCurrentUserSeeEquipPin), cachedTopology, scadaSettings.feederFilter);
+            if (matched && !matched.has(place.id)) {
+                scadaSettings.feederFilter = 'ALL';
+                const fSel = document.getElementById('scadaFeederFilterSelect');
+                if (fSel) fSel.value = 'ALL';
+                needRefresh = true;
+            }
+        }
+        if (currentPinColorFilter !== 'all' && getEffectivePinColorKey(place) !== currentPinColorFilter) {
+            currentPinColorFilter = 'all';
+            updateEquipColorFilterPillsUI();
+            needRefresh = true;
+        }
+        if (needRefresh) {
+            renderLabeledPlacesList(true);
+            scheduleUnifiedScadaRefresh();
         }
     }
 
@@ -2301,8 +2372,9 @@
     function focusMapOnSearchMatch() {
         hideSearchEquipDropdown();
         const kw = (document.getElementById('searchLabeledPinInput')?.value || '').trim().toLowerCase();
-        const matches = labeledPlaces.filter(p => canCurrentUserSeeEquipPin(p) && (currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter) && (!kw || String(p.name || '').toLowerCase().includes(kw) || String(p.note || '').toLowerCase().includes(kw) || `${p.lat},${p.lon}`.includes(kw)));
-        if (matches.length === 0) return showToast('⚠️ ไม่พบรหัสอุปกรณ์ไฟฟ้าที่ค้นหาในหมวดนี้');
+        const branchPins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+        const matches = filterBranchPinsByActiveFeeder(branchPins).filter(p => (currentPinColorFilter === 'all' || getEffectivePinColorKey(p) === currentPinColorFilter) && (!kw || String(p.name || '').toLowerCase().includes(kw) || String(p.note || '').toLowerCase().includes(kw) || `${p.lat},${p.lon}`.includes(kw)));
+        if (matches.length === 0) return showToast('⚠️ ไม่พบรหัสอุปกรณ์ไฟฟ้าที่ค้นหาในหมวด/วงจรนี้');
         if (window.innerWidth < 1024 && !isMapFullscreen) document.getElementById('labeledInteractiveMap')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         if (matches.length === 1) { focusSinglePinOnMap(matches[0].id); showToast(`🎯 พบอุปกรณ์: ${matches[0].name}`); }
         else { renderMarkersOnMap(matches, true, true); showToast(`🗺️ แสดงผลการค้นหาบนแผนที่ ${matches.length} จุด`); }
@@ -2345,14 +2417,20 @@
         } else { lazyScrollObserver?.disconnect(); lazyScrollObserver = null; }
     }
 
-    function renderLabeledPlacesList(updateMapMarkers = false) {
+        function renderLabeledPlacesList(updateMapMarkers = false) {
         loadStoredLabeledPlaces();
         updateMainSwitcherButtonsStyle(); updateAdminBulkColorBarVisibility(); updateEquipColorFilterPillsUI();
 
         const scopeLabel = getActiveEquipScopeLabel(), grpBadge = document.getElementById('currentEquipGroupHeaderBadge');
         if (grpBadge) grpBadge.textContent = `🏢 ${scopeLabel}`;
-        const visiblePins = labeledPlaces.filter(canCurrentUserSeeEquipPin), countBadge = document.getElementById('mapTabPinCountBadge');
-        if (countBadge) countBadge.textContent = String(visiblePins.length);
+        const allBranchPins = labeledPlaces.filter(canCurrentUserSeeEquipPin);
+        cachedTopology = computeUnifiedTopology(allBranchPins);
+        if (scadaSettings.feederFilter !== 'ALL' && !cachedTopology.feedersSet.has(scadaSettings.feederFilter)) {
+            scadaSettings.feederFilter = 'ALL';
+        }
+        const visiblePins = filterBranchPinsByActiveFeeder(allBranchPins, cachedTopology);
+        const countBadge = document.getElementById('mapTabPinCountBadge');
+        if (countBadge) countBadge.textContent = String(allBranchPins.length);
 
         const container = document.getElementById('labeledPlacesCardsContainer'), summaryEl = document.getElementById('labeledListSummaryText');
         if (!container) return;
@@ -2375,15 +2453,18 @@
         else filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
 
         if (summaryEl) {
+            const fdTag = scadaSettings.feederFilter === 'ALL' ? '' : ` • ⚡ วงจร ${scadaSettings.feederFilter}`;
             const cTag = currentPinColorFilter === 'all' ? '' : ` • เฉพาะ${getPinColorTheme(currentPinColorFilter).dot}${getPinColorTheme(currentPinColorFilter).name}`;
-            summaryEl.textContent = (kw || currentPinColorFilter !== 'all') ? `🔍 แสดง ${filtered.length} จุด${cTag} (จาก ${visiblePins.length} จุด)` : `⚡ อุปกรณ์ไฟฟ้าใน ${scopeLabel} (${visiblePins.length} จุด)`;
+            summaryEl.textContent = (kw || currentPinColorFilter !== 'all' || scadaSettings.feederFilter !== 'ALL')
+                ? `🔍 แสดง ${filtered.length} จุด${fdTag}${cTag} (จาก ${allBranchPins.length} จุด)`
+                : `⚡ อุปกรณ์ไฟฟ้าใน ${scopeLabel} (${allBranchPins.length} จุด)`;
         }
         if (updateMapMarkers) renderMarkersOnMap(filtered, false, false);
 
         lazyScrollObserver?.disconnect();
         container.innerHTML = '';
         if (filtered.length === 0) {
-            container.innerHTML = `<div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-500 space-y-2"><div class="text-base font-bold text-slate-600">⚡ ไม่พบรายการอุปกรณ์ไฟฟ้า</div>${currentPinColorFilter !== 'all' ? `<div><button type="button" onclick="selectEquipPinColorFilter('all')" class="bg-teal-600 text-white px-3 py-1.5 rounded-xl font-bold text-xs shadow-sm">🔄 แสดงหมุดทุกสี (${kwFiltered.length} จุด)</button></div>` : ''}</div>`;
+            container.innerHTML = `<div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-500 space-y-2"><div class="text-base font-bold text-slate-600">⚡ ไม่พบรายการอุปกรณ์ไฟฟ้า</div><div class="flex flex-wrap justify-center gap-1.5">${currentPinColorFilter !== 'all' ? `<button type="button" onclick="selectEquipPinColorFilter('all')" class="bg-teal-600 text-white px-3 py-1.5 rounded-xl font-bold text-xs shadow-sm">🔄 แสดงหมุดทุกสี</button>` : ''}${scadaSettings.feederFilter !== 'ALL' ? `<button type="button" onclick="onScadaFeederFilterChange('ALL')" class="bg-indigo-600 text-white px-3 py-1.5 rounded-xl font-bold text-xs shadow-sm">🔌 แสดงทุกวงจร</button>` : ''}</div></div>`;
             return;
         }
         lazyCardsQueue = [...filtered]; lazyTotalCount = filtered.length; lazyMountedCount = 0;
@@ -2848,7 +2929,7 @@
         const zoom = leafletMap.getZoom(), baseW = scadaSettings.lineWeight, items = [];
         cachedTopology.edgesList.forEach(entry => {
             const eState = cachedTopology.edgeStates.get(entry.edgeKey); if (!eState) return;
-            if (scadaSettings.feederFilter !== 'ALL' && (entry.edge.fd || '') !== scadaSettings.feederFilter && eState.primarySource?.feeder !== normFd(scadaSettings.feederFilter)) return;
+            if (scadaSettings.feederFilter !== 'ALL' && normFd(entry.edge.fd) !== normFd(scadaSettings.feederFilter) && normFd(eState.primarySource?.feeder) !== normFd(scadaSettings.feederFilter)) return;
             const rawLL = [[Number(entry.fromPin.lat), Number(entry.fromPin.lon)], ...(entry.edge.w || []), [Number(entry.toPin.lat), Number(entry.toPin.lon)]];
             items.push({ entry, eState, basePxPts: rawLL.map(c => leafletMap.project(L.latLng(c[0], c[1]), zoom)) });
         });
@@ -2958,7 +3039,16 @@
     function onScadaSideOffsetChange(v) { scadaSettings.sideOffset = parseInt(v, 10) || 0; localStorage.setItem('elec_scada_side_offset', String(scadaSettings.sideOffset)); }
     function setScadaDrawColor(hex) { scadaSettings.activeColor = normHex(hex) || '#10b981'; localStorage.setItem('elec_scada_last_color', scadaSettings.activeColor); renderQuickToolbarColorButtons(scadaSettings.activeColor); renderScadaDrawPreview(); }
     function onScadaLineWeightChange(v) { scadaSettings.lineWeight = parseFloat(v) || 1.8; localStorage.setItem('elec_scada_line_weight', String(scadaSettings.lineWeight)); scheduleUnifiedScadaRefresh(); }
-    function onScadaFeederFilterChange(v) { scadaSettings.feederFilter = v || 'ALL'; currentlyOpenEdgePopup = null; leafletMap?.closePopup(); scheduleUnifiedScadaRefresh(); restoreMapFloatingUiIfNoPopup(); }
+        function onScadaFeederFilterChange(v) {
+        scadaSettings.feederFilter = v || 'ALL';
+        currentlyOpenEdgePopup = null;
+        currentlyOpenPopupPinId = null;
+        leafletMap?.closePopup();
+        renderLabeledPlacesList(true);
+        scheduleUnifiedScadaRefresh();
+        restoreMapFloatingUiIfNoPopup();
+    }
+
     function toggleScadaLinesVisibility() { scadaSettings.showLines = !scadaSettings.showLines; if (!scadaSettings.showLines) { currentlyOpenEdgePopup = null; leafletMap?.closePopup(); } updateToolbarToggleButtonsUI(); scheduleUnifiedScadaRefresh(); restoreMapFloatingUiIfNoPopup(); }
     function toggleScadaAutoJumperMode() { scadaSettings.autoJumper = !scadaSettings.autoJumper; localStorage.setItem('elec_scada_auto_jumper', String(scadaSettings.autoJumper)); updateToolbarToggleButtonsUI(); scheduleUnifiedScadaRefresh(); }
     function toggleScadaAntiOverlapMode() { scadaSettings.antiOverlap = !scadaSettings.antiOverlap; localStorage.setItem('elec_scada_anti_overlap', String(scadaSettings.antiOverlap)); updateToolbarToggleButtonsUI(); scheduleUnifiedScadaRefresh(); }
