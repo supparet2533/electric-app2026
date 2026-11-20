@@ -15,9 +15,9 @@
     <meta name="application-name" content="ช่างไฟฟ้า">
     <meta name="theme-color" content="#0f766e">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=139">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=139">
-    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=139">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=147">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=147">
+    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=147">
 
     <script>
         if (window.self !== window.top) document.documentElement.classList.add('is-embedded-frame');
@@ -201,6 +201,7 @@
                     <button type="button" id="backToMainBtn" onclick="goBackToMainPage()" class="hidden bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition items-center gap-1 shadow-sm">⬅️ <span>หน้าหลัก</span></button>
                     <button type="button" id="gpsToggleBtn" onclick="toggleGpsTracking()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm">📍 GPS: เปิด</button>
                     <button type="button" id="soundAlertToggleBtn" onclick="toggleSoundAlert()" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm">🔔 เสียง: เปิด</button>
+                    <a href="tx-load-form.html" class="bg-indigo-500/90 hover:bg-indigo-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm flex items-center gap-1">📊 <span>วัดโหลด</span></a>
                     <button type="button" onclick="syncJobsFromCloud(false)" class="bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm">🔄 ซิงค์งาน</button>
                     <button type="button" onclick="handleTechLogout()" class="bg-rose-500/90 hover:bg-rose-600 text-white px-2.5 py-1.5 rounded-xl text-xs font-bold transition shadow-sm">🚪 ออก</button>
                 </div>
@@ -369,13 +370,13 @@
     <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=145"></script>
-    <script src="shared-core.js?v=145"></script>
-    <script src="tech-jobs.js?v=145"></script>
-    <script src="scada-engine.js?v=145"></script>
-    <script src="pm-calendar.js?v=145"></script>
-    <script src="scada-fault-locator.js?v=145"></script>
-    <script src="pm-push.js?v=145"></script>
+    <script src="pea-idb-store.js?v=147"></script>
+    <script src="shared-core.js?v=147"></script>
+    <script src="tech-jobs.js?v=147"></script>
+    <script src="scada-engine.js?v=147"></script>
+    <script src="pm-calendar.js?v=147"></script>
+    <script src="scada-fault-locator.js?v=147"></script>
+    <script src="pm-push.js?v=147"></script>
 
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
     <script>
@@ -394,9 +395,9 @@
                 navigator.serviceWorker.addEventListener('controllerchange', function() {
                     if (!hadSwController || isSwReloading) return;
                     const tag = (document.activeElement && document.activeElement.tagName) || '';
-                    const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
-                        Boolean(document.querySelector('#inspectModal:not(.hidden)'));
-
+                                        const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
+                        document.body.classList.contains('scada-sim-active') ||
+                        Boolean(document.querySelector('#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden)'));
                     if (!isTypingOrModal) {
                         isSwReloading = true;
                         window.location.reload();
