@@ -1,0 +1,1205 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ระบบวัดโหลดหม้อแปลง — PEA Smart Grid</title>
+    <meta name="theme-color" content="#1e3a8a">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=147">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            overflow-x: clip;
+        }
+        input:where(:not([type="radio"]):not([type="checkbox"])), select, textarea {
+            background-color: #f8fafc;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 0.75rem;
+            transition: all 0.18s ease;
+        }
+        input:where(:not([type="radio"]):not([type="checkbox"])):focus, select:focus, textarea:focus {
+            background-color: #ffffff;
+            border-color: #2563eb !important;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+        }
+        /* กระดาษรายงานมาตรฐาน กฟภ. สำหรับพรีวิวและออก PDF A4 */
+        .pea-report-paper {
+            font-family: 'Sarabun', 'Prompt', sans-serif;
+            background: #ffffff;
+            color: #0f172a;
+            line-height: 1.65;
+        }
+        .dot-val {
+            display: inline-block;
+            min-width: 46px;
+            padding: 0 6px;
+            border-bottom: 1.5px dotted #334155;
+            text-align: center;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        body.role-viewer-readonly .tx-edit-only {
+            display: none !important;
+        }
+        #customAlertModal, #customConfirmModal, #customPromptModal {
+            z-index: 1480 !important;
+        }
+        @media print {
+            body { background: #ffffff !important; padding: 0 !important; }
+            .no-print { display: none !important; }
+            #officialReportWrapper { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
+        }
+    </style>
+</head>
+<body class="min-h-[100dvh] pb-10">
+
+    <!-- แถบหัวระบบ -->
+    <div class="no-print bg-gradient-to-r from-blue-900 via-indigo-800 to-teal-700 text-white px-4 pt-[max(0.9rem,env(safe-area-inset-top))] pb-4 shadow-lg">
+        <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
+            <div>
+                <h1 class="text-base sm:text-lg font-bold flex items-center gap-2">
+                    <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white/15 text-amber-300">📊</span>
+                    <span>ระบบวัดโหลดหม้อแปลงจำหน่าย</span>
+                    <span id="txBranchHeaderBadge" class="bg-amber-400 text-slate-950 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full">กฟส.บึง</span>
+                </h1>
+                <p class="text-[11px] text-blue-100 mt-0.5">คำนวณพิกัด F/L อัตโนมัติ • เกณฑ์ตัดสินติดตั้งมิเตอร์ ≤ 80% • เก็บข้อมูลแยกตามสาขา</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+                <a href="./index.html" class="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition">🏠 หน้าหลัก</a>
+                <a href="./page2.html?tab=map" class="bg-teal-500/90 hover:bg-teal-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition">⚡ ผัง SCADA</a>
+                <button type="button" onclick="syncTxLoadsFromCloud(false)" class="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm transition">🔄 ซิงค์ข้อมูล</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-5xl mx-auto px-3 sm:px-4 pt-4 space-y-4">
+
+        <!-- แผนผังวงจรหม้อแปลงต้นฉบับ กฟภ. (แตะที่รูปเพื่อขยายเต็มจอได้) -->
+        <div class="no-print bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <button type="button" onclick="toggleWiringGuide()" class="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100 flex items-center justify-between gap-2 text-xs font-bold text-slate-700 transition">
+                <span class="text-left">📐 ผังวงจรหม้อแปลง (วงจรที่ 1–4 และลำดับเฟส N-A-B-C • แตะรูปเพื่อขยาย)</span>
+                <span id="wiringGuideArrow" class="text-blue-600 shrink-0">🔼 ซ่อนผัง</span>
+            </button>
+            <div id="wiringGuideBody" class="p-3 sm:p-4 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/60">
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                    <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบนั่งร้าน / เสาคู่)</div>
+                    <img src="./tx-circuit-1.jpg?v=147" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                    <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบแขวนเสาเดี่ยว)</div>
+                    <img src="./tx-circuit-2.jpg?v=147" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                </div>
+            </div>
+        </div>
+
+        <!-- หน้าต่างซูมดูรูปผังวงจรเต็มจอ -->
+        <div id="diagramZoomModal" onclick="closeDiagramZoom()" class="no-print fixed inset-0 z-[1450] hidden items-center justify-center bg-slate-950/85 p-3 backdrop-blur-sm">
+            <img id="diagramZoomImg" src="" alt="ขยายผังวงจร" class="max-w-full max-h-[92dvh] bg-white rounded-xl p-2 shadow-2xl object-contain">
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+            <!-- ฝั่งซ้าย: ฟอร์มบันทึกค่าหน้างาน -->
+            <div class="no-print lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-4">
+                <div class="flex items-center justify-between border-b pb-2">
+                    <h2 id="formModeTitle" class="text-sm sm:text-base font-bold text-slate-800">📝 กรอกผลวัดโหลดหม้อแปลง</h2>
+                    <button type="button" onclick="resetTxLoadForm(true)" class="tx-edit-only text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2.5 py-1 rounded-lg font-bold">🧹 ล้างฟอร์มเริ่มใหม่</button>
+                </div>
+
+                <input type="hidden" id="editingRecordId" value="">
+
+                <!-- ข้อมูลหัวใบงาน -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">📄 เลขที่คำร้อง</label>
+                        <input type="text" id="reqNoInput" oninput="recalcAndRender()" placeholder="เช่น 160" class="w-full px-3 py-2 font-bold text-slate-800">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">📅 วันที่วัดโหลด</label>
+                        <input type="text" id="measureDateInput" oninput="recalcAndRender()" placeholder="วว/ดด/2569" class="w-full px-3 py-2 font-semibold text-slate-800">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block font-bold text-slate-700 mb-1">🏢 การไฟฟ้าสาขา (ออกหัวรายงาน)</label>
+                        <input type="text" id="officeNameInput" oninput="recalcAndRender()" placeholder="เช่น กฟภ.บึง" class="w-full px-3 py-2 font-bold text-teal-900">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 text-xs">
+                    <div class="sm:col-span-5 relative">
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="font-bold text-slate-700">⚡ รหัส PEA หม้อแปลง <span class="text-rose-500">*</span></label>
+                            <button type="button" onclick="openScadaTrSearchModal()" class="text-[10px] text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2 py-0.5 rounded font-bold">🔍 ดึงจากหมุดผัง</button>
+                        </div>
+                        <input type="text" id="peaNoInput" oninput="recalcAndRender()" placeholder="เช่น 60-035331" class="w-full px-3 py-2 font-mono font-bold text-sm text-blue-900">
+                    </div>
+                    <div class="sm:col-span-4">
+                        <label class="block font-bold text-slate-700 mb-1">🔌 ขนาดหม้อแปลง (kVA) <span class="text-rose-500">*</span></label>
+                        <select id="txKvaSelect" onchange="onKvaSelectionChange()" class="w-full px-2.5 py-2 font-bold text-slate-800 bg-white">
+                            <optgroup label="ระบบ 3 เฟส (400/230V)">
+                                <option value="3P:50">50 kVA (3 เฟส • F/L 72.2 A)</option>
+                                <option value="3P:75">75 kVA (3 เฟส • F/L 108.3 A)</option>
+                                <option value="3P:100">100 kVA (3 เฟส • F/L 144.3 A)</option>
+                                <option value="3P:125">125 kVA (3 เฟส • F/L 180.4 A)</option>
+                                <option value="3P:160" selected>160 kVA (3 เฟส • F/L 230.9 A)</option>
+                                <option value="3P:200">200 kVA (3 เฟส • F/L 288.7 A)</option>
+                                <option value="3P:250">250 kVA (3 เฟส • F/L 360.8 A)</option>
+                                <option value="3P:315">315 kVA (3 เฟส • F/L 454.7 A)</option>
+                                <option value="3P:400">400 kVA (3 เฟส • F/L 577.4 A)</option>
+                                <option value="3P:500">500 kVA (3 เฟส • F/L 721.7 A)</option>
+                                <option value="3P:630">630 kVA (3 เฟส • F/L 909.3 A)</option>
+                                <option value="3P:800">800 kVA (3 เฟส • F/L 1154.7 A)</option>
+                                <option value="3P:1000">1,000 kVA (3 เฟส • F/L 1443.4 A)</option>
+                                <option value="3P:1250">1,250 kVA (3 เฟส • F/L 1804.2 A)</option>
+                                <option value="3P:1600">1,600 kVA (3 เฟส • F/L 2309.4 A)</option>
+                            </optgroup>
+                            <optgroup label="ระบบ 1 เฟส (230/460V 3 สาย แยกขด A-B)">
+                                <option value="1P3W:30">30 kVA (1 เฟส 3 สาย • F/L 65.2 A/ขด)</option>
+                                <option value="1P3W:50">50 kVA (1 เฟส 3 สาย • F/L 108.7 A/ขด)</option>
+                            </optgroup>
+                            <optgroup label="ระบบ 1 เฟส (230V 2 สาย)">
+                                <option value="1P2W:30">30 kVA (1 เฟส 2 สาย • F/L 130.4 A)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-3">
+                        <label class="block font-bold text-amber-900 mb-1">🎯 พิกัด F/L 100% (A)</label>
+                        <input type="number" step="0.1" id="flAmpInput" oninput="recalcAndRender()" class="w-full px-3 py-2 font-mono font-extrabold text-amber-900 bg-amber-50 border-amber-300 text-center">
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-1 text-xs">
+                        <label class="font-bold text-slate-700">📍 สถานที่ / บริเวณติดตั้งหม้อแปลง (บันทึกช่วยจำในระบบ)</label>
+                        <button type="button" onclick="fillCurrentGpsToLocation()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded font-bold">📍 แนบพิกัดมือถือ</button>
+                    </div>
+                    <input type="text" id="locationNoteInput" oninput="recalcAndRender()" placeholder="เช่น หน้าหมู่บ้านสิลันตา / ซอย 3..." class="w-full px-3 py-1.5 text-xs">
+                </div>
+
+                <!-- 1. ตารางวัดกระแสแต่ละวงจร (A) -->
+                <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-extrabold text-blue-900">⚡ 1. วัดกระแสแต่ละวงจร (แอมป์ - A)</span>
+                        <button type="button" id="toggleExtraCktBtn" onclick="toggleExtraCircuits()" class="text-[11px] bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 px-2.5 py-0.5 rounded-lg font-bold shadow-sm">+ เปิดวงจร 3 - 4</button>
+                    </div>
+                    <div class="grid grid-cols-10 gap-1.5 text-[11px] font-extrabold text-center text-slate-600">
+                        <div class="col-span-1">วงจร</div>
+                        <div class="col-span-3 text-rose-700">เฟส A (แอมป์)</div>
+                        <div class="col-span-3 text-amber-700">เฟส B (แอมป์)</div>
+                        <div class="col-span-3 text-blue-700">เฟส C (แอมป์)</div>
+                    </div>
+                    <div id="currentGridRows" class="space-y-1.5"></div>
+                </div>
+
+                <!-- 2. ตารางวัดแรงดันต้นทาง (V) -->
+                <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-extrabold text-teal-900">🔌 2. วัดแรงดันต้นทาง (โวลต์ - V)</span>
+                        <span class="text-[10px] text-slate-500">กรอกเฉพาะวงจรที่จ่ายไฟ</span>
+                    </div>
+                    <div class="grid grid-cols-10 gap-1.5 text-[11px] font-extrabold text-center text-slate-600">
+                        <div class="col-span-1">วงจร</div>
+                        <div class="col-span-3 text-rose-700">เฟส A (โวลต์)</div>
+                        <div class="col-span-3 text-amber-700">เฟส B (โวลต์)</div>
+                        <div class="col-span-3 text-blue-700">เฟส C (โวลต์)</div>
+                    </div>
+                    <div id="voltageStartGridRows" class="space-y-1.5"></div>
+                </div>
+
+                <!-- 3. วัดแรงดันปลายสาย จุดขอมิเตอร์ (V) & ไฟทาง -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-2">
+                        <span class="block text-xs font-extrabold text-indigo-950">🏠 3. วัดแรงดันปลายสาย จุดขอมิเตอร์ (V)</span>
+                        <div class="grid grid-cols-3 gap-1.5 text-center text-xs">
+                            <div>
+                                <span class="text-[10px] font-bold text-rose-700">เฟส A</span>
+                                <input type="number" step="any" inputmode="decimal" id="vEndA" oninput="recalcAndRender()" placeholder="V" class="w-full px-2 py-1.5 text-center font-semibold bg-white">
+                            </div>
+                            <div>
+                                <span class="text-[10px] font-bold text-amber-700">เฟส B</span>
+                                <input type="number" step="any" inputmode="decimal" id="vEndB" oninput="recalcAndRender()" placeholder="V" class="w-full px-2 py-1.5 text-center font-semibold bg-white">
+                            </div>
+                            <div id="vEndCWrap">
+                                <span class="text-[10px] font-bold text-blue-700">เฟส C</span>
+                                <input type="number" step="any" inputmode="decimal" id="vEndC" oninput="recalcAndRender()" placeholder="V" class="w-full px-2 py-1.5 text-center font-semibold bg-white">
+                            </div>
+                        </div>
+                        <p id="lowVoltageWarnText" class="hidden text-[10.5px] font-bold text-rose-600"></p>
+                    </div>
+
+                    <div class="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2 text-xs">
+                        <span class="block font-extrabold text-amber-950">💡 4. ไฟทางพ่วงวงจร</span>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <span class="block text-[10px] font-bold text-slate-600 mb-0.5">พ่วงเข้าเฟส</span>
+                                <select id="streetPhaseSelect" onchange="onStreetPhaseChange()" class="w-full px-2 py-1.5 font-bold bg-white text-slate-800">
+                                    <option value="ไม่มี">ไม่มีไฟทาง</option>
+                                    <option value="A">เฟส A</option>
+                                    <option value="B">เฟส B</option>
+                                    <option value="C">เฟส C</option>
+                                </select>
+                            </div>
+                            <div>
+                                <span class="block text-[10px] font-bold text-slate-600 mb-0.5">กระแสไฟทาง (A)</span>
+                                <input type="number" step="any" min="0" inputmode="decimal" id="streetAmpInput" value="0" oninput="recalcAndRender()" class="w-full px-2.5 py-1.5 text-center font-bold bg-white">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- แดชบอร์ดสรุปผลเกณฑ์ 80% อัตโนมัติ -->
+                <div class="p-3.5 rounded-2xl bg-slate-900 text-white space-y-2.5">
+                    <div class="flex flex-wrap items-center justify-between gap-1 text-xs">
+                        <span class="font-extrabold text-amber-300">📊 สรุปกระแสโหลดรวมเทียบเกณฑ์ 80%</span>
+                        <span id="limit80Badge" class="bg-white/15 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-emerald-200">เพดาน 80% = 184.7 A</span>
+                    </div>
+                    <div id="liveSummaryCards" class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs"></div>
+
+                    <!-- ตัวเลือกปรับผลการพิจารณาติดตั้งมิเตอร์ (ค่าเริ่มต้น = คำนวณตามเกณฑ์ 80%) -->
+                    <div class="pt-2 border-t border-slate-700 grid grid-cols-3 gap-2 text-[11px]">
+                        <div>
+                            <span class="text-slate-300 block mb-0.5">ผลติดตั้ง เฟส A:</span>
+                            <select id="overrideResA" onchange="recalcAndRender()" class="w-full px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-600 font-bold">
+                                <option value="auto">อัตโนมัติ (≤80%)</option>
+                                <option value="ได้">ได้ (อนุมัติ)</option>
+                                <option value="ไม่ได้">ไม่ได้ (งดติดตั้ง)</option>
+                            </select>
+                        </div>
+                        <div id="overrideWrapB">
+                            <span class="text-slate-300 block mb-0.5">ผลติดตั้ง เฟส B:</span>
+                            <select id="overrideResB" onchange="recalcAndRender()" class="w-full px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-600 font-bold">
+                                <option value="auto">อัตโนมัติ (≤80%)</option>
+                                <option value="ได้">ได้ (อนุมัติ)</option>
+                                <option value="ไม่ได้">ไม่ได้ (งดติดตั้ง)</option>
+                            </select>
+                        </div>
+                        <div id="overrideWrapC">
+                            <span class="text-slate-300 block mb-0.5">ผลติดตั้ง เฟส C:</span>
+                            <select id="overrideResC" onchange="recalcAndRender()" class="w-full px-2 py-1 rounded-lg bg-slate-800 text-white border border-slate-600 font-bold">
+                                <option value="auto">อัตโนมัติ (≤80%)</option>
+                                <option value="ได้">ได้ (อนุมัติ)</option>
+                                <option value="ไม่ได้">ไม่ได้ (งดติดตั้ง)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- หมายเหตุ & ผู้วัดโหลด + ลายเซ็น -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">📝 หมายเหตุ</label>
+                        <input type="text" id="remarkInput" oninput="recalcAndRender()" placeholder="เว้นว่างได้ (เช่น สลับเฟส, รอปรับปรุงสาย...)" class="w-full px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">👷 ผู้ดำเนินการวัดโหลด</label>
+                        <input type="text" id="inspectorNameInput" oninput="recalcAndRender()" placeholder="ชื่อ-สกุล ช่างผู้วัดโหลด" class="w-full px-3 py-2 font-bold text-slate-800">
+                    </div>
+                </div>
+
+                <div class="p-3 rounded-2xl bg-blue-50/70 border border-blue-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2">
+                        <span id="sigStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                        <span id="sigStatusLabel" class="font-bold text-slate-700">ยังไม่ได้ลงลายมือชื่อดิจิทัล</span>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <button type="button" onclick="openSignatureModal()" class="tx-edit-only bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl font-bold shadow-sm">✍️ เซ็นชื่อบนหน้าจอ</button>
+                        <button type="button" onclick="clearSavedSignature()" class="tx-edit-only bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 px-2.5 py-1.5 rounded-xl font-bold">ล้างลายเซ็น</button>
+                    </div>
+                </div>
+
+                <!-- ปุ่มสั่งงานหลัก -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                    <button type="button" id="saveTxRecordBtn" onclick="saveTxLoadRecord()" class="tx-edit-only bg-teal-600 hover:bg-teal-700 text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">💾 บันทึกเข้าระบบสาขา</button>
+                    <button type="button" onclick="exportReportPdf()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">📄 ออกใบรายงาน PDF</button>
+                    <button type="button" onclick="shareTxSummaryToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">💬 ส่งสรุปเข้า LINE</button>
+                </div>
+            </div>
+
+            <!-- ฝั่งขวา: ตัวอย่างใบรายงานมาตรฐาน กฟภ. (A4 Preview) -->
+            <div class="lg:col-span-5 space-y-3">
+                <div id="officialReportWrapper" class="bg-white rounded-2xl border border-slate-300 shadow-md p-5 sm:p-7 overflow-x-auto">
+                    <div id="officialReportSheet" class="pea-report-paper text-[13px] sm:text-[13.5px] max-w-[680px] mx-auto space-y-2.5"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ประวัติการวัดโหลดหม้อแปลงของสาขา -->
+        <div class="no-print bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+                <div>
+                    <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>📜 ประวัติใบวัดโหลดหม้อแปลงในสังกัด</span>
+                        <span id="historyBranchBadge" class="bg-teal-100 text-teal-800 text-[11px] px-2 py-0.5 rounded-md font-extrabold">-</span>
+                    </h3>
+                    <p class="text-[11px] text-slate-500">แยกสิทธิ์การมองเห็นตามสาขา กฟส. อัตโนมัติ (คลิกเพื่อเปิดดู/แก้ไข หรือพิมพ์ PDF ซ้ำ)</p>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <input type="text" id="searchTxHistoryInput" oninput="renderTxHistoryList()" placeholder="🔍 ค้นหา PEA, คำร้อง, สถานที่..." class="px-3 py-1.5 text-xs bg-white w-48 sm:w-60">
+                    <button type="button" onclick="exportTxHistoryExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm">📊 Excel</button>
+                </div>
+            </div>
+            <div id="txHistoryContainer" class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-96 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- ป๊อปอัปค้นหาหม้อแปลงจากหมุดในผัง SCADA -->
+    <div id="scadaTrModal" class="no-print fixed inset-0 z-[1300] hidden items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+            <div class="px-4 py-3 bg-teal-700 text-white flex justify-between items-center">
+                <h3 class="font-bold text-sm">⚡ เลือกหมุดหม้อแปลง / อุปกรณ์จากผังสาขา</h3>
+                <button type="button" onclick="closeScadaTrSearchModal()" class="text-xl font-bold leading-none">&times;</button>
+            </div>
+            <div class="p-3 border-b bg-slate-50">
+                <input type="text" id="scadaTrFilterInput" oninput="renderScadaTrModalList()" placeholder="🔍 พิมพ์ค้นหารหัส PEA หรือชื่อหมุด..." class="w-full px-3 py-2 text-xs bg-white">
+            </div>
+            <div id="scadaTrListContainer" class="p-3 overflow-y-auto space-y-1.5 flex-1 text-xs"></div>
+        </div>
+    </div>
+
+    <!-- ป๊อปอัปเซ็นลายมือชื่อแนวนอนหมึกสีน้ำเงิน -->
+    <div id="sigModal" class="no-print fixed inset-0 z-[1400] hidden items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
+            <div class="px-4 py-2.5 bg-blue-800 text-white flex justify-between items-center text-xs sm:text-sm font-bold">
+                <span>✍️ ลงลายมือชื่อผู้ดำเนินการวัดโหลด (หมึกสีน้ำเงิน)</span>
+                <button type="button" onclick="closeSignatureModal()" class="text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-3 bg-slate-100">
+                <canvas id="sigCanvas" width="760" height="240" class="w-full h-48 sm:h-56 bg-white rounded-xl border-2 border-dashed border-blue-400 touch-none cursor-crosshair"></canvas>
+            </div>
+            <div class="p-3 bg-white border-t flex justify-between items-center gap-2 text-xs">
+                <button type="button" onclick="clearSigCanvasOnly()" class="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold">🧹 ล้างกระดาน</button>
+                <div class="flex gap-2">
+                    <button type="button" onclick="closeSignatureModal()" class="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-bold">ยกเลิก</button>
+                    <button type="button" onclick="confirmSignature()" class="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold shadow">✅ ใช้ลายเซ็นนี้</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="no-print fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
+
+    <!-- โหลดแกนกลางระบบเพื่อแชร์บัญชีผู้ใช้ สิทธิ์ และสาขา กฟส. -->
+    <script src="pea-idb-store.js?v=147"></script>
+    <script src="shared-core.js?v=147"></script>
+
+    <script>
+    (function () {
+        'use strict';
+
+        const TX_STORAGE_KEY = 'elec_tx_load_records_v1';
+        const LOAD_LIMIT_PCT = 80.0; // เกณฑ์มาตรฐาน 80%
+
+        let showCircuits34 = false;
+        let signatureDataUrl = '';
+        let txRecords = [];
+        let sigCtx = null;
+        let isDrawingSig = false;
+        let hasSigStroke = false;
+
+        window.openDiagramZoom = function (src) {
+            const modal = document.getElementById('diagramZoomModal');
+            const img = document.getElementById('diagramZoomImg');
+            if (!modal || !img || !src) return;
+            img.src = src;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        };
+
+        window.closeDiagramZoom = function () {
+            const modal = document.getElementById('diagramZoomModal');
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        function getTodayThaiDate() {
+            const d = new Date();
+            return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear() + 543}`;
+        }
+
+        function getActiveBranch() {
+            const raw = (typeof window.getCurrentUserGroup === 'function' ? window.getCurrentUserGroup() : '') ||
+                        localStorage.getItem('elec_app_current_group') || 'กฟส.บึง';
+            return (typeof window.normalizePeaGroupName === 'function' ? window.normalizePeaGroupName(raw) : raw) || 'กฟส.บึง';
+        }
+
+        function isAdminAllBranches() {
+            return typeof window.isCurrentUserAdmin === 'function' && window.isCurrentUserAdmin() &&
+                   !(localStorage.getItem('elec_app_current_group') || '').trim();
+        }
+
+        function canSeeTxRecord(rec) {
+            if (!rec || rec.deleted) return false;
+            if (isAdminAllBranches()) return true;
+            const myGrp = getActiveBranch();
+            const recGrp = (typeof window.normalizePeaGroupName === 'function' ? window.normalizePeaGroupName(rec.ownerGroup) : rec.ownerGroup) || 'กฟส.บึง';
+            return myGrp === recGrp;
+        }
+
+        function buildCircuitRowsDOM() {
+            const curWrap = document.getElementById('currentGridRows');
+            const volWrap = document.getElementById('voltageStartGridRows');
+            let curHtml = '', volHtml = '';
+            for (let c = 1; c <= 4; c++) {
+                const extraCls = c >= 3 ? 'ckt-extra hidden' : '';
+                curHtml += `<div class="grid grid-cols-10 gap-1.5 items-center ${extraCls}">
+                    <div class="col-span-1 text-center font-extrabold text-xs text-slate-700 bg-white py-1.5 rounded-lg border border-slate-200">#${c}</div>
+                    <div class="col-span-3"><input type="number" step="any" min="0" inputmode="decimal" id="iC${c}A" oninput="recalcAndRender()" placeholder="-" class="w-full px-2 py-1.5 text-xs text-center font-bold bg-white"></div>
+                    <div class="col-span-3 ckt-col-b"><input type="number" step="any" min="0" inputmode="decimal" id="iC${c}B" oninput="recalcAndRender()" placeholder="-" class="w-full px-2 py-1.5 text-xs text-center font-bold bg-white"></div>
+                    <div class="col-span-3 ckt-col-c"><input type="number" step="any" min="0" inputmode="decimal" id="iC${c}C" oninput="recalcAndRender()" placeholder="-" class="w-full px-2 py-1.5 text-xs text-center font-bold bg-white"></div>
+                </div>`;
+                volHtml += `<div class="grid grid-cols-10 gap-1.5 items-center ${extraCls}">
+                    <div class="col-span-1 text-center font-extrabold text-xs text-slate-700 bg-white py-1.5 rounded-lg border border-slate-200">#${c}</div>
+                    <div class="col-span-3"><input type="number" step="any" min="0" inputmode="decimal" id="vC${c}A" oninput="recalcAndRender()" placeholder="-" class="w-full px-2 py-1.5 text-xs text-center font-semibold bg-white"></div>
+                    <div class="col-span-3 ckt-col-b"><input type="number" step="any" min="0" inputmode="decimal" id="vC${c}B" oninput="recalcAndRender()" placeholder="-" class="w-full px-2 py-1.5 text-xs text-center font-semibold bg-white"></div>
+                    <div class="col-span-3 ckt-col-c"><input type="number" step="any" min="0" inputmode="decimal" id="vC${c}C" oninput="recalcAndRender()" placeholder="-" class="w-full px-2 py-1.5 text-xs text-center font-semibold bg-white"></div>
+                </div>`;
+            }
+            curWrap.innerHTML = curHtml;
+            volWrap.innerHTML = volHtml;
+        }
+
+        function calcDefaultFullLoadAmp(sysType, kva) {
+            const k = parseFloat(kva) || 160;
+            if (sysType === '1P3W') return Number(((k * 1000) / 460).toFixed(1));
+            if (sysType === '1P2W') return Number(((k * 1000) / 230).toFixed(1));
+            return Number(((k * 1000) / (Math.sqrt(3) * 400)).toFixed(1));
+        }
+
+        window.onKvaSelectionChange = function () {
+            const [sysType, kvaStr] = (document.getElementById('txKvaSelect').value || '3P:160').split(':');
+            document.getElementById('flAmpInput').value = calcDefaultFullLoadAmp(sysType, kvaStr);
+            applySystemPhaseVisibility(sysType);
+            recalcAndRender();
+        };
+
+        function applySystemPhaseVisibility(sysType) {
+            const is1P2W = sysType === '1P2W';
+            const is3P = sysType === '3P';
+            document.querySelectorAll('.ckt-col-b').forEach(el => el.classList.toggle('opacity-30', is1P2W));
+            document.querySelectorAll('.ckt-col-c').forEach(el => el.classList.toggle('opacity-30', !is3P));
+            document.getElementById('vEndCWrap')?.classList.toggle('opacity-30', !is3P);
+            document.getElementById('overrideWrapB')?.classList.toggle('hidden', is1P2W);
+            document.getElementById('overrideWrapC')?.classList.toggle('hidden', !is3P);
+        }
+
+        window.toggleExtraCircuits = function (forceState) {
+            showCircuits34 = typeof forceState === 'boolean' ? forceState : !showCircuits34;
+            document.querySelectorAll('.ckt-extra').forEach(el => el.classList.toggle('hidden', !showCircuits34));
+            const btn = document.getElementById('toggleExtraCktBtn');
+            if (btn) btn.textContent = showCircuits34 ? '🔼 ซ่อนวงจร 3 - 4' : '+ เปิดวงจร 3 - 4';
+        };
+
+        window.toggleWiringGuide = function () {
+            const body = document.getElementById('wiringGuideBody');
+            const arrow = document.getElementById('wiringGuideArrow');
+            const hidden = body.classList.toggle('hidden');
+            arrow.textContent = hidden ? '🔽 แสดงผัง' : '🔼 ซ่อนผัง';
+        };
+
+        window.onStreetPhaseChange = function () {
+            const ph = document.getElementById('streetPhaseSelect').value;
+            const ampEl = document.getElementById('streetAmpInput');
+            if (ph === 'ไม่มี' && ampEl) ampEl.value = '0';
+            recalcAndRender();
+        };
+
+        function numOrNull(id) {
+            const raw = (document.getElementById(id)?.value ?? '').trim();
+            if (raw === '') return null;
+            const v = parseFloat(raw);
+            return isNaN(v) ? null : v;
+        }
+
+        function fmtNum(v, maxDec = 2) {
+            if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '';
+            const n = Number(v);
+            return Number(n.toFixed(maxDec)).toString();
+        }
+
+        function collectFormState() {
+            const [sysType, kvaStr] = (document.getElementById('txKvaSelect').value || '3P:160').split(':');
+            const kva = parseInt(kvaStr, 10) || 160;
+            const flAmp = Math.max(1, parseFloat(document.getElementById('flAmpInput').value) || calcDefaultFullLoadAmp(sysType, kva));
+            const limit80Amp = Number((flAmp * (LOAD_LIMIT_PCT / 100)).toFixed(1));
+
+            const circuits = [];
+            let hasAnyCurrent = false;
+            for (let c = 1; c <= 4; c++) {
+                const iA = numOrNull(`iC${c}A`), iB = sysType === '1P2W' ? null : numOrNull(`iC${c}B`), iC = sysType === '3P' ? numOrNull(`iC${c}C`) : null;
+                const vA = numOrNull(`vC${c}A`), vB = sysType === '1P2W' ? null : numOrNull(`vC${c}B`), vC = sysType === '3P' ? numOrNull(`vC${c}C`) : null;
+                if (iA !== null || iB !== null || iC !== null) hasAnyCurrent = true;
+                circuits.push({ c, iA, iB, iC, vA, vB, vC });
+            }
+
+            const streetPhase = document.getElementById('streetPhaseSelect').value || 'ไม่มี';
+            const streetAmp = streetPhase === 'ไม่มี' ? 0 : Math.max(0, parseFloat(document.getElementById('streetAmpInput').value) || 0);
+
+            const sumA = circuits.reduce((s, r) => s + (r.iA || 0), 0) + (streetPhase === 'A' ? streetAmp : 0);
+            const sumB = circuits.reduce((s, r) => s + (r.iB || 0), 0) + (streetPhase === 'B' ? streetAmp : 0);
+            const sumC = circuits.reduce((s, r) => s + (r.iC || 0), 0) + (streetPhase === 'C' ? streetAmp : 0);
+
+            const pctA = Number(((sumA / flAmp) * 100).toFixed(2));
+            const pctB = Number(((sumB / flAmp) * 100).toFixed(2));
+            const pctC = Number(((sumC / flAmp) * 100).toFixed(2));
+
+            const decidePhase = (pct, overrideId, activePhase) => {
+                if (!activePhase) return '-';
+                const ov = document.getElementById(overrideId)?.value || 'auto';
+                if (ov !== 'auto') return ov;
+                if (!hasAnyCurrent && streetAmp === 0) return '-';
+                return pct <= LOAD_LIMIT_PCT ? 'ได้' : 'ไม่ได้';
+            };
+
+            const resA = decidePhase(pctA, 'overrideResA', true);
+            const resB = decidePhase(pctB, 'overrideResB', sysType !== '1P2W');
+            const resC = decidePhase(pctC, 'overrideResC', sysType === '3P');
+
+            return {
+                id: document.getElementById('editingRecordId').value || '',
+                reqNo: (document.getElementById('reqNoInput').value || '').trim(),
+                measureDate: (document.getElementById('measureDateInput').value || '').trim() || getTodayThaiDate(),
+                officeName: (document.getElementById('officeNameInput').value || '').trim() || getActiveBranch().replace(/^กฟส\./, 'กฟภ.'),
+                peaNo: (document.getElementById('peaNoInput').value || '').trim(),
+                sysType, kva, flAmp, limit80Amp,
+                locationNote: (document.getElementById('locationNoteInput').value || '').trim(),
+                circuits,
+                vEnd: { A: numOrNull('vEndA'), B: sysType === '1P2W' ? null : numOrNull('vEndB'), C: sysType === '3P' ? numOrNull('vEndC') : null },
+                streetPhase, streetAmp,
+                totals: { sumA: Number(sumA.toFixed(2)), sumB: Number(sumB.toFixed(2)), sumC: Number(sumC.toFixed(2)), pctA, pctB, pctC, resA, resB, resC, maxPct: Math.max(pctA, sysType !== '1P2W' ? pctB : 0, sysType === '3P' ? pctC : 0) },
+                overrides: { A: document.getElementById('overrideResA').value, B: document.getElementById('overrideResB').value, C: document.getElementById('overrideResC').value },
+                remark: (document.getElementById('remarkInput').value || '').trim(),
+                inspector: (document.getElementById('inspectorNameInput').value || '').trim(),
+                signature: signatureDataUrl || '',
+                ownerGroup: getActiveBranch()
+            };
+        }
+
+        window.recalcAndRender = function () {
+            const st = collectFormState();
+            const esc = window.escapeHtmlStr || (s => String(s ?? ''));
+
+            document.getElementById('limit80Badge').textContent = `เพดาน 80% = ${st.limit80Amp} A (F/L ${st.flAmp} A)`;
+
+            // เตือนแรงดันตกปลายสาย (< 200V)
+            const lowVolts = [['A', st.vEnd.A], ['B', st.vEnd.B], ['C', st.vEnd.C]].filter(([, v]) => v !== null && v > 0 && v < 200);
+            const warnEl = document.getElementById('lowVoltageWarnText');
+            if (lowVolts.length > 0) {
+                warnEl.textContent = `⚠️ แรงดันปลายสายต่ำกว่า 200V ที่เฟส ${lowVolts.map(x => `${x[0]} (${x[1]}V)`).join(', ')}`;
+                warnEl.classList.remove('hidden');
+            } else {
+                warnEl.classList.add('hidden');
+            }
+
+            // การ์ดสรุปสด 3 เฟส
+            const phasesMeta = [
+                { key: 'A', label: 'เฟส A', sum: st.totals.sumA, pct: st.totals.pctA, res: st.totals.resA, active: true },
+                { key: 'B', label: 'เฟส B', sum: st.totals.sumB, pct: st.totals.pctB, res: st.totals.resB, active: st.sysType !== '1P2W' },
+                { key: 'C', label: 'เฟส C', sum: st.totals.sumC, pct: st.totals.pctC, res: st.totals.resC, active: st.sysType === '3P' }
+            ];
+            document.getElementById('liveSummaryCards').innerHTML = phasesMeta.filter(p => p.active).map(p => {
+                const over = p.pct > LOAD_LIMIT_PCT;
+                const barColor = over ? 'bg-rose-500' : (p.pct >= 65 ? 'bg-amber-400' : 'bg-emerald-400');
+                const pillCls = p.res === 'ได้' ? 'bg-emerald-500/25 text-emerald-300 border-emerald-400/50'
+                              : (p.res === 'ไม่ได้' ? 'bg-rose-500/30 text-rose-200 border-rose-400/60' : 'bg-slate-700 text-slate-300 border-slate-600');
+                return `<div class="p-2.5 rounded-xl bg-slate-800 border ${over ? 'border-rose-500' : 'border-slate-700'} space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-slate-200">${p.label}</span>
+                        <span class="px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${pillCls}">${p.res === '-' ? 'รอกรอกค่า' : `ติดมิเตอร์: ${p.res}`}</span>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <span class="text-base font-extrabold text-white">${p.sum.toFixed(2)} A</span>
+                        <span class="text-xs font-extrabold ${over ? 'text-rose-400' : 'text-amber-300'}">${p.pct.toFixed(2)}%</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                        <div class="h-full ${barColor}" style="width:${Math.min(100, p.pct)}%"></div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // วาดกระดาษรายงานมาตรฐาน กฟภ.
+            const cktCurrentLines = st.circuits.map(r =>
+                `<div>วงจร ${r.c}. &nbsp;เฟส A <span class="dot-val">${esc(fmtNum(r.iA))}</span> A. &nbsp;เฟส B <span class="dot-val">${esc(fmtNum(r.iB))}</span> A. &nbsp;เฟส C <span class="dot-val">${esc(fmtNum(r.iC))}</span> A.</div>`
+            ).join('');
+            const cktVoltLines = st.circuits.map(r =>
+                `<div>วงจร ${r.c}. &nbsp;เฟส A <span class="dot-val">${esc(fmtNum(r.vA, 1))}</span> V. &nbsp;เฟส B <span class="dot-val">${esc(fmtNum(r.vB, 1))}</span> V. &nbsp;เฟส C <span class="dot-val">${esc(fmtNum(r.vC, 1))}</span> V.</div>`
+            ).join('');
+
+            const resColor = r => r === 'ไม่ได้' ? 'color:#be123c;' : (r === 'ได้' ? 'color:#047857;' : '');
+            const sigImgHtml = st.signature
+                ? `<div class="flex justify-center mb-1"><img src="${st.signature}" alt="ลายเซ็น" class="h-12 object-contain"></div>`
+                : '<div class="h-8"></div>';
+
+            document.getElementById('officialReportSheet').innerHTML = `
+                <div class="text-center font-bold text-[16px] pb-1">
+                    รายงานการวัดโหลดหม้อแปลง ${esc(st.officeName)} ${st.reqNo ? `เลขที่คำร้อง ${esc(st.reqNo)}` : ''}
+                </div>
+                <div class="text-center">
+                    <b>วันที่</b> <span class="dot-val">${esc(st.measureDate)}</span>
+                    <b>หม้อแปลงขนาด</b> <span class="dot-val">${esc(st.kva)}</span> <b>kVA &nbsp;PEA</b> <span class="dot-val min-w-[95px]">${esc(st.peaNo || '-')}</span>
+                </div>
+
+                <div class="text-center font-bold pt-1">วัดกระแสแต่ละวงจร</div>
+                <div class="text-center space-y-1">${cktCurrentLines}</div>
+
+                <div class="text-center font-bold pt-1">วัดแรงดันต้นทาง</div>
+                <div class="text-center space-y-1">${cktVoltLines}</div>
+
+                <div class="text-center font-bold pt-1">วัดแรงดันต้นปลายสาย จุดขอมิเตอร์</div>
+                <div class="text-center">
+                    เฟส A <span class="dot-val">${esc(fmtNum(st.vEnd.A, 1))}</span> V. &nbsp;
+                    เฟส B <span class="dot-val">${esc(fmtNum(st.vEnd.B, 1))}</span> V. &nbsp;
+                    เฟส C <span class="dot-val">${esc(fmtNum(st.vEnd.C, 1))}</span> V.
+                </div>
+
+                <div class="text-center pt-1">
+                    <b>ไฟทางพ่วงวงจรเฟส</b> <span class="dot-val">${esc(st.streetPhase)}</span>
+                    <b>กระแสไฟทาง</b> <span class="dot-val">${esc(fmtNum(st.streetAmp))}</span> A.
+                </div>
+
+                <div class="text-center">
+                    <b>พิกัดกระแสหม้อแปลงขนาด</b> <span class="dot-val">${esc(st.kva)}</span> <b>KVA. &nbsp;F/L 100 %</b> <span class="dot-val">${esc(st.flAmp)}</span> A.
+                </div>
+
+                <div class="text-center font-bold pt-1">กระแสโหลดรวม (เกณฑ์พิจารณา ≤ 80%)</div>
+                <div class="text-center space-y-1">
+                    <div>เฟส A <span class="dot-val">${esc(st.totals.sumA.toFixed(2))}</span> A. &nbsp;คิดเป็น <span class="dot-val">${esc(st.totals.pctA.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>
+                    ${st.sysType !== '1P2W' ? `<div>เฟส B <span class="dot-val">${esc(st.totals.sumB.toFixed(2))}</span> A. &nbsp;คิดเป็น <span class="dot-val">${esc(st.totals.pctB.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>` : ''}
+                    ${st.sysType === '3P' ? `<div>เฟส C <span class="dot-val">${esc(st.totals.sumC.toFixed(2))}</span> A. &nbsp;คิดเป็น <span class="dot-val">${esc(st.totals.pctC.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>` : ''}
+                </div>
+
+                <div class="text-center space-y-1 pt-1">
+                    <div>เฟส A สามารถติดตั้งมิเตอร์ <span class="dot-val" style="${resColor(st.totals.resA)}">${esc(st.totals.resA)}</span></div>
+                    ${st.sysType !== '1P2W' ? `<div>เฟส B สามารถติดตั้งมิเตอร์ <span class="dot-val" style="${resColor(st.totals.resB)}">${esc(st.totals.resB)}</span></div>` : ''}
+                    ${st.sysType === '3P' ? `<div>เฟส C สามารถติดตั้งมิเตอร์ <span class="dot-val" style="${resColor(st.totals.resC)}">${esc(st.totals.resC)}</span></div>` : ''}
+                </div>
+
+                <div class="text-center pt-1">
+                    หมายเหตุ <span class="dot-val min-w-[180px]">${esc(st.remark || '-')}</span>
+                </div>
+
+                <div class="text-center pt-4">
+                    ${sigImgHtml}
+                    <div>ลงชื่อ <span class="dot-val min-w-[150px]">${esc(st.inspector || '')}</span> ผู้ดำเนินการวัดโหลด</div>
+                </div>
+            `;
+        };
+
+        // ระบบกระดานลายเซ็นหมึกน้ำเงิน
+        function initSignaturePad() {
+            const canvas = document.getElementById('sigCanvas');
+            if (!canvas) return;
+            sigCtx = canvas.getContext('2d');
+            sigCtx.lineWidth = 3.2;
+            sigCtx.lineCap = 'round';
+            sigCtx.lineJoin = 'round';
+            sigCtx.strokeStyle = '#1d4ed8';
+
+            const getPt = (e) => {
+                const r = canvas.getBoundingClientRect();
+                const t = e.touches ? e.touches[0] : e;
+                return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) };
+            };
+            const start = (e) => { if (e.cancelable) e.preventDefault(); isDrawingSig = true; hasSigStroke = true; const p = getPt(e); sigCtx.beginPath(); sigCtx.moveTo(p.x, p.y); };
+            const move = (e) => { if (!isDrawingSig) return; if (e.cancelable) e.preventDefault(); const p = getPt(e); sigCtx.lineTo(p.x, p.y); sigCtx.stroke(); };
+            const end = () => { isDrawingSig = false; };
+
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', end);
+            canvas.addEventListener('touchstart', start, { passive: false });
+            canvas.addEventListener('touchmove', move, { passive: false });
+            canvas.addEventListener('touchend', end);
+        }
+
+        window.openSignatureModal = function () {
+            if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถแก้ไขข้อมูลได้');
+            const m = document.getElementById('sigModal');
+            m.classList.remove('hidden'); m.classList.add('flex');
+            clearSigCanvasOnly();
+        };
+        window.closeSignatureModal = function () {
+            const m = document.getElementById('sigModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        };
+        window.clearSigCanvasOnly = function () {
+            const c = document.getElementById('sigCanvas');
+            if (sigCtx && c) sigCtx.clearRect(0, 0, c.width, c.height);
+            hasSigStroke = false;
+        };
+        window.confirmSignature = function () {
+            if (!hasSigStroke) return window.showToast?.('✍️ กรุณาเซ็นชื่อบนกระดานก่อนกดยืนยัน');
+            signatureDataUrl = document.getElementById('sigCanvas').toDataURL('image/png');
+            updateSigIndicator();
+            closeSignatureModal();
+            recalcAndRender();
+            window.showToast?.('✅ แนบลายมือชื่อเรียบร้อยแล้ว');
+        };
+        window.clearSavedSignature = function () {
+            signatureDataUrl = '';
+            updateSigIndicator();
+            recalcAndRender();
+        };
+        function updateSigIndicator() {
+            const dot = document.getElementById('sigStatusDot'), lbl = document.getElementById('sigStatusLabel');
+            if (signatureDataUrl) {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+                lbl.textContent = 'แนบลายมือชื่อหมึกน้ำเงินแล้ว';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
+                lbl.textContent = 'ยังไม่ได้ลงลายมือชื่อดิจิทัล';
+            }
+        }
+
+        // ดึงรหัสหม้อแปลงจากหมุดอุปกรณ์ SCADA ของสาขาตัวเอง
+        window.openScadaTrSearchModal = function () {
+            const m = document.getElementById('scadaTrModal');
+            m.classList.remove('hidden'); m.classList.add('flex');
+            renderScadaTrModalList();
+            setTimeout(() => document.getElementById('scadaTrFilterInput')?.focus(), 80);
+        };
+        window.closeScadaTrSearchModal = function () {
+            const m = document.getElementById('scadaTrModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        };
+        window.renderScadaTrModalList = function () {
+            const kw = (document.getElementById('scadaTrFilterInput')?.value || '').trim().toLowerCase();
+            const myGrp = getActiveBranch();
+            let pins = [];
+            try { pins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]'); } catch (e) {}
+            const list = pins.filter(p => {
+                if (!p?.id) return false;
+                const pGrp = (window.normalizePeaGroupName ? window.normalizePeaGroupName(p.ownerGroup) : p.ownerGroup) || 'กฟส.บึง';
+                if (!isAdminAllBranches() && pGrp !== myGrp) return false;
+                const txt = `${p.name || ''} ${p.note || ''}`.toLowerCase();
+                return !kw || txt.includes(kw);
+            }).slice(0, 60);
+
+            const box = document.getElementById('scadaTrListContainer');
+            if (!list.length) {
+                box.innerHTML = '<div class="text-center py-6 text-slate-400">ไม่พบหมุดอุปกรณ์ที่ค้นหาในสังกัดสาขานี้</div>';
+                return;
+            }
+            const esc = window.escapeHtmlStr || (s => s);
+            box.innerHTML = list.map(p => {
+                const safeId = String(p.id).replace(/'/g, "\\'");
+                return `<button type="button" onclick="pickScadaPinForTx('${safeId}')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-teal-400 hover:bg-teal-50/50 transition">
+                    <div class="font-bold text-slate-800">⚡ ${esc(p.name)}</div>
+                    ${p.note ? `<div class="text-[11px] text-slate-500">${esc(p.note)}</div>` : ''}
+                </button>`;
+            }).join('');
+        };
+        window.pickScadaPinForTx = function (pinId) {
+            let pins = [];
+            try { pins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]'); } catch (e) {}
+            const p = pins.find(x => x?.id === pinId);
+            if (!p) return;
+            applyExternalParamsToForm({ pea: p.name, note: p.note || '', lat: p.lat, lon: p.lon });
+            closeScadaTrSearchModal();
+            window.showToast?.(`⚡ ดึงข้อมูล "${p.name}" เข้าฟอร์มแล้ว`);
+        };
+
+        window.fillCurrentGpsToLocation = function () {
+            if (!navigator.geolocation) return window.showToast?.('⚠️ เบราว์เซอร์ไม่รองรับ GPS');
+            window.showToast?.('⏳ กำลังดึงพิกัดมือถือ...');
+            navigator.geolocation.getCurrentPosition(pos => {
+                const locInp = document.getElementById('locationNoteInput');
+                const coordStr = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+                locInp.value = locInp.value.trim() ? `${locInp.value.trim()} (${coordStr})` : `พิกัด ${coordStr}`;
+                recalcAndRender();
+                window.showToast?.('📍 แนบพิกัดเรียบร้อย');
+            }, () => window.showToast?.('❌ ดึงพิกัดไม่สำเร็จ กรุณาเปิด Location'));
+        };
+
+        // จัดการคลังข้อมูลแยกสาขา + ซิงค์ Google Apps Script
+        function loadLocalTxRecords() {
+            try { txRecords = JSON.parse(localStorage.getItem(TX_STORAGE_KEY) || '[]'); } catch (e) { txRecords = []; }
+            if (!Array.isArray(txRecords)) txRecords = [];
+        }
+
+        function saveLocalTxRecords() {
+            txRecords.sort((a, b) => (new Date(b.updatedAt || 0).getTime() || 0) - (new Date(a.updatedAt || 0).getTime() || 0));
+            localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(txRecords.slice(0, 400)));
+        }
+
+        window.saveTxLoadRecord = async function () {
+            if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถบันทึกข้อมูลได้');
+            const st = collectFormState();
+            if (!st.peaNo) {
+                document.getElementById('peaNoInput').focus();
+                return window.showToast?.('⚠️ กรุณาระบุรหัส PEA หม้อแปลงก่อนบันทึก');
+            }
+            const nowIso = new Date().toISOString();
+            const curUser = (localStorage.getItem('elec_app_current_user') || '').trim();
+            const recId = st.id || ('tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
+
+            const record = { ...st, id: recId, ownerUser: curUser, ownerGroup: getActiveBranch(), updatedAt: nowIso };
+            loadLocalTxRecords();
+            const idx = txRecords.findIndex(r => r.id === recId);
+            if (idx !== -1) txRecords[idx] = record; else txRecords.unshift(record);
+            saveLocalTxRecords();
+
+            document.getElementById('editingRecordId').value = recId;
+            document.getElementById('formModeTitle').textContent = `✏️ แก้ไขใบวัดโหลด PEA ${record.peaNo}`;
+            renderTxHistoryList();
+            window.showToast?.(`✅ บันทึกผลวัดโหลดลงสาขา ${record.ownerGroup} เรียบร้อย!`);
+
+            const apiUrl = window.getActiveCloudApiUrl?.();
+            if (apiUrl && localStorage.getItem('elec_app_logged_in') === 'true') {
+                try {
+                    window.PeaCore?.unlockCloudWrite?.(15000);
+                    await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'saveTxLoad', group: record.ownerGroup, record })
+                    });
+                } catch (e) {}
+            }
+        };
+
+        window.syncTxLoadsFromCloud = async function (silent = true) {
+            const apiUrl = window.getActiveCloudApiUrl?.();
+            if (!apiUrl || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            try {
+                let res;
+                if (window.isViewerRole?.()) {
+                    window.PeaCore?.forceCloudRead?.();
+                    res = await fetch(`${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=listTxLoads&t=${Date.now()}`);
+                } else {
+                    res = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'listTxLoads', group: isAdminAllBranches() ? '' : getActiveBranch() })
+                    });
+                }
+                const data = await res.json();
+                if (data?.status === 'ok' && Array.isArray(data.records)) {
+                    loadLocalTxRecords();
+                    const byId = new Map(txRecords.map(r => [r.id, r]));
+                    data.records.forEach(cr => {
+                        if (!cr?.id) return;
+                        const ex = byId.get(cr.id);
+                        if (!ex || (new Date(cr.updatedAt || 0).getTime() || 0) >= (new Date(ex.updatedAt || 0).getTime() || 0)) {
+                            byId.set(cr.id, cr);
+                        }
+                    });
+                    txRecords = Array.from(byId.values()).filter(r => !r.deleted);
+                    saveLocalTxRecords();
+                    renderTxHistoryList();
+                    if (!silent) window.showToast?.('🔄 ซิงค์ประวัติวัดโหลดล่าสุดเรียบร้อย!');
+                }
+            } catch (e) {
+                if (!silent) window.showToast?.('⚠️ ซิงค์คลาวด์ไม่สำเร็จ แสดงข้อมูลจากในเครื่อง');
+            }
+        };
+
+        window.loadRecordIntoForm = function (id) {
+            loadLocalTxRecords();
+            const r = txRecords.find(x => x.id === id && canSeeTxRecord(x));
+            if (!r) return;
+            document.getElementById('editingRecordId').value = r.id;
+            document.getElementById('formModeTitle').textContent = `✏️ แก้ไขใบวัดโหลด PEA ${r.peaNo}`;
+            document.getElementById('reqNoInput').value = r.reqNo || '';
+            document.getElementById('measureDateInput').value = r.measureDate || getTodayThaiDate();
+            document.getElementById('officeNameInput').value = r.officeName || '';
+            document.getElementById('peaNoInput').value = r.peaNo || '';
+            const selVal = `${r.sysType || '3P'}:${r.kva || 160}`;
+            const kvaSel = document.getElementById('txKvaSelect');
+            if (Array.from(kvaSel.options).some(o => o.value === selVal)) kvaSel.value = selVal;
+            applySystemPhaseVisibility(r.sysType || '3P');
+            document.getElementById('flAmpInput').value = r.flAmp || calcDefaultFullLoadAmp(r.sysType || '3P', r.kva || 160);
+            document.getElementById('locationNoteInput').value = r.locationNote || '';
+
+            let need34 = false;
+            for (let c = 1; c <= 4; c++) {
+                const row = (r.circuits || []).find(x => x.c === c) || {};
+                ['iA', 'iB', 'iC', 'vA', 'vB', 'vC'].forEach(f => {
+                    const domId = f[0] + 'C' + c + f[1];
+                    const el = document.getElementById(domId);
+                    if (el) el.value = row[f] ?? '';
+                    if (c >= 3 && row[f] !== null && row[f] !== undefined && row[f] !== '') need34 = true;
+                });
+            }
+            toggleExtraCircuits(need34);
+
+            document.getElementById('vEndA').value = r.vEnd?.A ?? '';
+            document.getElementById('vEndB').value = r.vEnd?.B ?? '';
+            document.getElementById('vEndC').value = r.vEnd?.C ?? '';
+            document.getElementById('streetPhaseSelect').value = r.streetPhase || 'ไม่มี';
+            document.getElementById('streetAmpInput').value = r.streetAmp ?? 0;
+            document.getElementById('overrideResA').value = r.overrides?.A || 'auto';
+            document.getElementById('overrideResB').value = r.overrides?.B || 'auto';
+            document.getElementById('overrideResC').value = r.overrides?.C || 'auto';
+            document.getElementById('remarkInput').value = r.remark || '';
+            document.getElementById('inspectorNameInput').value = r.inspector || '';
+            signatureDataUrl = r.signature || '';
+            updateSigIndicator();
+            recalcAndRender();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        window.deleteTxRecord = function (id) {
+            if (window.isViewerRole?.()) return;
+            const confirmMsg = 'ต้องการลบประวัติใบวัดโหลดรายการนี้ใช่หรือไม่?';
+            const doDelete = async function () {
+                loadLocalTxRecords();
+                const target = txRecords.find(x => x.id === id);
+                txRecords = txRecords.filter(x => x.id !== id);
+                saveLocalTxRecords();
+                if (document.getElementById('editingRecordId').value === id) resetTxLoadForm(false);
+                renderTxHistoryList();
+                window.showToast?.('🗑️ ลบรายการวัดโหลดแล้ว');
+                const apiUrl = window.getActiveCloudApiUrl?.();
+                if (apiUrl && target) {
+                    try {
+                        window.PeaCore?.unlockCloudWrite?.(15000);
+                        await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: 'deleteTxLoad', id, group: target.ownerGroup || getActiveBranch() })
+                        });
+                    } catch (e) {}
+                }
+            };
+            if (typeof window.showCustomConfirm === 'function') {
+                window.showCustomConfirm(confirmMsg, doDelete, '🗑️ ยืนยันการลบข้อมูล');
+            } else if (window.confirm(confirmMsg)) {
+                doDelete();
+            }
+        };
+
+        window.resetTxLoadForm = function (showMsg = false) {
+            document.getElementById('editingRecordId').value = '';
+            document.getElementById('formModeTitle').textContent = '📝 กรอกผลวัดโหลดหม้อแปลง';
+            document.getElementById('reqNoInput').value = '';
+            document.getElementById('measureDateInput').value = getTodayThaiDate();
+            document.getElementById('peaNoInput').value = '';
+            document.getElementById('txKvaSelect').value = '3P:160';
+            applySystemPhaseVisibility('3P');
+            document.getElementById('flAmpInput').value = calcDefaultFullLoadAmp('3P', 160);
+            document.getElementById('locationNoteInput').value = '';
+            for (let c = 1; c <= 4; c++) {
+                ['iA', 'iB', 'iC', 'vA', 'vB', 'vC'].forEach(f => {
+                    const el = document.getElementById(f[0] + 'C' + c + f[1]);
+                    if (el) el.value = '';
+                });
+            }
+            ['vEndA', 'vEndB', 'vEndC', 'remarkInput'].forEach(id => { document.getElementById(id).value = ''; });
+            document.getElementById('streetPhaseSelect').value = 'ไม่มี';
+            document.getElementById('streetAmpInput').value = '0';
+            ['overrideResA', 'overrideResB', 'overrideResC'].forEach(id => { document.getElementById(id).value = 'auto'; });
+            toggleExtraCircuits(false);
+            clearSavedSignature();
+            recalcAndRender();
+            if (showMsg) window.showToast?.('🧹 ล้างฟอร์มพร้อมกรอกรายการใหม่แล้ว');
+        };
+
+        window.renderTxHistoryList = function () {
+            loadLocalTxRecords();
+            const kw = (document.getElementById('searchTxHistoryInput')?.value || '').trim().toLowerCase();
+            const visible = txRecords.filter(r => {
+                if (!canSeeTxRecord(r)) return false;
+                if (!kw) return true;
+                return `${r.peaNo} ${r.reqNo} ${r.locationNote} ${r.inspector} ${r.measureDate}`.toLowerCase().includes(kw);
+            });
+
+            const container = document.getElementById('txHistoryContainer');
+            const esc = window.escapeHtmlStr || (s => String(s ?? ''));
+            if (!visible.length) {
+                container.innerHTML = '<div class="col-span-full text-center py-8 text-xs text-slate-400">ยังไม่มีประวัติการวัดโหลดหม้อแปลงในสังกัดนี้</div>';
+                return;
+            }
+            container.innerHTML = visible.map(r => {
+                const maxPct = Number(r.totals?.maxPct || 0);
+                const over = maxPct > LOAD_LIMIT_PCT;
+                const safeId = String(r.id).replace(/'/g, "\\'");
+                return `<div class="p-3 rounded-xl border ${over ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200 bg-slate-50/60'} flex flex-col justify-between gap-2 text-xs">
+                    <div>
+                        <div class="flex items-center justify-between gap-1">
+                            <span class="font-extrabold text-blue-950 text-sm">⚡ PEA ${esc(r.peaNo)} (${esc(r.kva)} kVA)</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${over ? 'bg-rose-600 text-white' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}">สูงสุด ${maxPct.toFixed(1)}%</span>
+                        </div>
+                        <div class="text-[11px] text-slate-600 mt-0.5">
+                            🏢 ${esc(r.ownerGroup)} • 📅 ${esc(r.measureDate)} ${r.reqNo ? `• คำร้อง #${esc(r.reqNo)}` : ''}
+                        </div>
+                        ${r.locationNote ? `<div class="text-[11px] text-teal-800 truncate">📍 ${esc(r.locationNote)}</div>` : ''}
+                        <div class="text-[11px] text-slate-700 font-semibold mt-1">
+                            A: ${Number(r.totals?.pctA || 0).toFixed(1)}% (${esc(r.totals?.resA)}) |
+                            B: ${Number(r.totals?.pctB || 0).toFixed(1)}% (${esc(r.totals?.resB)}) |
+                            C: ${Number(r.totals?.pctC || 0).toFixed(1)}% (${esc(r.totals?.resC)})
+                        </div>
+                    </div>
+                    <div class="pt-1.5 border-t border-slate-200/80 flex items-center justify-between">
+                        <span class="text-[10px] text-slate-500">👷 ${esc(r.inspector || '-')}</span>
+                        <div class="flex gap-1.5">
+                            <button type="button" onclick="loadRecordIntoForm('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📂 เปิดดู / พิมพ์</button>
+                            <button type="button" onclick="deleteTxRecord('${safeId}')" class="tx-edit-only bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg text-[11px] font-bold">🗑️</button>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
+        window.exportReportPdf = function () {
+            const st = collectFormState();
+            const el = document.getElementById('officialReportSheet');
+            const fn = `ใบวัดโหลด_${(st.peaNo || 'TR').replace(/\s+/g, '_')}_${st.measureDate.replace(/\//g, '-')}.pdf`;
+            if (typeof html2pdf === 'undefined') { window.print(); return; }
+            window.showToast?.('⏳ กำลังสร้างไฟล์ PDF มาตรฐาน A4...');
+
+            const prevWidth = el.style.width;
+            const prevMaxWidth = el.style.maxWidth;
+            el.style.width = '660px';
+            el.style.maxWidth = '660px';
+
+            html2pdf().set({
+                margin: [12, 14, 12, 14],
+                filename: fn,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, windowWidth: 760 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            }).from(el).save().then(() => {
+                window.showToast?.('📄 ดาวน์โหลดไฟล์ PDF เรียบร้อย!');
+            }).finally(() => {
+                el.style.width = prevWidth;
+                el.style.maxWidth = prevMaxWidth;
+            });
+        };
+
+        window.shareTxSummaryToLine = function () {
+            const st = collectFormState();
+            const lines = [
+                `📊 รายงานวัดโหลดหม้อแปลง (${st.officeName})`,
+                `📄 เลขที่คำร้อง: ${st.reqNo || '-'} • วันที่: ${st.measureDate}`,
+                `⚡ หม้อแปลง PEA: ${st.peaNo || '-'} (${st.kva} kVA • F/L ${st.flAmp} A)`,
+                st.locationNote ? `📍 บริเวณ: ${st.locationNote}` : '',
+                `━━━━━━━━━━━━━━━━━━`,
+                `• เฟส A: ${st.totals.sumA.toFixed(2)} A (${st.totals.pctA.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resA}`,
+                st.sysType !== '1P2W' ? `• เฟส B: ${st.totals.sumB.toFixed(2)} A (${st.totals.pctB.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resB}` : '',
+                st.sysType === '3P' ? `• เฟส C: ${st.totals.sumC.toFixed(2)} A (${st.totals.pctC.toFixed(2)}%) ➔ ติดมิเตอร์: ${st.totals.resC}` : '',
+                st.remark ? `📝 หมายเหตุ: ${st.remark}` : '',
+                `👷 ผู้วัดโหลด: ${st.inspector || '-'}`
+            ].filter(Boolean).join('\n');
+
+            window.copyTextToClipboard?.(lines, '💬 คัดลอกผลวัดโหลดและกำลังเปิด LINE...');
+            window.open('https://line.me/R/share?text=' + encodeURIComponent(lines), '_blank');
+        };
+
+        window.exportTxHistoryExcel = async function () {
+            loadLocalTxRecords();
+            const list = txRecords.filter(canSeeTxRecord);
+            if (!list.length) return window.showToast?.('⚠️ ยังไม่มีประวัติสำหรับส่งออก');
+            const headers = ['วันที่', 'สาขา', 'เลขที่คำร้อง', 'PEA หม้อแปลง', 'ขนาด(kVA)', 'F/L(A)', 'รวมเฟส A(A)', '%เฟส A', 'ผลเฟส A', 'รวมเฟส B(A)', '%เฟส B', 'ผลเฟส B', 'รวมเฟส C(A)', '%เฟส C', 'ผลเฟส C', 'สถานที่', 'หมายเหตุ', 'ผู้วัดโหลด'];
+            const rows = list.map(r => [
+                r.measureDate, r.ownerGroup, r.reqNo || '-', r.peaNo, r.kva, r.flAmp,
+                r.totals?.sumA ?? 0, r.totals?.pctA ?? 0, r.totals?.resA || '-',
+                r.totals?.sumB ?? 0, r.totals?.pctB ?? 0, r.totals?.resB || '-',
+                r.totals?.sumC ?? 0, r.totals?.pctC ?? 0, r.totals?.resC || '-',
+                r.locationNote || '-', r.remark || '-', r.inspector || '-'
+            ]);
+            const fn = `TxLoad_${getActiveBranch()}_${getTodayThaiDate().replace(/\//g, '-')}.xlsx`;
+            if ((await window.ensureXlsxLibraryLoaded?.()) && typeof XLSX !== 'undefined') {
+                const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                XLSX.utils.book_append_sheet(wb, ws, 'ประวัติวัดโหลด');
+                XLSX.writeFile(wb, fn);
+            } else {
+                window.PeaCore?.downloadCsvFallback?.(headers, rows, fn);
+            }
+        };
+
+        function applyExternalParamsToForm(params) {
+            if (params.pea) {
+                const mPea = String(params.pea).match(/\d{2}-\d{5,7}/);
+                document.getElementById('peaNoInput').value = mPea ? mPea[0] : params.pea;
+            }
+            const combinedTxt = `${params.pea || ''} ${params.note || ''} ${params.kva || ''}`;
+            const kvaMatch = combinedTxt.match(/\b(30|50|75|100|125|160|200|250|315|400|500|630|800|1000|1250|1600)\s*(?:kva|k\b)/i);
+            if (kvaMatch) {
+                const k = kvaMatch[1];
+                const targetVal = k === '30' ? '1P3W:30' : `3P:${k}`;
+                const sel = document.getElementById('txKvaSelect');
+                if (Array.from(sel.options).some(o => o.value === targetVal)) {
+                    sel.value = targetVal;
+                    onKvaSelectionChange();
+                }
+            }
+            if (params.note || (params.lat && params.lon)) {
+                const coordPart = (params.lat && params.lon) ? ` (${Number(params.lat).toFixed(5)}, ${Number(params.lon).toFixed(5)})` : '';
+                document.getElementById('locationNoteInput').value = `${params.note || ''}${coordPart}`.trim();
+            }
+            if (params.req) document.getElementById('reqNoInput').value = params.req;
+            recalcAndRender();
+        }
+
+        function bootTxLoadApp() {
+            if (localStorage.getItem('elec_app_logged_in') !== 'true') {
+                window.location.href = './index.html';
+                return;
+            }
+            if (window.isViewerRole?.()) document.body.classList.add('role-viewer-readonly');
+
+            buildCircuitRowsDOM();
+            initSignaturePad();
+
+            const grp = getActiveBranch();
+            document.getElementById('txBranchHeaderBadge').textContent = `🏢 ${grp}`;
+            document.getElementById('historyBranchBadge').textContent = isAdminAllBranches() ? 'ทุกสาขา (Admin)' : grp;
+            document.getElementById('officeNameInput').value = grp.replace(/^กฟส\./, 'กฟภ.');
+            document.getElementById('measureDateInput').value = getTodayThaiDate();
+
+            const rawUser = localStorage.getItem('elec_app_current_user') || '';
+            const cleanUser = window.formatTechDisplayName ? window.formatTechDisplayName(rawUser) : rawUser;
+            document.getElementById('inspectorNameInput').value = cleanUser.replace(/\s*กฟ[สฟจตอ]\..*$/, '').trim();
+            document.getElementById('flAmpInput').value = calcDefaultFullLoadAmp('3P', 160);
+
+            const q = new URLSearchParams(window.location.search);
+            if (q.has('pea') || q.has('kva') || q.has('req')) {
+                applyExternalParamsToForm({
+                    pea: q.get('pea') || '', kva: q.get('kva') || '',
+                    note: q.get('note') || '', lat: q.get('lat') || '', lon: q.get('lon') || '', req: q.get('req') || ''
+                });
+            } else {
+                recalcAndRender();
+            }
+
+            renderTxHistoryList();
+            if (window.PeaIdbStore?.ready) {
+                window.PeaIdbStore.ready.then(() => renderTxHistoryList()).catch(() => {});
+            }
+            setTimeout(() => syncTxLoadsFromCloud(true), 500);
+        }
+
+        document.addEventListener('wheel', function (e) {
+            const el = e.target;
+            if (el && el.tagName === 'INPUT' && el.type === 'number' && document.activeElement === el) {
+                el.blur();
+            }
+        }, { passive: true });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') {
+                closeDiagramZoom();
+                closeSignatureModal();
+                closeScadaTrSearchModal();
+            }
+        });
+
+        if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('./sw.js').catch(function () {});
+            });
+        }
+
+        if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootTxLoadApp);
+        else bootTxLoadApp();
+    })();
+    </script>
+</body>
+</html>
