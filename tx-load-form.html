@@ -35,12 +35,12 @@
             font-family: 'Sarabun', 'Prompt', sans-serif;
             background: #ffffff;
             color: #0f172a;
-            line-height: 1.65;
+            line-height: 1.7;
         }
         .dot-val {
             display: inline-block;
-            min-width: 46px;
-            padding: 0 6px;
+            min-width: 52px;
+            padding: 0 8px 1px;
             border-bottom: 1.5px dotted #334155;
             text-align: center;
             font-weight: 700;
@@ -52,10 +52,20 @@
         #customAlertModal, #customConfirmModal, #customPromptModal {
             z-index: 1480 !important;
         }
+        @page {
+            size: A4 portrait;
+            margin: 18mm 16mm;
+        }
         @media print {
             body { background: #ffffff !important; padding: 0 !important; }
             .no-print { display: none !important; }
             #officialReportWrapper { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
+            #officialReportSheet {
+                max-width: 100% !important;
+                font-size: 12.5pt !important;
+                line-height: 1.85 !important;
+            }
+            .dot-val { min-width: 68px !important; }
         }
     </style>
 </head>
@@ -682,12 +692,12 @@
                 </div>
 
                 <div class="text-center pt-1">
-                    หมายเหตุ <span class="dot-val min-w-[180px]">${esc(st.remark || '-')}</span>
+                    หมายเหตุ <span class="dot-val min-w-[220px]">${esc(st.remark || '-')}</span>
                 </div>
 
                 <div class="text-center pt-4">
                     ${sigImgHtml}
-                    <div>ลงชื่อ <span class="dot-val min-w-[150px]">${esc(st.inspector || '')}</span> ผู้ดำเนินการวัดโหลด</div>
+                    <div>ลงชื่อ <span class="dot-val min-w-[170px]">${esc(st.inspector || '')}</span> ผู้ดำเนินการวัดโหลด</div>
                 </div>
             `;
         };
@@ -1047,7 +1057,47 @@
             }).join('');
         };
 
-                window.exportReportPdf = async function () {
+        // ตัดขอบว่างโปร่งใสรอบลายเซ็นอัตโนมัติ เพื่อให้ลายเซ็นวางอยู่เหนือเส้นลงชื่อได้ขนาดพอดี
+        function trimSignatureImageToCanvas(img) {
+            if (!img) return null;
+            const sw = img.naturalWidth || img.width || 760;
+            const sh = img.naturalHeight || img.height || 240;
+            if (!sw || !sh) return img;
+            try {
+                const tmp = document.createElement('canvas');
+                tmp.width = sw;
+                tmp.height = sh;
+                const tctx = tmp.getContext('2d');
+                tctx.drawImage(img, 0, 0, sw, sh);
+                const data = tctx.getImageData(0, 0, sw, sh).data;
+                let minX = sw, minY = sh, maxX = -1, maxY = -1;
+                for (let py = 0; py < sh; py++) {
+                    for (let px = 0; px < sw; px++) {
+                        if (data[(py * sw + px) * 4 + 3] > 15) {
+                            if (px < minX) minX = px;
+                            if (px > maxX) maxX = px;
+                            if (py < minY) minY = py;
+                            if (py > maxY) maxY = py;
+                        }
+                    }
+                }
+                if (maxX < minX || maxY < minY) return img;
+                const pad = 10;
+                const cx0 = Math.max(0, minX - pad);
+                const cy0 = Math.max(0, minY - pad);
+                const cw = Math.min(sw - cx0, (maxX - minX + 1) + pad * 2);
+                const ch = Math.min(sh - cy0, (maxY - minY + 1) + pad * 2);
+                const out = document.createElement('canvas');
+                out.width = cw;
+                out.height = ch;
+                out.getContext('2d').drawImage(tmp, cx0, cy0, cw, ch, 0, 0, cw, ch);
+                return out;
+            } catch (e) {
+                return img;
+            }
+        }
+
+        window.exportReportPdf = async function () {
             const st = collectFormState();
             const fn = `ใบวัดโหลด_${(st.peaNo || 'TR').replace(/\s+/g, '_')}_${st.measureDate.replace(/\//g, '-')}.pdf`;
             if (typeof html2pdf === 'undefined') { window.print(); return; }
@@ -1055,10 +1105,10 @@
 
             try {
                 if (document.fonts && document.fonts.ready) {
-                    await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 800))]);
+                    await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 900))]);
                 }
 
-                const sigImg = await new Promise((resolve) => {
+                const rawSigImg = await new Promise((resolve) => {
                     if (!st.signature) return resolve(null);
                     const im = new Image();
                     im.crossOrigin = 'anonymous';
@@ -1066,9 +1116,10 @@
                     im.onerror = () => resolve(null);
                     im.src = st.signature;
                 });
+                const sigSource = trimSignatureImageToCanvas(rawSigImg);
 
-                // วาดใบรายงานลง Canvas ขนาด A4 โดยตรง (ตัดปัญหาหน้าขาวจาก scrollY บนมือถือ 100%)
-                const W = 1400, H = 2020, cx = W / 2, maxContentW = 1260;
+                // ขนาด A4 แท้ความละเอียดสูง (210 × 296.4 mm, margin 0 การันตี 1 หน้าเต็ม 100%)
+                const W = 1600, H = 2258, cx = W / 2, maxContentW = 1280;
                 const pdfCanvas = document.createElement('canvas');
                 pdfCanvas.width = W;
                 pdfCanvas.height = H;
@@ -1079,14 +1130,15 @@
                 ctx.fillRect(0, 0, W, H);
                 ctx.textBaseline = 'alphabetic';
 
-                const drawCenteredRow = (y, tokens, baseSize = 23) => {
+                const drawCenteredRow = (y, tokens, baseSize = 33) => {
                     const measureWithScale = (sc) => tokens.map(tk => {
                         const fWeight = tk.t === 'dot' ? (tk.bold === false ? '400' : '700') : (tk.bold ? '700' : '400');
                         const fSize = Math.round((tk.size || baseSize) * sc);
                         ctx.font = `${fWeight} ${fSize}px ${fontStack}`;
                         const txt = String(tk.text ?? '');
                         const tw = ctx.measureText(txt).width;
-                        const w = tk.t === 'dot' ? Math.max((tk.minW || 95) * sc, tw + 24 * sc) : tw;
+                        const minBox = (tk.minW || 140) * sc;
+                        const w = tk.t === 'dot' ? Math.max(minBox, tw + 34 * sc) : Math.max((tk.fixedW || 0) * sc, tw);
                         return { ...tk, txt, fWeight, fSize, w };
                     });
 
@@ -1104,17 +1156,17 @@
                         if (m.t === 'dot') {
                             ctx.save();
                             ctx.strokeStyle = '#334155';
-                            ctx.lineWidth = 2;
-                            ctx.setLineDash([3, 4]);
+                            ctx.lineWidth = 2.2;
+                            ctx.setLineDash([3, 5]);
                             ctx.beginPath();
-                            ctx.moveTo(curX + 4, y + 7);
-                            ctx.lineTo(curX + m.w - 4, y + 7);
+                            ctx.moveTo(curX + 5, y + 10);
+                            ctx.lineTo(curX + m.w - 5, y + 10);
                             ctx.stroke();
                             ctx.restore();
 
                             ctx.fillStyle = m.color || '#0f172a';
                             ctx.textAlign = 'center';
-                            ctx.fillText(m.txt, curX + m.w / 2, y);
+                            ctx.fillText(m.txt, curX + m.w / 2, y - 2);
                         } else {
                             ctx.fillStyle = m.color || '#0f172a';
                             ctx.textAlign = 'left';
@@ -1124,139 +1176,148 @@
                     });
                 };
 
-                let y = 78;
-                const titleTxt = `รายงานการวัดโหลดหม้อแปลง ${st.officeName}${st.reqNo ? ` เลขที่คำร้อง ${st.reqNo}` : ''}`;
-                drawCenteredRow(y, [{ t: 'text', text: titleTxt, bold: true, size: 28 }]);
-
-                y += 58;
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'วันที่ ', bold: true },
-                    { t: 'dot', text: st.measureDate, minW: 155 },
-                    { t: 'text', text: '   หม้อแปลงขนาด ', bold: true },
-                    { t: 'dot', text: String(st.kva), minW: 90 },
-                    { t: 'text', text: ' kVA   PEA ', bold: true },
-                    { t: 'dot', text: st.peaNo || '-', minW: 175 }
-                ]);
-
-                y += 56;
-                drawCenteredRow(y, [{ t: 'text', text: 'วัดกระแสแต่ละวงจร', bold: true, size: 24 }]);
-                st.circuits.forEach(r => {
-                    y += 46;
-                    drawCenteredRow(y, [
-                        { t: 'text', text: `วงจร ${r.c}.   เฟส A ` },
-                        { t: 'dot', text: fmtNum(r.iA), minW: 105 },
-                        { t: 'text', text: ' A.   เฟส B ' },
-                        { t: 'dot', text: fmtNum(r.iB), minW: 105 },
-                        { t: 'text', text: ' A.   เฟส C ' },
-                        { t: 'dot', text: fmtNum(r.iC), minW: 105 },
-                        { t: 'text', text: ' A.' }
-                    ], 22);
-                });
-
-                y += 56;
-                drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นทาง', bold: true, size: 24 }]);
-                st.circuits.forEach(r => {
-                    y += 46;
-                    drawCenteredRow(y, [
-                        { t: 'text', text: `วงจร ${r.c}.   เฟส A ` },
-                        { t: 'dot', text: fmtNum(r.vA, 1), minW: 105 },
-                        { t: 'text', text: ' V.   เฟส B ' },
-                        { t: 'dot', text: fmtNum(r.vB, 1), minW: 105 },
-                        { t: 'text', text: ' V.   เฟส C ' },
-                        { t: 'dot', text: fmtNum(r.vC, 1), minW: 105 },
-                        { t: 'text', text: ' V.' }
-                    ], 22);
-                });
-
-                y += 56;
-                drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นปลายสาย จุดขอมิเตอร์', bold: true, size: 24 }]);
-                y += 46;
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'เฟส A ' },
-                    { t: 'dot', text: fmtNum(st.vEnd.A, 1), minW: 105 },
-                    { t: 'text', text: ' V.   เฟส B ' },
-                    { t: 'dot', text: fmtNum(st.vEnd.B, 1), minW: 105 },
-                    { t: 'text', text: ' V.   เฟส C ' },
-                    { t: 'dot', text: fmtNum(st.vEnd.C, 1), minW: 105 },
-                    { t: 'text', text: ' V.' }
-                ], 22);
-
-                y += 54;
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'ไฟทางพ่วงวงจรเฟส ', bold: true },
-                    { t: 'dot', text: st.streetPhase, minW: 115 },
-                    { t: 'text', text: '   กระแสไฟทาง ', bold: true },
-                    { t: 'dot', text: fmtNum(st.streetAmp), minW: 105 },
-                    { t: 'text', text: ' A.' }
-                ]);
-
-                y += 48;
-                drawCenteredRow(y, [
-                    { t: 'text', text: 'พิกัดกระแสหม้อแปลงขนาด ', bold: true },
-                    { t: 'dot', text: String(st.kva), minW: 95 },
-                    { t: 'text', text: ' KVA.   F/L 100 % ', bold: true },
-                    { t: 'dot', text: String(st.flAmp), minW: 115 },
-                    { t: 'text', text: ' A.' }
-                ]);
-
-                y += 56;
-                drawCenteredRow(y, [{ t: 'text', text: 'กระแสโหลดรวม (เกณฑ์พิจารณา ≤ 80%)', bold: true, size: 24 }]);
-
                 const loadPhases = [
                     { ph: 'A', sum: st.totals.sumA, pct: st.totals.pctA, res: st.totals.resA, show: true },
                     { ph: 'B', sum: st.totals.sumB, pct: st.totals.pctB, res: st.totals.resB, show: st.sysType !== '1P2W' },
                     { ph: 'C', sum: st.totals.sumC, pct: st.totals.pctC, res: st.totals.resC, show: st.sysType === '3P' }
                 ].filter(x => x.show);
 
-                loadPhases.forEach(lp => {
-                    y += 46;
+                // ปรับระยะบรรทัดยืดหยุ่นเล็กน้อยให้เต็มหน้า A4 พอดีทั้งหม้อแปลง 3 เฟส และ 1 เฟส
+                const vScale = loadPhases.length === 1 ? 1.08 : (loadPhases.length === 2 ? 1.04 : 1.0);
+                const rowGap = Math.round(64 * vScale);
+                const secGap = Math.round(82 * vScale);
+
+                // ขอบบน ~2.4 ซม.
+                let y = 185;
+                const titleTxt = `รายงานการวัดโหลดหม้อแปลง ${st.officeName}${st.reqNo ? ` เลขที่คำร้อง ${st.reqNo}` : ''}`;
+                drawCenteredRow(y, [{ t: 'text', text: titleTxt, bold: true, size: 42 }]);
+
+                y += secGap;
+                drawCenteredRow(y, [
+                    { t: 'text', text: 'วันที่  ', bold: true },
+                    { t: 'dot', text: st.measureDate, minW: 215 },
+                    { t: 'text', text: '    หม้อแปลงขนาด  ', bold: true },
+                    { t: 'dot', text: String(st.kva), minW: 125 },
+                    { t: 'text', text: '  kVA    PEA  ', bold: true },
+                    { t: 'dot', text: st.peaNo || '-', minW: 255 }
+                ], 33);
+
+                y += secGap;
+                drawCenteredRow(y, [{ t: 'text', text: 'วัดกระแสแต่ละวงจร', bold: true, size: 36 }]);
+                st.circuits.forEach(r => {
+                    y += rowGap;
                     drawCenteredRow(y, [
-                        { t: 'text', text: `เฟส ${lp.ph} ` },
-                        { t: 'dot', text: lp.sum.toFixed(2), minW: 115 },
-                        { t: 'text', text: ' A.   คิดเป็น ' },
-                        { t: 'dot', text: lp.pct.toFixed(2), minW: 115 },
-                        { t: 'text', text: ' % ของพิกัดหม้อแปลง' }
-                    ], 22);
+                        { t: 'text', text: `วงจร ${r.c}.    เฟส A  `, fixedW: 220 },
+                        { t: 'dot', text: fmtNum(r.iA), minW: 160 },
+                        { t: 'text', text: '  A.     เฟส B  ' },
+                        { t: 'dot', text: fmtNum(r.iB), minW: 160 },
+                        { t: 'text', text: '  A.     เฟส C  ' },
+                        { t: 'dot', text: fmtNum(r.iC), minW: 160 },
+                        { t: 'text', text: '  A.' }
+                    ], 32);
                 });
 
-                y += 12;
+                y += secGap;
+                drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นทาง', bold: true, size: 36 }]);
+                st.circuits.forEach(r => {
+                    y += rowGap;
+                    drawCenteredRow(y, [
+                        { t: 'text', text: `วงจร ${r.c}.    เฟส A  `, fixedW: 220 },
+                        { t: 'dot', text: fmtNum(r.vA, 1), minW: 160 },
+                        { t: 'text', text: '  V.     เฟส B  ' },
+                        { t: 'dot', text: fmtNum(r.vB, 1), minW: 160 },
+                        { t: 'text', text: '  V.     เฟส C  ' },
+                        { t: 'dot', text: fmtNum(r.vC, 1), minW: 160 },
+                        { t: 'text', text: '  V.' }
+                    ], 32);
+                });
+
+                y += secGap;
+                drawCenteredRow(y, [{ t: 'text', text: 'วัดแรงดันต้นปลายสาย จุดขอมิเตอร์', bold: true, size: 36 }]);
+                y += rowGap;
+                drawCenteredRow(y, [
+                    { t: 'text', text: 'เฟส A  ' },
+                    { t: 'dot', text: fmtNum(st.vEnd.A, 1), minW: 170 },
+                    { t: 'text', text: '  V.     เฟส B  ' },
+                    { t: 'dot', text: fmtNum(st.vEnd.B, 1), minW: 170 },
+                    { t: 'text', text: '  V.     เฟส C  ' },
+                    { t: 'dot', text: fmtNum(st.vEnd.C, 1), minW: 170 },
+                    { t: 'text', text: '  V.' }
+                ], 32);
+
+                y += Math.round(76 * vScale);
+                drawCenteredRow(y, [
+                    { t: 'text', text: 'ไฟทางพ่วงวงจรเฟส  ', bold: true },
+                    { t: 'dot', text: st.streetPhase, minW: 170 },
+                    { t: 'text', text: '     กระแสไฟทาง  ', bold: true },
+                    { t: 'dot', text: fmtNum(st.streetAmp), minW: 165 },
+                    { t: 'text', text: '  A.' }
+                ], 33);
+
+                y += Math.round(68 * vScale);
+                drawCenteredRow(y, [
+                    { t: 'text', text: 'พิกัดกระแสหม้อแปลงขนาด  ', bold: true },
+                    { t: 'dot', text: String(st.kva), minW: 145 },
+                    { t: 'text', text: '  KVA.     F/L 100 %  ', bold: true },
+                    { t: 'dot', text: String(st.flAmp), minW: 175 },
+                    { t: 'text', text: '  A.' }
+                ], 33);
+
+                y += secGap;
+                drawCenteredRow(y, [{ t: 'text', text: 'กระแสโหลดรวม (เกณฑ์พิจารณา ≤ 80%)', bold: true, size: 36 }]);
+
+                loadPhases.forEach(lp => {
+                    y += rowGap;
+                    drawCenteredRow(y, [
+                        { t: 'text', text: `เฟส ${lp.ph}  `, fixedW: 92 },
+                        { t: 'dot', text: lp.sum.toFixed(2), minW: 175 },
+                        { t: 'text', text: '  A.     คิดเป็น  ' },
+                        { t: 'dot', text: lp.pct.toFixed(2), minW: 175 },
+                        { t: 'text', text: '  % ของพิกัดหม้อแปลง' }
+                    ], 32);
+                });
+
+                y += Math.round(18 * vScale);
                 const getResHex = r => r === 'ไม่ได้' ? '#be123c' : (r === 'ได้' ? '#047857' : '#0f172a');
                 loadPhases.forEach(lp => {
-                    y += 46;
+                    y += rowGap;
                     drawCenteredRow(y, [
-                        { t: 'text', text: `เฟส ${lp.ph} สามารถติดตั้งมิเตอร์ ` },
-                        { t: 'dot', text: lp.res, minW: 115, color: getResHex(lp.res) }
-                    ]);
+                        { t: 'text', text: `เฟส ${lp.ph} สามารถติดตั้งมิเตอร์  `, fixedW: 390 },
+                        { t: 'dot', text: lp.res, minW: 185, color: getResHex(lp.res) }
+                    ], 33);
                 });
 
-                y += 54;
+                y += Math.round(78 * vScale);
                 drawCenteredRow(y, [
-                    { t: 'text', text: 'หมายเหตุ ' },
-                    { t: 'dot', text: st.remark || '-', minW: 340 }
-                ]);
+                    { t: 'text', text: 'หมายเหตุ  ' },
+                    { t: 'dot', text: st.remark || '-', minW: 860 }
+                ], 33);
 
-                if (sigImg) {
-                    y += 32;
-                    const maxSigH = 110, maxSigW = 360;
-                    const ratio = Math.min(maxSigW / (sigImg.width || 360), maxSigH / (sigImg.height || 110));
-                    const drawW = (sigImg.width || 360) * ratio;
-                    const drawH = (sigImg.height || 110) * ratio;
-                    ctx.drawImage(sigImg, cx - drawW / 2, y, drawW, drawH);
-                    y += drawH + 28;
+                if (sigSource) {
+                    y += Math.round(38 * vScale);
+                    const sw = sigSource.width || 360;
+                    const sh = sigSource.height || 120;
+                    const maxSigW = 460, maxSigH = 135;
+                    const ratio = Math.min(maxSigW / sw, maxSigH / sh);
+                    const drawW = sw * ratio;
+                    const drawH = sh * ratio;
+                    const boxH = 140;
+                    ctx.drawImage(sigSource, cx - drawW / 2, y + (boxH - drawH), drawW, drawH);
+                    y += boxH + 38;
                 } else {
-                    y += 95;
+                    y += Math.round(155 * vScale);
                 }
 
                 drawCenteredRow(y, [
-                    { t: 'text', text: 'ลงชื่อ ' },
-                    { t: 'dot', text: st.inspector || '', minW: 280 },
-                    { t: 'text', text: ' ผู้ดำเนินการวัดโหลด' }
-                ]);
+                    { t: 'text', text: 'ลงชื่อ  ' },
+                    { t: 'dot', text: st.inspector || '', minW: 390 },
+                    { t: 'text', text: '  ผู้ดำเนินการวัดโหลด' }
+                ], 33);
 
                 await html2pdf().set({
-                    margin: 10,
+                    margin: 0,
                     filename: fn,
-                    image: { type: 'jpeg', quality: 0.98 },
+                    image: { type: 'jpeg', quality: 0.99 },
                     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
                 }).from(pdfCanvas, 'canvas').save();
 
