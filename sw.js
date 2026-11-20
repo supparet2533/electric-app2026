@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v134 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v147 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v146';
+const CACHE_NAME = 'pea-smart-tools-v147';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -11,6 +11,9 @@ const APP_SHELL_ASSETS = [
     './index.html',
     './page2.html',
     './meter-form.html',
+    './tx-load-form.html',
+    './tx-circuit-1.jpg',
+    './tx-circuit-2.jpg',
     './pea-logo.png',
     './pea-idb-store.js',
     './shared-core.js',
@@ -300,7 +303,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2, /meter-form) + Timeout 5 วิ
+    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2, /meter-form, /tx-load-form) + Timeout 5 วิ
     const isAppShellFile = url.origin === self.location.origin &&
         (req.mode === 'navigate' || /\.(?:html|js|mjs|css|json|webmanifest)$/i.test(url.pathname) || url.pathname.endsWith('/'));
 
@@ -309,12 +312,19 @@ self.addEventListener('fetch', (event) => {
         const cleanCacheKey = url.origin + url.pathname;
         const isPage2Route = /\/page2(?:\.html)?$/i.test(url.pathname);
         const isMeterFormRoute = /\/meter-form(?:\.html)?$/i.test(url.pathname);
+        const isTxLoadFormRoute = /\/tx-load-form(?:\.html)?$/i.test(url.pathname);
         const isRootOrIndex = url.pathname === baseDirPath || /\/index(?:\.html)?$/i.test(url.pathname);
-        const mirrorKey = isRootOrIndex
-            ? url.origin + (url.pathname === baseDirPath ? baseDirPath + 'index.html' : baseDirPath)
-            : (isPage2Route
-                ? url.origin + baseDirPath + 'page2.html'
-                : (isMeterFormRoute ? url.origin + baseDirPath + 'meter-form.html' : ''));
+
+        let mirrorKey = '';
+        if (isRootOrIndex) {
+            mirrorKey = url.origin + (url.pathname === baseDirPath ? baseDirPath + 'index.html' : baseDirPath);
+        } else if (isPage2Route) {
+            mirrorKey = url.origin + baseDirPath + 'page2.html';
+        } else if (isMeterFormRoute) {
+            mirrorKey = url.origin + baseDirPath + 'meter-form.html';
+        } else if (isTxLoadFormRoute) {
+            mirrorKey = url.origin + baseDirPath + 'tx-load-form.html';
+        }
 
         event.respondWith(
             (async () => {
@@ -389,12 +399,17 @@ self.addEventListener('fetch', (event) => {
                     if (timer) clearTimeout(timer);
                     if (cachedFallback) return cachedFallback;
                     if (req.mode === 'navigate' && cache) {
-                        const fallbackPage = isMeterFormRoute
-                            ? await cache.match('./meter-form.html', { ignoreSearch: true, ignoreVary: true })
-                            : (isPage2Route
-                                ? await cache.match('./page2.html', { ignoreSearch: true, ignoreVary: true })
-                                : (await cache.match('./index.html', { ignoreSearch: true, ignoreVary: true }) ||
-                                   await cache.match('./', { ignoreSearch: true, ignoreVary: true })));
+                        let fallbackPage = null;
+                        if (isMeterFormRoute) {
+                            fallbackPage = await cache.match('./meter-form.html', { ignoreSearch: true, ignoreVary: true });
+                        } else if (isTxLoadFormRoute) {
+                            fallbackPage = await cache.match('./tx-load-form.html', { ignoreSearch: true, ignoreVary: true });
+                        } else if (isPage2Route) {
+                            fallbackPage = await cache.match('./page2.html', { ignoreSearch: true, ignoreVary: true });
+                        } else {
+                            fallbackPage = await cache.match('./index.html', { ignoreSearch: true, ignoreVary: true }) ||
+                                           await cache.match('./', { ignoreSearch: true, ignoreVary: true });
+                        }
                         return fallbackPage || Response.error();
                     }
                     return Response.error();
@@ -479,7 +494,7 @@ self.addEventListener('notificationclick', (event) => {
                     self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
                 );
             }
-            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null;
+            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
         })
     );
 });
