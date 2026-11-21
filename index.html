@@ -12,10 +12,9 @@
     <meta name="application-name" content="ระบบงานไฟฟ้า">
     <meta name="theme-color" content="#1e3a8a">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=147">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=147">
-    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=147">
-
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=149">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-main-maskable-192.png?v=149">
+    <link id="webManifestLink" rel="manifest" href="./manifest-main.json?v=149">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -913,14 +912,14 @@
 
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 text-sm z-[1500]">แจ้งเตือนระบบ</div>
 
-    <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
+       <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=147"></script>
-    <script src="shared-core.js?v=147"></script>
-    <script src="main-app.js?v=147"></script>
-    <script src="pm-calendar.js?v=147"></script>
-    <script src="scada-fault-locator.js?v=147"></script>
-    <script src="pm-push.js?v=147"></script>
+    <script src="pea-idb-store.js?v=149"></script>
+    <script src="shared-core.js?v=149"></script>
+    <script src="main-app.js?v=149"></script>
+    <script src="pm-calendar.js?v=149"></script>
+    <script src="scada-fault-locator.js?v=149"></script>
+    <script src="pm-push.js?v=149"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
@@ -1012,8 +1011,17 @@
                 navigator.serviceWorker.addEventListener('controllerchange', function() {
                     if (!hadSwController || isSwReloading) return;
                     const tag = (document.activeElement && document.activeElement.tagName) || '';
-                    const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
-                        Boolean(document.querySelector('#inspectModal:not(.hidden)'));
+                    const hasOpenModalOrDock = Boolean(document.querySelector(
+                        '#leftBrowserDock:not(.hidden), #stationModal:not(.hidden), #issueModal:not(.hidden), #tambonModal:not(.hidden), #apiKeyModal:not(.hidden), #meterLinkModal:not(.hidden), #backupModal:not(.hidden), #caModal:not(.hidden), #stripWordsModal:not(.hidden), #scadaCadImportModal:not(.hidden), #userManageModal:not(.hidden), #onlineUsersModal:not(.hidden), #pmCalendarModal:not(.hidden)'
+                    ));
+                    const hasUnsavedFormDraft = [
+                        'deviceInput', 'disconnectDeviceInput', 'reporterInput', 'gpsInput',
+                        'rawCustomerPasteInput', 'issueType', 'area', 'address', 'phone', 'gps'
+                    ].some(function(id) {
+                        const el = document.getElementById(id);
+                        return Boolean(el && el.value && el.value.trim() !== '');
+                    });
+                    const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || hasOpenModalOrDock || hasUnsavedFormDraft;
 
                     if (!isTypingOrModal) {
                         isSwReloading = true;
