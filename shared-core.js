@@ -1997,14 +1997,15 @@
 
     // เฉพาะคำสั่งเขียนตรง (ส่วน saveJobs ใช้คิวยุบรวมใน drainCloudPostWorker อยู่แล้ว ไม่ให้ซ้อนคิว)
     const QUEUED_DIRECT_WRITE_ACTIONS = new Set([
-        'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
+        'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'deleteTxPdf', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
     ]);
     const DIRECT_RETRY_POST_ACTIONS = new Set([
-        'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
+        'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'deleteTxPdf', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
     ]);
 
     const SUBMIT_BTN_SELECTOR = [
         '#saveTxRecordBtn',
+        '#deleteActivePdfBtn',
         '#saveEquipPinSubmitBtn',
         '#confirmClearEquipSubmitBtn',
         '#techLoginBtn',
