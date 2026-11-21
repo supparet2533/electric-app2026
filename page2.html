@@ -15,9 +15,9 @@
     <meta name="application-name" content="ช่างไฟฟ้า">
     <meta name="theme-color" content="#0f766e">
 
-    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=147">
-    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=147">
-    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=147">
+    <link id="favIconPng" rel="icon" type="image/png" sizes="192x192" href="./icon-tech-192.png?v=149">
+    <link id="appleTouchIconPng" rel="apple-touch-icon" sizes="192x192" href="./icon-tech-maskable-192.png?v=149">
+    <link id="webManifestLink" rel="manifest" href="./manifest.json?v=149">
 
     <script>
         if (window.self !== window.top) document.documentElement.classList.add('is-embedded-frame');
@@ -370,13 +370,13 @@
     <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=147"></script>
-    <script src="shared-core.js?v=147"></script>
-    <script src="tech-jobs.js?v=147"></script>
-    <script src="scada-engine.js?v=147"></script>
-    <script src="pm-calendar.js?v=147"></script>
-    <script src="scada-fault-locator.js?v=147"></script>
-    <script src="pm-push.js?v=147"></script>
+    <script src="pea-idb-store.js?v=149"></script>
+    <script src="shared-core.js?v=149"></script>
+    <script src="tech-jobs.js?v=149"></script>
+    <script src="scada-engine.js?v=149"></script>
+    <script src="pm-calendar.js?v=149"></script>
+    <script src="scada-fault-locator.js?v=149"></script>
+    <script src="pm-push.js?v=149"></script>
 
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
     <script>
@@ -395,9 +395,12 @@
                 navigator.serviceWorker.addEventListener('controllerchange', function() {
                     if (!hadSwController || isSwReloading) return;
                     const tag = (document.activeElement && document.activeElement.tagName) || '';
-                                        const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
-                        document.body.classList.contains('scada-sim-active') ||
-                        Boolean(document.querySelector('#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden)'));
+                    const isSimActive = document.body.classList.contains('scada-sim-active') ||
+                        Boolean(window.PeaCore && window.PeaCore.simSandbox && window.PeaCore.simSandbox.active);
+                    const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
+                        isSimActive ||
+                        Boolean(document.querySelector('#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaColorPaletteModal:not(.hidden), #pmCalendarModal:not(.hidden), #deletedEquipAuditModal:not(.hidden), #techOnlineModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden)'));
+
                     if (!isTypingOrModal) {
                         isSwReloading = true;
                         window.location.reload();
