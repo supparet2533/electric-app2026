@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ระบบวัดโหลดหม้อแปลง — PEA Smart Grid</title>
     <meta name="theme-color" content="#1e3a8a">
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=148">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=149">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
@@ -91,7 +91,7 @@
 </head>
 <body class="min-h-[100dvh] pb-10">
 
-    <!-- แถบโหมดเปิดดูใบรายงาน PDF จากลิงก์แชร์ LINE (แสดงเฉพาะโหมดลิงก์สาธารณะ) -->
+    <!-- แถบโหมดเปิดดูใบรายงาน PDF จากลิงก์แชร์ LINE (แสดงเฉพาะโหมดลิงก์สำรองสาธารณะ) -->
     <div id="publicPdfViewerBar" class="print-hide hidden bg-gradient-to-r from-slate-900 via-indigo-900 to-teal-800 text-white px-4 pt-[max(0.9rem,env(safe-area-inset-top))] pb-3.5 shadow-lg">
         <div class="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -135,11 +135,11 @@
             <div id="wiringGuideBody" class="p-3 sm:p-4 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/60">
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบนั่งร้าน / เสาคู่)</div>
-                    <img src="./tx-circuit-1.jpg?v=148" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-1.jpg?v=149" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบแขวนเสาเดี่ยว)</div>
-                    <img src="./tx-circuit-2.jpg?v=148" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-2.jpg?v=149" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
             </div>
         </div>
@@ -430,8 +430,8 @@
     <div id="toast" class="no-print print-hide fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
 
     <!-- โหลดแกนกลางระบบเพื่อแชร์บัญชีผู้ใช้ สิทธิ์ และสาขา กฟส. -->
-    <script src="pea-idb-store.js?v=148"></script>
-    <script src="shared-core.js?v=148"></script>
+    <script src="pea-idb-store.js?v=149"></script>
+    <script src="shared-core.js?v=149"></script>
 
     <script>
     (function () {
@@ -746,6 +746,46 @@
             `;
         };
 
+        // ตัดขอบว่างโปร่งใสรอบลายเซ็นอัตโนมัติ (ลดขนาด Base64 ลง 70-85% และจัดวางเหนือเส้นลงชื่อได้พอดี)
+        function trimSignatureImageToCanvas(img) {
+            if (!img) return null;
+            const sw = img.naturalWidth || img.width || 760;
+            const sh = img.naturalHeight || img.height || 240;
+            if (!sw || !sh) return img;
+            try {
+                const tmp = document.createElement('canvas');
+                tmp.width = sw;
+                tmp.height = sh;
+                const tctx = tmp.getContext('2d');
+                tctx.drawImage(img, 0, 0, sw, sh);
+                const data = tctx.getImageData(0, 0, sw, sh).data;
+                let minX = sw, minY = sh, maxX = -1, maxY = -1;
+                for (let py = 0; py < sh; py++) {
+                    for (let px = 0; px < sw; px++) {
+                        if (data[(py * sw + px) * 4 + 3] > 15) {
+                            if (px < minX) minX = px;
+                            if (px > maxX) maxX = px;
+                            if (py < minY) minY = py;
+                            if (py > maxY) maxY = py;
+                        }
+                    }
+                }
+                if (maxX < minX || maxY < minY) return img;
+                const pad = 10;
+                const cx0 = Math.max(0, minX - pad);
+                const cy0 = Math.max(0, minY - pad);
+                const cw = Math.min(sw - cx0, (maxX - minX + 1) + pad * 2);
+                const ch = Math.min(sh - cy0, (maxY - minY + 1) + pad * 2);
+                const out = document.createElement('canvas');
+                out.width = cw;
+                out.height = ch;
+                out.getContext('2d').drawImage(tmp, cx0, cy0, cw, ch, 0, 0, cw, ch);
+                return out;
+            } catch (e) {
+                return img;
+            }
+        }
+
         // ระบบกระดานลายเซ็นหมึกน้ำเงิน
         function initSignaturePad() {
             const canvas = document.getElementById('sigCanvas');
@@ -790,7 +830,9 @@
         };
         window.confirmSignature = function () {
             if (!hasSigStroke) return window.showToast?.('✍️ กรุณาเซ็นชื่อบนกระดานก่อนกดยืนยัน');
-            signatureDataUrl = document.getElementById('sigCanvas').toDataURL('image/png');
+            const rawCanvas = document.getElementById('sigCanvas');
+            const trimmedCanvas = trimSignatureImageToCanvas(rawCanvas) || rawCanvas;
+            signatureDataUrl = trimmedCanvas.toDataURL('image/png');
             updateSigIndicator();
             closeSignatureModal();
             recalcAndRender();
@@ -872,7 +914,7 @@
             }, () => window.showToast?.('❌ ดึงพิกัดไม่สำเร็จ กรุณาเปิด Location'));
         };
 
-        // จัดการคลังข้อมูลแยกสาขา + ซิงค์ Google Apps Script
+        // จัดการคลังข้อมูลแยกสาขา (ป้องกัน localStorage Quota เต็ม) + ซิงค์ Google Apps Script
         function loadLocalTxRecords() {
             try { txRecords = JSON.parse(localStorage.getItem(TX_STORAGE_KEY) || '[]'); } catch (e) { txRecords = []; }
             if (!Array.isArray(txRecords)) txRecords = [];
@@ -880,7 +922,15 @@
 
         function saveLocalTxRecords() {
             txRecords.sort((a, b) => (new Date(b.updatedAt || 0).getTime() || 0) - (new Date(a.updatedAt || 0).getTime() || 0));
-            localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(txRecords.slice(0, 400)));
+            txRecords = txRecords.slice(0, 400);
+            try {
+                localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(txRecords));
+            } catch (quotaErr) {
+                try {
+                    const slim = txRecords.slice(0, 150).map((r, i) => i < 50 ? r : { ...r, signature: '' });
+                    localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(slim));
+                } catch (e) {}
+            }
         }
 
         window.saveTxLoadRecord = async function () {
@@ -931,17 +981,9 @@
             const apiUrl = window.getActiveCloudApiUrl?.();
             if (!apiUrl || localStorage.getItem('elec_app_logged_in') !== 'true') return;
             try {
-                let res;
-                if (window.isViewerRole?.()) {
-                    window.PeaCore?.forceCloudRead?.();
-                    res = await fetch(`${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=listTxLoads&t=${Date.now()}`);
-                } else {
-                    res = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'listTxLoads', group: isAdminAllBranches() ? '' : getActiveBranch() })
-                    });
-                }
+                window.PeaCore?.forceCloudRead?.();
+                const grpParam = isAdminAllBranches() ? '' : `&group=${encodeURIComponent(getActiveBranch())}`;
+                const res = await fetch(`${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=listTxLoads${grpParam}&t=${Date.now()}`);
                 const data = await res.json();
                 if (data?.status === 'ok' && Array.isArray(data.records)) {
                     loadLocalTxRecords();
@@ -1006,9 +1048,9 @@
             updateSigIndicator();
             recalcAndRender();
 
-            if (r.pdfUrl) {
-                lastPdfCache = { fp: r.pdfFp || computeReportPdfFingerprint(collectFormState()), url: r.pdfUrl };
-            }
+            lastPdfCache = r.pdfUrl
+                ? { fp: r.pdfFp || computeReportPdfFingerprint(collectFormState()), url: r.pdfUrl }
+                : { fp: '', url: '' };
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
@@ -1088,6 +1130,7 @@
                 const maxPct = Number(r.totals?.maxPct || 0);
                 const over = maxPct > LOAD_LIMIT_PCT;
                 const safeId = String(r.id).replace(/'/g, "\\'");
+                const safePdfHref = /^https?:\/\//i.test(r.pdfUrl || '') ? esc(r.pdfUrl) : '';
                 return `<div class="p-3 rounded-xl border ${over ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200 bg-slate-50/60'} flex flex-col justify-between gap-2 text-xs">
                     <div>
                         <div class="flex items-center justify-between gap-1">
@@ -1107,7 +1150,7 @@
                     <div class="pt-1.5 border-t border-slate-200/80 flex items-center justify-between">
                         <span class="text-[10px] text-slate-500">👷 ${esc(r.inspector || '-')}</span>
                         <div class="flex gap-1.5">
-                            ${r.pdfUrl ? `<a href="${esc(r.pdfUrl)}" target="_blank" rel="noopener noreferrer" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[11px] font-bold">📄 PDF</a>` : ''}
+                            ${safePdfHref ? `<a href="${safePdfHref}" target="_blank" rel="noopener noreferrer" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[11px] font-bold">📄 PDF</a>` : ''}
                             <button type="button" onclick="loadRecordIntoForm('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📂 เปิดดู / พิมพ์</button>
                             <button type="button" onclick="deleteTxRecord('${safeId}')" class="tx-edit-only bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg text-[11px] font-bold">🗑️</button>
                         </div>
@@ -1115,46 +1158,6 @@
                 </div>`;
             }).join('');
         };
-
-        // ตัดขอบว่างโปร่งใสรอบลายเซ็นอัตโนมัติ เพื่อให้ลายเซ็นวางอยู่เหนือเส้นลงชื่อได้ขนาดพอดี
-        function trimSignatureImageToCanvas(img) {
-            if (!img) return null;
-            const sw = img.naturalWidth || img.width || 760;
-            const sh = img.naturalHeight || img.height || 240;
-            if (!sw || !sh) return img;
-            try {
-                const tmp = document.createElement('canvas');
-                tmp.width = sw;
-                tmp.height = sh;
-                const tctx = tmp.getContext('2d');
-                tctx.drawImage(img, 0, 0, sw, sh);
-                const data = tctx.getImageData(0, 0, sw, sh).data;
-                let minX = sw, minY = sh, maxX = -1, maxY = -1;
-                for (let py = 0; py < sh; py++) {
-                    for (let px = 0; px < sw; px++) {
-                        if (data[(py * sw + px) * 4 + 3] > 15) {
-                            if (px < minX) minX = px;
-                            if (px > maxX) maxX = px;
-                            if (py < minY) minY = py;
-                            if (py > maxY) maxY = py;
-                        }
-                    }
-                }
-                if (maxX < minX || maxY < minY) return img;
-                const pad = 10;
-                const cx0 = Math.max(0, minX - pad);
-                const cy0 = Math.max(0, minY - pad);
-                const cw = Math.min(sw - cx0, (maxX - minX + 1) + pad * 2);
-                const ch = Math.min(sh - cy0, (maxY - minY + 1) + pad * 2);
-                const out = document.createElement('canvas');
-                out.width = cw;
-                out.height = ch;
-                out.getContext('2d').drawImage(tmp, cx0, cy0, cw, ch, 0, 0, cw, ch);
-                return out;
-            } catch (e) {
-                return img;
-            }
-        }
 
         // สร้างตัววาดกระดาษ A4 มาตรฐาน ใช้ร่วมกันทั้งปุ่มดาวน์โหลด PDF และปุ่มส่งลิงก์ PDF เข้า LINE
         async function buildOfficialReportPdfWorker(st) {
@@ -1389,7 +1392,7 @@
             }
         };
 
-        // เข้ารหัส/ถอดรหัสลิงก์เปิดใบรายงาน PDF สำรองกรณีออฟไลน์หรือยังไม่ได้อัปเดต Code.gs
+        // เข้ารหัส/ถอดรหัสลิงก์เปิดใบรายงาน PDF สำรองกรณีออฟไลน์
         function encodePdfShareParam(st) {
             try {
                 const compact = [
@@ -1469,13 +1472,32 @@
                     if (resJson?.status === 'ok' && resJson.viewUrl) {
                         lastPdfCache = { fp, url: resJson.viewUrl };
                         if (st.id) {
+                            const nowIso = new Date().toISOString();
                             loadLocalTxRecords();
                             const idx = txRecords.findIndex(r => r.id === st.id);
                             if (idx !== -1) {
-                                txRecords[idx].pdfUrl = resJson.viewUrl;
-                                txRecords[idx].pdfFp = fp;
+                                const targetGrp = txRecords[idx].ownerGroup || st.ownerGroup;
+                                txRecords[idx] = {
+                                    ...txRecords[idx],
+                                    ...st,
+                                    id: st.id,
+                                    ownerGroup: targetGrp,
+                                    pdfUrl: resJson.viewUrl,
+                                    pdfFp: fp,
+                                    updatedAt: nowIso
+                                };
                                 saveLocalTxRecords();
                                 renderTxHistoryList();
+                                window.PeaCore?.unlockCloudWrite?.(15000);
+                                fetch(apiUrl, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                    body: JSON.stringify({
+                                        action: 'saveTxLoad',
+                                        group: targetGrp,
+                                        record: txRecords[idx]
+                                    })
+                                }).catch(() => {});
                             }
                         }
                         return resJson.viewUrl;
@@ -1696,7 +1718,11 @@
 
         if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('./sw.js').catch(function () {});
+                navigator.serviceWorker.register('./sw.js').then(function (reg) {
+                    document.addEventListener('visibilitychange', function () {
+                        if (document.visibilityState === 'visible') reg.update().catch(function () {});
+                    });
+                }).catch(function () {});
             });
         }
 
