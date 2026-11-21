@@ -1146,7 +1146,7 @@
             }
         };
 
-        window.saveTxLoadRecord = async function () {
+                window.saveTxLoadRecord = async function () {
             if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถบันทึกข้อมูลได้');
             const st = collectFormState();
             if (!st.peaNo) {
@@ -1160,18 +1160,30 @@
             const matchedPdfUrl = (lastPdfCache.fp === fp && lastPdfCache.url) ? lastPdfCache.url : '';
             const matchedPdfFileId = matchedPdfUrl ? (lastPdfCache.fileId || extractDriveFileId(matchedPdfUrl)) : '';
 
+            loadLocalTxRecords();
+            const idx = txRecords.findIndex(r => r.id === recId);
+            const preservedGroup = (idx !== -1 && txRecords[idx].ownerGroup) ? txRecords[idx].ownerGroup : getActiveBranch();
+
+            // หากแก้ไขตัวเลขใหม่จนไม่ตรงกับ PDF เดิม ให้ล้างแคชลิงก์เก่าและซ่อนแถบเปิด PDF ทันที
+            if (!matchedPdfUrl && lastPdfCache.url) {
+                const orphanId = lastPdfCache.fileId || extractDriveFileId(lastPdfCache.url);
+                const savedOldId = (idx !== -1 && txRecords[idx]) ? (txRecords[idx].pdfFileId || extractDriveFileId(txRecords[idx].pdfUrl)) : '';
+                if (orphanId && orphanId !== savedOldId) {
+                    requestCloudDeletePdf({ id: '', group: preservedGroup, fileId: orphanId, pdfUrl: lastPdfCache.url }).catch(() => {});
+                }
+                lastPdfCache = { fp: '', url: '', fileId: '' };
+            }
+
             const record = {
                 ...st,
                 id: recId,
                 ownerUser: curUser,
-                ownerGroup: getActiveBranch(),
+                ownerGroup: preservedGroup,
                 pdfUrl: matchedPdfUrl || '',
                 pdfFileId: matchedPdfFileId || '',
                 pdfFp: matchedPdfUrl ? fp : '',
                 updatedAt: nowIso
             };
-            loadLocalTxRecords();
-            const idx = txRecords.findIndex(r => r.id === recId);
             if (idx !== -1) txRecords[idx] = record; else txRecords.unshift(record);
             saveLocalTxRecords();
 
@@ -1193,7 +1205,7 @@
                 } catch (e) {}
             }
         };
-
+        
         window.syncTxLoadsFromCloud = async function (silent = true) {
             const apiUrl = window.getActiveCloudApiUrl?.();
             if (!apiUrl || localStorage.getItem('elec_app_logged_in') !== 'true') return;
