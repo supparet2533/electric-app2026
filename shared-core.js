@@ -1585,6 +1585,43 @@
         };
     }
 
+        async function nativePostWithBackoff(url, payloadObj, maxRetries = 3) {
+        let attempt = 0;
+        while (true) {
+            try {
+                const res = await nativeFetch.call(window, url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payloadObj)
+                });
+                const resText = await res.text();
+                let isBusy = [408, 429, 500, 502, 503, 504].includes(res.status);
+                if (!isBusy) {
+                    try {
+                        const j = JSON.parse(resText);
+                        if (j && (j.busy === true || j.retryable === true || j.code === 'SERVER_BUSY' || j.skippedBusyRam === true)) {
+                            isBusy = !payloadObj?.ramOnly;
+                        } else if (j && j.status === 'error' && /server busy|lock timeout|too many|service invoked/i.test(String(j.message || ''))) {
+                            isBusy = !payloadObj?.ramOnly;
+                        }
+                    } catch (e) {}
+                }
+                if (!isBusy || attempt >= maxRetries || navigator.onLine === false) {
+                    return { res, resText };
+                }
+            } catch (netErr) {
+                if (attempt >= maxRetries || navigator.onLine === false) throw netErr;
+            }
+            attempt++;
+            unlockCloudWrite(20000);
+            const waitMs = (1300 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 650);
+            if (!payloadObj?.ramOnly) {
+                showToast(`⏳ คิวเซิร์ฟเวอร์หนาแน่น ระบบกำลังส่งซ้ำอัตโนมัติ (รอบที่ ${attempt}/${maxRetries})...`);
+            }
+            await new Promise(r => setTimeout(r, waitMs));
+        }
+    }
+
     async function drainCloudPostWorker() {
         if (isPostWorkerRunning || !pendingPostTask) return;
         isPostWorkerRunning = true;
@@ -1593,14 +1630,11 @@
                 const task = pendingPostTask, waiters = pendingPostWaiters;
                 pendingPostTask = null; pendingPostWaiters = [];
                 try {
-                    const res = await nativeFetch.call(window, task.url, {
-                        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify(task.payload)
-                    });
-                    const resText = await res.text();
+                    const { res, resText } = await nativePostWithBackoff(task.url, task.payload, 3);
                     let ok = res.ok;
                     try {
-                        const j = JSON.parse(resText);handleServerUnauthorizedIfNeeded(j);
+                        const j = JSON.parse(resText);
+                        handleServerUnauthorizedIfNeeded(j);
                         if (j?.status === 'ok' && j?.ok !== false && !j?.skippedQuota && !j?.skippedBusyRam) ok = true;
                         else if (j?.status === 'error' || j?.ok === false || j?.skippedBusyRam) ok = false;
                     } catch (e) {}
@@ -1638,18 +1672,22 @@
         const cacheKey = `${getCurrentUserGroup() || '__ADMIN__'}::${rawStorageGet('elec_app_current_role') || 'user'}`;
 
         if (method === 'GET') {
-            const mem = sheetMemoryCacheMap.get(cacheKey);
-            if (!forceManualGet && mem && (Date.now() - mem.ts < 3500)) {
-                return new Response(mem.text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+            const isSpecialGetAction = /[?&]action=(?:listTxLoads|getJob)\b/i.test(rawUrl);
+            if (!isSpecialGetAction) {
+                const mem = sheetMemoryCacheMap.get(cacheKey);
+                if (!forceManualGet && mem && (Date.now() - mem.ts < 3500)) {
+                    return new Response(mem.text, { status: 200, headers: { 'Content-Type': 'application/json' } });
+                }
+                forceManualGet = false;
             }
-            forceManualGet = false;
             inFlightCloudGetCount++;
             try {
                 const res = await nativeFetch.call(window, scopedUrl, init);
                 const text = await res.text();
-                try {                                      const data = JSON.parse(text);
+                try {
+                    const data = JSON.parse(text);
                     handleServerUnauthorizedIfNeeded(data);
-                    if (data?.status === 'ok' && Array.isArray(data.jobs)) {
+                    if (!isSpecialGetAction && data?.status === 'ok' && Array.isArray(data.jobs)) {
                         data.jobs.forEach(j => {
                             if (!j || j.jobType === 'tech_loc') return;
                             const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
@@ -1679,15 +1717,20 @@
         if (method === 'POST' && typeof init?.body === 'string') {
             try {
                 const bodyObj = JSON.parse(init.body);
-                if (['verifyLogin', 'verifyPassword', 'login', 'saveUsers', 'resolveShortUrl'].includes(bodyObj?.action)) {
+                if (['verifyLogin', 'verifyPassword', 'verifyUserPassword', 'login', 'saveUsers', 'resolveShortUrl'].includes(bodyObj?.action)) {
                     if (bodyObj.action === 'saveUsers') invalidateSheetCaches();
-                    return nativeFetch.call(window, scopedUrl, init);
+                    const authRes = await nativeFetch.call(window, scopedUrl, init);
+                    if (bodyObj.action === 'saveUsers') {
+                        try { handleServerUnauthorizedIfNeeded(await authRes.clone().json()); } catch (e) {}
+                    }
+                    return authRes;
                 }
-                if (isViewerRole()) {
+                if (isViewerRole() && bodyObj?.action !== 'listTxLoads') {
                     return new Response(JSON.stringify({ status: 'ok', skippedViewer: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
                 }
                 if (bodyObj?.action === 'patchDelta') {
                     const res = await nativeFetch.call(window, scopedUrl, init);
+                    try { handleServerUnauthorizedIfNeeded(await res.clone().json()); } catch (e) {}
                     invalidateSheetCaches();
                     return res;
                 }
@@ -1712,8 +1755,12 @@
                 }
             } catch (e) {}
         }
-        return nativeFetch.call(window, scopedUrl, init);
+
+        const fallbackRes = await nativeFetch.call(window, scopedUrl, init);
+        try { handleServerUnauthorizedIfNeeded(await fallbackRes.clone().json()); } catch (e) {}
+        return fallbackRes;
     };
+
     // ========================================================================
     // 8. Server Auth (SHA-256), Online Presence, Geo & ShortLink Utilities
     // ========================================================================
@@ -1836,7 +1883,7 @@
         return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
     }
 
-        function deepParseCoords(rawStr) {
+    function deepParseCoords(rawStr) {
         if (!rawStr) return null;
         let s = String(rawStr).trim();
         try { s = decodeURIComponent(s); } catch (e) {}
@@ -1934,5 +1981,201 @@
     refreshRamPinsIndex();
     seedMqttPinBaseline(ramIndex.pinsList);
     connectMqttLiveBus(false);
+})();
+
+// ============================================================================
+// 🛡️ PEA CONCURRENCY SHIELD: Write Queue + Exponential Backoff + Button Cooldown
+// ============================================================================
+(function () {
+    'use strict';
+    if (window.__peaConcurrencyShieldInstalled) return;
+    window.__peaConcurrencyShieldInstalled = true;
+
+    const MAX_RETRIES = 3;
+    const BASE_DELAY_MS = 1300;
+    const BUTTON_COOLDOWN_MS = 3500; // หน่วงปุ่มกดซ้ำ 3.5 วินาทีหลังส่งข้อมูลเสร็จ
+
+    // เฉพาะคำสั่งเขียนตรง (ส่วน saveJobs ใช้คิวยุบรวมใน drainCloudPostWorker อยู่แล้ว ไม่ให้ซ้อนคิว)
+    const QUEUED_DIRECT_WRITE_ACTIONS = new Set([
+        'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
+    ]);
+    const DIRECT_RETRY_POST_ACTIONS = new Set([
+        'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
+    ]);
+
+    const SUBMIT_BTN_SELECTOR = [
+        '#saveTxRecordBtn',
+        '#saveEquipPinSubmitBtn',
+        '#confirmClearEquipSubmitBtn',
+        '#techLoginBtn',
+        'button[onclick*="saveAndCopyFault"]',
+        'button[onclick*="generateOutageMessage"]',
+        'button[onclick*="submitTechReport"]',
+        'button[onclick*="saveScadaNodeModal"]',
+        'button[onclick*="applySimulatedStateToRealGrid"]',
+        'button[onclick*="handleLogin("]'
+    ].join(', ');
+
+    const origFetch = window.fetch.bind(window);
+    let writeQueueChain = Promise.resolve();
+    let recentClickedBtn = null;
+    let recentClickAtMs = 0;
+    let recentClickWasEnabled = true;
+
+    function sleepMs(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function isGasEndpoint(urlStr) {
+        return typeof urlStr === 'string' && /script\.google\.com|script\.googleusercontent\.com/i.test(urlStr);
+    }
+
+    function inspectRequestMeta(input, init) {
+        const urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : String(input || ''));
+        const method = String((init && init.method) || 'GET').toUpperCase();
+        if (!isGasEndpoint(urlStr)) return { isGas: false };
+
+        let action = '';
+        let isRamOnly = false;
+        if (method === 'POST' && init && typeof init.body === 'string') {
+            try {
+                const parsed = JSON.parse(init.body);
+                action = String(parsed.action || '').trim();
+                isRamOnly = Boolean(parsed.ramOnly);
+            } catch (e) {}
+        } else if (method === 'GET') {
+            const mAct = urlStr.match(/[?&]action=([^&#]+)/i);
+            if (mAct) action = decodeURIComponent(mAct[1]);
+        }
+
+        const isSpecialOneShotGet = method === 'GET' && (action === 'listTxLoads' || action === 'getJob');
+        const maxRetries = (method === 'POST' && !isRamOnly && DIRECT_RETRY_POST_ACTIONS.has(action))
+            ? ((action === 'uploadJobPhoto' || action === 'uploadTxPdf') ? 2 : MAX_RETRIES)
+            : (isSpecialOneShotGet ? 2 : 0);
+
+        return {
+            isGas: true,
+            method,
+            action,
+            isRamOnly,
+            maxRetries,
+            shouldQueue: method === 'POST' && !isRamOnly && QUEUED_DIRECT_WRITE_ACTIONS.has(action),
+            shouldRetry: maxRetries > 0
+        };
+    }
+
+    async function isRetryableServerResponse(res) {
+        if (!res) return true;
+        if ([408, 429, 500, 502, 503, 504].includes(res.status)) return true;
+        if (res.status === 200) {
+            try {
+                const data = await res.clone().json();
+                if (data && (data.busy === true || data.retryable === true || data.code === 'SERVER_BUSY')) {
+                    return true;
+                }
+                if (data && data.status === 'error' && /server busy|lock timeout|too many|service invoked/i.test(String(data.message || ''))) {
+                    return true;
+                }
+            } catch (e) {}
+        }
+        return false;
+    }
+
+    async function executeFetchWithBackoff(input, init, meta) {
+        let attempt = 0;
+        while (true) {
+            const reqInit = init ? Object.assign({}, init) : undefined;
+            if (meta.method === 'POST' && !meta.isRamOnly && (attempt > 0 || DIRECT_RETRY_POST_ACTIONS.has(meta.action))) {
+                window.PeaCore?.unlockCloudWrite?.(20000);
+            }
+            try {
+                const res = await origFetch(input, reqInit);
+                if (!meta.shouldRetry || attempt >= meta.maxRetries || !(await isRetryableServerResponse(res))) {
+                    return res;
+                }
+            } catch (netErr) {
+                if (!meta.shouldRetry || attempt >= meta.maxRetries || navigator.onLine === false) {
+                    throw netErr;
+                }
+            }
+
+            attempt++;
+            const jitterMs = Math.floor(Math.random() * 650);
+            const waitMs = (BASE_DELAY_MS * Math.pow(2, attempt - 1)) + jitterMs;
+
+            if (meta.method === 'POST' && typeof window.showToast === 'function') {
+                window.showToast(`⏳ คิวเซิร์ฟเวอร์หนาแน่น ระบบกำลังส่งซ้ำอัตโนมัติ (รอบที่ ${attempt}/${meta.maxRetries})...`);
+            }
+            await sleepMs(waitMs);
+        }
+    }
+
+    function lockButtonWithCooldown(btn, promiseToWait, wasEnabledBeforeClick) {
+        if (!btn || btn.dataset.peaLockedFlight === '1') return;
+        btn.dataset.peaLockedFlight = '1';
+        btn.dataset.peaTapGuard = '1';
+        const prevOpacity = btn.style.opacity;
+        const prevPointer = btn.style.pointerEvents;
+
+        btn.disabled = true;
+        btn.style.opacity = '0.65';
+        btn.style.pointerEvents = 'none';
+
+        Promise.resolve(promiseToWait).finally(() => {
+            setTimeout(() => {
+                if (wasEnabledBeforeClick) btn.disabled = false;
+                btn.style.opacity = prevOpacity;
+                btn.style.pointerEvents = prevPointer;
+                delete btn.dataset.peaLockedFlight;
+                delete btn.dataset.peaTapGuard;
+            }, BUTTON_COOLDOWN_MS);
+        });
+    }
+
+    window.fetch = function (input, init) {
+        const meta = inspectRequestMeta(input, init);
+        if (!meta.isGas) return origFetch(input, init);
+
+        const runTask = () => executeFetchWithBackoff(input, init, meta);
+        let taskPromise;
+
+        if (meta.shouldQueue) {
+            const nextInQueue = writeQueueChain.then(runTask, runTask);
+            writeQueueChain = nextInQueue.catch(() => {});
+            taskPromise = nextInQueue;
+        } else {
+            taskPromise = runTask();
+        }
+
+        if (meta.method === 'POST' && !meta.isRamOnly && recentClickedBtn && (Date.now() - recentClickAtMs < 1500)) {
+            lockButtonWithCooldown(recentClickedBtn, taskPromise, recentClickWasEnabled);
+            recentClickedBtn = null;
+        }
+
+        return taskPromise;
+    };
+
+    document.addEventListener('click', function (e) {
+        const btn = e.target && e.target.closest ? e.target.closest(SUBMIT_BTN_SELECTOR) : null;
+        if (!btn) return;
+
+        if (btn.dataset.peaTapGuard === '1' || btn.dataset.peaLockedFlight === '1') {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            window.showToast?.('⏳ ระบบกำลังบันทึกข้อมูล กรุณารอสักครู่...');
+            return;
+        }
+
+        btn.dataset.peaTapGuard = '1';
+        recentClickedBtn = btn;
+        recentClickAtMs = Date.now();
+        recentClickWasEnabled = !btn.disabled;
+
+        setTimeout(() => {
+            if (btn.dataset.peaLockedFlight !== '1') {
+                delete btn.dataset.peaTapGuard;
+            }
+        }, 850);
+    }, true);
 })();
 // ==================== จบไฟล์ shared-core.js (v6.7) ====================
