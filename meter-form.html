@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
 <title>รายงานเหตุการณ์มิเตอร์ชำรุด - กฟส.บึง</title>
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=149">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
@@ -283,11 +284,12 @@
   .pdf-loading-mask {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.72); z-index: 10000;
     display: flex; align-items: center; justify-content: center; color: #fff;
-    font-family: 'Sarabun', sans-serif; font-size: 15px; font-weight: bold;
+    font-family: 'Sarabun', sans-serif; font-size: 15px; font-weight: bold; padding: 16px;
   }
   .pdf-loading-box {
-    background: #1e293b; border: 1px solid #475569; padding: 16px 22px;
-    border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    background: #1e293b; border: 1px solid #475569; padding: 18px 22px;
+    border-radius: 14px; box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+    max-width: 340px; width: 100%; text-align: center;
   }
 
   .sig-modal-backdrop {
@@ -350,11 +352,15 @@
   .modal-btn-cancel { background: #e5e7eb; color: #374151; }
   .modal-btn-save { background: #16a34a; color: #fff; flex: 1.3; }
 
+  body.role-viewer-readonly #cloudSaveBtn,
+  body.role-viewer-readonly .btn-reset,
+  body.role-viewer-readonly #refillJobBtn { display: none !important; }
+
   @media print {
     html, body { background: #fff; padding: 0; overflow: visible !important; line-height: 1.44; }
     .page-stage { width: 100% !important; max-width: none !important; height: auto !important; overflow: visible !important; }
     .page { width: 100% !important; padding: 0 !important; margin: 0 !important; transform: none !important; box-shadow: none !important; }
-    .no-print, .top-panel, .sig-placeholder, .sig-modal-backdrop { display: none !important; }
+    .no-print, .top-panel, .sig-placeholder, .sig-modal-backdrop, .pdf-loading-mask { display: none !important; }
     .sig-slot { border: none; border-bottom: 1px dotted #000; background: transparent; border-radius: 0; }
     .line-input:focus { background: transparent; }
     input::placeholder { color: transparent !important; }
@@ -418,7 +424,7 @@
 <div id="pageStage" class="page-stage">
   <div id="formPage" class="page">
     <div class="header-logo" onclick="document.getElementById('logoUpload').click()" title="แตะเพื่อเปลี่ยนรูปตราสัญลักษณ์">
-      <img id="peaLogoImg" class="pea-emblem-img" src="./pea-logo.png" alt="ตราสัญลักษณ์ กฟภ.">
+      <img id="peaLogoImg" class="pea-emblem-img" src="./pea-logo.png" alt="ตราสัญลักษณ์ กฟภ." onerror="this.style.visibility='hidden'">
     </div>
 
     <div class="row-2col">
@@ -585,11 +591,13 @@
   </div>
 </div>
 
+<script src="pea-idb-store.js?v=149"></script>
 <script>
   const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   const THAI_COMBINING_MARKS_RE = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
   const CUSTOM_LOGO_STORAGE_KEY = 'pea_custom_logo_override_v3';
   const DEFAULT_LOGO_FILE = './pea-logo.png';
+  const FALLBACK_CLOUD_API_URL = 'https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec';
 
   const TEXT_INPUT_IDS = [
     'docNoInput', 'docDateInput', 'shiftDateInput', 'oldPeaInput', 'addrLine1Input', 'addrLine2Input',
@@ -608,9 +616,19 @@
   let activeDraftFingerprint = '';
   let loadedRawJobRecord = null;
   let autoSaveTimer = null;
+  let isCloudSyncInFlight = false;
+  let hasQueuedCloudSync = false;
+  let lastCloudVisibilityCheckMs = 0;
 
   function isLineInAppBrowser() {
     return /\bLine\//i.test(navigator.userAgent || '');
+  }
+
+  function isLoggedViewerRole() {
+    try {
+      return localStorage.getItem('elec_app_logged_in') === 'true' &&
+             (localStorage.getItem('elec_app_current_role') || '').trim() === 'viewer';
+    } catch (e) { return false; }
   }
 
   async function popOutToExternalBrowser() {
@@ -749,7 +767,7 @@
         const incTs = Number(incoming.ts || 0);
 
         if (incoming.cleared || !incoming.src) {
-          if (incTs > curTs) {
+          if (incTs >= curTs && incTs > 0) {
             imgEl.removeAttribute('src');
             imgEl.style.display = 'none';
             imgEl.dataset.signed = 'false';
@@ -758,7 +776,7 @@
             if (placeEl) placeEl.style.display = 'inline';
           }
         } else if (imgEl.dataset.signed !== 'true' || incTs >= curTs) {
-          if (imgEl.dataset.explicitCleared === 'true' && curTs > incTs) return;
+          if (imgEl.dataset.explicitCleared === 'true' && curTs >= incTs) return;
           imgEl.src = incoming.src;
           imgEl.style.display = 'block';
           imgEl.dataset.signed = 'true';
@@ -855,24 +873,33 @@
   }
 
   async function resolveCloudApiBaseUrl() {
-    for (const k of ['elec_cloud_api_url', 'cloud_api_url_custom', 'pea_cached_cloud_url']) {
-      const v = (localStorage.getItem(k) || sessionStorage.getItem(k) || '').trim();
-      if (/^https:\/\/script\.google\.com\/macros\/s\//i.test(v)) return v.split('?')[0];
-    }
     try {
-      const res = await fetch('./shared-core.js');
+      const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+      const isAdm = (localStorage.getItem('elec_app_current_role') || '').trim() === 'admin';
+      if (isLogged && !isAdm) {
+        const branchNode = (localStorage.getItem('elec_cloud_user_api_url') || '').trim();
+        if (/^https:\/\/script\.google\.com\/macros\/s\//i.test(branchNode)) return branchNode.split('?')[0];
+      }
+      for (const k of ['elec_cloud_api_url', 'cloud_api_url_custom', 'pea_cached_cloud_url']) {
+        const v = (localStorage.getItem(k) || sessionStorage.getItem(k) || '').trim();
+        if (/^https:\/\/script\.google\.com\/macros\/s\//i.test(v)) return v.split('?')[0];
+      }
+    } catch (e) {}
+    try {
+      const res = await fetch('./shared-core.js?v=149');
       const txt = await res.text();
       const m = txt.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/);
       if (m) {
-        sessionStorage.setItem('pea_cached_cloud_url', m[0]);
+        try { sessionStorage.setItem('pea_cached_cloud_url', m[0]); } catch (e) {}
         return m[0];
       }
     } catch (e) {}
-    return '';
+    return FALLBACK_CLOUD_API_URL;
   }
 
   function getStoredStaffAuthQuery() {
     try {
+      if (localStorage.getItem('elec_app_logged_in') !== 'true') return '';
       const u = (localStorage.getItem('elec_app_current_user') || '').trim();
       const t = (localStorage.getItem('elec_app_session_token') || '').trim();
       if (u && t) return `&authUser=${encodeURIComponent(u)}&authToken=${encodeURIComponent(t)}`;
@@ -880,68 +907,98 @@
     return '';
   }
 
-  // --- ซิงค์ข้อมูลใบมิเตอร์และลายเซ็นขึ้น Google Sheets (จำกัดเฉพาะฟิลด์ meterFormState ผ่านรหัส k) ---
+  // --- ซิงค์ข้อมูลใบมิเตอร์และลายเซ็นขึ้น Google Sheets (คิวเรียงลำดับ + Auto-Retry เมื่อ SERVER_BUSY) ---
   async function syncMeterStateToCloud(isSilent = true) {
+    if (isLoggedViewerRole()) return false;
     saveLocalDraftState();
     if (!activeShortJobId || activeShortJobId === 'draft_preview' || !navigator.onLine) return false;
+
+    if (isCloudSyncInFlight) {
+      hasQueuedCloudSync = true;
+      return true;
+    }
+
     const baseUrl = await resolveCloudApiBaseUrl();
     if (!baseUrl) return false;
 
+    isCloudSyncInFlight = true;
     const cloudBtn = document.getElementById('cloudSaveBtn');
-    const origTxt = cloudBtn ? cloudBtn.textContent : '';
+    const origTxt = cloudBtn ? cloudBtn.textContent : '☁️ บันทึกออนไลน์';
     if (cloudBtn && !isSilent) {
       cloudBtn.disabled = true;
       cloudBtn.textContent = '⏳ กำลังบันทึก...';
     }
 
+    let okResult = false;
     try {
-      const curState = collectCurrentFormState();
-      const targetGroup = loadedRawJobRecord?.ownerGroup || activeOfficeGroup || 'กฟส.บึง';
+      do {
+        hasQueuedCloudSync = false;
+        const curState = collectCurrentFormState();
+        const targetGroup = loadedRawJobRecord?.ownerGroup || activeOfficeGroup || 'กฟส.บึง';
 
-      if (loadedRawJobRecord) {
-        loadedRawJobRecord.meterFormState = curState;
-        try {
-          const localList = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
-          const idx = localList.findIndex(it => it && it.dateTimeSaved === loadedRawJobRecord.dateTimeSaved);
-          if (idx !== -1) {
-            localList[idx].meterFormState = curState;
-            localStorage.setItem('elecReportsComplete_all', JSON.stringify(localList));
-          }
-        } catch (e) {}
-      }
-
-      const bodyStr = JSON.stringify({
-        action: 'saveMeterState',
-        i: activeShortJobId,
-        k: activeMeterKey,
-        group: targetGroup,
-        meterFormState: curState
-      });
-
-      const res = await fetch(`${baseUrl}?group=${encodeURIComponent(targetGroup)}${getStoredStaffAuthQuery()}`, {
-        method: 'POST',
-        keepalive: new Blob([bodyStr]).size < 55000,
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: bodyStr
-      });
-      const data = await res.json();
-      if (data?.status === 'ok') {
-        const pill = document.getElementById('autoSavePill');
-        if (pill) {
-          pill.textContent = '☁️ ซิงค์ออนไลน์แล้ว';
-          pill.style.display = 'inline-block';
+        if (loadedRawJobRecord) {
+          loadedRawJobRecord.meterFormState = curState;
+          try {
+            const localList = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]');
+            const idx = localList.findIndex(it => it && it.dateTimeSaved === loadedRawJobRecord.dateTimeSaved);
+            if (idx !== -1) {
+              localList[idx].meterFormState = curState;
+              localStorage.setItem('elecReportsComplete_all', JSON.stringify(localList));
+            }
+          } catch (e) {}
         }
-        return true;
-      }
+
+        const bodyStr = JSON.stringify({
+          action: 'saveMeterState',
+          i: activeShortJobId,
+          k: activeMeterKey,
+          group: targetGroup,
+          meterFormState: curState
+        });
+
+        const postUrl = `${baseUrl}?group=${encodeURIComponent(targetGroup)}${getStoredStaffAuthQuery()}`;
+        const maxRetries = 3;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const res = await fetch(postUrl, {
+              method: 'POST',
+              keepalive: new Blob([bodyStr]).size < 55000,
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: bodyStr
+            });
+            let data = null;
+            try { data = await res.json(); } catch (e) {}
+
+            if (data?.status === 'ok') {
+              const pill = document.getElementById('autoSavePill');
+              if (pill) {
+                pill.textContent = '☁️ ซิงค์ออนไลน์แล้ว';
+                pill.style.display = 'inline-block';
+              }
+              okResult = true;
+              break;
+            }
+
+            const isBusy = [408, 429, 500, 502, 503, 504].includes(res.status) ||
+                           Boolean(data && (data.busy === true || data.retryable === true || data.code === 'SERVER_BUSY'));
+            if (!isBusy || attempt >= maxRetries || !navigator.onLine) break;
+          } catch (netErr) {
+            if (attempt >= maxRetries || !navigator.onLine) break;
+          }
+          const waitMs = (1200 * Math.pow(2, attempt)) + Math.floor(Math.random() * 600);
+          await new Promise(r => setTimeout(r, waitMs));
+        }
+      } while (hasQueuedCloudSync && navigator.onLine);
     } catch (err) {
       console.error(err);
     } finally {
+      isCloudSyncInFlight = false;
       if (cloudBtn && !isSilent) {
         cloudBtn.disabled = false;
         cloudBtn.textContent = origTxt;
       }
     }
-    return false;
+    return okResult;
   }
 
   // --- ดึงข้อมูลใบงานด้วยรหัสสั้นคู่กับรหัสลับ k (ป้องกันคนนอกสุ่มเดาลิงก์) ---
@@ -974,7 +1031,7 @@
           const mergeOnly = alreadyAppliedLiveDraft || Boolean(hit.meterFormState && hit.meterFormState.updatedAt > savedLocalDraft.updatedAt);
           applySavedFormState(savedLocalDraft, mergeOnly);
         }
-        document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
+        if (!isLoggedViewerRole()) document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
         foundLocally = true;
       }
     } catch (e) {}
@@ -1025,6 +1082,7 @@
 
         if (hit) {
           loadedRawJobRecord = hit;
+          lastCloudVisibilityCheckMs = Date.now();
           if (hit.meterKey && !activeMeterKey) activeMeterKey = String(hit.meterKey).trim();
           const cloudPayload = convertJobRecordToMeterPayload(hit, closedMap, usersList);
           if (!alreadyAppliedLiveDraft) {
@@ -1047,7 +1105,7 @@
             const localNewer = !hit.meterFormState || Number(savedLocalDraft.updatedAt || 0) >= Number(hit.meterFormState.updatedAt || 0);
             applySavedFormState(savedLocalDraft, alreadyAppliedLiveDraft || !localNewer);
           }
-          document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
+          if (!isLoggedViewerRole()) document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
           if (fetchBar) fetchBar.style.display = 'none';
           saveLocalDraftState();
           return;
@@ -1065,6 +1123,26 @@
         setTimeout(() => { fetchBar.style.display = 'none'; }, 4000);
       }
     }
+  }
+
+  // ซิงค์ลายเซ็นใหม่จากคนอื่นอัตโนมัติเมื่อสลับกลับมาเปิดแท็บหน้าจอ
+  async function refreshSignaturesOnVisible() {
+    if (!activeShortJobId || activeShortJobId === 'draft_preview' || !navigator.onLine || isCloudSyncInFlight) return;
+    if (document.getElementById('sigModal')?.classList.contains('active')) return;
+    if (Date.now() - lastCloudVisibilityCheckMs < 15000) return;
+    lastCloudVisibilityCheckMs = Date.now();
+    try {
+      const baseUrl = await resolveCloudApiBaseUrl();
+      if (!baseUrl) return;
+      const keyParam = activeMeterKey ? `&k=${encodeURIComponent(activeMeterKey)}` : '';
+      const res = await fetch(`${baseUrl}?action=getJob&i=${encodeURIComponent(activeShortJobId)}${keyParam}&group=${encodeURIComponent(activeOfficeGroup)}${getStoredStaffAuthQuery()}&t=${Date.now()}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (data?.job?.meterFormState) {
+        loadedRawJobRecord = data.job;
+        applySavedFormState(data.job.meterFormState, true);
+        saveLocalDraftState();
+      }
+    } catch (e) {}
   }
 
   function rasterizeSourceToPngDataUrl(srcUrl, fallbackW = 800, fallbackH = 660) {
@@ -1096,13 +1174,15 @@
   async function initPeaLogoPng() {
     const logoEl = document.getElementById('peaLogoImg');
     if (!logoEl) return;
+    logoEl.style.visibility = 'visible';
     logoEl.onload = fitPaperToScreen;
     const savedLogo = localStorage.getItem(CUSTOM_LOGO_STORAGE_KEY);
     const targetSrc = savedLogo || DEFAULT_LOGO_FILE;
 
     if (!targetSrc.startsWith('data:image/png')) {
       const pngDataUrl = await rasterizeSourceToPngDataUrl(targetSrc, 800, 660);
-      logoEl.src = pngDataUrl || targetSrc;
+      if (pngDataUrl) logoEl.src = pngDataUrl;
+      else logoEl.src = targetSrc;
     } else {
       logoEl.src = targetSrc;
     }
@@ -1325,11 +1405,11 @@
       document.getElementById('linkedJobLinks').innerHTML = actionLinks.join('');
       document.getElementById('linkedJobInfoBar').style.display = 'flex';
     }
-    document.getElementById('refillJobBtn').style.display = 'inline-flex';
+    if (!isLoggedViewerRole()) document.getElementById('refillJobBtn').style.display = 'inline-flex';
   }
 
   function refillOriginalJobOnly() {
-    if (!cachedIncomingPayload) return;
+    if (!cachedIncomingPayload || isLoggedViewerRole()) return;
     applyIncomingJobPayload(cachedIncomingPayload);
     saveLocalDraftState();
   }
@@ -1489,6 +1569,7 @@
       const pngUrl = await rasterizeSourceToPngDataUrl(ev.target.result);
       const finalSrc = pngUrl || ev.target.result;
       const img = document.getElementById('peaLogoImg');
+      img.style.visibility = 'visible';
       img.onload = fitPaperToScreen;
       img.src = finalSrc;
       localStorage.setItem(CUSTOM_LOGO_STORAGE_KEY, finalSrc);
@@ -1496,9 +1577,15 @@
     reader.readAsDataURL(file);
   }
 
-  window.addEventListener('DOMContentLoaded', () => {
+  window.addEventListener('DOMContentLoaded', async () => {
     if (isLineInAppBrowser()) {
       document.getElementById('lineWebViewWarn').style.display = 'flex';
+    }
+    if (window.PeaIdbStore?.ready) {
+      try { await Promise.race([window.PeaIdbStore.ready, new Promise(r => setTimeout(r, 900))]); } catch (e) {}
+    }
+    if (isLoggedViewerRole()) {
+      document.body.classList.add('role-viewer-readonly');
     }
 
     initPeaLogoPng();
@@ -1566,7 +1653,16 @@
     }
   });
 
-  window.addEventListener('load', fitPaperToScreen);
+  window.addEventListener('load', () => {
+    fitPaperToScreen();
+    if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshSignaturesOnVisible();
+  });
 
   function updateStatusLamps() {
     ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
@@ -1597,18 +1693,22 @@
 
     const origLogo = origPage.querySelector('#peaLogoImg');
     const cloneLogo = a4Inner.querySelector('#peaLogoImg');
-    if (origLogo && cloneLogo && origLogo.complete && origLogo.naturalWidth > 0) {
-      try {
-        const logoCanvas = document.createElement('canvas');
-        const lw = Math.min(800, Math.max(540, origLogo.naturalWidth));
-        const lh = Math.round(lw * (origLogo.naturalHeight / origLogo.naturalWidth));
-        logoCanvas.width = lw;
-        logoCanvas.height = lh;
-        logoCanvas.style.cssText = 'width:135px;height:auto;display:block;';
-        logoCanvas.getContext('2d').drawImage(origLogo, 0, 0, lw, lh);
-        logoCanvas.toDataURL('image/png');
-        cloneLogo.replaceWith(logoCanvas);
-      } catch (e) { cloneLogo.src = origLogo.src; }
+    if (origLogo && cloneLogo) {
+      if (origLogo.complete && origLogo.naturalWidth > 0) {
+        try {
+          const logoCanvas = document.createElement('canvas');
+          const lw = Math.min(800, Math.max(540, origLogo.naturalWidth));
+          const lh = Math.round(lw * (origLogo.naturalHeight / origLogo.naturalWidth));
+          logoCanvas.width = lw;
+          logoCanvas.height = lh;
+          logoCanvas.style.cssText = 'width:135px;height:auto;display:block;';
+          logoCanvas.getContext('2d').drawImage(origLogo, 0, 0, lw, lh);
+          logoCanvas.toDataURL('image/png');
+          cloneLogo.replaceWith(logoCanvas);
+        } catch (e) { cloneLogo.src = origLogo.src; }
+      } else {
+        cloneLogo.style.display = 'none';
+      }
     }
 
     const origCbs = origPage.querySelectorAll('input[type="checkbox"]');
@@ -1652,6 +1752,46 @@
 
     a4Sheet.appendChild(a4Inner);
     return { a4Sheet, a4Inner };
+  }
+
+  function triggerDirectPdfDownload(pdfBlob, fileName) {
+    const url = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // ป๊อปอัปส่งต่อไฟล์ PDF ทันทีในแตะเดียว กรณี iOS Safari ตัดสิทธิ์ User Activation ระหว่างรอวาด PDF
+  function showInstantShareFallbackPrompt(pdfFile, pdfBlob, fileName, shareTitle, shareText) {
+    const promptMask = document.createElement('div');
+    promptMask.className = 'pdf-loading-mask no-print';
+    promptMask.innerHTML = `
+      <div class="pdf-loading-box" style="display:flex;flex-direction:column;gap:10px;">
+        <div style="font-size:15px;color:#fde047;">✅ สร้างไฟล์ PDF เสร็จสมบูรณ์</div>
+        <button type="button" id="instantShareTapBtn" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px;font-family:'Sarabun',sans-serif;font-size:14px;font-weight:bold;cursor:pointer;">📤 แตะเพื่อส่งเข้า LINE / แอปอื่น</button>
+        <button type="button" id="instantDownloadTapBtn" style="background:#0284c7;color:#fff;border:none;border-radius:8px;padding:9px;font-family:'Sarabun',sans-serif;font-size:13.5px;font-weight:bold;cursor:pointer;">📥 ดาวน์โหลดเก็บลงเครื่อง</button>
+        <button type="button" id="instantCloseTapBtn" style="background:transparent;color:#cbd5e1;border:1px solid #475569;border-radius:8px;padding:7px;font-family:'Sarabun',sans-serif;font-size:12.5px;cursor:pointer;">ปิดหน้าต่าง</button>
+      </div>
+    `;
+    document.body.appendChild(promptMask);
+
+    promptMask.querySelector('#instantShareTapBtn').onclick = async () => {
+      promptMask.remove();
+      try {
+        await navigator.share({ files: [pdfFile], title: shareTitle, text: shareText });
+      } catch (err) {
+        if (err && err.name !== 'AbortError') triggerDirectPdfDownload(pdfBlob, fileName);
+      }
+    };
+    promptMask.querySelector('#instantDownloadTapBtn').onclick = () => {
+      promptMask.remove();
+      triggerDirectPdfDownload(pdfBlob, fileName);
+    };
+    promptMask.querySelector('#instantCloseTapBtn').onclick = () => promptMask.remove();
   }
 
   async function shareAsPDF() {
@@ -1735,34 +1875,32 @@
 
     if (!pdfBlob) return;
 
-    try {
-      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        await navigator.share({
-          files: [pdfFile],
-          title: `รายงานเหตุการณ์มิเตอร์ชำรุด (${officeName})`,
-          text: `ใบรายงานเหตุการณ์มิเตอร์ชำรุด PEA: ${peaNo}${docNo ? ' (' + docNo + ')' : ''}`
-        });
-      } else if (isLineInAppBrowser()) {
-        if (confirm('เบราว์เซอร์ภายใน LINE บล็อกการส่งไฟล์ PDF\nระบบบันทึกข้อมูลและลายเซ็นของคุณไว้แล้ว ต้องการสลับไปเปิดใน Chrome/Safari เพื่อแชร์ PDF ทันทีหรือไม่?')) {
-          popOutToExternalBrowser();
-        }
-      } else {
-        const url = URL.createObjectURL(pdfBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+    const shareTitle = `รายงานเหตุการณ์มิเตอร์ชำรุด (${officeName})`;
+    const shareText = `ใบรายงานเหตุการณ์มิเตอร์ชำรุด PEA: ${peaNo}${docNo ? ' (' + docNo + ')' : ''}`;
+    const canNativeShare = Boolean(navigator.canShare && navigator.canShare({ files: [pdfFile] }));
+
+    if (canNativeShare) {
+      try {
+        await navigator.share({ files: [pdfFile], title: shareTitle, text: shareText });
+        return;
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') return;
+        showInstantShareFallbackPrompt(pdfFile, pdfBlob, fileName, shareTitle, shareText);
+        return;
       }
-    } catch (shareErr) {
-      console.error(shareErr);
+    }
+
+    if (isLineInAppBrowser()) {
+      if (confirm('เบราว์เซอร์ภายใน LINE บล็อกการส่งไฟล์ PDF\nระบบบันทึกข้อมูลและลายเซ็นของคุณไว้แล้ว ต้องการสลับไปเปิดใน Chrome/Safari เพื่อแชร์ PDF ทันทีหรือไม่?')) {
+        popOutToExternalBrowser();
+      }
+    } else {
+      triggerDirectPdfDownload(pdfBlob, fileName);
     }
   }
 
-  // --- ระบบกระดานเซ็นชื่อ + จำลายเซ็นประจำตัวพนักงาน + บีบอัดภาพคมชัด ---
+  // --- ระบบกระดานเซ็นชื่อ + ตัดขอบจัดกึ่งกลางตามสัดส่วนจริง (ไม่บีบแบน) ---
   let currentSlotId = null;
   let isDrawing = false;
   let hasDrawn = false;
@@ -1775,13 +1913,56 @@
   const modalNameInput = document.getElementById('modalNameInput');
   const rotateBtn = document.getElementById('rotateBtn');
 
+  function drawImageProportionallyOnModal(img) {
+    if (!img) return;
+    const cw = modalCanvas.offsetWidth;
+    const ch = modalCanvas.offsetHeight;
+    const iw = img.naturalWidth || img.width || cw;
+    const ih = img.naturalHeight || img.height || ch;
+    if (!cw || !ch || !iw || !ih) return;
+    const scale = Math.min((cw * 0.9) / iw, (ch * 0.85) / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    ctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+  }
+
   function exportCompactSignaturePng(sourceCanvas, targetW = 420, targetH = 96) {
     try {
+      const sw = sourceCanvas.width;
+      const sh = sourceCanvas.height;
+      const sctx = sourceCanvas.getContext('2d');
+      const data = sctx.getImageData(0, 0, sw, sh).data;
+      let minX = sw, minY = sh, maxX = -1, maxY = -1;
+      for (let py = 0; py < sh; py++) {
+        for (let px = 0; px < sw; px++) {
+          if (data[(py * sw + px) * 4 + 3] > 15) {
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
+        }
+      }
+
       const c = document.createElement('canvas');
       c.width = targetW;
       c.height = targetH;
       const cctx = c.getContext('2d');
-      cctx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
+
+      if (maxX >= minX && maxY >= minY) {
+        const bw = Math.max(1, maxX - minX + 1);
+        const bh = Math.max(1, maxY - minY + 1);
+        const padX = 12, padY = 6;
+        const maxScale = (window.devicePixelRatio || 1) > 1 ? 0.95 : 1.35;
+        const scale = Math.min((targetW - padX * 2) / bw, (targetH - padY * 2) / bh, maxScale);
+        const dw = bw * scale;
+        const dh = bh * scale;
+        cctx.drawImage(sourceCanvas, minX, minY, bw, bh, (targetW - dw) / 2, (targetH - dh) / 2, dw, dh);
+      } else {
+        const scale = Math.min(targetW / sw, targetH / sh);
+        const dw = sw * scale, dh = sh * scale;
+        cctx.drawImage(sourceCanvas, (targetW - dw) / 2, (targetH - dh) / 2, dw, dh);
+      }
       return c.toDataURL('image/png');
     } catch (e) {
       return sourceCanvas.toDataURL('image/png');
@@ -1800,7 +1981,7 @@
       clearModalCanvas();
       const img = new Image();
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, modalCanvas.offsetWidth, modalCanvas.offsetHeight);
+        drawImageProportionallyOnModal(img);
         hasDrawn = true;
       };
       img.src = preset.src;
@@ -1843,7 +2024,7 @@
   function resizeModalCanvas(preserveDrawing = false) {
     let tempUrl = null;
     if (preserveDrawing && hasDrawn) {
-      tempUrl = modalCanvas.toDataURL('image/png');
+      tempUrl = exportCompactSignaturePng(modalCanvas, 640, 180);
     }
 
     const ratio = Math.max(window.devicePixelRatio || 1, 1);
@@ -1859,7 +2040,7 @@
 
     if (tempUrl) {
       const img = new Image();
-      img.onload = () => { ctx.drawImage(img, 0, 0, cw, ch); };
+      img.onload = () => { drawImageProportionallyOnModal(img); };
       img.src = tempUrl;
     }
   }
@@ -1871,6 +2052,7 @@
   }
 
   function openSigModal(slotId, roleTitle) {
+    if (isLoggedViewerRole()) return;
     currentSlotId = slotId;
     document.getElementById('modalTitle').textContent = 'ลงลายมือชื่อ: ' + roleTitle;
     const formNameInput = document.getElementById('name-' + slotId);
@@ -1901,7 +2083,7 @@
     if (existingImg && existingImg.dataset.signed === 'true' && existingImg.src) {
       const img = new Image();
       img.onload = () => {
-        ctx.drawImage(img, 0, 0, modalCanvas.offsetWidth, modalCanvas.offsetHeight);
+        drawImageProportionallyOnModal(img);
         hasDrawn = true;
       };
       img.src = existingImg.src;
@@ -1919,7 +2101,7 @@
   }
 
   function saveSignature() {
-    if (!currentSlotId) return;
+    if (!currentSlotId || isLoggedViewerRole()) return;
 
     const imgEl = document.getElementById('img-' + currentSlotId);
     const placeEl = document.getElementById('place-' + currentSlotId);
@@ -2022,6 +2204,7 @@
   });
 
   function resetAll() {
+    if (isLoggedViewerRole()) return;
     if (!confirm('ต้องการล้างข้อมูลและลายเซ็นในหน้านี้ทั้งหมดใช่หรือไม่?')) return;
     const clearTs = String(Date.now());
     document.querySelectorAll('.line-input').forEach(inp => inp.value = '');
