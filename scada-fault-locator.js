@@ -1,6 +1,6 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — HIGH-PRECISION LINE DISTANCE CALCULATOR v3.2 (scada-fault-locator.js)
-// พาทที่ 1 / 2 : ระบบอิมพีแดนซ์ 22kV, ซิงค์สเกลวงจร, คัดกรองจุดรวมหน้าสถานี (Feeder Gate) & กราฟสายส่ง
+// ⚡ PEA SMART GRID — HIGH-PRECISION LINE DISTANCE CALCULATOR v3.5 (scada-fault-locator.js)
+// พาทที่ 1 / 2 : ระบบอิมพีแดนซ์ 22kV + คิดสาย UG ในสถานี 150 ม. ทุกวงจร + CB/RC ทุกตัวเป็นต้นทางจ่ายไฟ
 // ============================================================================
 (function () {
     'use strict';
@@ -21,6 +21,7 @@
     const MAIN_TRUNK_ANCHOR_TYPES = new Set(['RC', 'CB', 'VB', 'VS', 'VSC', 'S', 'GEN']);
 
     const DEFAULT_BUS_KV = 22.6; // แรงดันบัสจ่ายไฟจริงเฉลี่ยหน้าสถานีไฟฟ้า กฟภ. (22.5 - 22.8 kV)
+    const DEFAULT_STATION_UG_METERS = 150; // สายเคเบิลใต้ดิน (UG 240 ตร.มม.) ภายในสถานีออกสู่ Riser Pole 150 เมตร ทุกวงจรจ่ายไฟ
     const OVERHEAD_SAG_FACTOR = 1.035; // ชดเชยระยะสายตกท้องช้างและช่วงโค้งเสา (+3.5%)
     const UG_SLACK_FACTOR = 1.025; // ชดเชยสายเคเบิลมุดดินขึ้นเสา Riser (+2.5%)
 
@@ -40,7 +41,7 @@
         IDEAL_ZERO: { label: 'ไม่คิดอิมพีแดนซ์สถานี', rs1: 0.01, xs1: 0.15, rs0: 0.02, xs0: 0.25 }
     };
 
-    const DEFAULT_AMP_HINT_TEXT = '💡 กรอกกระแส (A) หรือระยะรีเลย์ (กม.) • เลือกจุด FI ขึ้น / ตัดจุดไฟไม่ผ่านหลายจุด เพื่อบีบเหลือซอยเดียว';
+    const DEFAULT_AMP_HINT_TEXT = '💡 กรอกกระแส (A) หรือระยะรีเลย์ (กม.) • คิดรวมสาย UG ในสถานี 150 ม. ให้ทุกวงจรจ่ายไฟอัตโนมัติ';
 
     const safeSessionGet = (k) => { try { return window.sessionStorage.getItem(k); } catch (e) { return null; } };
     const safeSessionSet = (k, v) => { try { window.sessionStorage.setItem(k, v); } catch (e) {} };
@@ -65,7 +66,7 @@
     let lastClearedPktTs = 0;
 
     // ========================================================================
-    // 1. ระบบจัดเก็บค่าตั้งต้น & ซิงค์ค่าเทียบสเกลจริงรายวงจรข้ามเครื่อง (Cloud + MQTT Sync)
+    // 1. ระบบจัดเก็บค่าตั้งต้น, อิมพีแดนซ์สาย UG สถานี 150 ม. & ซิงค์สเกลวงจรข้ามเครื่อง
     // ========================================================================
     function normGrp(raw) {
         if (typeof window.normalizePeaGroupName === 'function') return window.normalizePeaGroupName(raw) || '';
@@ -90,12 +91,15 @@
             sourceKey: 'SUB_50MVA',
             busKv: DEFAULT_BUS_KV,
             rfOhm: 0,
-            autoLateral: true
+            autoLateral: true,
+            stationUg: true
         };
         try {
             const legacy = JSON.parse(localStorage.getItem('elec_scada_22kv_fault_calc_prefs_v1') || '{}') || {};
             const cur = JSON.parse(localStorage.getItem(FAULT_PREF_KEY) || '{}') || {};
-            return Object.assign(defaults, legacy, cur);
+            const merged = Object.assign(defaults, legacy, cur);
+            merged.rfOhm = 0;
+            return merged;
         } catch (e) {
             return defaults;
         }
@@ -103,8 +107,38 @@
 
     function saveCalcPrefs(patch) {
         try {
-            localStorage.setItem(FAULT_PREF_KEY, JSON.stringify(Object.assign(loadCalcPrefs(), patch || {})));
+            const next = Object.assign(loadCalcPrefs(), patch || {});
+            delete next.rfOhm;
+            localStorage.setItem(FAULT_PREF_KEY, JSON.stringify(next));
         } catch (e) {}
+    }
+
+    // คำนวณเวกเตอร์อิมพีแดนซ์ของสายเคเบิลใต้ดิน (UG 240 ตร.มม.) ภายในสถานีไฟฟ้า (ค่ามาตรฐาน 150 เมตร = 0.15 กม.)
+    function getStationExitUgVector(ugMeters = DEFAULT_STATION_UG_METERS) {
+        const km = Math.max(0, (Number(ugMeters) || 0) / 1000);
+        const ug = PEA_22KV_CABLES.UG240;
+        return {
+            km,
+            meters: Math.round(km * 1000),
+            r1: ug.r1 * km,
+            x1: ug.x1 * km,
+            r0: ug.r0 * km,
+            x0: ug.x0 * km
+        };
+    }
+
+    // หากเส้นสายแรกที่ออกจากต้นทางในผังมีการระบุป้าย UG ไว้เองแล้ว จะหักลบให้โดยไม่คิดซ้ำซ้อน แต่ถ้าไม่ได้ระบุจะบวกสาย UG ในสถานีครบ 150 เมตรอัตโนมัติ
+    function computeEffectiveStationUgVector(rootPinId, adjGraph, stationUgEnabled = true) {
+        if (!stationUgEnabled) return getStationExitUgVector(0);
+        const nbs = (adjGraph && rootPinId && adjGraph.get(rootPinId)) ? adjGraph.get(rootPinId) : [];
+        let explicitUgMeters = 0;
+        const ugNbs = nbs.filter((nb) => nb.isExplicitUg);
+        if (ugNbs.length > 0) {
+            const minGroundKm = Math.min(...ugNbs.map((nb) => nb.groundKm ?? nb.lenKm ?? 0));
+            explicitUgMeters = Math.round(minGroundKm * 1000);
+        }
+        const remainMeters = Math.max(0, DEFAULT_STATION_UG_METERS - explicitUgMeters);
+        return getStationExitUgVector(remainMeters);
     }
 
     function loadLocalCalibMap() {
@@ -363,7 +397,7 @@
     }
 
     // ========================================================================
-    // 3. เชื่อมแผนที่ Leaflet, คัดกรองรหัสฟีดเดอร์หน้าสถานี (Feeder Gate) & คัดลอก PC
+    // 3. เชื่อมแผนที่ Leaflet, กำหนด CB/RC ทุกตัวเป็นต้นทางจ่ายไฟ & คัดกรองจุดรวมสถานี
     // ========================================================================
     function injectFaultLocatorStyles() {
         if (document.getElementById('peaScadaFaultLocatorCss') || !document.head) return;
@@ -523,11 +557,13 @@
         return m ? m[1].toUpperCase() : '';
     }
 
+    // กำหนดให้ทุกหมุดที่เป็น CB, RC หรือ GEN เป็นต้นทางจ่ายไฟทั้งหมด ไม่ว่าจะใช้รหัสหรือชื่ออะไร
     function isSubstationBreakerOrSourceNode(pin) {
         if (!pin) return false;
-        const eqT = pin.scadaNode?.t || 'PIN';
-        if (eqT === 'CB' || eqT === 'GEN') return true;
-        if ((eqT === 'RC' || eqT === 'VB') && /\b[A-Z]{2,4}\d{1,2}(?:S|CB|F)-0*1\b/i.test(String(pin.name || ''))) return true;
+        const eqT = String(pin.scadaNode?.t || 'PIN').toUpperCase();
+        if (eqT === 'CB' || eqT === 'RC' || eqT === 'GEN') return true;
+        const nm = String(pin.name || '').trim();
+        if (/\(\s*(?:CB|RC)\b/i.test(nm)) return true;
         return false;
     }
 
@@ -535,7 +571,7 @@
         const hubIds = new Set();
         pins.forEach((p) => {
             if (!p) return;
-            const eqT = p.scadaNode?.t || 'PIN';
+            const eqT = String(p.scadaNode?.t || 'PIN').toUpperCase();
             if (eqT === 'GEN' || /^(?:สฟฟ\.?|สถานีไฟฟ้า)|busbar|\bbus\b/i.test(String(p.name || '').trim())) {
                 hubIds.add(p.id);
                 return;
@@ -560,7 +596,6 @@
         return hubIds;
     }
 
-    // ตรวจสอบรหัสฟีดเดอร์ของแต่ละสายที่แยกออกจากจุดรวมหน้าสถานี (เดินสำรวจผ่านหมุด T-Tap สูงสุด 8 ชั้น)
     function resolveBranchFeederCode(hubId, firstNextId, edgeFd, pinMap, adj) {
         const explicit = String(edgeFd || '').trim().replace(/\s+/g, '').toUpperCase();
         const mExp = explicit.match(/\b([A-Z]{2,4}\d{1,2})\b/);
@@ -586,10 +621,9 @@
         return '';
     }
 
-    // เปิดทางให้เดินผ่านจุดรวมสายหน้าสถานีได้เมื่อเบรกเกอร์ต้นทางเกาะอยู่กับจุดรวมนั้น และสร้างด่านคัดกรองออกเฉพาะสายของฟีดเดอร์ตัวเอง
     function buildTransitHubsAndFeederGate(sourcePinId, pinMap, adj, busbarHubIds) {
         const transitHubIds = new Set();
-        const blockedHubExitPairs = new Set(); // รูปแบบ 'hubId__toId'
+        const blockedHubExitPairs = new Set();
         const srcPin = pinMap.get(sourcePinId);
         if (!srcPin || !adj.has(sourcePinId)) return { transitHubIds, blockedHubExitPairs };
 
@@ -602,9 +636,9 @@
         };
         const startNbs = adj.get(sourcePinId) || [];
         const hasDirectNonHubExit = startNbs.some((nb) => !isHubOrSource(nb.toId));
+        const srcFd = extractPinFeederCode(srcPin);
 
         if (!hasDirectNonHubExit) {
-            // หมุดเบรกเกอร์ต้นทาง (เช่น BNH03S-01) ลากสายรวมเข้าจุดพักหน้าสถานี -> อนุญาตให้ผ่านจุดพักหน้าสถานีในรัศมี 0.8 กม.
             const q = [{ id: sourcePinId, distKm: 0 }];
             const vis = new Set([sourcePinId]);
             while (q.length > 0) {
@@ -613,15 +647,15 @@
                     if (vis.has(nb.toId)) return;
                     const nextDist = cur.distKm + (nb.groundKm ?? nb.lenKm ?? 0);
                     const nbPin = pinMap.get(nb.toId);
-                    const nbT = nbPin?.scadaNode?.t || 'PIN';
-                    if (nextDist <= 0.85 && (hubs.has(nb.toId) || nbT === 'CB' || nbT === 'GEN')) {
+                    const nbFd = extractPinFeederCode(nbPin);
+                    const sameOrNeutralFd = !nbFd || !srcFd || nbFd === srcFd;
+                    if (nextDist <= 0.85 && (hubs.has(nb.toId) || (isSubstationBreakerOrSourceNode(nbPin) && sameOrNeutralFd))) {
                         vis.add(nb.toId);
                         transitHubIds.add(nb.toId);
                         q.push({ id: nb.toId, distKm: nextDist });
                     }
                 });
             }
-            // กรณีลากพ่วงผ่านเบรกเกอร์หน้าสถานีตัวติดกันก่อนออกสาย
             if (transitHubIds.size === 0) {
                 startNbs.forEach((nb) => {
                     if ((nb.groundKm ?? nb.lenKm ?? 0) <= 0.5 && isHubOrSource(nb.toId)) {
@@ -631,7 +665,6 @@
             }
         }
 
-        const srcFd = extractPinFeederCode(srcPin);
         if (srcFd && transitHubIds.size > 0) {
             transitHubIds.forEach((hubId) => {
                 const outEdges = (adj.get(hubId) || []).filter((nb) => {
@@ -642,7 +675,6 @@
                     toId: nb.toId,
                     fd: resolveBranchFeederCode(hubId, nb.toId, nb.fd, pinMap, adj)
                 }));
-                // บล็อกสายของวงจรอื่นเฉพาะเมื่อตรวจพบสายของวงจรตัวเอง (เช่น BNH03) ออกจากจุดรวมนี้จริง
                 const hasOwnFeederExit = tagged.some((x) => x.fd === srcFd);
                 if (hasOwnFeederExit) {
                     tagged.forEach((x) => {
@@ -724,7 +756,7 @@
             });
         }
 
-        const rootSeeds = pins.filter((p) => !peeledNode.has(p.id) || p.scadaNode?.t === 'CB' || p.scadaNode?.t === 'RC').map((p) => p.id);
+        const rootSeeds = pins.filter((p) => !peeledNode.has(p.id) || isSubstationBreakerOrSourceNode(p)).map((p) => p.id);
         const vis = new Set(rootSeeds), q = [...rootSeeds];
         const treeChildren = new Map(), behindDfNode = new Set();
         pins.forEach((p) => {
@@ -770,7 +802,7 @@
             const children = treeChildren.get(u) || [];
             if (!children.length) return;
             const uPin = pinMap.get(u);
-            const uIsStationOrRc = isSubstationBreakerOrSourceNode(uPin) || uPin?.scadaNode?.t === 'RC' || busHubPreview.has(u);
+            const uIsStationOrRc = isSubstationBreakerOrSourceNode(uPin) || busHubPreview.has(u);
             const uIsJunction = !uIsStationOrRc && ((deg.get(u) || 0) >= 3 || isNodeTTap(uPin, pins));
             let longestChildIdx = -1, longestReach = -1;
             children.forEach(({ idx, child }) => {
@@ -852,14 +884,16 @@
 
         rawPhysEdges.forEach((pe) => {
             const eFd = pe.edge?.fd || '';
-            fullPhysAdj.get(pe.uId).push({ toId: pe.vId, lenKm: pe.elecLenKm, relayKm: pe.relayLenKm, groundKm: pe.groundLenKm, cabProf: pe.cabProf, fd: eFd });
-            fullPhysAdj.get(pe.vId).push({ toId: pe.uId, lenKm: pe.elecLenKm, relayKm: pe.relayLenKm, groundKm: pe.groundLenKm, cabProf: pe.cabProf, fd: eFd });
+            const isExplicitUg = Boolean(pe.explicitCab?.isUg);
+            fullPhysAdj.get(pe.uId).push({ toId: pe.vId, lenKm: pe.elecLenKm, relayKm: pe.relayLenKm, groundKm: pe.groundLenKm, cabProf: pe.cabProf, fd: eFd, isExplicitUg });
+            fullPhysAdj.get(pe.vId).push({ toId: pe.uId, lenKm: pe.elecLenKm, relayKm: pe.relayLenKm, groundKm: pe.groundLenKm, cabProf: pe.cabProf, fd: eFd, isExplicitUg });
         });
 
         rawActiveEdges.forEach((ae) => {
             const eFd = ae.edge?.fd || '';
-            adj.get(ae.uId).push({ toId: ae.vId, lenKm: ae.elecLenKm, relayKm: ae.relayLenKm, groundKm: ae.groundLenKm, cabProf: ae.cabProf, pts: ae.fwdPts, fd: eFd });
-            adj.get(ae.vId).push({ toId: ae.uId, lenKm: ae.elecLenKm, relayKm: ae.relayLenKm, groundKm: ae.groundLenKm, cabProf: ae.cabProf, pts: ae.revPts, fd: eFd });
+            const isExplicitUg = Boolean(ae.explicitCab?.isUg);
+            adj.get(ae.uId).push({ toId: ae.vId, lenKm: ae.elecLenKm, relayKm: ae.relayLenKm, groundKm: ae.groundLenKm, cabProf: ae.cabProf, pts: ae.fwdPts, fd: eFd, isExplicitUg });
+            adj.get(ae.vId).push({ toId: ae.uId, lenKm: ae.elecLenKm, relayKm: ae.relayLenKm, groundKm: ae.groundLenKm, cabProf: ae.cabProf, pts: ae.revPts, fd: eFd, isExplicitUg });
         });
 
         const busbarHubIds = detectSubstationBusbarHubIds(pins, pinMap, fullPhysAdj);
@@ -867,7 +901,7 @@
     }
 
     // ========================================================================
-    // 5. เรขาคณิตตัดเส้นสาย, ตัวกั้นปลายทาง (รองรับ Transit Hub) & ข้อมูลแวดล้อม
+    // 5. เรขาคณิตตัดเส้นสาย, คำนวณสายต้นน้ำ + บวกสาย UG ในสถานี 150 ม. ทุกวงจรจ่ายไฟ
     // ========================================================================
     function resolveRealDestinationName(startToId, fromId, pinMap, adj, allPins) {
         const firstPin = pinMap.get(startToId);
@@ -924,7 +958,6 @@
         return out;
     }
 
-    // อนุญาตให้ผ่านจุดรวมหน้าสถานีของตัวเอง (transitHubIds) และทะลุ RC กลางสายที่จ่ายไฟอยู่ แต่กั้นไม่ให้ทะลุเข้าสถานีปลายทางหรือเบรกเกอร์วงจรอื่น
     function isBarrierTerminalNode(pin, sourcePin, stopAtOpenSwitch, bypassOpenSet = null, busbarHubIds = null, transitHubIds = null) {
         if (!pin || !sourcePin || pin.id === sourcePin.id) return false;
         if (transitHubIds && transitHubIds.has(pin.id)) return false;
@@ -1086,24 +1119,25 @@
         return hotspots.slice(0, 80);
     }
 
-    function computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, activeAdj, fullPhysAdj, busbarHubIds = null, transitHubIds = null) {
+    function computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, activeAdj, fullPhysAdj, busbarHubIds = null, transitHubIds = null, stationUgEnabled = true) {
         const zeroVec = { r1: 0, x1: 0, r0: 0, x0: 0 };
         const srcPin = pinMap.get(sourcePinId);
         const hubs = busbarHubIds || new Set();
         const transits = transitHubIds || new Set();
-        if (!srcPin) return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
+        if (!srcPin) {
+            return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0, stationUgKm: 0, parentBrkId: '', parentBrkName: '' };
+        }
 
-        // กรณีหมุดที่เลือกคือเบรกเกอร์ต้นสถานี (CB, GEN หรือ S-01 หน้าสถานี): ห้ามบล็อกจุดร่วม transitHubIds และต้องเช็กว่ายังมีสายทางออกเหลืออยู่เสมอ
+        // ทุกหมุดที่เป็น CB / RC / GEN คือต้นทางจ่ายไฟทั้งหมด และบวกค่าสาย UG ในสถานี 150 ม. (0.15 กม.) เข้าเป็นฐานของทุกวงจรจ่ายไฟอัตโนมัติ
         if (isSubstationBreakerOrSourceNode(srcPin) || hubs.has(sourcePinId)) {
+            const stUg = computeEffectiveStationUgVector(sourcePinId, fullPhysAdj, stationUgEnabled);
             const blockedNodes = new Set(), blockedStartNeighbors = new Set();
-            const srcFd = extractPinFeederCode(srcPin);
             if (!hubs.has(sourcePinId)) {
                 (fullPhysAdj.get(sourcePinId) || []).forEach((nb) => {
                     if (transits.has(nb.toId)) return;
                     const nbP = pinMap.get(nb.toId);
                     if (!nbP) return;
-                    const nbFd = extractPinFeederCode(nbP);
-                    if (hubs.has(nb.toId) || isSubstationBreakerOrSourceNode(nbP) || (srcFd && nbFd && srcFd !== nbFd && (nb.groundKm ?? nb.lenKm) < 0.45)) {
+                    if (hubs.has(nb.toId) || isSubstationBreakerOrSourceNode(nbP)) {
                         blockedNodes.add(nb.toId);
                         blockedStartNeighbors.add(nb.toId);
                     }
@@ -1114,7 +1148,15 @@
                 blockedNodes.clear();
                 blockedStartNeighbors.clear();
             }
-            return { blockedNodes, blockedStartNeighbors, upstreamVec: zeroVec, upstreamKm: 0 };
+            return {
+                blockedNodes,
+                blockedStartNeighbors,
+                upstreamVec: { r1: stUg.r1, x1: stUg.x1, r0: stUg.r0, x0: stUg.x0 },
+                upstreamKm: 0,
+                stationUgKm: stUg.km,
+                parentBrkId: '',
+                parentBrkName: ''
+            };
         }
 
         const runDijkstra = (adjGraph, startId, ignoreOpenSw, skipNodeId = null) => {
@@ -1149,23 +1191,44 @@
             return { dMap, vMap };
         };
 
-        const stationRoots = pins.filter((p) => p.id !== sourcePinId && isSubstationBreakerOrSourceNode(p) && p.scadaNode?.t !== 'GEN');
-        const fallbackRoots = pins.filter((p) => p.id !== sourcePinId && (p.scadaNode?.t === 'CB' || p.scadaNode?.t === 'RC' || hubs.has(p.id)));
-        const candidateRoots = stationRoots.length > 0 ? stationRoots : fallbackRoots;
-        if (!candidateRoots.length) return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
+        const srcFd = extractPinFeederCode(srcPin);
+        const allPowerSources = pins.filter((p) => p.id !== sourcePinId && (isSubstationBreakerOrSourceNode(p) || hubs.has(p.id)));
+        const isCompatibleRoot = (b, strictSameFeeder) => {
+            const bFd = extractPinFeederCode(b);
+            if (strictSameFeeder) return Boolean(srcFd && bFd && bFd === srcFd);
+            if (srcFd && bFd && bFd !== srcFd) return false;
+            return true;
+        };
 
         let useGraph = activeAdj, ignoreOpen = false;
         let resFromSrc = runDijkstra(useGraph, sourcePinId, false, null);
-        let rootPool = candidateRoots.filter((b) => resFromSrc.dMap.has(b.id));
+        let rootPool = allPowerSources.filter((b) => resFromSrc.dMap.has(b.id) && isCompatibleRoot(b, false));
 
         if (!rootPool.length) {
-            useGraph = fullPhysAdj; ignoreOpen = true;
-            resFromSrc = runDijkstra(useGraph, sourcePinId, true, null);
-            rootPool = candidateRoots.filter((b) => resFromSrc.dMap.has(b.id));
+            rootPool = allPowerSources.filter((b) => resFromSrc.dMap.has(b.id));
         }
-        if (!rootPool.length) return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
+        if (!rootPool.length && srcFd) {
+            const sameFdRoots = allPowerSources.filter((b) => isCompatibleRoot(b, true));
+            if (sameFdRoots.length > 0) {
+                useGraph = fullPhysAdj;
+                ignoreOpen = true;
+                resFromSrc = runDijkstra(useGraph, sourcePinId, true, null);
+                rootPool = sameFdRoots.filter((b) => resFromSrc.dMap.has(b.id));
+            }
+        }
+        if (!rootPool.length) {
+            const stUgFallback = computeEffectiveStationUgVector(sourcePinId, fullPhysAdj, stationUgEnabled);
+            return {
+                blockedNodes: new Set(),
+                blockedStartNeighbors: new Set(),
+                upstreamVec: { r1: stUgFallback.r1, x1: stUgFallback.x1, r0: stUgFallback.r0, x0: stUgFallback.x0 },
+                upstreamKm: 0,
+                stationUgKm: stUgFallback.km,
+                parentBrkId: '',
+                parentBrkName: ''
+            };
+        }
 
-        const srcFd = extractPinFeederCode(srcPin);
         rootPool.sort((a, b) => {
             const aClosed = (a.scadaNode?.st || 'C') !== 'O' ? 1 : 0, bClosed = (b.scadaNode?.st || 'C') !== 'O' ? 1 : 0;
             const aFd = (srcFd && extractPinFeederCode(a) === srcFd) ? 1 : 0;
@@ -1174,10 +1237,17 @@
         });
 
         const parentBrk = rootPool[0];
+        const stUgRoot = computeEffectiveStationUgVector(parentBrk.id, fullPhysAdj, stationUgEnabled);
         const withSrc = runDijkstra(useGraph, parentBrk.id, ignoreOpen, null);
         const withoutSrc = runDijkstra(useGraph, parentBrk.id, ignoreOpen, sourcePinId);
         const srcDistFromBrk = withSrc.dMap.get(sourcePinId) ?? 0;
-        const upstreamVec = withSrc.vMap.get(sourcePinId) || zeroVec;
+        const lineUpVec = withSrc.vMap.get(sourcePinId) || zeroVec;
+        const upstreamVec = {
+            r1: stUgRoot.r1 + lineUpVec.r1,
+            x1: stUgRoot.x1 + lineUpVec.x1,
+            r0: stUgRoot.r0 + lineUpVec.r0,
+            x0: stUgRoot.x0 + lineUpVec.x0
+        };
         const blockedNodes = new Set([parentBrk.id]), blockedStartNeighbors = new Set();
 
         (useGraph.get(sourcePinId) || []).forEach((nb) => {
@@ -1187,8 +1257,8 @@
         });
         const hasDownstreamLeft = (activeAdj.get(sourcePinId) || []).some((nb) => !blockedStartNeighbors.has(nb.toId));
         return hasDownstreamLeft
-            ? { blockedNodes, blockedStartNeighbors, upstreamVec, upstreamKm: srcDistFromBrk }
-            : { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec, upstreamKm: srcDistFromBrk };
+            ? { blockedNodes, blockedStartNeighbors, upstreamVec, upstreamKm: srcDistFromBrk, stationUgKm: stUgRoot.km, parentBrkId: parentBrk.id, parentBrkName: parentBrk.name || '' }
+            : { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec, upstreamKm: srcDistFromBrk, stationUgKm: stUgRoot.km, parentBrkId: parentBrk.id, parentBrkName: parentBrk.name || '' };
     }
 
     function findAmpHitDistanceOnSpan(vecStart, cabProfile, spanElecLimitKm, targetAmp, faultType, srcBus, rfOhm, busKv, calFactor, allowClampOrigin) {
@@ -1210,10 +1280,10 @@
         }
         return { hit: true, deltaElecKm: (lo + hi) / 2 };
     }
-    // ===== จบพาทที่ 1 / 2 ของไฟล์ scada-fault-locator.js (v3.2) =====
-        // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ scada-fault-locator.js (v3.2 — วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) =====
+    // ===== จบพาทที่ 1 / 2 ของไฟล์ scada-fault-locator.js (v3.5) =====
+        // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ scada-fault-locator.js (v3.5 — วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) =====
     // ========================================================================
-    // 6. แกนประมวลผลคำนวณระยะสายหลัก + คัดกรองจุดรวมสถานี + จัดอันดับความแม่นยำ
+    // 6. แกนประมวลผลคำนวณระยะสายหลัก + รวมสาย UG สถานี 150 ม. ทั้งโหมดกระแสและรีเลย์
     // ========================================================================
     function collectValidWiredPinIds(pins) {
         const pinIdSet = new Set(pins.map((p) => p.id));
@@ -1229,7 +1299,6 @@
         return wiredIds;
     }
 
-    // กรณีหมุดที่เลือกเป็นหมุดป้ายสถานะลอยๆ (มีชื่อซ้ำกับหมุดจริงในผังแต่ไม่ได้ลากสาย) ให้สลับไปใช้หมุดตัวที่มีสายเชื่อมจริงอัตโนมัติ
     function resolveWiredTwinSourcePin(sourcePinId, pins, wiredIds) {
         const rawPin = pins.find((p) => p.id === sourcePinId);
         if (!rawPin || wiredIds.has(sourcePinId)) return rawPin || null;
@@ -1247,10 +1316,7 @@
         if (exactTwin) return exactTwin;
 
         if (rawFd) {
-            const fdBreakerTwin = wiredCandidates.find((p) => {
-                const t = p.scadaNode?.t || 'PIN';
-                return (t === 'CB' || t === 'RC') && extractPinFeederCode(p) === rawFd;
-            });
+            const fdBreakerTwin = wiredCandidates.find((p) => isSubstationBreakerOrSourceNode(p) && extractPinFeederCode(p) === rawFd);
             if (fdBreakerTwin) return fdBreakerTwin;
         }
         return rawPin;
@@ -1267,6 +1333,7 @@
         const srcPin = pinMap.get(effectiveSourceId);
 
         const autoLateral = filterOpts.autoLateral !== false;
+        const stationUg = filterOpts.stationUg !== false;
         const mustPassId = (filterOpts.mustPassId && filterOpts.mustPassId !== effectiveSourceId && pinMap.has(filterOpts.mustPassId)) ? filterOpts.mustPassId : '';
         const bypassIsolateId = (filterOpts.bypassIsolateId && filterOpts.bypassIsolateId !== effectiveSourceId && pinMap.has(filterOpts.bypassIsolateId)) ? filterOpts.bypassIsolateId : '';
         const notPassSet = new Set(Array.from(filterOpts.notPassIds || []).filter((id) => id && id !== effectiveSourceId && id !== mustPassId && pinMap.has(id)));
@@ -1276,10 +1343,28 @@
         const { adj, fullPhysAdj, physicalEdges, busbarHubIds } = buildScadaGraphs(pins, pinMap, stopAtOpenSwitch, ampCalcCfg?.cableKey || 'SAC185', autoLateral, bypassOpenSet);
         const { transitHubIds, blockedHubExitPairs } = buildTransitHubsAndFeederGate(effectiveSourceId, pinMap, adj, busbarHubIds);
 
-        // ระบบกันเหนียว: หากทางออกทุกเส้นจากหมุดต้นทางยังติดสถานะกั้นบัส ให้ปลดล็อกจุดเชื่อมประชิดทันทีเพื่อไม่ให้ระยะกลายเป็น 0
+        if (mustPassId && !busbarHubIds.has(mustPassId)) transitHubIds.add(mustPassId);
+        if (bypassIsolateId && !busbarHubIds.has(bypassIsolateId)) transitHubIds.add(bypassIsolateId);
+
+        const lockedFd = filterOpts._lockedFeederCode || '';
+        if (lockedFd && !extractPinFeederCode(srcPin)) {
+            [effectiveSourceId, ...Array.from(transitHubIds)].forEach((hubId) => {
+                const outEdges = (adj.get(hubId) || []).filter((nb) => nb.toId !== effectiveSourceId && !transitHubIds.has(nb.toId));
+                const tagged = outEdges.map((nb) => ({
+                    toId: nb.toId,
+                    fd: resolveBranchFeederCode(hubId, nb.toId, nb.fd, pinMap, adj)
+                }));
+                if (tagged.some((x) => x.fd === lockedFd)) {
+                    tagged.forEach((x) => {
+                        if (x.fd && x.fd !== lockedFd) blockedHubExitPairs.add(`${hubId}__${x.toId}`);
+                    });
+                }
+            });
+        }
+
         const startEdges = adj.get(effectiveSourceId) || [];
         if (startEdges.length > 0 && startEdges.every((nb) => isBarrierTerminalNode(pinMap.get(nb.toId), srcPin, stopAtOpenSwitch, bypassOpenSet, busbarHubIds, transitHubIds))) {
-            const srcFd = extractPinFeederCode(srcPin);
+            const srcFd = extractPinFeederCode(srcPin) || lockedFd;
             startEdges.forEach((nb) => {
                 transitHubIds.add(nb.toId);
                 if (srcFd) {
@@ -1292,15 +1377,54 @@
             });
         }
 
-        const upInfo = computeUpstreamFilterAndVector(effectiveSourceId, pins, pinMap, adj, fullPhysAdj, busbarHubIds, transitHubIds);
+        const upInfo = computeUpstreamFilterAndVector(effectiveSourceId, pins, pinMap, adj, fullPhysAdj, busbarHubIds, transitHubIds, stationUg);
         const upFilter = downstreamOnly ? upInfo : { blockedNodes: new Set(), blockedStartNeighbors: new Set() };
-        const useUpstreamZ = Boolean(ampCalcCfg && ampCalcCfg.sourceKey !== 'IDEAL_ZERO');
-        const initVec = useUpstreamZ ? upInfo.upstreamVec : { r1: 0, x1: 0, r0: 0, x0: 0 };
+        const useUpstreamZ = !ampCalcCfg || ampCalcCfg.sourceKey !== 'IDEAL_ZERO';
+        const stUgOnlyVec = stationUg ? getStationExitUgVector((upInfo.stationUgKm || 0) * 1000) : { r1: 0, x1: 0, r0: 0, x0: 0 };
+        const initVec = useUpstreamZ ? upInfo.upstreamVec : stUgOnlyVec;
+        const stationUgMeters = Math.round((upInfo.stationUgKm || 0) * 1000);
 
         const useMultiCableAmp = Boolean(ampCalcCfg && ampCalcCfg.ampVal > 0 && ampCalcCfg.useAmpSolver !== false);
+        const srcBus = ampCalcCfg ? (PEA_SOURCE_BUS_PRESETS[ampCalcCfg.sourceKey] || PEA_SOURCE_BUS_PRESETS.SUB_50MVA) : PEA_SOURCE_BUS_PRESETS.SUB_50MVA;
+        const busKv = ampCalcCfg?.busKv || DEFAULT_BUS_KV;
+        const calFactor = ampCalcCfg?.calFactor || 1.0;
+        const maxOriginAmp = ampCalcCfg ? Math.round(calcFaultCurrentAtVector(initVec, ampCalcCfg.faultType, srcBus, ampCalcCfg.rfOhm, busKv, calFactor)) : 0;
+        const allowClampAtRoot = !useUpstreamZ || upInfo.upstreamKm <= 0.05;
+
+        // กรณีเลือกสวิตช์ลูกข่าย (VS/VB/S/DF) แล้วกรอกกระแสสูงเกินพิกัดจุดนั้น ให้ถอยกลับไปเริ่มวัดจากต้นทาง CB/RC ของวงจรให้อัตโนมัติ
+        if (useMultiCableAmp && !allowClampAtRoot && ampCalcCfg.ampVal > maxOriginAmp && upInfo.parentBrkId && upInfo.parentBrkId !== effectiveSourceId && !filterOpts._autoSteppedBack) {
+            const origFd = extractPinFeederCode(srcPin);
+            const steppedOpts = Object.assign({}, filterOpts, {
+                mustPassId: '',
+                _autoSteppedBack: true,
+                _stepBackTargetId: effectiveSourceId,
+                _lockedFeederCode: origFd
+            });
+            let steppedRes = traceFaultLocations(upInfo.parentBrkId, targetKm, tolKm, stopAtOpenSwitch, true, ampCalcCfg, steppedOpts);
+            if ((!steppedRes || !steppedRes.candidates?.length) && stopAtOpenSwitch) {
+                steppedRes = traceFaultLocations(upInfo.parentBrkId, targetKm, tolKm, false, true, ampCalcCfg, steppedOpts);
+            }
+            if (steppedRes && !steppedRes.error && steppedRes.candidates?.length > 0) {
+                steppedRes.autoSteppedBackInfo = {
+                    fromPinId: effectiveSourceId,
+                    fromPinName: srcPin.name,
+                    fromMaxAmp: maxOriginAmp,
+                    toBrkName: steppedRes.srcPin?.name || upInfo.parentBrkName
+                };
+                return steppedRes;
+            }
+        }
+
+        // ชดเชยค่ารีแอกแตนซ์ของสาย UG ในสถานี 150 ม. สำหรับโหมดระบุระยะทางจากรีเลย์ (กม.)
+        const defaultCabKey = ampCalcCfg?.cableKey || document.getElementById('scadaFaultCableSelect')?.value || 'SAC185';
+        const refCabForRelay = PEA_22KV_CABLES[defaultCabKey] || PEA_22KV_CABLES.SAC185;
+        const ugRelayEqKm = (!useMultiCableAmp && stationUg && upInfo.stationUgKm > 0 && (isSubstationBreakerOrSourceNode(srcPin) || busbarHubIds.has(effectiveSourceId)))
+            ? (upInfo.stationUgKm * (PEA_22KV_CABLES.UG240.x1 / (refCabForRelay.x1 || 0.345)))
+            : 0;
+        const initRelayKm = (ugRelayEqKm > 0 && targetKm > ugRelayEqKm + 0.02) ? ugRelayEqKm : 0;
 
         const elecDist = new Map([[effectiveSourceId, 0]]);
-        const relayDist = new Map([[effectiveSourceId, 0]]);
+        const relayDist = new Map([[effectiveSourceId, initRelayKm]]);
         const groundDist = new Map([[effectiveSourceId, 0]]);
         const vecMap = new Map([[effectiveSourceId, { ...initVec }]]);
         const parentMap = new Map();
@@ -1346,12 +1470,6 @@
                 }
             });
         }
-
-        const srcBus = ampCalcCfg ? (PEA_SOURCE_BUS_PRESETS[ampCalcCfg.sourceKey] || PEA_SOURCE_BUS_PRESETS.SUB_50MVA) : PEA_SOURCE_BUS_PRESETS.SUB_50MVA;
-        const busKv = ampCalcCfg?.busKv || DEFAULT_BUS_KV;
-        const calFactor = ampCalcCfg?.calFactor || 1.0;
-        const maxOriginAmp = ampCalcCfg ? Math.round(calcFaultCurrentAtVector(initVec, ampCalcCfg.faultType, srcBus, ampCalcCfg.rfOhm, busKv, calFactor)) : 0;
-        const allowClampAtRoot = !useUpstreamZ || upInfo.upstreamKm <= 0.05;
 
         const tracedSegments = [], rfArcZones = [], rawCandidates = [];
         let maxReachKm = 0, furthestPin = srcPin, minEndFaultAmp = Infinity, exceededMidSwitchAmp = false;
@@ -1516,10 +1634,18 @@
 
         const outageReports = getRecentActiveOutageReports();
         const historyHotspots = getHistoricalFaultHotspots();
+        const stepBackTargetId = filterOpts._stepBackTargetId || '';
 
         rawCandidates.forEach((c) => {
             let score = rawCandidates.length === 1 ? 88 : 64;
             const reasons = [];
+
+            if (stepBackTargetId && pinMap.has(stepBackTargetId)) {
+                if (isNodeOnAncestorChain(stepBackTargetId, c.toId, parentMap) || isNodeOnAncestorChain(stepBackTargetId, c.fromId, parentMap)) {
+                    score += 18;
+                    reasons.push(`🎯 อยู่บนแนวสายเมนก่อนถึง ${pinMap.get(stepBackTargetId)?.name || ''}`);
+                }
+            }
 
             if (!useMultiCableAmp && ampCalcCfg?.ampVal > 0 && c.vecAtHit) {
                 const boltedMaxA = calcFaultCurrentAtVector(c.vecAtHit, ampCalcCfg.faultType, srcBus, 0, busKv, calFactor);
@@ -1609,6 +1735,7 @@
             candidates: rawCandidates, maxReachKm, furthestPin,
             ampCalcCfg, minEndFaultAmp,
             upstreamKm: useUpstreamZ ? upInfo.upstreamKm : 0,
+            stationUgMeters,
             exceededMidSwitchAmp, maxOriginAmp,
             mustPassPin: mustPassId ? pinMap.get(mustPassId) : null,
             bypassIsolatePin: bypassIsolateId ? pinMap.get(bypassIsolateId) : null,
@@ -1618,7 +1745,7 @@
     }
 
     // ========================================================================
-    // 7. การจัดการ UI, ดรอปดาวน์คัดเฉพาะหมุดมีสายเชื่อม, ป้ายตัด FI & เทียบสเกลวงจร
+    // 7. การจัดการ UI, ให้ CB/RC ทุกตัวอยู่กลุ่มต้นทางจ่ายไฟ & เทียบสเกลวงจร
     // ========================================================================
     function clearFaultLocatorOverlay() {
         faultLayerGroup?.clearLayers();
@@ -1708,7 +1835,7 @@
         if (phSel) phSel.value = 'LL';
         const tolSel = document.getElementById('scadaFaultTolSelect');
         if (tolSel) tolSel.value = '0.15';
-        saveCalcPrefs({ faultType: 'LL', rfOhm: 0 });
+        saveCalcPrefs({ faultType: 'LL' });
 
         const hintEl = document.getElementById('scadaFaultAmpCalcBadge');
         if (hintEl) {
@@ -1806,6 +1933,7 @@
         updateCalibBadgeUI(srcId);
     }
 
+    // จัดให้หมุด CB และ RC ทุกตัวเป็นกลุ่มต้นทางจ่ายไฟหลักทั้งหมดโดยไม่แบ่งแยกรหัสชื่อ
     function populateFaultSourceDropdown(preferFeeder = '', preferDevice = '', preferStation = '', preferIsolate = '') {
         const sel = document.getElementById('scadaFaultSourceSelect');
         if (!sel) return { unmatchedDeviceHint: '', matchedMustPassPin: null, matchedIsolatePin: null };
@@ -1820,20 +1948,26 @@
         const wiredIds = collectValidWiredPinIds(pins);
         const requireWired = wiredIds.size > 0;
 
-        // คัดเฉพาะสวิตช์/เบรกเกอร์ที่มีเส้นสายเชื่อมจริงในผังเท่านั้น (ตัดหมุดป้ายสถานะลอยๆ ที่มีชื่อซ้ำออกอัตโนมัติ)
-        const breakers = [], switches = [], wiredPlainPins = [];
+        const sourceBreakers = [], switches = [], wiredPlainPins = [];
         pins.forEach((p) => {
             if (requireWired && !wiredIds.has(p.id)) return;
-            const t = p.scadaNode?.t || 'PIN';
-            if (t === 'CB' || t === 'RC') breakers.push(p);
-            else if (['VB', 'VS', 'VSC', 'S', 'DF', 'GEN'].includes(t)) switches.push(p);
-            else if (wiredIds.has(p.id) && !isNodeTTap(p, pins)) wiredPlainPins.push(p);
+            const t = String(p.scadaNode?.t || 'PIN').toUpperCase();
+            if (t === 'CB' || t === 'RC' || /\(\s*(?:CB|RC)\b/i.test(String(p.name || ''))) {
+                sourceBreakers.push(p);
+            } else if (['VB', 'VS', 'VSC', 'S', 'DF', 'GEN'].includes(t)) {
+                switches.push(p);
+            } else if (wiredIds.has(p.id) && !isNodeTTap(p, pins)) {
+                wiredPlainPins.push(p);
+            }
         });
-        breakers.sort((a, b) => (isSubstationBreakerOrSourceNode(a) ? -1 : 1) - (isSubstationBreakerOrSourceNode(b) ? -1 : 1));
 
-        const allCandidates = [...breakers, ...switches, ...wiredPlainPins];
+        const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th');
+        sourceBreakers.sort(byName);
+        switches.sort(byName);
+
+        const allCandidates = [...sourceBreakers, ...switches, ...wiredPlainPins];
         const opts = [
-            ...breakers.map((b) => `<option value="${escHtml(b.id)}">■ [${escHtml(b.scadaNode?.t || 'CB')}] ${escHtml(b.name)}${b.scadaNode?.fd ? ` (${escHtml(b.scadaNode.fd)})` : ''}</option>`),
+            ...sourceBreakers.map((b) => `<option value="${escHtml(b.id)}">■ [${escHtml(b.scadaNode?.t || 'CB')}] ${escHtml(b.name)}${b.scadaNode?.fd ? ` (${escHtml(b.scadaNode.fd)})` : ''}</option>`),
             ...switches.map((s) => `<option value="${escHtml(s.id)}">${s.scadaNode?.t === 'VB' ? '▣' : '⚡'} [${escHtml(s.scadaNode?.t)}] ${escHtml(s.name)}</option>`),
             ...wiredPlainPins.map((wp) => `<option value="${escHtml(wp.id)}">📍 [หมุด] ${escHtml(wp.name)}</option>`)
         ];
@@ -1857,11 +1991,11 @@
             const numM = String(preferFeeder).match(/(\d+)\s*$/), fNum = numM ? parseInt(numM[1], 10) : null;
             const cleanFd = String(preferFeeder).trim().toUpperCase().replace(/\s+/g, '');
             const stPrefix = (String(preferStation || '').toUpperCase().match(/[A-Z]{2,4}/) || [''])[0];
-            const pool = breakers.length > 0 ? breakers : allCandidates;
+            const pool = sourceBreakers.length > 0 ? sourceBreakers : allCandidates;
             const scored = pool.map((b) => {
                 const bFd = String(b.scadaNode?.fd || '').toUpperCase().replace(/\s+/g, '');
                 const bTxt = `${bFd} ${b.name || ''} ${b.note || ''}`.toUpperCase();
-                let score = (isSubstationBreakerOrSourceNode(b) ? 18 : 0) + ((bFd && cleanFd && bFd === cleanFd) ? 120 : 0);
+                let score = (isSubstationBreakerOrSourceNode(b) ? 25 : 0) + ((bFd && cleanFd && bFd === cleanFd) ? 120 : 0);
                 if (fNum !== null) {
                     const fdM = Array.from(bTxt.matchAll(/(?:\b(?!KV)[A-Z]{2,4}\s*F?\s*0*(\d+)|\bF\s*0*(\d+)|วงจร\s*0*(\d+))(?![0-9]|KV)/gi));
                     if (fdM.some((m) => parseInt(m[1] || m[2] || m[3], 10) === fNum)) score += 65;
@@ -1882,7 +2016,9 @@
         }
         const matchedIsolatePin = findMatchingPinByTextHint(preferIsolate, allCandidates);
 
-        if (matchedFeederBreaker) {
+        if (devPin && isSubstationBreakerOrSourceNode(devPin) && (!matchedFeederBreaker || extractPinFeederCode(devPin) === extractPinFeederCode(matchedFeederBreaker))) {
+            sel.value = devPin.id;
+        } else if (matchedFeederBreaker) {
             sel.value = matchedFeederBreaker.id;
             if (devPin && devPin.id !== matchedFeederBreaker.id) matchedMustPassPin = devPin;
         } else if (devPin) {
@@ -1903,16 +2039,16 @@
         return { unmatchedDeviceHint, matchedMustPassPin, matchedIsolatePin };
     }
 
-    function getSelectedSourceUpstreamQuick(srcId, cableKey, stopOpen, autoLateral) {
-        if (!srcId) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0 };
+    function getSelectedSourceUpstreamQuick(srcId, cableKey, stopOpen, autoLateral, stationUg = true) {
+        if (!srcId) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0, stationUgKm: 0, parentBrkId: '', parentBrkName: '' };
         const pins = getVisibleScadaPins();
         const wiredIds = collectValidWiredPinIds(pins);
         const resolved = resolveWiredTwinSourcePin(srcId, pins, wiredIds);
-        if (!resolved) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0 };
+        if (!resolved) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0, stationUgKm: 0, parentBrkId: '', parentBrkName: '' };
         const pinMap = new Map(pins.map((p) => [p.id, p]));
         const { adj, fullPhysAdj, busbarHubIds } = buildScadaGraphs(pins, pinMap, stopOpen, cableKey, autoLateral, new Set([resolved.id]));
         const { transitHubIds } = buildTransitHubsAndFeederGate(resolved.id, pinMap, adj, busbarHubIds);
-        return computeUpstreamFilterAndVector(resolved.id, pins, pinMap, adj, fullPhysAdj, busbarHubIds, transitHubIds);
+        return computeUpstreamFilterAndVector(resolved.id, pins, pinMap, adj, fullPhysAdj, busbarHubIds, transitHubIds, stationUg);
     }
 
     function readPage2AmpCalcConfig(updateKmPreview = false) {
@@ -1923,7 +2059,8 @@
         const busKv = parseFloat(document.getElementById('scadaFaultBusKvSelect')?.value || String(DEFAULT_BUS_KV)) || DEFAULT_BUS_KV;
         const rfOhm = Math.max(0, parseFloat(document.getElementById('scadaFaultRfInput')?.value || '0') || 0);
         const autoLateral = document.getElementById('scadaFaultAutoLateralChk')?.checked !== false;
-        saveCalcPrefs({ faultType, cableKey, sourceKey, busKv, rfOhm, autoLateral });
+        const stationUg = document.getElementById('scadaFaultStationUgChk')?.checked !== false;
+        saveCalcPrefs({ faultType, cableKey, sourceKey, busKv, autoLateral, stationUg });
 
         const srcId = document.getElementById('scadaFaultSourceSelect')?.value || '';
         const calRec = getSourceCalibRecord(srcId);
@@ -1932,13 +2069,14 @@
         if (isNaN(ampRaw) || ampRaw <= 0) return null;
 
         const stopOpen = document.getElementById('scadaFaultStopOpenChk')?.checked !== false;
-        const upQuick = sourceKey !== 'IDEAL_ZERO'
-            ? getSelectedSourceUpstreamQuick(srcId, cableKey, stopOpen, autoLateral)
-            : { upstreamVec: null, upstreamKm: 0 };
+        const upQuick = getSelectedSourceUpstreamQuick(srcId, cableKey, stopOpen, autoLateral, stationUg);
+        const baseVec = sourceKey !== 'IDEAL_ZERO'
+            ? upQuick.upstreamVec
+            : (stationUg ? getStationExitUgVector((upQuick.stationUgKm || 0) * 1000) : null);
 
-        const solved = solveUniformDistanceKmFromAmp(ampRaw, faultType, cableKey, sourceKey, rfOhm, upQuick.upstreamVec, busKv, calFactor);
+        const solved = solveUniformDistanceKmFromAmp(ampRaw, faultType, cableKey, sourceKey, rfOhm, baseVec, busKv, calFactor);
         if (solved.error) return null;
-        const exceedsMidSwitch = Boolean(solved.clampedNearBus && upQuick.upstreamKm > 0.05);
+        const exceedsMidSwitch = Boolean(solved.clampedNearBus && upQuick.upstreamKm > 0.05 && sourceKey !== 'IDEAL_ZERO');
 
         if (updateKmPreview) {
             const tolSel = document.getElementById('scadaFaultTolSelect');
@@ -1947,7 +2085,10 @@
         return {
             ampVal: ampRaw, faultType, cableKey, sourceKey, busKv, rfOhm, calFactor, calRec,
             approxUniformKm: solved.km, clampedNearBus: solved.clampedNearBus,
-            exceedsMidSwitch, maxPossibleAmp: solved.maxPossibleAmp, upstreamKm: upQuick.upstreamKm,
+            exceedsMidSwitch, maxPossibleAmp: solved.maxPossibleAmp,
+            upstreamKm: sourceKey !== 'IDEAL_ZERO' ? upQuick.upstreamKm : 0,
+            stationUgMeters: Math.round((upQuick.stationUgKm || 0) * 1000),
+            parentBrkId: upQuick.parentBrkId || '', parentBrkName: upQuick.parentBrkName || '',
             useAmpSolver: true
         };
     }
@@ -1974,28 +2115,39 @@
 
         const kmTyped = parseFloat(document.getElementById('scadaFaultKmInput')?.value || '');
         const hasKmTyped = !isNaN(kmTyped) && kmTyped > 0;
+        const stationUgChk = document.getElementById('scadaFaultStationUgChk')?.checked !== false;
+        saveCalcPrefs({ stationUg: stationUgChk });
         const cfg = readPage2AmpCalcConfig(lastEditedMetric !== 'km' || !hasKmTyped);
         const hintEl = document.getElementById('scadaFaultAmpCalcBadge');
 
         if (hintEl) {
-            if (!cfg) {
+            if (!cfg && !hasKmTyped) {
                 hintEl.textContent = DEFAULT_AMP_HINT_TEXT;
                 hintEl.className = 'text-[10.5px] text-slate-400';
+            } else if (!cfg && hasKmTyped) {
+                const ugKmNote = stationUgChk ? ` • หักสาย UG ในสถานี ${DEFAULT_STATION_UG_METERS} ม. แล้ว` : '';
+                hintEl.textContent = `📏 คำนวณตามระยะรีเลย์ ${kmTyped.toFixed(2)} กม.${ugKmNote}`;
+                hintEl.className = 'text-[10.5px] text-sky-300 font-bold';
             } else if (lastEditedMetric === 'km' && hasKmTyped) {
-                hintEl.textContent = `📏 ใช้ระยะรีเลย์ ${kmTyped.toFixed(2)} กม. (ชดเชย X1 สายมุดดิน) + คานผลกระแส ${cfg.ampVal.toLocaleString()} A ตัดกิ่งย่อยที่เป็นไปไม่ได้`;
+                const ugNote = cfg.stationUgMeters > 0 ? ` + หัก UG สถานี ${cfg.stationUgMeters} ม.` : '';
+                hintEl.textContent = `📏 ใช้ระยะรีเลย์ ${kmTyped.toFixed(2)} กม. (ชดเชย X1${ugNote}) + คานผลกระแส ${cfg.ampVal.toLocaleString()} A`;
                 hintEl.className = 'text-[10.5px] text-sky-300 font-bold';
             } else if (cfg.exceedsMidSwitch) {
-                hintEl.textContent = `⚠️ กระแส ${cfg.ampVal.toLocaleString()} A สูงกว่าพิกัดลัดวงจร ณ หมุดนี้ (~${cfg.maxPossibleAmp.toLocaleString()} A) • แนะนำเลือก ■ CB/RC หน้าสถานีเป็นต้นทาง`;
-                hintEl.className = 'text-[10.5px] text-amber-300 font-bold';
+                const autoBackTxt = cfg.parentBrkName
+                    ? `กด "คำนวณจุด" เพื่อถอยไปเริ่มวัดจากต้นสาย (${cfg.parentBrkName}) อัตโนมัติ`
+                    : 'แนะนำเลือก ■ CB/RC ต้นทางจ่ายไฟ';
+                hintEl.textContent = `🔄 กระแส ${cfg.ampVal.toLocaleString()} A เกิดฝั่งต้นสายก่อนถึงสวิตช์นี้ (สูงสุดณจุดนี้ ~${cfg.maxPossibleAmp.toLocaleString()} A) • ${autoBackTxt}`;
+                hintEl.className = 'text-[10.5px] text-cyan-300 font-bold';
             } else if (cfg.clampedNearBus) {
-                hintEl.textContent = `⚡ กระแส ${cfg.ampVal.toLocaleString()} A สูงระดับหน้าบัสสถานี (สูงสุด ~${cfg.maxPossibleAmp.toLocaleString()} A) ➔ เริ่มจากต้นสาย`;
+                hintEl.textContent = `⚡ กระแส ${cfg.ampVal.toLocaleString()} A สูงระดับช่วงออกสถานี/Riser Pole (สูงสุด ~${cfg.maxPossibleAmp.toLocaleString()} A) ➔ เริ่มจากต้นสาย`;
                 hintEl.className = 'text-[10.5px] text-amber-300 font-bold';
             } else {
                 const fLabel = getFaultTypeLabelThai(cfg.faultType);
+                const ugTag = cfg.stationUgMeters > 0 ? ` • รวม UG สถานี ${cfg.stationUgMeters} ม.` : '';
                 const rfTag = cfg.rfOhm > 0 ? ` • หักดิน ${cfg.rfOhm}Ω` : '';
                 const calTag = cfg.calRec ? ` • ☁️ สเกลวงจร x${cfg.calFactor.toFixed(2)}` : '';
                 const upTxt = cfg.upstreamKm > 0.05 ? ` • รวมสายต้นน้ำ ${cfg.upstreamKm.toFixed(2)} กม.` : '';
-                hintEl.textContent = `⚡ ${cfg.ampVal.toLocaleString()} A (${fLabel} @ ${cfg.busKv}kV${rfTag}) ≈ ระยะสายเมน ${cfg.approxUniformKm.toFixed(2)} กม.${upTxt}${calTag}`;
+                hintEl.textContent = `⚡ ${cfg.ampVal.toLocaleString()} A (${fLabel} @ ${cfg.busKv}kV${ugTag}${rfTag}) ≈ ระยะสายอากาศ ${cfg.approxUniformKm.toFixed(2)} กม.${upTxt}${calTag}`;
                 hintEl.className = 'text-[10.5px] text-emerald-300 font-bold';
             }
         }
@@ -2044,10 +2196,11 @@
         const sourceKey = document.getElementById('scadaFaultSubZSelect')?.value || 'SUB_50MVA';
         const busKv = parseFloat(document.getElementById('scadaFaultBusKvSelect')?.value || String(DEFAULT_BUS_KV)) || DEFAULT_BUS_KV;
         const autoLateral = document.getElementById('scadaFaultAutoLateralChk')?.checked !== false;
+        const stationUg = document.getElementById('scadaFaultStationUgChk')?.checked !== false;
 
         const probe = traceFaultLocations(srcId, 999, 0, false, true, {
             ampVal: 0, faultType, cableKey, sourceKey, busKv, rfOhm: 0, calFactor: 1.0, useAmpSolver: false
-        }, { autoLateral });
+        }, { autoLateral, stationUg });
 
         const vecAtRef = probe.vecMap?.get(refPinId);
         if (!vecAtRef) return window.showToast?.('⚠️ หมุดที่เลือกไม่ได้เชื่อมต่อสายไฟถึงต้นทางวงจรนี้');
@@ -2135,6 +2288,7 @@
         const stopOpen = document.getElementById('scadaFaultStopOpenChk')?.checked !== false;
         const downstreamOnly = document.getElementById('scadaFaultDownstreamChk')?.checked !== false;
         const autoLateral = document.getElementById('scadaFaultAutoLateralChk')?.checked !== false;
+        const stationUg = document.getElementById('scadaFaultStationUgChk')?.checked !== false;
         const mustPassId = document.getElementById('scadaFaultMustPassSelect')?.value || '';
         const bypassIsolateId = document.getElementById('scadaFaultBypassIsolateSelect')?.value || '';
         const tripStatus = document.getElementById('scadaFaultTripModeSelect')?.value || 'AUTO';
@@ -2159,13 +2313,14 @@
         faultLayerGroup.clearLayers();
         const effectiveKm = (!preferKmSolver && ampCfg) ? ampCfg.approxUniformKm : kmVal;
         const res = traceFaultLocations(srcId, effectiveKm, tolVal, stopOpen, downstreamOnly, ampCfg, {
-            autoLateral, mustPassId, bypassIsolateId, notPassIds: excludedNotPassIds, tripStatus
+            autoLateral, stationUg, mustPassId, bypassIsolateId, notPassIds: excludedNotPassIds, tripStatus
         });
         if (res.error) return window.showToast?.('⚠️ ' + res.error);
         lastFaultResult = res;
 
-        if (res.redirectedFromUnwired && sel && Array.from(sel.options).some((o) => o.value === res.srcPin.id)) {
+        if ((res.redirectedFromUnwired || res.autoSteppedBackInfo) && sel && Array.from(sel.options).some((o) => o.value === res.srcPin.id)) {
             sel.value = res.srcPin.id;
+            onFaultAmpParamsChanged(false);
         }
         const fdFilterEl = document.getElementById('scadaFeederFilterSelect');
         if (fdFilterEl && fdFilterEl.value !== 'ALL' && fdFilterEl.value !== (res.srcPin?.scadaNode?.fd || '')) {
@@ -2215,7 +2370,7 @@
                 `<div class="text-[11px] text-slate-600">➡️ มุ่งหน้า: <b>${escHtml(c.towardName)}</b> (${escHtml(c.spec)})</div>` +
                 nearHtml +
                 reasonHtml +
-                `<div class="text-[10px] text-slate-400">พิกัด: ${c.lat}, ${c.lon} (ระยะถนน/ผัง ${c.totalGroundKm.toFixed(2)} กม.)</div>` +
+                `<div class="text-[10px] text-slate-400">พิกัด: ${c.lat}, ${c.lon} (ระยะถนน/ผัง ${c.totalGroundKm.toFixed(2)} กม.${res.stationUgMeters > 0 ? ` • รวมคิด UG สถานี ${res.stationUgMeters} ม.` : ''})</div>` +
                 `<div class="pt-1 grid grid-cols-2 gap-1">` +
                 `<button type="button" onclick="navigateToFaultCandidate(${idx})" style="background:#2563eb;color:#fff;padding:5px 6px;border-radius:8px;font-weight:700;font-size:10.5px;white-space:nowrap;">🚗 นำทาง Maps</button>` +
                 `<button type="button" onclick="openFaultStreetView(${c.lat},${c.lon})" style="background:#d97706;color:#fff;padding:5px 6px;border-radius:8px;font-weight:700;font-size:10.5px;white-space:nowrap;">🛣️ ส่องเสาจริง</button>` +
@@ -2229,6 +2384,9 @@
         if (resBox) {
             resBox.classList.remove('hidden');
             const diagNotices = [];
+            if (res.autoSteppedBackInfo) {
+                diagNotices.push(`<div class="px-2 py-1 bg-cyan-950/80 border border-cyan-400/50 rounded-lg text-[10.5px] text-cyan-200">🔄 <b>ถอยกลับต้นสายอัตโนมัติ:</b> กระแส ${ampCfg.ampVal.toLocaleString()} A เกิดก่อนถึงสวิตช์ <b>${escHtml(res.autoSteppedBackInfo.fromPinName)}</b> (~${res.autoSteppedBackInfo.fromMaxAmp.toLocaleString()} A) ระบบจึงเริ่มวัดจากต้นวงจร <b>${escHtml(res.autoSteppedBackInfo.toBrkName)}</b> ให้ทันที</div>`);
+            }
             if (res.impliedRfOhm !== null) {
                 const rfDesc = res.impliedRfOhm < 0.8
                     ? 'ลัดวงจรโดยตรง (สายขาดช็อตโครง/ลูกถ้วยแตก)'
@@ -2240,7 +2398,7 @@
 
             if (res.candidates.length === 0) {
                 if (res.exceededMidSwitchAmp) {
-                    resBox.innerHTML = `<div class="p-2 bg-amber-950/80 border border-amber-400/50 rounded-xl text-amber-200 text-[11px]">⚠️ กระแส <b>${ampCfg.ampVal.toLocaleString()} A</b> สูงกว่ากระแสลัดวงจรสูงสุด ณ จุด <b>${escHtml(res.srcPin.name)}</b> (~${res.maxOriginAmp.toLocaleString()} A) จุดเกิดเหตุอยู่<b>ฝั่งต้นสายก่อนถึงหมุดนี้</b> (แนะนำเปลี่ยนต้นทางเป็น ■ CB/RC หน้าสถานี)</div>`;
+                    resBox.innerHTML = `<div class="p-2 bg-amber-950/80 border border-amber-400/50 rounded-xl text-amber-200 text-[11px]">⚠️ กระแส <b>${ampCfg.ampVal.toLocaleString()} A</b> สูงกว่ากระแสลัดวงจรสูงสุด ณ จุด <b>${escHtml(res.srcPin.name)}</b> (~${res.maxOriginAmp.toLocaleString()} A) จุดเกิดเหตุอยู่<b>ฝั่งต้นสายก่อนถึงสวิตช์นี้</b> (แนะนำเปลี่ยนต้นทางเป็น ■ CB/RC)</div>`;
                 } else {
                     const endAmpNote = (ampCfg && isFinite(res.minEndFaultAmp)) ? ` (กระแสลัดวงจรต่ำสุดที่ปลายผังคือ ~${Math.round(res.minEndFaultAmp).toLocaleString()} A)` : '';
                     const filterHint = (res.mustPassPin || res.excludedPinsList?.length) ? ' หรือเกิดจากตัวกรองจุดผ่าน/ไม่ผ่านที่เลือกไว้' : '';
@@ -2250,10 +2408,11 @@
                     if (res.furthestPin) bounds.push([Number(res.furthestPin.lat), Number(res.furthestPin.lon)]);
                 }
             } else {
-                const upNote = res.upstreamKm > 0.05 ? ` • รวมสายต้นน้ำ ${res.upstreamKm.toFixed(2)} กม.` : '';
+                const ugHeadNote = res.stationUgMeters > 0 ? ` • รวม UG สถานี ${res.stationUgMeters} ม.` : '';
+                const upNote = res.upstreamKm > 0.05 ? ` • สายต้นน้ำ ${res.upstreamKm.toFixed(2)} กม.` : '';
                 const headTxt = (ampCfg && ampCfg.useAmpSolver !== false)
-                    ? `🎯 จัดอันดับ ${res.candidates.length} จุดคาดการณ์ จากกระแส ${ampCfg.ampVal.toLocaleString()} A${upNote}`
-                    : `🎯 จัดอันดับ ${res.candidates.length} จุดคาดการณ์ตามระยะรีเลย์ (${effectiveKm.toFixed(2)} กม.)`;
+                    ? `🎯 จัดอันดับ ${res.candidates.length} จุดคาดการณ์ จากกระแส ${ampCfg.ampVal.toLocaleString()} A${ugHeadNote}${upNote}`
+                    : `🎯 จัดอันดับ ${res.candidates.length} จุดคาดการณ์ตามระยะรีเลย์ (${effectiveKm.toFixed(2)} กม.${ugHeadNote})`;
                 resBox.innerHTML = `${diagNotices.join('')}` +
                     `<div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-rose-200 font-bold">` +
                     `<span class="min-w-0">${escHtml(headTxt)}</span>` +
@@ -2287,14 +2446,15 @@
     function buildFaultLocatorReportText() {
         if (!lastFaultResult?.candidates?.length) return '';
         const r = lastFaultResult, ac = r.ampCalcCfg;
+        const ugReportTag = r.stationUgMeters > 0 ? ` • รวมสาย UG ในสถานี ${r.stationUgMeters} ม.` : '';
         const metricLine = (ac && ac.useAmpSolver !== false)
-            ? `⚡ คำนวณจากกระแส : ${ac.ampVal.toLocaleString()} A (${getFaultTypeLabelThai(ac.faultType)} @ ${ac.busKv}kV${ac.rfOhm > 0 ? ` • ดิน ${ac.rfOhm} Ω` : ''})`
-            : `📏 ระยะจากรีเลย์ : ${r.targetKm.toFixed(2)} กม. (±${r.tolKm.toFixed(2)} กม.)${r.impliedRfOhm !== null ? ` • ประเมินความต้านทาน ~${r.impliedRfOhm} Ω` : ''}`;
+            ? `⚡ คำนวณจากกระแส : ${ac.ampVal.toLocaleString()} A (${getFaultTypeLabelThai(ac.faultType)} @ ${ac.busKv}kV${ugReportTag}${ac.rfOhm > 0 ? ` • ดิน ${ac.rfOhm} Ω` : ''})`
+            : `📏 ระยะจากรีเลย์ : ${r.targetKm.toFixed(2)} กม. (±${r.tolKm.toFixed(2)} กม.${ugReportTag})${r.impliedRfOhm !== null ? ` • ประเมินความต้านทาน ~${r.impliedRfOhm} Ω` : ''}`;
         const fiLine = r.mustPassPin ? `📟 ผ่านจุดเห็นฟอลต์ : ${r.mustPassPin.name}` : '';
         const isoLine = r.bypassIsolatePin ? `🔓 โซนหลังสวิตช์ปลด : ${r.bypassIsolatePin.name}` : '';
         const lines = [
-            `🎯 รายงานจุดคาดการณ์ตามแนวสาย 22kV (v3.2)`,
-            `⚡ ต้นทางวัดระยะ : ${r.srcPin.name}${r.srcPin.scadaNode?.fd ? ` (${r.srcPin.scadaNode.fd})` : ''}`,
+            `🎯 รายงานจุดคาดการณ์ตามแนวสาย 22kV (v3.5)`,
+            `⚡ ต้นทางจ่ายไฟ : ${r.srcPin.name}${r.srcPin.scadaNode?.fd ? ` (${r.srcPin.scadaNode.fd})` : ''}`,
             metricLine,
             fiLine,
             isoLine,
@@ -2357,7 +2517,6 @@
         }
 
         const prefs = loadCalcPrefs();
-        const rfInitVal = Number(prefs.rfOhm) > 0 ? String(prefs.rfOhm) : '';
         const cableOpts = Object.entries(PEA_22KV_CABLES).map(([k, v]) => `<option value="${k}"${prefs.cableKey === k ? ' selected' : ''}>${escHtml(v.label)}</option>`).join('');
         const subOpts = Object.entries(PEA_SOURCE_BUS_PRESETS).map(([k, v]) => `<option value="${k}"${prefs.sourceKey === k ? ' selected' : ''}>${escHtml(v.label)}</option>`).join('');
         const busKvOpts = [22.0, 22.4, 22.6, 22.8, 23.0].map((kv) => `<option value="${kv}"${Math.abs(Number(prefs.busKv) - kv) < 0.06 ? ' selected' : ''}>บัส ${kv.toFixed(1)} kV</option>`).join('');
@@ -2384,9 +2543,9 @@
             `<select id="scadaFaultCableSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-2 sm:col-span-3 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold">${cableOpts}</select>` +
             `<select id="scadaFaultSubZSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold">${subOpts}</select>` +
             `<select id="scadaFaultBusKvSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-1 px-1.5 py-1.5 rounded-lg bg-slate-800 text-cyan-200 border border-slate-600 text-[10.5px] font-bold">${busKvOpts}</select>` +
-            `<div class="col-span-2 sm:col-span-2 flex items-center bg-slate-800 border border-slate-600 rounded-lg px-2 py-1" title="ความต้านทานดิน/กิ่งไม้ (โอห์ม) ปกติช็อตตรงเว้นว่างหรือใส่ 0">` +
+            `<div class="col-span-2 sm:col-span-2 flex items-center bg-slate-800 border border-slate-600 rounded-lg px-2 py-1" title="ความต้านทานดิน/กิ่งไม้ (โอห์ม) ปกติช็อตตรงเว้นว่างเป็น 0">` +
             `<span class="text-[10px] text-amber-200/80 font-bold whitespace-nowrap mr-1.5">Ω ดิน:</span>` +
-            `<input type="number" step="0.5" min="0" max="50" id="scadaFaultRfInput" value="${rfInitVal}" onchange="onFaultAmpParamsChanged(true)" placeholder="0 (ปกติ)" class="w-full min-w-0 bg-transparent border-0 text-slate-100 text-[11px] font-extrabold text-center focus:outline-none"></div></div>` +
+            `<input type="number" step="0.5" min="0" max="50" id="scadaFaultRfInput" value="" onchange="onFaultAmpParamsChanged(true)" placeholder="0 (ปกติ)" class="w-full min-w-0 bg-transparent border-0 text-slate-100 text-[11px] font-extrabold text-center focus:outline-none"></div></div>` +
 
             `<div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5 pt-0.5">` +
             `<select id="scadaFaultMustPassSelect" onchange="onFaultConstraintChanged()" class="sm:col-span-3 px-2 py-1 rounded-lg bg-slate-800 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold"><option value="">🟢 ผ่านจุด/เห็นฟอลต์: ไม่ระบุ</option></select>` +
@@ -2402,7 +2561,8 @@
             `<div class="flex flex-wrap items-center gap-3">` +
             `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultStopOpenChk" checked onchange="onFaultConstraintChanged()" class="accent-rose-500 rounded"><span>หยุดที่สวิตช์ปลด (Tie)</span></label>` +
             `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultDownstreamChk" checked onchange="onFaultConstraintChanged()" class="accent-rose-500 rounded"><span>เฉพาะท้ายน้ำ</span></label>` +
-            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultAutoLateralChk"${prefs.autoLateral !== false ? ' checked' : ''} onchange="onFaultAmpParamsChanged(true)" class="accent-emerald-500 rounded"><span>ประเมินสายกิ่ง &amp; ชดเชย X1 มุดดิน / สายหย่อน</span></label>` +
+            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultStationUgChk"${prefs.stationUg !== false ? ' checked' : ''} onchange="onFaultAmpParamsChanged(true)" class="accent-cyan-400 rounded"><span class="text-cyan-200 font-semibold">คิดสาย UG ในสถานี 150 ม. ทุกวงจร</span></label>` +
+            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultAutoLateralChk"${prefs.autoLateral !== false ? ' checked' : ''} onchange="onFaultAmpParamsChanged(true)" class="accent-emerald-500 rounded"><span>ประเมินสายกิ่ง &amp; สายหย่อน (+3.5%)</span></label>` +
             `</div>` +
             `<button type="button" id="btnFaultToggleCalib" onclick="openFaultCalibrateModal()" class="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded-lg text-[10.5px] font-bold">🎯 เทียบสเกลวงจร</button>` +
             `</div>` +
@@ -2515,7 +2675,6 @@
                     const el = document.getElementById(id);
                     if (el) el.value = '';
                 });
-                saveCalcPrefs({ rfOhm: 0 });
 
                 const matchRes = populateFaultSourceDropdown(pkt.feeder || '', pkt.deviceHint || '', pkt.stationHint || '', pkt.isolateHint || '');
 
@@ -2628,7 +2787,8 @@
         let km = hasExplicitRelayKm ? explicitKm : 0;
         if (!hasExplicitRelayKm && amp > 0) {
             const prefs = loadCalcPrefs();
-            km = solveUniformDistanceKmFromAmp(amp, faultType, prefs.cableKey, prefs.sourceKey, 0, null, prefs.busKv || DEFAULT_BUS_KV, 1.0).km || 1.0;
+            const baseUgVec = prefs.stationUg !== false ? getStationExitUgVector(DEFAULT_STATION_UG_METERS) : null;
+            km = solveUniformDistanceKmFromAmp(amp, faultType, prefs.cableKey, prefs.sourceKey, 0, baseUgVec, prefs.busKv || DEFAULT_BUS_KV, 1.0).km || 1.0;
         }
         if (km <= 0 && (!amp || amp <= 0)) {
             return window.showToast?.('⚠️ กรุณากรอกกระแส A, B, C, G หรือระยะทาง (กม.) ก่อนกดดูจุดบนผัง');
@@ -2759,4 +2919,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initFaultLocatorModule);
     else initFaultLocatorModule();
 })();
-// ==================== จบไฟล์ scada-fault-locator.js (v3.2) ====================
+// ==================== จบไฟล์ scada-fault-locator.js (v3.5) ====================
