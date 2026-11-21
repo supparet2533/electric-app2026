@@ -1,7 +1,7 @@
 // ============================================================================
-// 🎯⚡ PEA SMART GRID — HIGH-PRECISION FAULT LOCATOR v3.1 (scada-fault-locator.js)
-// ชี้เป้าฟอลต์ 22kV แม่นยำสูง: ทะลุ RC กลางสาย + ทะลุสวิตช์ปลดแยกโซน + ชดเชย X1 เคเบิลมุดดิน
-// + ซิงค์สเกลวงจรข้ามเครื่องอัตโนมัติ + ตัด FI ไม่ขึ้นหลายจุด + Street View & หม้อแปลงใกล้เคียง
+// 🎯⚡ PEA SMART GRID — HIGH-PRECISION FAULT LOCATOR v3.1 Final (scada-fault-locator.js)
+// ชี้เป้าฟอลต์ 22kV แม่นยำสูง: ทะลุ RC กลางสาย + กั้นบัสสถานีอัตโนมัติ + ทะลุสวิตช์ปลดแยกโซน
+// + ชดเชย X1 เคเบิลมุดดิน + ซิงค์สเกลวงจรข้ามเครื่อง + ปุ่มคัดลอกสำหรับ LINE PC & Street View
 // ============================================================================
 (function () {
     'use strict';
@@ -127,7 +127,6 @@
         return merged;
     }
 
-    // ดึงค่าเทียบสเกลจาก elec_tech_locations_map ที่ซิงค์ผ่าน MQTT และ Google Sheets มาผสานลงเครื่องโดยไม่สร้างลูปส่งกลับ
     function pullCloudCalibIntoLocal() {
         try {
             const locMap = JSON.parse(localStorage.getItem(STORAGE_KEY_TECH_LOC) || '{}') || {};
@@ -164,7 +163,6 @@
         const regKey = CLOUD_CALIB_PREFIX + targetGrp;
         const nowIso = new Date().toISOString();
 
-        // เก็บเฉพาะรายการที่ยังไม่หมดอายุ (ตัด Tombstone เก่าเกิน 30 วันไม่ให้เปลืองพื้นที่ชีต)
         const compactCalib = {};
         const nowMs = Date.now();
         Object.entries(updatedCalibMap || {}).forEach(([k, rec]) => {
@@ -216,7 +214,8 @@
         if (!rec) {
             const pins = getVisibleScadaPins();
             const sp = pins.find((p) => p.id === sourcePinId);
-            const nameKey = sp?.name ? ('NAME::' + String(sp.name).trim().toUpperCase()) : '';
+            const ownerGrp = normGrp(sp?.ownerGroup) || getCurrentBranchForCalib();
+            const nameKey = sp?.name ? ('NAME::' + ownerGrp + '::' + String(sp.name).trim().toUpperCase()) : '';
             if (nameKey && map[nameKey]) rec = map[nameKey];
         }
         if (!rec || rec.deleted || typeof rec.factor !== 'number' || isNaN(rec.factor)) return null;
@@ -234,7 +233,7 @@
         const ownerGrp = normGrp(sourcePinObj?.ownerGroup) || getCurrentBranchForCalib();
         const nowIso = new Date().toISOString();
         const map = pullCloudCalibIntoLocal();
-        const nameKey = sourcePinObj?.name ? ('NAME::' + String(sourcePinObj.ownerGroup || ownerGrp) + '::' + String(sourcePinObj.name).trim().toUpperCase()) : '';
+        const nameKey = sourcePinObj?.name ? ('NAME::' + ownerGrp + '::' + String(sourcePinObj.name).trim().toUpperCase()) : '';
 
         const entry = recObjOrNull
             ? Object.assign({}, recObjOrNull, { ownerGroup: ownerGrp, deleted: false, updatedAt: nowIso })
@@ -365,7 +364,7 @@
     }
 
     // ========================================================================
-    // 3. ระบบเชื่อมแผนที่ Leaflet & สิทธิ์การมองเห็นหมุดของสาขา
+    // 3. ระบบเชื่อมแผนที่ Leaflet, ส่องเสาจริง & คัดลอกลงคลิปบอร์ดสำหรับ PC
     // ========================================================================
     function injectFaultLocatorStyles() {
         if (document.getElementById('peaScadaFaultLocatorCss') || !document.head) return;
@@ -433,6 +432,42 @@
         return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
     }
 
+    function copyTextReliableWithFeedback(text, toastMsg, btnEl = null) {
+        const showDone = () => {
+            window.showToast?.(toastMsg);
+            if (btnEl && btnEl.tagName === 'BUTTON') {
+                if (!btnEl.dataset.origLabel) btnEl.dataset.origLabel = btnEl.innerHTML;
+                btnEl.innerHTML = '✅ คัดลอกแล้ว!';
+                clearTimeout(btnEl.__copyFeedbackTimer);
+                btnEl.__copyFeedbackTimer = setTimeout(() => {
+                    if (btnEl.dataset.origLabel) btnEl.innerHTML = btnEl.dataset.origLabel;
+                }, 1700);
+            }
+        };
+
+        const legacyExecCopy = () => {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            try {
+                document.execCommand('copy');
+                showDone();
+            } catch (e) {
+                window.showToast?.('⚠️ คัดลอกอัตโนมัติไม่สำเร็จ กรุณาลองอีกครั้ง');
+            }
+            document.body.removeChild(ta);
+        };
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(showDone).catch(legacyExecCopy);
+        } else {
+            legacyExecCopy();
+        }
+    }
+
     function openFaultLineShareSafe(text) {
         const lineUrl = 'https://line.me/R/share?text=' + encodeURIComponent(text);
         const win = window.open(lineUrl, '_blank');
@@ -477,6 +512,52 @@
         if (/^(?:•\s*)?t-tap\b|จุดแทป|แทปสาย|แทปกลางสาย|หมุดแทป/i.test(`${pin.name || ''} ${pin.note || ''}`)) return true;
         if (Array.isArray(pin.scadaLines) && pin.scadaLines.some((l) => l && (l._ttapTrunk || l._ttapFromId))) return true;
         return Array.isArray(allPins) && allPins.some((p) => p && p.id !== pin.id && Array.isArray(p.scadaLines) && p.scadaLines.some((l) => l && l.to === pin.id && l._ttapId));
+    }
+
+    // ตรวจสอบรหัสฟีดเดอร์และตรวจจับหมุดเบรกเกอร์หัวสถานี (CB / GEN / S-01 หน้าสถานี) และจุดบัสรวมหน้าสถานี (Substation Busbar Hub)
+    function extractPinFeederCode(pin) {
+        if (!pin) return '';
+        const explicitFd = String(pin.scadaNode?.fd || '').trim().replace(/\s+/g, '').toUpperCase();
+        if (explicitFd) return explicitFd;
+        const m = String(pin.name || '').trim().match(/\b([A-Z]{2,4}\d{1,2})(?:S|VS|VSC|RC|CB|F|-)/i);
+        return m ? m[1].toUpperCase() : '';
+    }
+
+    function isSubstationBreakerOrSourceNode(pin) {
+        if (!pin) return false;
+        const eqT = pin.scadaNode?.t || 'PIN';
+        if (eqT === 'CB' || eqT === 'GEN') return true;
+        if ((eqT === 'RC' || eqT === 'VB') && /\b[A-Z]{2,4}\d{1,2}(?:S|CB|F)-0*1\b/i.test(String(pin.name || ''))) return true;
+        return false;
+    }
+
+    function detectSubstationBusbarHubIds(pins, pinMap, fullPhysAdj) {
+        const hubIds = new Set();
+        pins.forEach((p) => {
+            if (!p) return;
+            const eqT = p.scadaNode?.t || 'PIN';
+            if (eqT === 'GEN' || /^(?:สฟฟ\.?|สถานีไฟฟ้า)|busbar|\bbus\b/i.test(String(p.name || '').trim())) {
+                hubIds.add(p.id);
+                return;
+            }
+            if (isSubstationBreakerOrSourceNode(p)) return;
+            const nbs = fullPhysAdj.get(p.id) || [];
+            if (nbs.length < 2) return;
+            const connectedBreakerFeeders = new Set();
+            let breakerCount = 0;
+            nbs.forEach((nb) => {
+                if ((nb.groundKm ?? nb.lenKm) > 0.45) return;
+                const nbP = pinMap.get(nb.toId);
+                if (nbP && isSubstationBreakerOrSourceNode(nbP)) {
+                    breakerCount++;
+                    connectedBreakerFeeders.add(extractPinFeederCode(nbP) || nbP.id);
+                }
+            });
+            if (breakerCount >= 2 && connectedBreakerFeeders.size >= 2) {
+                hubIds.add(p.id);
+            }
+        });
+        return hubIds;
     }
 
     // ========================================================================
@@ -583,7 +664,8 @@
             const children = treeChildren.get(u) || [];
             if (!children.length) return;
             const uPin = pinMap.get(u);
-            const uIsJunction = (deg.get(u) || 0) >= 3 || isNodeTTap(uPin, pins);
+            const uIsBreakerOrRc = isSubstationBreakerOrSourceNode(uPin) || uPin?.scadaNode?.t === 'RC';
+            const uIsJunction = !uIsBreakerOrRc && ((deg.get(u) || 0) >= 3 || isNodeTTap(uPin, pins));
             let longestChildIdx = -1, longestReach = -1;
             children.forEach(({ idx, child }) => {
                 const r = rawEdges[idx].groundLenKm + (maxSubtreeKm.get(child) || 0);
@@ -620,7 +702,6 @@
             re.behindDf = Boolean(behindDfNode.has(re.uId) || behindDfNode.has(re.vId) || pinMap.get(re.uId)?.scadaNode?.t === 'DF' || pinMap.get(re.vId)?.scadaNode?.t === 'DF');
             re.slackFactor = chosen.isUg ? UG_SLACK_FACTOR : OVERHEAD_SAG_FACTOR;
             re.elecLenKm = re.groundLenKm * re.slackFactor;
-            // ชดเชยสัดส่วนค่า X1 สำหรับโหมดอ่านระยะทางจากรีเลย์สถานี (โดยเฉพาะช่วงสายเคเบิลมุดดิน UG240 ที่ X1 ต่ำกว่าสายอากาศ 3 เท่า)
             re.x1Ratio = chosen.x1 / refX1;
             re.relayLenKm = re.elecLenKm * re.x1Ratio;
         });
@@ -647,8 +728,6 @@
                     rawPhysEdges.push({ uId: p.id, vId: dst.id, groundLenKm, explicitCab, edge: e });
                 }
 
-                // หมายเหตุสำคัญ: ไม่ตัดเส้นสายที่มี e.off === true ทิ้ง เพราะโซนที่เกิดฟอลต์มักถูกปลดไฟเป็นเส้นดับ (e.off) อยู่แล้ว!
-                // กั้นเฉพาะจุดจัมพ์ปลดถาวร (manualNO / st === 'O') เว้นแต่ปลายสายเป็นหมุดที่สั่งทะลุปลดแยกโซน
                 const isBypassedWire = Boolean(bypassOpenSet && (bypassOpenSet.has(p.id) || bypassOpenSet.has(dst.id)));
                 if (stopAtOpenSwitch && !isBypassedWire && (e.manualNO === true || e.st === 'O')) return;
                 if (seenActiveGeom.has(geomSig)) return;
@@ -675,11 +754,12 @@
             adj.get(ae.vId).push({ toId: ae.uId, lenKm: ae.elecLenKm, relayKm: ae.relayLenKm, groundKm: ae.groundLenKm, cabProf: ae.cabProf, pts: ae.revPts });
         });
 
-        return { adj, fullPhysAdj, physicalEdges: rawActiveEdges };
+        const busbarHubIds = detectSubstationBusbarHubIds(pins, pinMap, fullPhysAdj);
+        return { adj, fullPhysAdj, physicalEdges: rawActiveEdges, busbarHubIds };
     }
 
     // ========================================================================
-    // 5. เรขาคณิตตัดเส้นสาย, แก้ตรรกะ RC กลางสาย, จุดสังเกตหม้อแปลง & ประวัติฟอลต์ซ้ำซาก
+    // 5. เรขาคณิตตัดเส้นสาย, กั้นบัสสถานี/ทะลุ RC กลางสาย & จุดสังเกตหม้อแปลง
     // ========================================================================
     function resolveRealDestinationName(startToId, fromId, pinMap, adj, allPins) {
         const firstPin = pinMap.get(startToId);
@@ -736,12 +816,13 @@
         return out;
     }
 
-    // กั้นเฉพาะ CB สถานีปลายทาง (ส่วน RC และสวิตช์กลางสายที่ปิดจ่ายไฟอยู่ st === 'C' หรืออยู่ในรายการทะลุปลดแยกโซน ให้วิ่งผ่านได้ตามจริง)
-    function isBarrierTerminalNode(pin, sourcePinId, stopAtOpenSwitch, bypassOpenSet = null) {
-        if (!pin || pin.id === sourcePinId) return false;
-        const eqT = pin.scadaNode?.t || 'PIN';
-        if (eqT === 'CB') return true;
+    // กั้นหมุดบัสสถานี (busbarHubIds) และเบรกเกอร์ต้นสถานี (CB / GEN / S-01) ไม่ให้วิ่งย้อนข้ามวงจร แต่ยอมให้ทะลุ RC กลางสายที่ปิดจ่ายไฟอยู่ (st === 'C') ได้ตลอดสาย
+    function isBarrierTerminalNode(pin, sourcePin, stopAtOpenSwitch, bypassOpenSet = null, busbarHubIds = null) {
+        if (!pin || !sourcePin || pin.id === sourcePin.id) return false;
+        if (busbarHubIds && busbarHubIds.has(pin.id)) return true;
+        if (isSubstationBreakerOrSourceNode(pin)) return true;
         if (bypassOpenSet && bypassOpenSet.has(pin.id)) return false;
+        const eqT = pin.scadaNode?.t || 'PIN';
         return Boolean(stopAtOpenSwitch && SWITCHABLE_TYPES.has(eqT) && (pin.scadaNode?.st || 'C') === 'O');
     }
 
@@ -788,7 +869,6 @@
         return pts;
     }
 
-    // ค้นหาหมุดหม้อแปลงหรือจุดสังเกตในรัศมี 180 เมตรจากจุดคาดการณ์ (แม้ไม่ได้ลากสายแรงสูงเชื่อมทับ)
     function findNearbyLandmarkPin(lat, lon, pins, excludeRefName) {
         let best = null, bestScore = -Infinity;
         pins.forEach((p) => {
@@ -876,7 +956,6 @@
             if (rk && delReg[rk]) return;
             if (typeof window.canCurrentUserSeeJob === 'function' && !window.canCurrentUserSeeJob(j)) return;
 
-            // ข้ามงานสดที่เพิ่งแจ้งใน 2 ชั่วโมงล่าสุด (ใช้ใน getRecentActiveOutageReports แยกแล้ว)
             const jMs = Number(j.createdAtMs || 0) || (j.timestamp ? new Date(j.timestamp).getTime() : 0);
             if (jMs > 0 && Math.abs(nowMs - jMs) < 2 * 3600000) return;
 
@@ -898,12 +977,28 @@
         return hotspots.slice(0, 80);
     }
 
-    // แก้ตรรกะ RC กลางสาย: เฉพาะ CB เท่านั้นที่อยู่ติดบัสสถานี (upstream = 0) ส่วน RC กลางสายจะคำนวณอิมพีแดนซ์ย้อนกลับไปหา CB ต้นทางให้อัตโนมัติ!
-    function computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, activeAdj, fullPhysAdj) {
+    function computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, activeAdj, fullPhysAdj, busbarHubIds = null) {
         const zeroVec = { r1: 0, x1: 0, r0: 0, x0: 0 };
-        const srcPin = pinMap.get(sourcePinId), srcT = srcPin?.scadaNode?.t || 'PIN';
-        if (srcT === 'CB') {
-            return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
+        const srcPin = pinMap.get(sourcePinId);
+        const hubs = busbarHubIds || new Set();
+        if (!srcPin) return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
+
+        // กรณีหมุดที่เลือกคือเบรกเกอร์ต้นสถานีเอง (CB, GEN หรือ S-01 หน้าสถานี): บล็อกฝั่งบัสสถานีทั้งหมดไม่ให้ย้อนไปวงจรอื่น
+        if (isSubstationBreakerOrSourceNode(srcPin) || hubs.has(sourcePinId)) {
+            const blockedNodes = new Set(), blockedStartNeighbors = new Set();
+            const srcFd = extractPinFeederCode(srcPin);
+            if (!hubs.has(sourcePinId)) {
+                (fullPhysAdj.get(sourcePinId) || []).forEach((nb) => {
+                    const nbP = pinMap.get(nb.toId);
+                    if (!nbP) return;
+                    const nbFd = extractPinFeederCode(nbP);
+                    if (hubs.has(nb.toId) || isSubstationBreakerOrSourceNode(nbP) || (srcFd && nbFd && srcFd !== nbFd && (nb.groundKm ?? nb.lenKm) < 0.45)) {
+                        blockedNodes.add(nb.toId);
+                        blockedStartNeighbors.add(nb.toId);
+                    }
+                });
+            }
+            return { blockedNodes, blockedStartNeighbors, upstreamVec: zeroVec, upstreamKm: 0 };
         }
 
         const runDijkstra = (adjGraph, startId, ignoreOpenSw, skipNodeId = null) => {
@@ -915,15 +1010,14 @@
                 vis.add(u);
                 if (u !== startId) {
                     const uP = pinMap.get(u), eqT = uP?.scadaNode?.t || 'PIN', st = uP?.scadaNode?.st || 'C';
-                    // หยุดที่ CB สถานีเท่านั้น (ยอมให้วิ่งผ่าน RC กลางสายที่ปิดอยู่เพื่อหา CB ต้นสายจริงได้)
-                    if (eqT === 'CB') continue;
+                    if (isSubstationBreakerOrSourceNode(uP) || hubs.has(u)) continue;
                     if (!ignoreOpenSw && SWITCHABLE_TYPES.has(eqT) && st === 'O') continue;
                 }
                 const uVec = vMap.get(u) || zeroVec;
                 (adjGraph.get(u) || []).forEach((nb) => {
                     if (nb.toId === skipNodeId) return;
                     const nbP = pinMap.get(nb.toId), nbT = nbP?.scadaNode?.t || 'PIN', nbSt = nbP?.scadaNode?.st || 'C';
-                    if (!ignoreOpenSw && nbT !== 'CB' && SWITCHABLE_TYPES.has(nbT) && nbSt === 'O') return;
+                    if (!ignoreOpenSw && !isSubstationBreakerOrSourceNode(nbP) && !hubs.has(nb.toId) && SWITCHABLE_TYPES.has(nbT) && nbSt === 'O') return;
                     const nd = du + nb.lenKm;
                     if (nd < (dMap.get(nb.toId) ?? Infinity)) {
                         dMap.set(nb.toId, nd);
@@ -939,40 +1033,27 @@
             return { dMap, vMap };
         };
 
-        const cbPins = pins.filter((p) => p.id !== sourcePinId && p.scadaNode?.t === 'CB');
-        const rcPins = pins.filter((p) => p.id !== sourcePinId && p.scadaNode?.t === 'RC');
+        const stationRoots = pins.filter((p) => p.id !== sourcePinId && isSubstationBreakerOrSourceNode(p) && p.scadaNode?.t !== 'GEN');
+        const fallbackRoots = pins.filter((p) => p.id !== sourcePinId && (p.scadaNode?.t === 'CB' || p.scadaNode?.t === 'RC' || hubs.has(p.id)));
+        const candidateRoots = stationRoots.length > 0 ? stationRoots : fallbackRoots;
+        if (!candidateRoots.length) return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
 
         let useGraph = activeAdj, ignoreOpen = false;
         let resFromSrc = runDijkstra(useGraph, sourcePinId, false, null);
-        let rootPool = cbPins.filter((b) => resFromSrc.dMap.has(b.id));
+        let rootPool = candidateRoots.filter((b) => resFromSrc.dMap.has(b.id));
 
-        if (!rootPool.length && cbPins.length > 0) {
+        if (!rootPool.length) {
             useGraph = fullPhysAdj; ignoreOpen = true;
             resFromSrc = runDijkstra(useGraph, sourcePinId, true, null);
-            rootPool = cbPins.filter((b) => resFromSrc.dMap.has(b.id));
-        }
-
-        // กรณีผังสาขานั้นไม่มีหมุด CB เลย: หากต้นทางเป็น RC ให้ถือเป็นหัวสาย แต่ถ้าต้นทางเป็นสวิตช์ย่อยให้ยึด RC เป็นหัวสายแทน
-        if (!rootPool.length) {
-            if (srcT === 'RC') {
-                return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
-            }
-            useGraph = activeAdj; ignoreOpen = false;
-            resFromSrc = runDijkstra(useGraph, sourcePinId, false, null);
-            rootPool = rcPins.filter((r) => resFromSrc.dMap.has(r.id));
-            if (!rootPool.length && rcPins.length > 0) {
-                useGraph = fullPhysAdj; ignoreOpen = true;
-                resFromSrc = runDijkstra(useGraph, sourcePinId, true, null);
-                rootPool = rcPins.filter((r) => resFromSrc.dMap.has(r.id));
-            }
+            rootPool = candidateRoots.filter((b) => resFromSrc.dMap.has(b.id));
         }
         if (!rootPool.length) return { blockedNodes: new Set(), blockedStartNeighbors: new Set(), upstreamVec: zeroVec, upstreamKm: 0 };
 
-        const srcFd = String(srcPin?.scadaNode?.fd || '').trim().toUpperCase();
+        const srcFd = extractPinFeederCode(srcPin);
         rootPool.sort((a, b) => {
             const aClosed = (a.scadaNode?.st || 'C') !== 'O' ? 1 : 0, bClosed = (b.scadaNode?.st || 'C') !== 'O' ? 1 : 0;
-            const aFd = (srcFd && String(a.scadaNode?.fd || '').trim().toUpperCase() === srcFd) ? 1 : 0;
-            const bFd = (srcFd && String(b.scadaNode?.fd || '').trim().toUpperCase() === srcFd) ? 1 : 0;
+            const aFd = (srcFd && extractPinFeederCode(a) === srcFd) ? 1 : 0;
+            const bFd = (srcFd && extractPinFeederCode(b) === srcFd) ? 1 : 0;
             return (bFd - aFd) || (bClosed - aClosed) || ((resFromSrc.dMap.get(a.id) ?? Infinity) - (resFromSrc.dMap.get(b.id) ?? Infinity));
         });
 
@@ -1014,7 +1095,7 @@
     }
 
     // ========================================================================
-    // 6. แกนประมวลผลชี้เป้าหลัก + คานผลกฎของโอห์ม + จัดอันดับความน่าจะเป็น (v3.1)
+    // 6. แกนประมวลผลชี้เป้าหลัก + คานผลกฎของโอห์ม + จัดอันดับความน่าจะเป็น (v3.1 Final)
     // ========================================================================
     function traceFaultLocations(sourcePinId, targetKm, tolKm, stopAtOpenSwitch, downstreamOnly, ampCalcCfg = null, filterOpts = {}) {
         const pins = getVisibleScadaPins(), pinMap = new Map(pins.map((p) => [p.id, p]));
@@ -1028,8 +1109,8 @@
         const bypassOpenSet = new Set([sourcePinId, mustPassId, bypassIsolateId].filter(Boolean));
         const tripStatus = filterOpts.tripStatus || 'AUTO';
 
-        const { adj, fullPhysAdj, physicalEdges } = buildScadaGraphs(pins, pinMap, stopAtOpenSwitch, ampCalcCfg?.cableKey || 'SAC185', autoLateral, bypassOpenSet);
-        const upInfo = computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, adj, fullPhysAdj);
+        const { adj, fullPhysAdj, physicalEdges, busbarHubIds } = buildScadaGraphs(pins, pinMap, stopAtOpenSwitch, ampCalcCfg?.cableKey || 'SAC185', autoLateral, bypassOpenSet);
+        const upInfo = computeUpstreamFilterAndVector(sourcePinId, pins, pinMap, adj, fullPhysAdj, busbarHubIds);
         const upFilter = downstreamOnly ? upInfo : { blockedNodes: new Set(), blockedStartNeighbors: new Set() };
         const useUpstreamZ = Boolean(ampCalcCfg && ampCalcCfg.sourceKey !== 'IDEAL_ZERO');
         const initVec = useUpstreamZ ? upInfo.upstreamVec : { r1: 0, x1: 0, r0: 0, x0: 0 };
@@ -1050,9 +1131,8 @@
             if (visited.has(u)) continue;
             visited.add(u);
 
-            // หากหมุด u อยู่ในรายการ "FI ไม่ขึ้น / ไฟไม่ผ่าน" ให้หยุดขยายเลยหมุด u ออกไป (แต่ยังคำนวณบนช่วงสายก่อนถึงหมุด u ได้)
             if (u !== sourcePinId && notPassSet.has(u)) continue;
-            if (isBarrierTerminalNode(pinMap.get(u), sourcePinId, stopAtOpenSwitch, bypassOpenSet)) continue;
+            if (isBarrierTerminalNode(pinMap.get(u), srcPin, stopAtOpenSwitch, bypassOpenSet, busbarHubIds)) continue;
 
             const uElec = elecDist.get(u) || 0;
             const uRelay = relayDist.get(u) || 0;
@@ -1062,7 +1142,7 @@
 
             (adj.get(u) || []).forEach((nb) => {
                 if ((u === sourcePinId && upFilter.blockedStartNeighbors.has(nb.toId)) || upFilter.blockedNodes.has(nb.toId)) return;
-                if (isBarrierTerminalNode(pinMap.get(nb.toId), sourcePinId, stopAtOpenSwitch, bypassOpenSet)) return;
+                if (isBarrierTerminalNode(pinMap.get(nb.toId), srcPin, stopAtOpenSwitch, bypassOpenSet, busbarHubIds)) return;
                 const nextElec = uElec + nb.lenKm;
                 const nextRelay = uRelay + nb.relayKm;
                 const nextCost = useMultiCableAmp ? nextElec : nextRelay;
@@ -1095,6 +1175,12 @@
 
         const evaluateDirectedSpan = (fromId, toId, pts, fullGroundKm, fullElecKm, spanElecLimitKm, edgeRecord) => {
             if (spanElecLimitKm <= 1e-6 || (fromId === sourcePinId && upFilter.blockedStartNeighbors.has(toId))) return;
+            const dstPin = pinMap.get(toId);
+            // ป้องกันการลากเส้นประย้อนเข้าจุดบัสสถานี (busbarHubIds) หรือเบรกเกอร์หัวฟีดเดอร์ของวงจรอื่น
+            if (toId !== sourcePinId && (busbarHubIds.has(toId) || isSubstationBreakerOrSourceNode(dstPin))) {
+                return;
+            }
+
             const duElec = elecDist.get(fromId);
             const duRelay = relayDist.get(fromId);
             if (duElec === undefined || duRelay === undefined) return;
@@ -1108,7 +1194,6 @@
             const spanRelayLimitKm = spanElecLimitKm * x1Ratio;
             const endElecKm = duElec + spanElecLimitKm;
             const endRelayKm = duRelay + spanRelayLimitKm;
-            const dstPin = pinMap.get(toId);
             if (endElecKm > maxReachKm) { maxReachKm = endElecKm; furthestPin = dstPin || furthestPin; }
             const spanPts = spanGroundLimitKm < fullGroundKm - 1e-5 ? slicePolylineUpToGroundKm(pts, spanGroundLimitKm).path : pts;
 
@@ -1140,7 +1225,6 @@
                     }
                 }
             } else {
-                // โหมดวัดระยะจากรีเลย์สถานี (ชดเชยสัดส่วน X1 ของสายเคเบิลมุดดินและชนิดสายจริงอัตโนมัติ)
                 if (endRelayKm < targetKm) {
                     if (passedMustNode && spanPts.length >= 2) tracedSegments.push(spanPts);
                     return;
@@ -1200,8 +1284,8 @@
 
         physicalEdges.forEach((er) => {
             if (upFilter.blockedNodes.has(er.uId) || upFilter.blockedNodes.has(er.vId)) return;
-            const hasU = elecDist.has(er.uId) && !notPassSet.has(er.uId) && !isBarrierTerminalNode(pinMap.get(er.uId), sourcePinId, stopAtOpenSwitch, bypassOpenSet);
-            const hasV = elecDist.has(er.vId) && !notPassSet.has(er.vId) && !isBarrierTerminalNode(pinMap.get(er.vId), sourcePinId, stopAtOpenSwitch, bypassOpenSet);
+            const hasU = elecDist.has(er.uId) && !notPassSet.has(er.uId) && !isBarrierTerminalNode(pinMap.get(er.uId), srcPin, stopAtOpenSwitch, bypassOpenSet, busbarHubIds);
+            const hasV = elecDist.has(er.vId) && !notPassSet.has(er.vId) && !isBarrierTerminalNode(pinMap.get(er.vId), srcPin, stopAtOpenSwitch, bypassOpenSet, busbarHubIds);
             const L = er.elecLenKm;
             if (hasU && hasV) {
                 const du = elecDist.get(er.uId), dv = elecDist.get(er.vId);
@@ -1212,11 +1296,10 @@
             else if (!hasU && hasV) evaluateDirectedSpan(er.vId, er.uId, er.revPts, er.groundLenKm, L, L, er);
         });
 
-        // Fallback อัจฉริยะ: หากมีจุดเห็นฟอลต์จริง (mustPassId) หรือถูกบีบโซนด้วย notPassSet แต่ระยะคำนวณคลาดเคลื่อนไปนอกกรอบ ให้ชี้เป้าในโซนบังคับจริง
         let clampedToMustPass = false;
         if (rawCandidates.length === 0 && mustPassId && elecDist.has(mustPassId) && !notPassSet.has(mustPassId)) {
             const mpPin = pinMap.get(mustPassId);
-            const mpOut = (adj.get(mustPassId) || []).filter((nb) => !upFilter.blockedNodes.has(nb.toId));
+            const mpOut = (adj.get(mustPassId) || []).filter((nb) => !upFilter.blockedNodes.has(nb.toId) && !busbarHubIds.has(nb.toId) && !isSubstationBreakerOrSourceNode(pinMap.get(nb.toId)));
             if (mpOut.length > 0 && mpPin) {
                 clampedToMustPass = true;
                 mpOut.slice(0, 2).forEach((nb) => {
@@ -1246,7 +1329,6 @@
             }
         }
 
-        // จัดอันดับความแม่นยำ: ทาบใบงานไฟดับแท็บ 2 + คานผลกฎของโอห์ม (กรณีมีทั้ง กม. และ แอมป์) + สถานะ T/L + ประวัติเกิดเหตุซ้ำซาก
         const outageReports = getRecentActiveOutageReports();
         const historyHotspots = getHistoricalFaultHotspots();
 
@@ -1254,7 +1336,6 @@
             let score = rawCandidates.length === 1 ? 88 : 64;
             const reasons = [];
 
-            // คานผลกฎของโอห์ม เมื่อรู้ทั้งระยะรีเลย์ (กม.) และกระแสวัดจริง (แอมป์)
             if (!useMultiCableAmp && ampCalcCfg?.ampVal > 0 && c.vecAtHit) {
                 const boltedMaxA = calcFaultCurrentAtVector(c.vecAtHit, ampCalcCfg.faultType, srcBus, 0, busKv, calFactor);
                 c.boltedMaxAmp = Math.round(boltedMaxA);
@@ -1414,6 +1495,11 @@
         if (lastFaultResult) executeFaultDistanceSearch(0, 'auto');
     }
 
+    function onFaultConstraintChanged() {
+        onFaultAmpParamsChanged(false);
+        if (lastFaultResult) executeFaultDistanceSearch(0, 'auto');
+    }
+
     function resetFaultLocatorInputs(silent = false) {
         activePacketApplySeq++;
         lastEditedMetric = 'auto';
@@ -1483,14 +1569,14 @@
         const isoSel = document.getElementById('scadaFaultBypassIsolateSelect');
         const calRefSel = document.getElementById('scadaCalibRefPinSelect');
 
-        const filteredPins = allCandidates.filter((p) => p.id !== srcId);
+        const filteredPins = allCandidates.filter((p) => p.id !== srcId && p.scadaNode?.t !== 'GEN');
         const switchOpts = filteredPins.map((p) => {
             const t = p.scadaNode?.t || 'หมุด';
             const openTag = (p.scadaNode?.st === 'O') ? ' (ปลด O)' : '';
             return `<option value="${escHtml(p.id)}">[${escHtml(t)}] ${escHtml(p.name)}${openTag}</option>`;
         }).join('');
 
-        const openSwitchCandidates = filteredPins.filter((p) => SWITCHABLE_TYPES.has(p.scadaNode?.t || '') && (p.scadaNode?.st === 'O' || true));
+        const openSwitchCandidates = filteredPins.filter((p) => SWITCHABLE_TYPES.has(p.scadaNode?.t || ''));
         const isoOpts = openSwitchCandidates.map((p) => {
             const stTag = p.scadaNode?.st === 'O' ? '🔓 ปลดอยู่ • ' : '';
             return `<option value="${escHtml(p.id)}">${stTag}[${escHtml(p.scadaNode?.t)}] ${escHtml(p.name)}</option>`;
@@ -1553,7 +1639,7 @@
             else if (['VB', 'VS', 'VSC', 'S', 'DF', 'GEN'].includes(t)) switches.push(p);
             else if (wiredIds.has(p.id) && !isNodeTTap(p, pins)) wiredPlainPins.push(p);
         });
-        breakers.sort((a, b) => (a.scadaNode?.t === 'CB' ? -1 : 1) - (b.scadaNode?.t === 'CB' ? -1 : 1));
+        breakers.sort((a, b) => (isSubstationBreakerOrSourceNode(a) ? -1 : 1) - (isSubstationBreakerOrSourceNode(b) ? -1 : 1));
 
         const allCandidates = [...breakers, ...switches, ...wiredPlainPins];
         const opts = [
@@ -1578,7 +1664,7 @@
             const scored = pool.map((b) => {
                 const bFd = String(b.scadaNode?.fd || '').toUpperCase().replace(/\s+/g, '');
                 const bTxt = `${bFd} ${b.name || ''} ${b.note || ''}`.toUpperCase();
-                let score = (b.scadaNode?.t === 'CB' ? 18 : 0) + ((bFd && cleanFd && bFd === cleanFd) ? 120 : 0);
+                let score = (isSubstationBreakerOrSourceNode(b) ? 18 : 0) + ((bFd && cleanFd && bFd === cleanFd) ? 120 : 0);
                 if (fNum !== null) {
                     const fdM = Array.from(bTxt.matchAll(/(?:\b(?!KV)[A-Z]{2,4}\s*F?\s*0*(\d+)|\bF\s*0*(\d+)|วงจร\s*0*(\d+))(?![0-9]|KV)/gi));
                     if (fdM.some((m) => parseInt(m[1] || m[2] || m[3], 10) === fNum)) score += 65;
@@ -1624,8 +1710,8 @@
         if (!srcId) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0 };
         const pins = getVisibleScadaPins(), pinMap = new Map(pins.map((p) => [p.id, p]));
         if (!pinMap.has(srcId)) return { upstreamVec: { r1: 0, x1: 0, r0: 0, x0: 0 }, upstreamKm: 0 };
-        const { adj, fullPhysAdj } = buildScadaGraphs(pins, pinMap, stopOpen, cableKey, autoLateral, new Set([srcId]));
-        return computeUpstreamFilterAndVector(srcId, pins, pinMap, adj, fullPhysAdj);
+        const { adj, fullPhysAdj, busbarHubIds } = buildScadaGraphs(pins, pinMap, stopOpen, cableKey, autoLateral, new Set([srcId]));
+        return computeUpstreamFilterAndVector(srcId, pins, pinMap, adj, fullPhysAdj, busbarHubIds);
     }
 
     function readPage2AmpCalcConfig(updateKmPreview = false) {
@@ -1666,7 +1752,8 @@
     }
 
     function onFaultKmManualInput() {
-        lastEditedMetric = 'km';
+        const kmRaw = (document.getElementById('scadaFaultKmInput')?.value || '').trim();
+        lastEditedMetric = kmRaw !== '' ? 'km' : 'auto';
         onFaultAmpParamsChanged(false);
     }
 
@@ -1682,32 +1769,34 @@
         const srcId = document.getElementById('scadaFaultSourceSelect')?.value || '';
         updateCalibBadgeUI(srcId);
 
-        const cfg = readPage2AmpCalcConfig(lastEditedMetric === 'amp');
         const kmTyped = parseFloat(document.getElementById('scadaFaultKmInput')?.value || '');
+        const hasKmTyped = !isNaN(kmTyped) && kmTyped > 0;
+        const cfg = readPage2AmpCalcConfig(lastEditedMetric !== 'km' || !hasKmTyped);
         const hintEl = document.getElementById('scadaFaultAmpCalcBadge');
 
         if (hintEl) {
             if (!cfg) {
                 hintEl.textContent = DEFAULT_AMP_HINT_TEXT;
                 hintEl.className = 'text-[10.5px] text-slate-400';
-            } else if (lastEditedMetric === 'km' && kmTyped > 0) {
+            } else if (lastEditedMetric === 'km' && hasKmTyped) {
                 hintEl.textContent = `📏 ใช้ระยะรีเลย์ ${kmTyped.toFixed(2)} กม. (ชดเชย X1 สายมุดดิน) + คานผลกระแส ${cfg.ampVal.toLocaleString()} A ตัดกิ่งย่อยที่เป็นไปไม่ได้`;
                 hintEl.className = 'text-[10.5px] text-sky-300 font-bold';
             } else if (cfg.exceedsMidSwitch) {
-                hintEl.textContent = `⚠️ กระแส ${cfg.ampVal.toLocaleString()} A สูงกว่าพิกัดลัดวงจร ณ หมุดนี้ (~${cfg.maxPossibleAmp.toLocaleString()} A) • แนะนำเลือก ■ CB หน้าสถานีเป็นต้นทาง`;
+                hintEl.textContent = `⚠️ กระแส ${cfg.ampVal.toLocaleString()} A สูงกว่าพิกัดลัดวงจร ณ หมุดนี้ (~${cfg.maxPossibleAmp.toLocaleString()} A) • แนะนำเลือก ■ CB/RC หน้าสถานีเป็นต้นทาง`;
                 hintEl.className = 'text-[10.5px] text-amber-300 font-bold';
             } else if (cfg.clampedNearBus) {
                 hintEl.textContent = `⚡ กระแส ${cfg.ampVal.toLocaleString()} A สูงระดับหน้าบัสสถานี (สูงสุด ~${cfg.maxPossibleAmp.toLocaleString()} A) ➔ ชี้เป้าต้นสาย`;
                 hintEl.className = 'text-[10.5px] text-amber-300 font-bold';
             } else {
                 const fLabel = getFaultTypeLabelThai(cfg.faultType);
+                const rfTag = cfg.rfOhm > 0 ? ` • หักดิน ${cfg.rfOhm}Ω` : '';
                 const calTag = cfg.calRec ? ` • ☁️ สเกลวงจร x${cfg.calFactor.toFixed(2)}` : '';
                 const upTxt = cfg.upstreamKm > 0.05 ? ` • รวมสายต้นน้ำ ${cfg.upstreamKm.toFixed(2)} กม.` : '';
-                hintEl.textContent = `⚡ ${cfg.ampVal.toLocaleString()} A (${fLabel} @ ${cfg.busKv}kV) ≈ ระยะสายเมน ${cfg.approxUniformKm.toFixed(2)} กม.${upTxt}${calTag}`;
+                hintEl.textContent = `⚡ ${cfg.ampVal.toLocaleString()} A (${fLabel} @ ${cfg.busKv}kV${rfTag}) ≈ ระยะสายเมน ${cfg.approxUniformKm.toFixed(2)} กม.${upTxt}${calTag}`;
                 hintEl.className = 'text-[10.5px] text-emerald-300 font-bold';
             }
         }
-        if (triggerSearch && (cfg || kmTyped > 0)) executeFaultDistanceSearch(0, lastEditedMetric);
+        if (triggerSearch && (cfg || hasKmTyped)) executeFaultDistanceSearch(0, lastEditedMetric);
     }
 
     function updateCalibBadgeUI(srcId) {
@@ -1796,7 +1885,7 @@
     }
 
     // ========================================================================
-    // 8. การวาดหมุดเป้าหมายลงแผนที่, Street View, นำทาง Maps และแชร์รายงานเข้า LINE
+    // 8. การวาดหมุดเป้าหมายลงแผนที่, ปุ่มคัดลอกสำหรับ PC & ปุ่มส่งเข้า LINE
     // ========================================================================
     function navigateToFaultCandidate(idx) {
         const c = lastFaultResult?.candidates?.[idx];
@@ -1856,7 +1945,7 @@
             renderExcludedNotPassChips();
         }
 
-        if (!srcId) return window.showToast?.('⚠️ กรุณาตั้งค่าหมุด ■ CB หรือลากสายเชื่อมหมุดต้นทางในผังก่อนครับ');
+        if (!srcId) return window.showToast?.('⚠️ กรุณาตั้งค่าหมุด ■ CB/RC หรือลากสายเชื่อมหมุดต้นทางในผังก่อนครับ');
         if (!hasKm && !ampCfg) {
             return window.showToast?.('⚠️ กรุณากรอก "ระยะรีเลย์ (กม.)" หรือ "กระแสฟอลต์ (แอมป์)" อย่างใดอย่างหนึ่งก่อนกดชี้เป้าครับ');
         }
@@ -1922,10 +2011,11 @@
                 nearHtml +
                 reasonHtml +
                 `<div class="text-[10px] text-slate-400">พิกัด: ${c.lat}, ${c.lon} (ระยะถนน/ผัง ${c.totalGroundKm.toFixed(2)} กม.)</div>` +
-                `<div class="pt-1 grid grid-cols-3 gap-1">` +
-                `<button type="button" onclick="navigateToFaultCandidate(${idx})" style="background:#2563eb;color:#fff;padding:5px 4px;border-radius:8px;font-weight:700;font-size:10.5px;">🚗 นำทาง</button>` +
-                `<button type="button" onclick="openFaultStreetView(${c.lat},${c.lon})" style="background:#d97706;color:#fff;padding:5px 4px;border-radius:8px;font-weight:700;font-size:10.5px;">🛣️ ส่องเสาจริง</button>` +
-                `<button type="button" onclick="shareFaultLocatorReportToLine()" style="background:#00B900;color:#fff;padding:5px 4px;border-radius:8px;font-weight:700;font-size:10.5px;">💬 ส่ง LINE</button>` +
+                `<div class="pt-1 grid grid-cols-2 gap-1">` +
+                `<button type="button" onclick="navigateToFaultCandidate(${idx})" style="background:#2563eb;color:#fff;padding:5px 6px;border-radius:8px;font-weight:700;font-size:10.5px;white-space:nowrap;">🚗 นำทาง Maps</button>` +
+                `<button type="button" onclick="openFaultStreetView(${c.lat},${c.lon})" style="background:#d97706;color:#fff;padding:5px 6px;border-radius:8px;font-weight:700;font-size:10.5px;white-space:nowrap;">🛣️ ส่องเสาจริง</button>` +
+                `<button type="button" onclick="copyFaultLocatorReport(this)" style="background:#334155;color:#fde047;border:1px solid rgba(251,191,36,0.55);padding:5px 6px;border-radius:8px;font-weight:700;font-size:10.5px;white-space:nowrap;">📋 คัดลอก</button>` +
+                `<button type="button" onclick="shareFaultLocatorReportToLine()" style="background:#00B900;color:#fff;padding:5px 6px;border-radius:8px;font-weight:700;font-size:10.5px;white-space:nowrap;">💬 ส่งเข้า LINE</button>` +
                 `</div></div>`
             );
         });
@@ -1945,7 +2035,7 @@
 
             if (res.candidates.length === 0) {
                 if (res.exceededMidSwitchAmp) {
-                    resBox.innerHTML = `<div class="p-2 bg-amber-950/80 border border-amber-400/50 rounded-xl text-amber-200 text-[11px]">⚠️ กระแส <b>${ampCfg.ampVal.toLocaleString()} A</b> สูงกว่ากระแสลัดวงจรสูงสุด ณ จุด <b>${escHtml(res.srcPin.name)}</b> (~${res.maxOriginAmp.toLocaleString()} A) จุดเกิดเหตุอยู่<b>ฝั่งต้นสายก่อนถึงหมุดนี้</b> (แนะนำเปลี่ยนต้นทางเป็น ■ CB หน้าสถานี)</div>`;
+                    resBox.innerHTML = `<div class="p-2 bg-amber-950/80 border border-amber-400/50 rounded-xl text-amber-200 text-[11px]">⚠️ กระแส <b>${ampCfg.ampVal.toLocaleString()} A</b> สูงกว่ากระแสลัดวงจรสูงสุด ณ จุด <b>${escHtml(res.srcPin.name)}</b> (~${res.maxOriginAmp.toLocaleString()} A) จุดเกิดเหตุอยู่<b>ฝั่งต้นสายก่อนถึงหมุดนี้</b> (แนะนำเปลี่ยนต้นทางเป็น ■ CB/RC หน้าสถานี)</div>`;
                 } else {
                     const endAmpNote = (ampCfg && isFinite(res.minEndFaultAmp)) ? ` (กระแสลัดวงจรต่ำสุดที่ปลายผังคือ ~${Math.round(res.minEndFaultAmp).toLocaleString()} A)` : '';
                     const filterHint = (res.mustPassPin || res.excludedPinsList?.length) ? ' หรือเกิดจากตัวกรองจุดผ่าน/ไม่ผ่านที่เลือกไว้' : '';
@@ -1959,7 +2049,14 @@
                 const headTxt = (ampCfg && ampCfg.useAmpSolver !== false)
                     ? `🎯 จัดอันดับ ${res.candidates.length} จุดคาดการณ์ จากกระแส ${ampCfg.ampVal.toLocaleString()} A${upNote}`
                     : `🎯 จัดอันดับ ${res.candidates.length} จุดคาดการณ์ตามระยะรีเลย์ (${effectiveKm.toFixed(2)} กม.)`;
-                resBox.innerHTML = `${diagNotices.join('')}<div class="flex items-center justify-between text-[11px] text-rose-200 font-bold"><span>${escHtml(headTxt)}</span><button type="button" onclick="shareFaultLocatorReportToLine()" class="bg-[#00B900] text-white px-2 py-0.5 rounded-lg text-[10px] font-extrabold">💬 ส่งพิกัดเข้า LINE</button></div><div class="grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1 max-h-32 overflow-y-auto">` +
+                resBox.innerHTML = `${diagNotices.join('')}` +
+                    `<div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-rose-200 font-bold">` +
+                    `<span class="min-w-0">${escHtml(headTxt)}</span>` +
+                    `<div class="flex items-center gap-1 shrink-0 ml-auto">` +
+                    `<button type="button" onclick="copyFaultLocatorReport(this)" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-amber-400/50 px-2.5 py-1 rounded-lg text-[10px] font-extrabold whitespace-nowrap shadow-sm transition">📋 คัดลอก</button>` +
+                    `<button type="button" onclick="shareFaultLocatorReportToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-extrabold whitespace-nowrap shadow-sm transition">💬 ส่งเข้า LINE</button>` +
+                    `</div></div>` +
+                    `<div class="grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1 max-h-32 overflow-y-auto">` +
                     res.candidates.map((c, i) => {
                         const offTxt = c.refOffsetMeters >= 1000 ? `${(c.refOffsetMeters / 1000).toFixed(2)} กม.` : `${c.refOffsetMeters} ม.`;
                         const topCls = (i === 0 && res.candidates.length > 1) ? 'border-emerald-400/80 bg-emerald-950/50' : 'border-rose-400/40 bg-slate-950/90';
@@ -1982,8 +2079,8 @@
         });
     }
 
-    function shareFaultLocatorReportToLine() {
-        if (!lastFaultResult?.candidates?.length) return window.showToast?.('⚠️ ยังไม่มีจุดคาดการณ์ฟอลต์สำหรับส่ง LINE');
+    function buildFaultLocatorReportText() {
+        if (!lastFaultResult?.candidates?.length) return '';
         const r = lastFaultResult, ac = r.ampCalcCfg;
         const metricLine = (ac && ac.useAmpSolver !== false)
             ? `⚡ คำนวณจากกระแส : ${ac.ampVal.toLocaleString()} A (${getFaultTypeLabelThai(ac.faultType)} @ ${ac.busKv}kV${ac.rfOhm > 0 ? ` • ดิน ${ac.rfOhm} Ω` : ''})`
@@ -2010,8 +2107,19 @@
                 `   🛣️ ส่องเสาจริง: https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${c.lat},${c.lon}`
             );
         });
-        const msg = lines.join('\n');
-        window.copyTechText?.(msg, '💬 คัดลอกพิกัดและลิงก์ Street View แล้ว กำลังเปิด LINE...');
+        return lines.join('\n');
+    }
+
+    function copyFaultLocatorReport(btnEl = null) {
+        const msg = buildFaultLocatorReportText();
+        if (!msg) return window.showToast?.('⚠️ ยังไม่มีจุดคาดการณ์ฟอลต์สำหรับคัดลอก');
+        copyTextReliableWithFeedback(msg, '📋 คัดลอกผลชี้เป้าและพิกัดแล้ว! (วางใน LINE PC ได้เลย)', btnEl);
+    }
+
+    function shareFaultLocatorReportToLine() {
+        const msg = buildFaultLocatorReportText();
+        if (!msg) return window.showToast?.('⚠️ ยังไม่มีจุดคาดการณ์ฟอลต์สำหรับส่ง LINE');
+        copyTextReliableWithFeedback(msg, '💬 คัดลอกพิกัดและลิงก์ Street View แล้ว กำลังเปิด LINE...');
         openFaultLineShareSafe(msg);
     }
 
@@ -2070,14 +2178,16 @@
             `<option value="LG"${prefs.faultType === 'LG' ? ' selected' : ''}>🌱 ลงดิน 1 เฟส (LG)</option></select>` +
             `<select id="scadaFaultCableSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-2 sm:col-span-3 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold">${cableOpts}</select>` +
             `<select id="scadaFaultSubZSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold">${subOpts}</select>` +
-            `<select id="scadaFaultBusKvSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-2 px-1.5 py-1.5 rounded-lg bg-slate-800 text-cyan-200 border border-slate-600 text-[11px] font-bold">${busKvOpts}</select>` +
-            `<input type="number" step="0.5" min="0" max="50" id="scadaFaultRfInput" value="${rfInitVal}" title="ความต้านทานดิน/กิ่งไม้ (โอห์ม)" onchange="onFaultAmpParamsChanged(true)" placeholder="Ω ดิน" class="col-span-2 sm:col-span-1 px-1.5 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold text-center"></div>` +
+            `<select id="scadaFaultBusKvSelect" onchange="onFaultAmpParamsChanged(true)" class="col-span-1 sm:col-span-1 px-1.5 py-1.5 rounded-lg bg-slate-800 text-cyan-200 border border-slate-600 text-[10.5px] font-bold">${busKvOpts}</select>` +
+            `<div class="col-span-2 sm:col-span-2 flex items-center bg-slate-800 border border-slate-600 rounded-lg px-2 py-1" title="ความต้านทานดิน/กิ่งไม้ (โอห์ม) ปกติช็อตตรงเว้นว่างหรือใส่ 0">` +
+            `<span class="text-[10px] text-amber-200/80 font-bold whitespace-nowrap mr-1.5">Ω ดิน:</span>` +
+            `<input type="number" step="0.5" min="0" max="50" id="scadaFaultRfInput" value="${rfInitVal}" onchange="onFaultAmpParamsChanged(true)" placeholder="0 (ปกติ)" class="w-full min-w-0 bg-transparent border-0 text-slate-100 text-[11px] font-extrabold text-center focus:outline-none"></div></div>` +
 
             `<div class="grid grid-cols-1 sm:grid-cols-12 gap-1.5 pt-0.5">` +
-            `<select id="scadaFaultMustPassSelect" onchange="if(lastFaultResult)executeFaultDistanceSearch(0,'auto');" class="sm:col-span-3 px-2 py-1 rounded-lg bg-slate-800 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold"><option value="">🟢 ผ่านจุด/เห็นฟอลต์: ไม่ระบุ</option></select>` +
+            `<select id="scadaFaultMustPassSelect" onchange="onFaultConstraintChanged()" class="sm:col-span-3 px-2 py-1 rounded-lg bg-slate-800 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold"><option value="">🟢 ผ่านจุด/เห็นฟอลต์: ไม่ระบุ</option></select>` +
             `<select id="scadaFaultNotPassSelect" onchange="addFaultExcludedNotPassPin(this.value)" class="sm:col-span-4 px-2 py-1 rounded-lg bg-slate-800 text-rose-300 border border-rose-500/40 text-[11px] font-bold"><option value="">➕ ตัดจุด FI ปกติ/ไฟไม่ผ่าน (เลือกสะสมได้)...</option></select>` +
-            `<select id="scadaFaultBypassIsolateSelect" onchange="if(lastFaultResult)executeFaultDistanceSearch(0,'auto');" class="sm:col-span-3 px-2 py-1 rounded-lg bg-slate-800 text-sky-300 border border-sky-500/40 text-[11px] font-bold"><option value="">🔓 ทะลุสวิตช์เพิ่งปลดแยกโซน: ไม่ระบุ</option></select>` +
-            `<select id="scadaFaultTripModeSelect" onchange="if(lastFaultResult)executeFaultDistanceSearch(0,'auto');" class="sm:col-span-2 px-2 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold"><option value="AUTO">อาการ: อัตโนมัติ</option><option value="TL">🔒 T/L (ล็อกเอาต์)</option><option value="TR">🔄 T/R (ชั่วคราว)</option></select>` +
+            `<select id="scadaFaultBypassIsolateSelect" onchange="onFaultConstraintChanged()" class="sm:col-span-3 px-2 py-1 rounded-lg bg-slate-800 text-sky-300 border border-sky-500/40 text-[11px] font-bold"><option value="">🔓 ทะลุสวิตช์เพิ่งปลดแยกโซน: ไม่ระบุ</option></select>` +
+            `<select id="scadaFaultTripModeSelect" onchange="onFaultConstraintChanged()" class="sm:col-span-2 px-2 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[11px] font-bold"><option value="AUTO">อาการ: อัตโนมัติ</option><option value="TL">🔒 T/L (ล็อกเอาต์)</option><option value="TR">🔄 T/R (ชั่วคราว)</option></select>` +
             `</div>` +
             `<div id="scadaFaultExcludedChipsBar" class="hidden flex flex-wrap items-center gap-1 pt-0.5"></div>` +
 
@@ -2085,8 +2195,8 @@
 
             `<div class="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-300">` +
             `<div class="flex flex-wrap items-center gap-3">` +
-            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultStopOpenChk" checked onchange="onFaultAmpParamsChanged(false)" class="accent-rose-500 rounded"><span>หยุดที่สวิตช์ปลด (Tie)</span></label>` +
-            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultDownstreamChk" checked class="accent-rose-500 rounded"><span>เฉพาะท้ายน้ำ</span></label>` +
+            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultStopOpenChk" checked onchange="onFaultConstraintChanged()" class="accent-rose-500 rounded"><span>หยุดที่สวิตช์ปลด (Tie)</span></label>` +
+            `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultDownstreamChk" checked onchange="onFaultConstraintChanged()" class="accent-rose-500 rounded"><span>เฉพาะท้ายน้ำ</span></label>` +
             `<label class="inline-flex items-center gap-1.5 cursor-pointer select-none"><input type="checkbox" id="scadaFaultAutoLateralChk"${prefs.autoLateral !== false ? ' checked' : ''} onchange="onFaultAmpParamsChanged(true)" class="accent-emerald-500 rounded"><span>ประเมินสายกิ่ง &amp; ชดเชย X1 มุดดิน / สายหย่อน</span></label>` +
             `</div>` +
             `<button type="button" id="btnFaultToggleCalib" onclick="openFaultCalibrateModal()" class="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded-lg text-[10.5px] font-bold">🎯 เทียบสเกลวงจร</button>` +
@@ -2196,10 +2306,12 @@
 
                 excludedNotPassIds.clear();
                 renderExcludedNotPassChips();
-                ['scadaFaultMustPassSelect', 'scadaFaultBypassIsolateSelect'].forEach((id) => {
+                // รีเซ็ตตัวกรองและค่าความต้านทานดินเก่าไม่ให้ค้างข้ามใบงานใหม่
+                ['scadaFaultMustPassSelect', 'scadaFaultBypassIsolateSelect', 'scadaFaultRfInput'].forEach((id) => {
                     const el = document.getElementById(id);
                     if (el) el.value = '';
                 });
+                saveCalcPrefs({ rfOhm: 0 });
 
                 const matchRes = populateFaultSourceDropdown(pkt.feeder || '', pkt.deviceHint || '', pkt.stationHint || '', pkt.isolateHint || '');
 
@@ -2312,13 +2424,12 @@
         let km = hasExplicitRelayKm ? explicitKm : 0;
         if (!hasExplicitRelayKm && amp > 0) {
             const prefs = loadCalcPrefs();
-            km = solveUniformDistanceKmFromAmp(amp, faultType, prefs.cableKey, prefs.sourceKey, prefs.rfOhm, null, prefs.busKv || DEFAULT_BUS_KV, 1.0).km || 1.0;
+            km = solveUniformDistanceKmFromAmp(amp, faultType, prefs.cableKey, prefs.sourceKey, 0, null, prefs.busKv || DEFAULT_BUS_KV, 1.0).km || 1.0;
         }
         if (km <= 0 && (!amp || amp <= 0)) {
             return window.showToast?.('⚠️ กรุณากรอกกระแส A, B, C, G หรือระยะทาง (กม.) ก่อนกดชี้เป้า');
         }
 
-        // รองรับคลายลิงก์สั้น maps.app.goo.gl จากช่องพิกัดแท็บ 1 อัตโนมัติ
         const rawGpsTxt = (document.getElementById('gpsInput')?.value || '').trim();
         let reporterCoords = typeof window.deepParseCoords === 'function' ? window.deepParseCoords(rawGpsTxt) : null;
         if (!reporterCoords && rawGpsTxt && SHORT_URL_REGEX.test(rawGpsTxt) && typeof window.resolveGoogleShortLinkUniversal === 'function') {
@@ -2417,9 +2528,10 @@
     Object.assign(window, {
         toggleScadaFaultLocatorPanel, executeFaultDistanceSearch, clearFaultLocatorOverlay,
         resetFaultLocatorInputs, clearQuickFaultLocatorFromMainForm,
-        zoomToFaultCandidate, navigateToFaultCandidate, openFaultStreetView, shareFaultLocatorReportToLine,
+        zoomToFaultCandidate, navigateToFaultCandidate, openFaultStreetView,
+        buildFaultLocatorReportText, copyFaultLocatorReport, shareFaultLocatorReportToLine,
         triggerFaultLocatorFromMainForm, refreshFaultSourceOptions, onQuickFaultKmBarInput,
-        onFaultAmpParamsChanged, onFaultKmManualInput, onFaultFilterPinsChanged,
+        onFaultAmpParamsChanged, onFaultKmManualInput, onFaultFilterPinsChanged, onFaultConstraintChanged,
         addFaultExcludedNotPassPin, removeFaultExcludedNotPassPin, clearAllFaultExcludedPins,
         openFaultCalibrateModal, saveFaultFeederCalibration, clearFaultFeederCalibration,
         syncMainFormFaultCurrentsToQuickBar
@@ -2443,4 +2555,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initFaultLocatorModule);
     else initFaultLocatorModule();
 })();
-// ==================== จบไฟล์ scada-fault-locator.js (v3.1) ====================
+// ==================== จบไฟล์ scada-fault-locator.js (v3.1 Final) ====================
