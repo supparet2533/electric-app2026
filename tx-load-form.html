@@ -66,6 +66,20 @@
             font-weight: 700;
             color: #0f172a;
         }
+        /* ปรับขนาดกระดาษพรีวิวบนจอมือถือให้เรียงจบในบรรทัดเดียวเหมือนแผ่น A4 จริง */
+        @media (max-width: 639px) {
+            #officialReportWrapper {
+                padding: 1rem 0.65rem !important;
+            }
+            #officialReportSheet {
+                font-size: 11px !important;
+                line-height: 1.65 !important;
+            }
+            #officialReportSheet .dot-val {
+                min-width: 34px;
+                padding: 0 4px 1px;
+            }
+        }
         body.role-viewer-readonly .tx-edit-only {
             display: none !important;
         }
@@ -364,6 +378,18 @@
                     <button type="button" onclick="exportReportPdf()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">📄 ออกใบรายงาน PDF</button>
                     <button type="button" id="shareTxLineBtn" onclick="shareTxSummaryToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-3 rounded-xl shadow text-xs sm:text-sm transition">💬 ส่งสรุป + PDF เข้า LINE</button>
                 </div>
+
+                <!-- แถบจัดการและลบไฟล์ใบงาน .PDF ที่อัปโหลดไว้บนคลาวด์ -->
+                <div id="activePdfManageBar" class="hidden p-3 rounded-2xl bg-indigo-50/90 border border-indigo-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0"></span>
+                        <span id="activePdfStatusText" class="font-bold text-indigo-950 truncate">📄 มีไฟล์ใบงาน .PDF บน Google Drive แล้ว</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <a id="activePdfOpenLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-300 px-3 py-1.5 rounded-xl font-bold shadow-sm transition">🔗 เปิดดู .PDF</a>
+                        <button type="button" id="deleteActivePdfBtn" onclick="deleteCurrentFormPdf()" class="tx-edit-only bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-xl font-bold shadow-sm transition">🗑️ ลบใบงาน .PDF</button>
+                    </div>
+                </div>
             </div>
 
             <!-- ฝั่งขวา: ตัวอย่างใบรายงานมาตรฐาน กฟภ. (A4 Preview) -->
@@ -382,7 +408,7 @@
                         <span>📜 ประวัติใบวัดโหลดหม้อแปลงในสังกัด</span>
                         <span id="historyBranchBadge" class="bg-teal-100 text-teal-800 text-[11px] px-2 py-0.5 rounded-md font-extrabold">-</span>
                     </h3>
-                    <p class="text-[11px] text-slate-500">แยกสิทธิ์การมองเห็นตามสาขา กฟส. อัตโนมัติ (คลิกเพื่อเปิดดู/แก้ไข หรือพิมพ์ PDF ซ้ำ)</p>
+                    <p class="text-[11px] text-slate-500">แยกสิทธิ์การมองเห็นตามสาขา กฟส. อัตโนมัติ (คลิกเพื่อเปิดดู/แก้ไข ลบเฉพาะ .PDF หรือลบใบงาน)</p>
                 </div>
                 <div class="flex items-center gap-1.5">
                     <input type="text" id="searchTxHistoryInput" oninput="renderTxHistoryList()" placeholder="🔍 ค้นหา PEA, คำร้อง, สถานที่..." class="px-3 py-1.5 text-xs bg-white w-48 sm:w-60">
@@ -447,7 +473,17 @@
         let isDrawingSig = false;
         let hasSigStroke = false;
         let isSharingLine = false;
-        let lastPdfCache = { fp: '', url: '' };
+        let lastPdfCache = { fp: '', url: '', fileId: '' };
+
+        function extractDriveFileId(urlOrId) {
+            const s = String(urlOrId || '').trim();
+            if (!s || s.includes('pdfview=1')) return '';
+            if (/^[a-zA-Z0-9_-]{25,60}$/.test(s)) return s;
+            const m = s.match(/\/file\/d\/([a-zA-Z0-9_-]{25,60})/i) ||
+                      s.match(/[?&]id=([a-zA-Z0-9_-]{25,60})/i) ||
+                      s.match(/\/d\/([a-zA-Z0-9_-]{25,60})/i);
+            return m ? m[1] : '';
+        }
 
         window.openDiagramZoom = function (src) {
             const modal = document.getElementById('diagramZoomModal');
@@ -636,6 +672,48 @@
             ]);
         }
 
+        function getActiveFormPdfInfo() {
+            const recId = (document.getElementById('editingRecordId')?.value || '').trim();
+            if (lastPdfCache.url) {
+                return {
+                    recId,
+                    url: lastPdfCache.url,
+                    fileId: lastPdfCache.fileId || extractDriveFileId(lastPdfCache.url)
+                };
+            }
+            if (recId) {
+                loadLocalTxRecords();
+                const rec = txRecords.find(x => x.id === recId && !x.deleted);
+                if (rec?.pdfUrl) {
+                    return {
+                        recId,
+                        url: rec.pdfUrl,
+                        fileId: rec.pdfFileId || extractDriveFileId(rec.pdfUrl)
+                    };
+                }
+            }
+            return null;
+        }
+
+        function updateActivePdfManageBar() {
+            const bar = document.getElementById('activePdfManageBar');
+            const openLink = document.getElementById('activePdfOpenLink');
+            const statusTxt = document.getElementById('activePdfStatusText');
+            if (!bar || !openLink || !statusTxt) return;
+
+            const info = getActiveFormPdfInfo();
+            if (info && /^https?:\/\//i.test(info.url)) {
+                openLink.href = info.url;
+                statusTxt.textContent = info.fileId
+                    ? '📄 มีไฟล์ใบงาน .PDF บน Google Drive แล้ว'
+                    : '📄 มีลิงก์เปิดใบงาน .PDF แนบอยู่';
+                bar.classList.remove('hidden');
+            } else {
+                openLink.href = '#';
+                bar.classList.add('hidden');
+            }
+        }
+
         window.recalcAndRender = function () {
             const st = collectFormState();
             const esc = window.escapeHtmlStr || (s => String(s ?? ''));
@@ -678,12 +756,12 @@
                 </div>`;
             }).join('');
 
-            // วาดกระดาษรายงานมาตรฐาน กฟภ.
+            // วาดกระดาษรายงานมาตรฐาน กฟภ. (ล็อกบรรทัดวงจรไม่ให้ตัดคำตกหล่นบนมือถือ)
             const cktCurrentLines = st.circuits.map(r =>
-                `<div>วงจร ${r.c}. &nbsp;เฟส A <span class="dot-val">${esc(fmtNum(r.iA))}</span> A. &nbsp;เฟส B <span class="dot-val">${esc(fmtNum(r.iB))}</span> A. &nbsp;เฟส C <span class="dot-val">${esc(fmtNum(r.iC))}</span> A.</div>`
+                `<div class="whitespace-nowrap">วงจร ${r.c}. เฟส A <span class="dot-val">${esc(fmtNum(r.iA))}</span> A. เฟส B <span class="dot-val">${esc(fmtNum(r.iB))}</span> A. เฟส C <span class="dot-val">${esc(fmtNum(r.iC))}</span> A.</div>`
             ).join('');
             const cktVoltLines = st.circuits.map(r =>
-                `<div>วงจร ${r.c}. &nbsp;เฟส A <span class="dot-val">${esc(fmtNum(r.vA, 1))}</span> V. &nbsp;เฟส B <span class="dot-val">${esc(fmtNum(r.vB, 1))}</span> V. &nbsp;เฟส C <span class="dot-val">${esc(fmtNum(r.vC, 1))}</span> V.</div>`
+                `<div class="whitespace-nowrap">วงจร ${r.c}. เฟส A <span class="dot-val">${esc(fmtNum(r.vA, 1))}</span> V. เฟส B <span class="dot-val">${esc(fmtNum(r.vB, 1))}</span> V. เฟส C <span class="dot-val">${esc(fmtNum(r.vC, 1))}</span> V.</div>`
             ).join('');
 
             const resColor = r => r === 'ไม่ได้' ? 'color:#be123c;' : (r === 'ได้' ? 'color:#047857;' : '');
@@ -692,12 +770,12 @@
                 : '<div class="h-8"></div>';
 
             document.getElementById('officialReportSheet').innerHTML = `
-                <div class="text-center font-bold text-[16px] pb-1">
+                <div class="text-center font-bold text-[14px] sm:text-[16px] pb-1">
                     รายงานการวัดโหลดหม้อแปลง ${esc(st.officeName)} ${st.reqNo ? `เลขที่คำร้อง ${esc(st.reqNo)}` : ''}
                 </div>
-                <div class="text-center">
+                <div class="text-center whitespace-nowrap">
                     <b>วันที่</b> <span class="dot-val">${esc(st.measureDate)}</span>
-                    <b>หม้อแปลงขนาด</b> <span class="dot-val">${esc(st.kva)}</span> <b>kVA &nbsp;PEA</b> <span class="dot-val min-w-[95px]">${esc(st.peaNo || '-')}</span>
+                    <b>หม้อแปลงขนาด</b> <span class="dot-val">${esc(st.kva)}</span> <b>kVA PEA</b> <span class="dot-val min-w-[68px] sm:min-w-[95px]">${esc(st.peaNo || '-')}</span>
                 </div>
 
                 <div class="text-center font-bold pt-1">วัดกระแสแต่ละวงจร</div>
@@ -707,26 +785,26 @@
                 <div class="text-center space-y-1">${cktVoltLines}</div>
 
                 <div class="text-center font-bold pt-1">วัดแรงดันต้นปลายสาย จุดขอมิเตอร์</div>
-                <div class="text-center">
-                    เฟส A <span class="dot-val">${esc(fmtNum(st.vEnd.A, 1))}</span> V. &nbsp;
-                    เฟส B <span class="dot-val">${esc(fmtNum(st.vEnd.B, 1))}</span> V. &nbsp;
+                <div class="text-center whitespace-nowrap">
+                    เฟส A <span class="dot-val">${esc(fmtNum(st.vEnd.A, 1))}</span> V.
+                    เฟส B <span class="dot-val">${esc(fmtNum(st.vEnd.B, 1))}</span> V.
                     เฟส C <span class="dot-val">${esc(fmtNum(st.vEnd.C, 1))}</span> V.
                 </div>
 
-                <div class="text-center pt-1">
+                <div class="text-center pt-1 whitespace-nowrap">
                     <b>ไฟทางพ่วงวงจรเฟส</b> <span class="dot-val">${esc(st.streetPhase)}</span>
                     <b>กระแสไฟทาง</b> <span class="dot-val">${esc(fmtNum(st.streetAmp))}</span> A.
                 </div>
 
-                <div class="text-center">
-                    <b>พิกัดกระแสหม้อแปลงขนาด</b> <span class="dot-val">${esc(st.kva)}</span> <b>KVA. &nbsp;F/L 100 %</b> <span class="dot-val">${esc(st.flAmp)}</span> A.
+                <div class="text-center whitespace-nowrap">
+                    <b>พิกัดกระแสหม้อแปลงขนาด</b> <span class="dot-val">${esc(st.kva)}</span> <b>KVA. F/L 100 %</b> <span class="dot-val">${esc(st.flAmp)}</span> A.
                 </div>
 
                 <div class="text-center font-bold pt-1">กระแสโหลดรวม (เกณฑ์พิจารณา ≤ 80%)</div>
                 <div class="text-center space-y-1">
-                    <div>เฟส A <span class="dot-val">${esc(st.totals.sumA.toFixed(2))}</span> A. &nbsp;คิดเป็น <span class="dot-val">${esc(st.totals.pctA.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>
-                    ${st.sysType !== '1P2W' ? `<div>เฟส B <span class="dot-val">${esc(st.totals.sumB.toFixed(2))}</span> A. &nbsp;คิดเป็น <span class="dot-val">${esc(st.totals.pctB.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>` : ''}
-                    ${st.sysType === '3P' ? `<div>เฟส C <span class="dot-val">${esc(st.totals.sumC.toFixed(2))}</span> A. &nbsp;คิดเป็น <span class="dot-val">${esc(st.totals.pctC.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>` : ''}
+                    <div class="whitespace-nowrap">เฟส A <span class="dot-val">${esc(st.totals.sumA.toFixed(2))}</span> A. คิดเป็น <span class="dot-val">${esc(st.totals.pctA.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>
+                    ${st.sysType !== '1P2W' ? `<div class="whitespace-nowrap">เฟส B <span class="dot-val">${esc(st.totals.sumB.toFixed(2))}</span> A. คิดเป็น <span class="dot-val">${esc(st.totals.pctB.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>` : ''}
+                    ${st.sysType === '3P' ? `<div class="whitespace-nowrap">เฟส C <span class="dot-val">${esc(st.totals.sumC.toFixed(2))}</span> A. คิดเป็น <span class="dot-val">${esc(st.totals.pctC.toFixed(2))}</span> % ของพิกัดหม้อแปลง</div>` : ''}
                 </div>
 
                 <div class="text-center space-y-1 pt-1">
@@ -736,14 +814,16 @@
                 </div>
 
                 <div class="text-center pt-1">
-                    หมายเหตุ <span class="dot-val min-w-[220px]">${esc(st.remark || '-')}</span>
+                    หมายเหตุ <span class="dot-val min-w-[155px] sm:min-w-[220px]">${esc(st.remark || '-')}</span>
                 </div>
 
                 <div class="text-center pt-4">
                     ${sigImgHtml}
-                    <div>ลงชื่อ <span class="dot-val min-w-[170px]">${esc(st.inspector || '')}</span> ผู้ดำเนินการวัดโหลด</div>
+                    <div>ลงชื่อ <span class="dot-val min-w-[125px] sm:min-w-[170px]">${esc(st.inspector || '')}</span> ผู้ดำเนินการวัดโหลด</div>
                 </div>
             `;
+
+            updateActivePdfManageBar();
         };
 
         // ตัดขอบว่างโปร่งใสรอบลายเซ็นอัตโนมัติ (ลดขนาด Base64 ลง 70-85% และจัดวางเหนือเส้นลงชื่อได้พอดี)
@@ -933,6 +1013,139 @@
             }
         }
 
+        async function requestCloudDeletePdf({ id = '', group = '', fileId = '', pdfUrl = '', updatedRecord = null }) {
+            const apiUrl = window.getActiveCloudApiUrl?.();
+            if (!apiUrl || localStorage.getItem('elec_app_logged_in') !== 'true') return;
+            const targetGroup = group || getActiveBranch();
+            try {
+                window.PeaCore?.unlockCloudWrite?.(20000);
+                const res = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'deleteTxPdf',
+                        id,
+                        group: targetGroup,
+                        fileId: fileId || extractDriveFileId(pdfUrl),
+                        pdfUrl: pdfUrl || ''
+                    })
+                });
+                const data = await res.json().catch(() => ({}));
+                // Fallback อัตโนมัติกรณีหลังบ้านยังไม่ได้กด Deploy คำสั่ง deleteTxPdf
+                if (updatedRecord && data?.status === 'error' && /unknown action/i.test(String(data.message || ''))) {
+                    window.PeaCore?.unlockCloudWrite?.(15000);
+                    await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'saveTxLoad',
+                            group: targetGroup,
+                            record: updatedRecord
+                        })
+                    });
+                }
+            } catch (e) {}
+        }
+
+        // ลบไฟล์ใบงาน .PDF ของฟอร์มที่เปิดอยู่ปัจจุบัน
+        window.deleteCurrentFormPdf = function () {
+            if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถลบข้อมูลได้');
+            const info = getActiveFormPdfInfo();
+            if (!info) return window.showToast?.('ℹ️ ยังไม่มีไฟล์ใบงาน .PDF ที่แนบอยู่ในฟอร์มนี้');
+
+            const confirmMsg = 'ต้องการลบไฟล์ใบงาน .PDF นี้ออกจากระบบและ Google Drive ใช่หรือไม่?\n(ข้อมูลตัวเลขที่กรอกในฟอร์มจะยังอยู่ครบ)';
+            const doRemovePdf = async function () {
+                const nowIso = new Date().toISOString();
+                let updatedRecord = null;
+                let targetGroup = getActiveBranch();
+
+                if (info.recId) {
+                    loadLocalTxRecords();
+                    const idx = txRecords.findIndex(x => x.id === info.recId);
+                    if (idx !== -1) {
+                        targetGroup = txRecords[idx].ownerGroup || targetGroup;
+                        txRecords[idx] = {
+                            ...txRecords[idx],
+                            pdfUrl: '',
+                            pdfFileId: '',
+                            pdfFp: '',
+                            updatedAt: nowIso
+                        };
+                        updatedRecord = txRecords[idx];
+                        saveLocalTxRecords();
+                    }
+                }
+
+                lastPdfCache = { fp: '', url: '', fileId: '' };
+                updateActivePdfManageBar();
+                renderTxHistoryList();
+                window.showToast?.('🗑️ ลบไฟล์ใบงาน .PDF เรียบร้อยแล้ว');
+
+                await requestCloudDeletePdf({
+                    id: info.recId,
+                    group: targetGroup,
+                    fileId: info.fileId,
+                    pdfUrl: info.url,
+                    updatedRecord
+                });
+            };
+
+            if (typeof window.showCustomConfirm === 'function') {
+                window.showCustomConfirm(confirmMsg, doRemovePdf, '🗑️ ยืนยันการลบใบงาน .PDF');
+            } else if (window.confirm(confirmMsg)) {
+                doRemovePdf();
+            }
+        };
+
+        // ลบเฉพาะไฟล์ .PDF ออกจากรายการในประวัติ (โดยเก็บข้อมูลผลวัดโหลดไว้เหมือนเดิม)
+        window.deleteTxPdfOnly = function (id) {
+            if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถลบข้อมูลได้');
+            loadLocalTxRecords();
+            const target = txRecords.find(x => x.id === id && canSeeTxRecord(x));
+            if (!target || !target.pdfUrl) return;
+
+            const confirmMsg = `ต้องการลบเฉพาะไฟล์ใบงาน .PDF ของหม้อแปลง PEA ${target.peaNo || '-'} ออกจากระบบและ Google Drive ใช่หรือไม่?\n(ข้อมูลประวัติผลวัดโหลดจะยังคงอยู่)`;
+            const doRemove = async function () {
+                loadLocalTxRecords();
+                const idx = txRecords.findIndex(x => x.id === id);
+                if (idx === -1) return;
+                const oldUrl = txRecords[idx].pdfUrl || '';
+                const oldFileId = txRecords[idx].pdfFileId || extractDriveFileId(oldUrl);
+                const targetGroup = txRecords[idx].ownerGroup || getActiveBranch();
+
+                txRecords[idx] = {
+                    ...txRecords[idx],
+                    pdfUrl: '',
+                    pdfFileId: '',
+                    pdfFp: '',
+                    updatedAt: new Date().toISOString()
+                };
+                const updatedRec = txRecords[idx];
+                saveLocalTxRecords();
+
+                if (document.getElementById('editingRecordId').value === id || lastPdfCache.url === oldUrl) {
+                    lastPdfCache = { fp: '', url: '', fileId: '' };
+                    updateActivePdfManageBar();
+                }
+                renderTxHistoryList();
+                window.showToast?.('🗑️ ลบไฟล์ใบงาน .PDF เรียบร้อยแล้ว');
+
+                await requestCloudDeletePdf({
+                    id,
+                    group: targetGroup,
+                    fileId: oldFileId,
+                    pdfUrl: oldUrl,
+                    updatedRecord: updatedRec
+                });
+            };
+
+            if (typeof window.showCustomConfirm === 'function') {
+                window.showCustomConfirm(confirmMsg, doRemove, '🗑️ ยืนยันการลบใบงาน .PDF');
+            } else if (window.confirm(confirmMsg)) {
+                doRemove();
+            }
+        };
+
         window.saveTxLoadRecord = async function () {
             if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถบันทึกข้อมูลได้');
             const st = collectFormState();
@@ -945,13 +1158,16 @@
             const recId = st.id || ('tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
             const fp = computeReportPdfFingerprint(st);
             const matchedPdfUrl = (lastPdfCache.fp === fp && lastPdfCache.url) ? lastPdfCache.url : '';
+            const matchedPdfFileId = matchedPdfUrl ? (lastPdfCache.fileId || extractDriveFileId(matchedPdfUrl)) : '';
 
             const record = {
                 ...st,
                 id: recId,
                 ownerUser: curUser,
                 ownerGroup: getActiveBranch(),
-                ...(matchedPdfUrl ? { pdfUrl: matchedPdfUrl, pdfFp: fp } : {}),
+                pdfUrl: matchedPdfUrl || '',
+                pdfFileId: matchedPdfFileId || '',
+                pdfFp: matchedPdfUrl ? fp : '',
                 updatedAt: nowIso
             };
             loadLocalTxRecords();
@@ -961,6 +1177,7 @@
 
             document.getElementById('editingRecordId').value = recId;
             document.getElementById('formModeTitle').textContent = `✏️ แก้ไขใบวัดโหลด PEA ${record.peaNo}`;
+            updateActivePdfManageBar();
             renderTxHistoryList();
             window.showToast?.(`✅ บันทึกผลวัดโหลดลงสาขา ${record.ownerGroup} เรียบร้อย!`);
 
@@ -997,6 +1214,15 @@
                     });
                     txRecords = Array.from(byId.values()).filter(r => !r.deleted);
                     saveLocalTxRecords();
+
+                    const activeId = (document.getElementById('editingRecordId')?.value || '').trim();
+                    if (activeId) {
+                        const syncedActive = txRecords.find(r => r.id === activeId);
+                        if (syncedActive && !syncedActive.pdfUrl) {
+                            lastPdfCache = { fp: '', url: '', fileId: '' };
+                        }
+                    }
+                    updateActivePdfManageBar();
                     renderTxHistoryList();
                     if (!silent) window.showToast?.('🔄 ซิงค์ประวัติวัดโหลดล่าสุดเรียบร้อย!');
                 }
@@ -1046,33 +1272,50 @@
             document.getElementById('inspectorNameInput').value = r.inspector || '';
             signatureDataUrl = r.signature || '';
             updateSigIndicator();
-            recalcAndRender();
 
             lastPdfCache = r.pdfUrl
-                ? { fp: r.pdfFp || computeReportPdfFingerprint(collectFormState()), url: r.pdfUrl }
-                : { fp: '', url: '' };
+                ? {
+                    fp: r.pdfFp || computeReportPdfFingerprint(collectFormState()),
+                    url: r.pdfUrl,
+                    fileId: r.pdfFileId || extractDriveFileId(r.pdfUrl)
+                }
+                : { fp: '', url: '', fileId: '' };
+            recalcAndRender();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
         window.deleteTxRecord = function (id) {
             if (window.isViewerRole?.()) return;
-            const confirmMsg = 'ต้องการลบประวัติใบวัดโหลดรายการนี้ใช่หรือไม่?';
+            const confirmMsg = 'ต้องการลบประวัติใบวัดโหลดรายการนี้ (รวมถึงไฟล์ .PDF ที่แนบไว้) ใช่หรือไม่?';
             const doDelete = async function () {
                 loadLocalTxRecords();
                 const target = txRecords.find(x => x.id === id);
+                const oldUrl = target?.pdfUrl || '';
+                const oldFileId = target?.pdfFileId || extractDriveFileId(oldUrl);
                 txRecords = txRecords.filter(x => x.id !== id);
                 saveLocalTxRecords();
                 if (document.getElementById('editingRecordId').value === id) resetTxLoadForm(false);
                 renderTxHistoryList();
-                window.showToast?.('🗑️ ลบรายการวัดโหลดแล้ว');
+                window.showToast?.('🗑️ ลบรายการวัดโหลดเรียบร้อยแล้ว');
+
                 const apiUrl = window.getActiveCloudApiUrl?.();
                 if (apiUrl && target) {
+                    const grp = target.ownerGroup || getActiveBranch();
+                    if (oldFileId) {
+                        requestCloudDeletePdf({ id: '', group: grp, fileId: oldFileId, pdfUrl: oldUrl }).catch(() => {});
+                    }
                     try {
                         window.PeaCore?.unlockCloudWrite?.(15000);
                         await fetch(apiUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                            body: JSON.stringify({ action: 'deleteTxLoad', id, group: target.ownerGroup || getActiveBranch() })
+                            body: JSON.stringify({
+                                action: 'deleteTxLoad',
+                                id,
+                                group: grp,
+                                fileId: oldFileId,
+                                pdfUrl: oldUrl
+                            })
                         });
                     } catch (e) {}
                 }
@@ -1085,7 +1328,7 @@
         };
 
         window.resetTxLoadForm = function (showMsg = false) {
-            lastPdfCache = { fp: '', url: '' };
+            lastPdfCache = { fp: '', url: '', fileId: '' };
             document.getElementById('editingRecordId').value = '';
             document.getElementById('formModeTitle').textContent = '📝 กรอกผลวัดโหลดหม้อแปลง';
             document.getElementById('reqNoInput').value = '';
@@ -1147,12 +1390,13 @@
                             C: ${Number(r.totals?.pctC || 0).toFixed(1)}% (${esc(r.totals?.resC)})
                         </div>
                     </div>
-                    <div class="pt-1.5 border-t border-slate-200/80 flex items-center justify-between">
+                    <div class="pt-1.5 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-1.5">
                         <span class="text-[10px] text-slate-500">👷 ${esc(r.inspector || '-')}</span>
-                        <div class="flex gap-1.5">
+                        <div class="flex flex-wrap items-center gap-1.5">
                             ${safePdfHref ? `<a href="${safePdfHref}" target="_blank" rel="noopener noreferrer" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[11px] font-bold">📄 PDF</a>` : ''}
+                            ${safePdfHref ? `<button type="button" onclick="deleteTxPdfOnly('${safeId}')" title="ลบเฉพาะไฟล์ใบงาน .PDF" class="tx-edit-only bg-amber-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2 py-1 rounded-lg text-[11px] font-bold">🗑️ ลบ .PDF</button>` : ''}
                             <button type="button" onclick="loadRecordIntoForm('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold">📂 เปิดดู / พิมพ์</button>
-                            <button type="button" onclick="deleteTxRecord('${safeId}')" class="tx-edit-only bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg text-[11px] font-bold">🗑️</button>
+                            <button type="button" onclick="deleteTxRecord('${safeId}')" title="ลบทั้งรายการใบวัดโหลด" class="tx-edit-only bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-2 py-1 rounded-lg text-[11px] font-bold">🗑️</button>
                         </div>
                     </div>
                 </div>`;
@@ -1470,19 +1714,28 @@
                     });
                     const resJson = await res.json();
                     if (resJson?.status === 'ok' && resJson.viewUrl) {
-                        lastPdfCache = { fp, url: resJson.viewUrl };
+                        const uploadedFileId = resJson.fileId || extractDriveFileId(resJson.viewUrl);
+                        lastPdfCache = { fp, url: resJson.viewUrl, fileId: uploadedFileId };
+                        updateActivePdfManageBar();
+
                         if (st.id) {
                             const nowIso = new Date().toISOString();
                             loadLocalTxRecords();
                             const idx = txRecords.findIndex(r => r.id === st.id);
                             if (idx !== -1) {
                                 const targetGrp = txRecords[idx].ownerGroup || st.ownerGroup;
+                                const prevFileId = txRecords[idx].pdfFileId || extractDriveFileId(txRecords[idx].pdfUrl);
+                                // หากเคยมีไฟล์ PDF เก่าคนละไฟล์ของใบงานเดียวกัน ให้ลบไฟล์เก่าใน Drive ออกอัตโนมัติ
+                                if (prevFileId && prevFileId !== uploadedFileId) {
+                                    requestCloudDeletePdf({ id: '', group: targetGrp, fileId: prevFileId, pdfUrl: txRecords[idx].pdfUrl }).catch(() => {});
+                                }
                                 txRecords[idx] = {
                                     ...txRecords[idx],
                                     ...st,
                                     id: st.id,
                                     ownerGroup: targetGrp,
                                     pdfUrl: resJson.viewUrl,
+                                    pdfFileId: uploadedFileId,
                                     pdfFp: fp,
                                     updatedAt: nowIso
                                 };
@@ -1504,7 +1757,13 @@
                     }
                 } catch (e) {}
             }
-            return buildWebFallbackPdfUrl(st);
+
+            const fallbackUrl = buildWebFallbackPdfUrl(st);
+            if (fallbackUrl) {
+                lastPdfCache = { fp, url: fallbackUrl, fileId: '' };
+                updateActivePdfManageBar();
+            }
+            return fallbackUrl;
         }
 
         window.shareTxSummaryToLine = async function () {
