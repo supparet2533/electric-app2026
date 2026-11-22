@@ -1,7 +1,7 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SHARED CORE ENGINE v6.7 (shared-core.js)
-// ระบบแกนกลางร่วมสำหรับ index.html และ page2.html (เชื่อม IndexedDB v2.0, SCADA v6.5 & PM v7.3 ครบ 100%)
-// พาทที่ 1 / 4 : Config, Group Normalization, RBAC, UI Modals & Z-Index Safeguards
+// ⚡ PEA SMART GRID — SHARED CORE ENGINE v6.8 (shared-core.js)
+// ระบบแกนกลางร่วมสำหรับ index.html และ page2.html (เชื่อม IndexedDB v2.2 + AES-GCM 256-bit MQTT)
+// พาทที่ 1 / 2 : Config, Group Normalization, RBAC, UI Modals, Storage Bus & Registry Sync
 // ============================================================================
 (function () {
     'use strict';
@@ -19,6 +19,8 @@
     const SHEET_DISK_CACHE_MAX_CHARS = 180000;
     const REGISTRY_LOC_KEY = '__NAV_CANCEL_REGISTRY__';
     const PM_LOC_PREFIX = '__PM_SCHEDULE__';
+    const CALIB_LOC_PREFIX = '__FAULT_CALIB__';
+    const MQTT_SECRET_STORAGE_KEY = 'elec_mqtt_secret_key';
 
     const isEmbeddedIframe = (window.self !== window.top);
     const MY_PEER_ID = 'p20k_' + Math.random().toString(36).substring(2, 9) + '_' + (Date.now() % 100000);
@@ -56,6 +58,7 @@
     let inFlightCloudGetCount = 0;
     let allowWriteUntilMs = 0;
     let forceManualGet = false;
+    let recentLogoutAuthCache = { user: '', token: '', ts: 0 };
     const sheetMemoryCacheMap = new Map();
 
     // ป้องกันป๊อปอัปแก้ไขบัญชี/ตำบลจมหลังหน้าต่างหลักใน index.html และ page2.html
@@ -98,7 +101,8 @@
 
     function isSystemLocRegistryKey(k, itemObj) {
         if (!k) return true;
-        return k === REGISTRY_LOC_KEY || String(k).startsWith(PM_LOC_PREFIX) || Boolean(itemObj && itemObj.isSystemRegistry);
+        const s = String(k);
+        return s === REGISTRY_LOC_KEY || s.startsWith(PM_LOC_PREFIX) || s.startsWith(CALIB_LOC_PREFIX) || Boolean(itemObj && itemObj.isSystemRegistry);
     }
 
     // ========================================================================
@@ -152,6 +156,10 @@
         return withoutPea.toLowerCase();
     }
 
+    function numGroupMatchCheck(m) {
+        return Boolean(m && !/^(?:นาย|นาง|น\.ส\.|นางสาว|คุณ|ช่าง)/.test(m[2]));
+    }
+
     function normalizeUsernameFormat(rawUsername) {
         const s = String(rawUsername || '').trim().replace(/\s+/g, ' ');
         if (!s) return '';
@@ -169,9 +177,6 @@
         return s;
     }
 
-    function numGroupMatchCheck(m) {
-        return Boolean(m && !/^(?:นาย|นาง|น\.ส\.|นางสาว|คุณ|ช่าง)/.test(m[2]));
-    }
     function isUsernameMatchingAccount(inputUser, accountUser) {
         if (!inputUser || !accountUser) return false;
         const inTrim = String(inputUser).trim().replace(/\s+/g, ' ').toLowerCase();
@@ -395,8 +400,7 @@
         document.body.appendChild(link); link.click(); link.remove();
         setTimeout(() => { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 5000);
     }
-    // ===== จบพาทที่ 1 / 4 ของไฟล์ shared-core.js =====
-        // ===== เริ่มพาทที่ 2 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 1 / 4) =====
+
     // ========================================================================
     // 3. ระบบ Storage Bus รวมศูนย์, Single-Pass RAM Index, IndexedDB Stats & Sandbox
     // ========================================================================
@@ -496,7 +500,7 @@
         return trimmed;
     }
 
-        function pruneDeletedJobsMap(rawMap) {
+    function pruneDeletedJobsMap(rawMap) {
         if (!rawMap || typeof rawMap !== 'object') return {};
         const now = Date.now();
         const entries = Object.entries(rawMap)
@@ -546,7 +550,6 @@
         return 0;
     }
 
-    // คัดกรองหมุดตามสาขาอัตโนมัติ + ไม่เขียนทับสีหมุดอิสระ + ตัดลูปสะท้อนจาก main-app.js
     function sanitizePinsBeforeWrite(rawValStr, updateRamNow = false) {
         try {
             const parsed = JSON.parse(rawValStr);
@@ -720,11 +723,17 @@
         }
     };
 
-        Storage.prototype.removeItem = function (key) {
-        if (this === localStorage && (key === 'elec_app_current_user' || key === 'elec_app_session_token')) {
-            const u = (rawStorageGet('elec_app_current_user') || recentLogoutAuthCache.user || '').trim();
-            const t = (rawStorageGet('elec_app_session_token') || recentLogoutAuthCache.token || '').trim();
-            if (u && t) recentLogoutAuthCache = { user: u, token: t, ts: Date.now() };
+    Storage.prototype.removeItem = function (key) {
+        if (this === localStorage) {
+            if (key === 'elec_app_current_user' || key === 'elec_app_session_token') {
+                const u = (rawStorageGet('elec_app_current_user') || recentLogoutAuthCache.user || '').trim();
+                const t = (rawStorageGet('elec_app_session_token') || recentLogoutAuthCache.token || '').trim();
+                if (u && t) recentLogoutAuthCache = { user: u, token: t, ts: Date.now() };
+            }
+            if (key === 'elec_app_logged_in' || key === 'elec_app_session_token') {
+                try { nativeRemoveItem.call(localStorage, MQTT_SECRET_STORAGE_KEY); } catch (e) {}
+                clearMqttKeyAndDisconnect();
+            }
         }
         const res = nativeRemoveItem.apply(this, arguments);
         if (key === 'elec_labeled_places_list') { ramIndex.pinsRaw = null; refreshRamPinsIndex(); }
@@ -789,10 +798,9 @@
         syncClosedRegistryObject(closedReg);
         showToast('🧹 ล้างแคชซ้ำซ้อนเรียบร้อย (ประวัติใบงานและหมุดอยู่ครบ 100%)');
     }
-    // ===== จบพาทที่ 2 / 4 ของไฟล์ shared-core.js =====
-        // ===== เริ่มพาทที่ 3 / 4 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 2 / 4) =====
+
     // ========================================================================
-    // 4. ทะเบียนงานที่ปิด/ลบแล้ว, พิกัดช่าง & ซิงค์แผนงาน PM แบบรักษา Priority
+    // 4. ทะเบียนงานที่ปิด/ลบแล้ว, พิกัดช่าง, สเกลฟอลต์ & ซิงค์แผนงาน PM
     // ========================================================================
     function isAutoGeneratedFakeClosure(rep) {
         if (!rep) return false;
@@ -896,21 +904,35 @@
                 localMap[uKey] = { ...(lItem || {}), ...cItem, pmPlansMap: Object.fromEntries([...recentTrans, ...restEntries].slice(0, 60)), lastSeenAt: bestIso, updatedAt: bestIso };
                 return;
             }
-                        if (gpsDisabledLocal && curUser && !isSystemLocRegistryKey(uKey, cItem) && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) return;
+            if (uKey.startsWith(CALIB_LOC_PREFIX)) {
+                const lItem = localMap[uKey];
+                const mergedCalib = { ...(lItem?.calibMap || {}) };
+                Object.entries(cItem.calibMap || {}).forEach(([cid, cRec]) => {
+                    if (!cid || !cRec || typeof cRec !== 'object') return;
+                    const exC = mergedCalib[cid];
+                    const cUpd = new Date(cRec.updatedAt || 0).getTime() || 0, lUpd = exC ? (new Date(exC.updatedAt || 0).getTime() || 0) : -1;
+                    if (!exC || cUpd > lUpd || (cUpd === lUpd && cRec.deleted && !exC.deleted)) mergedCalib[cid] = cRec;
+                });
+                const cT = new Date(cItem.updatedAt || 0).getTime() || 0, lT = new Date(lItem?.updatedAt || 0).getTime() || 0;
+                const bestIso = (cT >= lT ? cItem.updatedAt : lItem?.updatedAt) || new Date().toISOString();
+                localMap[uKey] = { ...(lItem || {}), ...cItem, calibMap: mergedCalib, updatedAt: bestIso, lastSeenAt: bestIso };
+                return;
+            }
+            if (gpsDisabledLocal && curUser && !isSystemLocRegistryKey(uKey, cItem) && (isSameTechPerson(uKey, curUser) || isSameTechPerson(cItem.username, curUser))) return;
             const lItem = localMap[uKey];
             const cTime = Math.max(new Date(cItem.lastSeenAt || 0).getTime() || 0, new Date(cItem.updatedAt || 0).getTime() || 0);
             const lTime = Math.max(new Date(lItem?.lastSeenAt || 0).getTime() || 0, new Date(lItem?.updatedAt || 0).getTime() || 0);
             const getEqNavMs = (nav) => !nav ? 0 : Math.max(Number(nav.departTimestamp || 0) || 0, new Date(nav.updatedAt || 0).getTime() || 0, Number(nav.cancelledAtMs || 0) || 0);
-            const exNavT = getEqNavMs(lItem?.activeEquipNav),
-                inNavT = getEqNavMs(cItem?.activeEquipNav);
+            const exNavT = getEqNavMs(lItem?.activeEquipNav), inNavT = getEqNavMs(cItem?.activeEquipNav);
             if (!lItem || cTime >= lTime) {
                 localMap[uKey] = (exNavT > inNavT && lItem?.activeEquipNav) ? { ...cItem, activeEquipNav: lItem.activeEquipNav } : cItem;
             } else if (inNavT > exNavT && cItem?.activeEquipNav) {
                 localMap[uKey] = { ...lItem, activeEquipNav: cItem.activeEquipNav, updatedAt: cItem.updatedAt || lItem.updatedAt };
             }
-            });
-            localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
-            }
+        });
+        localStorage.setItem('elec_tech_locations_map', JSON.stringify(localMap));
+    }
+
     function cleanReopenedAndCancelledJobsInStorage() {
         try {
             const closedReg = getClosedJobsRegistry(), cancelJobMap = JSON.parse(rawStorageGet('elec_cancelled_job_nav_map') || '{}');
@@ -935,15 +957,19 @@
             if (regChanged) syncClosedRegistryObject(closedReg);
         } catch (e) {}
     }
-
+    // ===== จบพาทที่ 1 / 2 ของไฟล์ shared-core.js (v6.8) =====
+       // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ shared-core.js (v6.8 — วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) =====
     // ========================================================================
-    // 5. ท่อซิงค์เรียลไทม์ (MQTT Pin-Level Delta ปลอดลูปสะท้อนกลับ) & ปกป้องผัง Cloud
+    // 5. ท่อซิงค์เรียลไทม์เข้ารหัส AES-GCM (256-bit) ผูกกับ mqttKey จาก Code.gs
     // ========================================================================
     const WS_BROKERS = [
         'wss://broker.emqx.io:8084/mqtt',
         'wss://broker.hivemq.com:8884/mqtt',
         'wss://mqtt.eclipseprojects.io:443/mqtt'
     ];
+    const MQTT_MAX_SKEW_MS = 5 * 60 * 1000; // ป้องกันการดักแพ็กเก็ตเก่ามายิงซ้ำ (Anti-Replay 5 นาที)
+    const seenMqttNoncesMap = new Map();
+
     let mqttClient = null;
     let lastMqttAuthSig = '';
     const activeSubscribedTopics = new Set();
@@ -954,6 +980,10 @@
     const realtimeSubscribers = new Set();
     let uiRefreshRaf = null;
     const pendingRefreshKeys = new Set();
+    let mqttIncomingChain = Promise.resolve();
+
+    let cachedAesKeySource = '';
+    let cachedAesCryptoKeyPromise = null;
 
     const syncedJobHashes = new Map();
     let lastCloudTechLocSnapshot = null;
@@ -971,6 +1001,9 @@
     let pendingPostWaiters = [];
     let isPostWorkerRunning = false;
 
+    let localBroadcastCh = null;
+    try { if ('BroadcastChannel' in window) localBroadcastCh = new BroadcastChannel(CHANNEL_NAME); } catch (e) {}
+
     function snapshotCleanLocalEquipStrings() {
         if (rawStorageGet('elec_tech_has_pending_push') === 'true' || simSandbox.active) return;
         lastSyncedLocalPinsStr = rawStorageGet('elec_labeled_places_list') || '[]';
@@ -985,38 +1018,164 @@
         return Math.abs(h);
     }
 
-    function getOrgSecretKey() {
-        return getActiveCloudApiUrl() + '::' + (rawStorageGet('elec_mqtt_secret_key') || 'PEA_SMART_GRID_SECURE_2026');
-    }
-
-    function computePacketSignature(payloadStr, ts, secret) {
-        const str = payloadStr + '|' + ts + '|' + secret;
-        let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
-        for (let i = 0; i < str.length; i++) {
-            const ch = str.charCodeAt(i);
-            h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+    function uint8ToBase64(bytes) {
+        let bin = '';
+        const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
         }
-        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-        return (h2 >>> 0).toString(36) + '_' + (h1 >>> 0).toString(36);
+        return btoa(bin);
     }
 
-    function xorCipherTransform(text, keyStr) {
-        let out = '';
-        for (let i = 0; i < text.length; i++) out += String.fromCharCode(text.charCodeAt(i) ^ keyStr.charCodeAt(i % keyStr.length) ^ ((i * 31) & 0xff));
+    function base64ToUint8(b64Str) {
+        const norm = String(b64Str || '').trim().replace(/-/g, '+').replace(/_/g, '/');
+        const pad = norm.length % 4 === 0 ? '' : '='.repeat(4 - (norm.length % 4));
+        const bin = atob(norm + pad);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
         return out;
     }
 
-    function encryptMqttPayload(plainStr, ts) {
-        try { return 'ENC1_' + btoa(xorCipherTransform(encodeURIComponent(plainStr), getOrgSecretKey() + '#' + (ts % 9973))); }
-        catch (e) { return plainStr; }
+    function getStoredMqttSecretB64() {
+        return String(rawStorageGet(MQTT_SECRET_STORAGE_KEY) || '').trim();
     }
 
-    function decryptMqttPayload(cipherStr, ts) {
+    function hasValidMqttSecret() {
+        return getStoredMqttSecretB64().length >= 32 && Boolean(window.crypto?.subtle);
+    }
+
+    function clearMqttKeyAndDisconnect() {
+        cachedAesKeySource = '';
+        cachedAesCryptoKeyPromise = null;
+        lastMqttAuthSig = '';
+        if (mqttClient) {
+            try { activeSubscribedTopics.forEach(t => mqttClient.unsubscribe(t)); mqttClient.end(true); } catch (e) {}
+            mqttClient = null;
+            activeSubscribedTopics.clear();
+        }
+    }
+
+    function applyServerMqttKey(rawKeyB64, broadcastToPeers = true) {
+        const cleanKey = String(rawKeyB64 || '').trim();
+        if (cleanKey.length < 32) return false;
+        const prevKey = getStoredMqttSecretB64();
+        if (prevKey !== cleanKey) {
+            rawStorageSet(MQTT_SECRET_STORAGE_KEY, cleanKey);
+            cachedAesKeySource = '';
+            cachedAesCryptoKeyPromise = null;
+            if (broadcastToPeers) {
+                const syncMsg = { type: 'PEA_MQTT_KEY_SYNC', sender: MY_PEER_ID, ts: Date.now() };
+                try { localBroadcastCh?.postMessage(syncMsg); } catch (e) {}
+                try {
+                    if (window.parent && window.parent !== window) window.parent.postMessage(syncMsg, '*');
+                    document.getElementById('leftBrowserIframe')?.contentWindow?.postMessage(syncMsg, '*');
+                } catch (e) {}
+            }
+        }
+        if (rawStorageGet('elec_app_logged_in') === 'true' && (!mqttClient || prevKey !== cleanKey)) {
+            connectMqttLiveBus(true);
+        }
+        return true;
+    }
+
+    async function getAesGcmCryptoKey() {
+        const secretB64 = getStoredMqttSecretB64();
+        if (!secretB64 || !window.crypto?.subtle) return null;
+        if (cachedAesCryptoKeyPromise && cachedAesKeySource === secretB64) {
+            return cachedAesCryptoKeyPromise;
+        }
+        cachedAesKeySource = secretB64;
+        cachedAesCryptoKeyPromise = (async () => {
+            try {
+                let keyBytes = base64ToUint8(secretB64);
+                if (keyBytes.byteLength !== 32) {
+                    const hashBuf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secretB64));
+                    keyBytes = new Uint8Array(hashBuf);
+                }
+                return await crypto.subtle.importKey(
+                    'raw',
+                    keyBytes,
+                    { name: 'AES-GCM' },
+                    false,
+                    ['encrypt', 'decrypt']
+                );
+            } catch (e) {
+                cachedAesKeySource = '';
+                cachedAesCryptoKeyPromise = null;
+                return null;
+            }
+        })();
+        return cachedAesCryptoKeyPromise;
+    }
+
+    // เข้ารหัส AES-256-GCM พร้อมผูก AAD (ผู้ส่ง + เวลา + ชื่อคีย์) ป้องกันการดักอ่านและแก้ไขแพ็กเก็ต 100%
+    async function encryptMqttPayloadAesGcm(plainStr, ts, pktKey) {
+        const cryptoKey = await getAesGcmCryptoKey();
+        if (!cryptoKey) return null;
         try {
-            if (!cipherStr || !cipherStr.startsWith('ENC1_')) return null;
-            return decodeURIComponent(xorCipherTransform(atob(cipherStr.slice(5)), getOrgSecretKey() + '#' + (ts % 9973)));
-        } catch (e) { return null; }
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            const aadBytes = new TextEncoder().encode(`${MY_PEER_ID}|${ts}|${pktKey}`);
+            const plainBytes = new TextEncoder().encode(String(plainStr ?? ''));
+            const cipherBuf = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv, additionalData: aadBytes, tagLength: 128 },
+                cryptoKey,
+                plainBytes
+            );
+            const cipherBytes = new Uint8Array(cipherBuf);
+            const combined = new Uint8Array(iv.byteLength + cipherBytes.byteLength);
+            combined.set(iv, 0);
+            combined.set(cipherBytes, iv.byteLength);
+            return 'ENC2_' + uint8ToBase64(combined);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // ถอดรหัส AES-256-GCM + ตรวจสอบป้าย Auth Tag 128-bit + ป้องกันการยิงแพ็กเก็ตซ้ำ (Anti-Replay)
+    async function decryptMqttPayloadAesGcm(pkt) {
+        if (!pkt || typeof pkt.d !== 'string' || !pkt.d.startsWith('ENC2_') || !pkt.p || !pkt.t || !pkt.k) return null;
+        const now = Date.now();
+        const pktTs = Number(pkt.t) || 0;
+        if (!pktTs || Math.abs(now - pktTs) > MQTT_MAX_SKEW_MS) return null;
+
+        const cryptoKey = await getAesGcmCryptoKey();
+        if (!cryptoKey) return null;
+        try {
+            const rawBytes = base64ToUint8(pkt.d.slice(5));
+            if (rawBytes.byteLength <= 28) return null; // ต้องมีอย่างน้อย 12-byte IV + 16-byte GCM Auth Tag
+
+            const iv = rawBytes.subarray(0, 12);
+            const nonceId = `${pkt.p}_${uint8ToBase64(iv)}`;
+            if (seenMqttNoncesMap.has(nonceId)) return null;
+
+            const cipherWithTag = rawBytes.subarray(12);
+            const aadBytes = new TextEncoder().encode(`${pkt.p}|${pktTs}|${pkt.k}`);
+            const plainBuf = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv, additionalData: aadBytes, tagLength: 128 },
+                cryptoKey,
+                cipherWithTag
+            );
+
+            seenMqttNoncesMap.set(nonceId, now);
+            if (seenMqttNoncesMap.size > 600) {
+                for (const [nk, seenAt] of seenMqttNoncesMap.entries()) {
+                    if (now - seenAt > MQTT_MAX_SKEW_MS || seenMqttNoncesMap.size > 450) seenMqttNoncesMap.delete(nk);
+                    if (seenMqttNoncesMap.size <= 450) break;
+                }
+            }
+            return new TextDecoder('utf-8').decode(plainBuf);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function getMqttSecurityStatus() {
+        return {
+            cipher: 'AES-256-GCM (WebCrypto 128-bit Auth Tag)',
+            hasServerKey: hasValidMqttSecret(),
+            mqttConnected: Boolean(mqttClient && mqttClient.connected),
+            broker: WS_BROKERS[brokerFallbackIdx % WS_BROKERS.length]
+        };
     }
 
     function ensureMySessionTokenSyncedInUsers(usersArr) {
@@ -1215,14 +1374,10 @@
             }
         } catch (e) {} finally { isApplyingRemotePacket = false; }
     }
-    // ===== จบพาทที่ 3 / 4 ของไฟล์ shared-core.js =====
-    // ===== เริ่มพาทที่ 4 / 5 ของไฟล์ shared-core.js (วางต่อจากพาทที่ 3) =====
-    // ========================================================================
-    // 6. Write Gate, Sandbox, Same-Device Bus & MQTT Pin-Delta Engine
-    // ========================================================================
-    let localBroadcastCh = null;
-    try { if ('BroadcastChannel' in window) localBroadcastCh = new BroadcastChannel(CHANNEL_NAME); } catch (e) {}
 
+    // ========================================================================
+    // 6. Write Gate, Sandbox, Same-Device Bus & MQTT AES-GCM Engine
+    // ========================================================================
     function unlockCloudWrite(durationMs = 20000) {
         allowWriteUntilMs = Math.max(allowWriteUntilMs, Date.now() + (Number(durationMs) || 20000));
     }
@@ -1311,23 +1466,40 @@
     }
 
     function handleSameDeviceMsg(msg) {
-        if (!msg || msg.type !== 'PEA_SAME_DEVICE_KV' || msg.sender === MY_PEER_ID || !msg.key) return;
-        scheduleRealtimeRefresh(msg.key);
+        if (!msg || msg.sender === MY_PEER_ID) return;
+        if (msg.type === 'PEA_MQTT_KEY_SYNC') {
+            cachedAesKeySource = '';
+            cachedAesCryptoKeyPromise = null;
+            if (rawStorageGet('elec_app_logged_in') === 'true' && hasValidMqttSecret()) {
+                connectMqttLiveBus(true);
+            }
+            return;
+        }
+        if (msg.type === 'PEA_SAME_DEVICE_KV' && msg.key) {
+            scheduleRealtimeRefresh(msg.key);
+        }
     }
     if (localBroadcastCh) localBroadcastCh.onmessage = (e) => handleSameDeviceMsg(e.data);
     window.addEventListener('message', (e) => handleSameDeviceMsg(e.data));
 
     function getMqttTopicPair() {
-        const orgHash = hashString(getOrgSecretKey());
+        const secret = getStoredMqttSecretB64();
+        const orgSeed = `${getActiveCloudApiUrl()}::AES256GCM::${secret}`;
+        const orgHashA = hashString(orgSeed).toString(36);
+        const orgHashB = hashString(secret + '::TOPIC_SALT_V68').toString(36);
         const grp = normalizePeaGroupName(getCurrentUserGroup() || 'กฟส.บึง') || 'กฟส.บึง';
+        const grpHash = hashString(`${grp}::${secret.slice(0, 12)}`).toString(36);
         return {
-            globalTopic: `pea_sg_v6/${orgHash}/ALL`,
-            groupTopic: `pea_sg_v6/${orgHash}/G_${hashString(grp)}`
+            globalTopic: `pea_sg_v68/${orgHashA}_${orgHashB}/ALL`,
+            groupTopic: `pea_sg_v68/${orgHashA}_${orgHashB}/G_${grpHash}`
         };
     }
 
     function connectMqttLiveBus(forceResubscribe = false) {
         if (typeof mqtt === 'undefined' || typeof mqtt.connect !== 'function') return;
+        // เชื่อมต่อเฉพาะเมื่อล็อกอินแล้วและได้รับกุญแจ mqttKey จาก Code.gs แล้วเท่านั้น
+        if (rawStorageGet('elec_app_logged_in') !== 'true' || !hasValidMqttSecret()) return;
+
         const topics = getMqttTopicPair();
         const authSig = `${brokerFallbackIdx}::${topics.globalTopic}::${topics.groupTopic}`;
         if (mqttClient && lastMqttAuthSig === authSig && !forceResubscribe) return;
@@ -1352,15 +1524,16 @@
                 });
             });
             mqttClient.on('message', (_topic, payloadBuf) => {
-                try {
-                    const pkt = JSON.parse(payloadBuf.toString());
-                    if (!pkt || pkt.p === MY_PEER_ID || !pkt.d || !pkt.t) return;
-                    if (computePacketSignature(pkt.d, pkt.t, getOrgSecretKey()) !== pkt.s) return;
-                    const plain = decryptMqttPayload(pkt.d, pkt.t);
+                let pkt = null;
+                try { pkt = JSON.parse(payloadBuf.toString()); } catch (e) { return; }
+                if (!pkt || pkt.p === MY_PEER_ID || !pkt.d || !pkt.t || !pkt.k) return;
+
+                mqttIncomingChain = mqttIncomingChain.then(async () => {
+                    const plain = await decryptMqttPayloadAesGcm(pkt);
                     if (plain === null) return;
                     if (pkt.k === '__PIN_DELTA__') applyIncomingPinDeltaPacket(plain);
                     else if (LOCAL_WATCHED_KEYS.has(pkt.k)) applyIncomingLivePacket(pkt.k, plain);
-                } catch (e) {}
+                }).catch(() => {});
             });
             mqttClient.on('error', () => {
                 consecutiveMqttErrors++;
@@ -1382,44 +1555,51 @@
         }
         if (!SYNC_KEYS.has(key) || simSandbox.active || isViewerRole()) return;
         clearTimeout(debounceMqttTimers[key]);
-        debounceMqttTimers[key] = setTimeout(() => {
-            if (!mqttClient || !mqttClient.connected || simSandbox.active) return;
+        debounceMqttTimers[key] = setTimeout(async () => {
+            if (!mqttClient || !mqttClient.connected || simSandbox.active || !hasValidMqttSecret()) return;
             const ts = Date.now(), topics = getMqttTopicPair();
             const targetTopic = key === 'elec_user_accounts' ? topics.globalTopic : topics.groupTopic;
 
             if (key === 'elec_labeled_places_list' || key === 'elec_deleted_labeled_places_map') {
                 refreshRamPinsIndex(); refreshRamDelPinsIndex();
-                const upserted = [], deletedMap = {};
+                const upserted = [], deletedMap = {}, stagedMeta = [];
                 ramIndex.pinsList.forEach(p => {
                     if (!p?.id) return;
                     const sig = JSON.stringify(p);
                     if (mqttSentPinMetaMap.get(p.id)?.sig !== sig) {
                         upserted.push(p);
-                        mqttSentPinMetaMap.set(p.id, { sig, grp: normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง' });
+                        stagedMeta.push([p.id, { sig, grp: normalizePeaGroupName(p.ownerGroup || 'กฟส.บึง') || 'กฟส.บึง' }]);
                     }
                 });
+                const stagedDeletes = [];
                 Object.entries(ramIndex.delPinsObj || {}).forEach(([pid, iso]) => {
                     if (mqttSentPinMetaMap.has(pid) || key === 'elec_deleted_labeled_places_map') {
                         deletedMap[pid] = iso;
-                        mqttSentPinMetaMap.delete(pid);
+                        stagedDeletes.push(pid);
                     }
                 });
                 if (!upserted.length && !Object.keys(deletedMap).length) return;
                 const deltaStr = JSON.stringify({ upserted, deletedMap });
                 if (deltaStr.length > 130000) return;
-                const enc = encryptMqttPayload(deltaStr, ts);
-                mqttClient.publish(targetTopic, JSON.stringify({ p: MY_PEER_ID, t: ts, k: '__PIN_DELTA__', d: enc, s: computePacketSignature(enc, ts, getOrgSecretKey()) }));
+
+                const enc = await encryptMqttPayloadAesGcm(deltaStr, ts, '__PIN_DELTA__');
+                if (!enc || !mqttClient?.connected) return;
+                stagedMeta.forEach(([id, meta]) => mqttSentPinMetaMap.set(id, meta));
+                stagedDeletes.forEach(pid => mqttSentPinMetaMap.delete(pid));
+                mqttClient.publish(targetTopic, JSON.stringify({ v: 2, p: MY_PEER_ID, t: ts, k: '__PIN_DELTA__', d: enc }));
                 return;
             }
+
             const curVal = value ?? rawStorageGet(key) ?? '';
             if (!curVal || curVal.length > 130000) return;
-            const enc = encryptMqttPayload(curVal, ts);
-            mqttClient.publish(targetTopic, JSON.stringify({ p: MY_PEER_ID, t: ts, k: key, d: enc, s: computePacketSignature(enc, ts, getOrgSecretKey()) }));
+            const enc = await encryptMqttPayloadAesGcm(curVal, ts, key);
+            if (!enc || !mqttClient?.connected) return;
+            mqttClient.publish(targetTopic, JSON.stringify({ v: 2, p: MY_PEER_ID, t: ts, k: key, d: enc }));
         }, 180);
     }
 
     // ========================================================================
-    // 7. Smart Fetch Interceptor — ตัวสร้าง patchDelta และคิวส่งข้อมูลขึ้นชีต
+    // 7. Smart Fetch Interceptor — ตัวดักรับ mqttKey, สร้าง patchDelta & คิวส่งข้อมูล
     // ========================================================================
     let activeSyncScopeSig = '';
     const syncedDeletedJobKeys = new Map();
@@ -1457,8 +1637,6 @@
         lastSyncedLocalPinsStr = null; lastSyncedLocalDelPinsStr = null; lastSyncedLocalAuditStr = null; lastSyncedLocalBackupsStr = null;
     }
 
-        let recentLogoutAuthCache = { user: '', token: '', ts: 0 };
-
     function getActiveAuthCredentialsForFetch() {
         const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
         const curTok = (rawStorageGet('elec_app_session_token') || '').trim();
@@ -1473,9 +1651,11 @@
     }
 
     function handleServerUnauthorizedIfNeeded(parsedJson) {
+        if (parsedJson?.mqttKey) applyServerMqttKey(parsedJson.mqttKey);
         if (!parsedJson || parsedJson.unauthorized !== true) return;
         if (rawStorageGet('elec_app_logged_in') !== 'true') return;
-        ['elec_app_logged_in', 'elec_app_session_token'].forEach(k => nativeRemoveItem.call(localStorage, k));
+        ['elec_app_logged_in', 'elec_app_session_token', MQTT_SECRET_STORAGE_KEY].forEach(k => nativeRemoveItem.call(localStorage, k));
+        clearMqttKeyAndDisconnect();
         if (typeof window.checkLoginStatus === 'function') window.checkLoginStatus();
         if (typeof window.checkTechAuth === 'function') window.checkTechAuth();
         showToast('🔒 เซสชันหมดอายุหรือรหัสผ่านมีการเปลี่ยนแปลง กรุณาเข้าสู่ระบบใหม่');
@@ -1585,7 +1765,7 @@
         };
     }
 
-        async function nativePostWithBackoff(url, payloadObj, maxRetries = 3) {
+    async function nativePostWithBackoff(url, payloadObj, maxRetries = 3) {
         let attempt = 0;
         while (true) {
             try {
@@ -1684,9 +1864,16 @@
             try {
                 const res = await nativeFetch.call(window, scopedUrl, init);
                 const text = await res.text();
+                let sanitizedCacheText = text;
                 try {
                     const data = JSON.parse(text);
                     handleServerUnauthorizedIfNeeded(data);
+                    if (data?.mqttKey) {
+                        applyServerMqttKey(data.mqttKey);
+                        const diskCopy = { ...data };
+                        delete diskCopy.mqttKey;
+                        sanitizedCacheText = JSON.stringify(diskCopy);
+                    }
                     if (!isSpecialGetAction && data?.status === 'ok' && Array.isArray(data.jobs)) {
                         data.jobs.forEach(j => {
                             if (!j || j.jobType === 'tech_loc') return;
@@ -1704,8 +1891,8 @@
                             if (locReg.cloudGroupBackups) { const s = slimGroupBackupsJson(JSON.stringify(locReg.cloudGroupBackups)); lastBackupsHash = `${hashString(s)}_${s.length}`; if (!pendingPostTask && !isPostWorkerRunning) lastSyncedLocalBackupsStr = s; }
                             hasFirstBaseline = true;
                         }
-                        sheetMemoryCacheMap.set(cacheKey, { ts: Date.now(), text });
-                        if (text.length <= SHEET_DISK_CACHE_MAX_CHARS) rawStorageSet(SHEET_CACHE_STORAGE_KEY, text);
+                        sheetMemoryCacheMap.set(cacheKey, { ts: Date.now(), text: sanitizedCacheText });
+                        if (sanitizedCacheText.length <= SHEET_DISK_CACHE_MAX_CHARS) rawStorageSet(SHEET_CACHE_STORAGE_KEY, sanitizedCacheText);
                     }
                 } catch (e) {}
                 return new Response(text, { status: res.status || 200, headers: { 'Content-Type': 'application/json' } });
@@ -1720,9 +1907,7 @@
                 if (['verifyLogin', 'verifyPassword', 'verifyUserPassword', 'login', 'saveUsers', 'resolveShortUrl'].includes(bodyObj?.action)) {
                     if (bodyObj.action === 'saveUsers') invalidateSheetCaches();
                     const authRes = await nativeFetch.call(window, scopedUrl, init);
-                    if (bodyObj.action === 'saveUsers') {
-                        try { handleServerUnauthorizedIfNeeded(await authRes.clone().json()); } catch (e) {}
-                    }
+                    try { handleServerUnauthorizedIfNeeded(await authRes.clone().json()); } catch (e) {}
                     return authRes;
                 }
                 if (isViewerRole() && bodyObj?.action !== 'listTxLoads') {
@@ -1762,7 +1947,7 @@
     };
 
     // ========================================================================
-    // 8. Server Auth (SHA-256), Online Presence, Geo & ShortLink Utilities
+    // 8. Server Auth (SHA-256 + mqttKey Sync), Online Presence, Geo & ShortLink
     // ========================================================================
     async function computeSha256Hex(str) {
         if (!window.crypto?.subtle) return '';
@@ -1774,7 +1959,7 @@
         const pwdHash = await computeSha256Hex(pwdPlain);
         return (accountsList || []).find(acc => {
             if (!isUsernameMatchingAccount(uInput, acc.username)) return false;
-            const stored = String(acc.password || '').trim(), cleanStored = stored.replace(/^sha256:/i, '').toLowerCase();
+            const stored = String(acc.password || '').trim(), cleanStored = stored.replace(/^sha256[:$]/i, '').toLowerCase();
             return stored === pwdPlain || (pwdHash && cleanStored === pwdHash);
         }) || null;
     }
@@ -1809,6 +1994,7 @@
         rawStorageSet(LAST_GROUP_SESSION_KEY, grp || '__ADMIN_ALL__');
         rawStorageSet('elec_app_session_token', finalToken);
         rawStorageSet('elec_app_last_active', String(Date.now()));
+        if (data?.mqttKey) applyServerMqttKey(data.mqttKey);
         invalidateSheetCaches();
         connectMqttLiveBus(true);
         return { status: 'ok', authenticated: true, user: { username: canonUser, role, group: grp, displayName: authedUser.displayName || '' } };
@@ -1826,6 +2012,7 @@
                     body: JSON.stringify({ action: 'verifyLogin', username: u, rawUsername: u, password: pwd, checkOnly: true })
                 });
                 const d = await res.json();
+                if (d?.mqttKey) applyServerMqttKey(d.mqttKey);
                 if (d?.authenticated === true) return true;
                 if (d?.authenticated === undefined && await matchAccountLocally(u, pwd, getParsedUserAccounts())) return true;
             } catch (e) {
@@ -1958,7 +2145,8 @@
         createTrailingAsyncQueue, enterSimSandbox, exitSimSandbox,
         verifyLoginOnServer, verifyPasswordOnServer, updateUserOnlineHeartbeat, getAccountsOnlineStatusList,
         cleanReopenedAndCancelledJobsInStorage, runWithGroupViewFilter, getStorageUsageStats, cleanTemporaryCacheSafe,
-        downloadCsvFallback, calcHaversineKm, deepParseCoords, resolveGoogleShortLinkUniversal
+        downloadCsvFallback, calcHaversineKm, deepParseCoords, resolveGoogleShortLinkUniversal,
+        getMqttSecurityStatus
     };
 
     Object.assign(window, {
@@ -1993,9 +2181,8 @@
 
     const MAX_RETRIES = 3;
     const BASE_DELAY_MS = 1300;
-    const BUTTON_COOLDOWN_MS = 3500; // หน่วงปุ่มกดซ้ำ 3.5 วินาทีหลังส่งข้อมูลเสร็จ
+    const BUTTON_COOLDOWN_MS = 3500;
 
-    // เฉพาะคำสั่งเขียนตรง (ส่วน saveJobs ใช้คิวยุบรวมใน drainCloudPostWorker อยู่แล้ว ไม่ให้ซ้อนคิว)
     const QUEUED_DIRECT_WRITE_ACTIONS = new Set([
         'patchDelta', 'saveTxLoad', 'deleteTxLoad', 'deleteTxPdf', 'saveMeterState', 'saveUsers', 'uploadJobPhoto', 'uploadTxPdf'
     ]);
@@ -2179,4 +2366,4 @@
         }, 850);
     }, true);
 })();
-// ==================== จบไฟล์ shared-core.js (v6.7) ====================
+// ==================== จบไฟล์ shared-core.js (v6.8) ==================== 
