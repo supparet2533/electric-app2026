@@ -1,7 +1,7 @@
 // ============================================================================
-// 🔀⚡ PEA SMART GRID — AUTO TIE-SWITCH & ISOLATION ADVISOR v1.0 (scada-tie-advisor.js)
-// วิเคราะห์แผนปลดกั้นโซนชำรุด (หัว-ท้าย) + ค้นหาสวิตช์พ่วง (Tie Switch) จ่ายไฟคืนอัตโนมัติ
-// พร้อมระบบล็อกนิรภัยกันสับไฟชนฟอลต์ ประเมินโหลดหม้อแปลง (kVA/A) และจำลองผลบนผังในคลิกเดียว
+// 🔀⚡ PEA SMART GRID — AUTO TIE-SWITCH & ISOLATION ADVISOR v1.1 (scada-tie-advisor.js)
+// วิเคราะห์แผนปลดกั้นโซนสายเสีย (หัว-ท้าย) + ค้นหาสวิตช์พ่วง (Tie Switch) จ่ายไฟคืนอัตโนมัติ
+// พร้อมล็อกนิรภัยกันสับชนจุดเสีย ประเมินโหลดหม้อแปลง (kVA/A) จำลองผลบนผัง & พับแผงอัตโนมัติ
 // ============================================================================
 (function () {
     'use strict';
@@ -10,7 +10,6 @@
     const STORAGE_KEY_DELETED = 'elec_deleted_labeled_places_map';
     const TX_STORAGE_KEY = 'elec_tx_load_records_v1';
 
-    // อุปกรณ์ที่ทำหน้าที่เป็นแหล่งจ่ายต้นทาง และอุปกรณ์สวิตช์ที่สั่งปลด-สับแยกตอนได้
     const SOURCE_PIN_TYPES = new Set(['CB', 'RC', 'GEN']);
     const ISOLATING_SW_TYPES = new Set(['CB', 'RC', 'VB', 'VS', 'VSC', 'S', 'DF']);
     const TIE_CAPABLE_TYPES = new Set(['VB', 'VS', 'VSC', 'S', 'RC', 'CB']);
@@ -102,7 +101,10 @@
 
     function getCurrentScopeKey() {
         let curGrp = '';
-        try { curGrp = (typeof window.getCurrentUserGroup === 'function' ? window.getCurrentUserGroup() : '') || localStorage.getItem('elec_app_current_group') || ''; } catch (e) {}
+        try {
+            curGrp = (typeof window.getCurrentUserGroup === 'function' ? window.getCurrentUserGroup() : '') ||
+                     localStorage.getItem('elec_app_current_group') || '';
+        } catch (e) {}
         const isAdminAll = typeof window.isCurrentUserAdmin === 'function' && window.isCurrentUserAdmin() && !normGrp(curGrp);
         return isAdminAll ? '__ADMIN_ALL__' : (normGrp(curGrp) || 'กฟส.บึง');
     }
@@ -155,7 +157,8 @@
             ta.value = text;
             ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
             document.body.appendChild(ta);
-            ta.focus(); ta.select();
+            ta.focus();
+            ta.select();
             try { document.execCommand('copy'); done(); } catch (e) {}
             document.body.removeChild(ta);
         };
@@ -164,7 +167,7 @@
     }
 
     // ========================================================================
-    // 2. สร้างโครงข่ายกราฟไฟฟ้า 22kV, ตรวจจับแหล่งจ่าย และประเมินโหลดหม้อแปลง
+    // 2. สร้างโครงข่ายกราฟไฟฟ้า 22kV, แยกแหล่งจ่ายต้นทาง และประเมินโหลดหม้อแปลง
     // ========================================================================
     function getPinEquipType(pin) {
         if (!pin) return 'PIN';
@@ -174,10 +177,6 @@
         if (/\(\s*CB\b/i.test(nm)) return 'CB';
         if (/\(\s*RC\b/i.test(nm)) return 'RC';
         return 'PIN';
-    }
-
-    function isPinPowerSource(pin) {
-        return SOURCE_PIN_TYPES.has(getPinEquipType(pin));
     }
 
     function isPinIsolatingSwitch(pin) {
@@ -221,12 +220,81 @@
         const peaNo = mPea ? mPea[1] : '';
         const txRec = peaNo ? txRecordMap.get(peaNo) : null;
         const ratedKva = txRec?.kva ? Number(txRec.kva) : (mKva ? Number(mKva[1]) : 100);
-        let demandKva = ratedKva * 0.55; // ค่าเฉลี่ยโหลดใช้งานทั่วไป 55% กรณีไม่มีประวัติวัดโหลด
+        let demandKva = ratedKva * 0.55;
         if (txRec?.totals) {
             const sumLtAmp = (Number(txRec.totals.sumA) || 0) + (Number(txRec.totals.sumB) || 0) + (Number(txRec.totals.sumC) || 0);
             if (sumLtAmp > 0) demandKva = (sumLtAmp * 230) / 1000;
         }
         return { peaNo, ratedKva, demandKva, measured: Boolean(txRec) };
+    }
+
+    // คัดแยกหมุดต้นทางจ่ายไฟหลัก (CB, GEN, เบรกเกอร์ -01 หรือ RC หัวสายของวงจร) ออกจาก RC กลางสาย
+    function detectRootPowerSourceIds(pins, pinMap, adj, edgesMap) {
+        const rootIds = new Set();
+        const busHubIds = new Set();
+
+        pins.forEach((p) => {
+            const t = getPinEquipType(p);
+            if (t === 'GEN' || /^(?:สฟฟ\.?|สถานีไฟฟ้า)|busbar|\bbus\b/i.test(String(p.name || '').trim())) {
+                busHubIds.add(p.id);
+            }
+        });
+
+        pins.forEach((p) => {
+            const t = getPinEquipType(p);
+            if (t === 'CB' || t === 'GEN') {
+                rootIds.add(p.id);
+                return;
+            }
+            if (t === 'RC') {
+                const nm = String(p.name || '').trim();
+                const closedNbs = (adj.get(p.id) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge);
+                const nearHub = closedNbs.some((nb) => busHubIds.has(nb.toId) && nb.lenKm <= 0.8);
+                if (/\b[A-Z]{2,4}\d{1,2}(?:S|CB|F)-0*1\b/i.test(nm) || /\(\s*CB\b/i.test(nm) || closedNbs.length <= 1 || nearHub) {
+                    rootIds.add(p.id);
+                }
+            }
+        });
+
+        // กรณีวงจรนั้นใช้ RC รหัสอื่นเป็นหัวสาย (เช่น BNF03VS-101 [RC] แตกออก 2 กิ่งโดยไม่มี CB ในกลุ่มสาย) ให้ตั้งเป็นต้นทางจ่ายไฟอัตโนมัติ
+        const coveredFeeders = new Set();
+        rootIds.forEach((id) => {
+            const fd = extractPinFeederCode(pinMap.get(id));
+            if (fd) coveredFeeders.add(fd);
+        });
+
+        pins.forEach((p) => {
+            if (getPinEquipType(p) !== 'RC' || rootIds.has(p.id)) return;
+            const fd = extractPinFeederCode(p);
+            if (fd && !coveredFeeders.has(fd)) {
+                rootIds.add(p.id);
+                coveredFeeders.add(fd);
+            }
+        });
+
+        // กันเหนียวกรณีไม่ระบุรหัส fd เลยในกลุ่มสายที่เชื่อมถึงกัน
+        const visComp = new Set();
+        pins.forEach((p) => {
+            if (visComp.has(p.id) || (adj.get(p.id) || []).length === 0) return;
+            const comp = [];
+            const q = [p.id];
+            visComp.add(p.id);
+            while (q.length > 0) {
+                const cur = q.shift();
+                comp.push(cur);
+                (adj.get(cur) || []).forEach((nb) => {
+                    if (edgesMap.get(nb.edgeKey)?.isOpenEdge || visComp.has(nb.toId)) return;
+                    visComp.add(nb.toId);
+                    q.push(nb.toId);
+                });
+            }
+            if (!comp.some((id) => rootIds.has(id))) {
+                const firstRc = comp.find((id) => getPinEquipType(pinMap.get(id)) === 'RC');
+                if (firstRc) rootIds.add(firstRc);
+            }
+        });
+
+        return rootIds;
     }
 
     function buildNetworkTopology(overridePinsStr = null) {
@@ -236,7 +304,6 @@
         const edgesMap = new Map();
         pins.forEach((p) => adj.set(p.id, []));
 
-        // รวบรวมเส้นสายแบบสองทิศทางและตรวจเช็กสถานะสายปลด (manualNO / st === 'O')
         pins.forEach((p) => {
             (p.scadaLines || []).forEach((e, idx) => {
                 const dst = pinMap.get(e?.to);
@@ -279,7 +346,8 @@
             });
         });
 
-        return { pins, pinMap, adj, edges: Array.from(edgesMap.values()), edgesMap };
+        const rootSourceIds = detectRootPowerSourceIds(pins, pinMap, adj, edgesMap);
+        return { pins, pinMap, adj, edges: Array.from(edgesMap.values()), edgesMap, rootSourceIds };
     }
 
     function pointToSegmentDistKm(pLat, pLon, aLat, aLon, bLat, bLon) {
@@ -308,14 +376,12 @@
         return bestEdge ? { edge: bestEdge, point: bestPt, distKm: bestDist } : null;
     }
 
-    // หาระยะและแหล่งจ่ายไฟ (CB/RC/GEN ที่สับ C อยู่) ของทุกหมุดในกราฟหลังจำลองการปลดกั้น
-    function computeEnergizedStateMap(pins, pinMap, adj, edgesMap, forcedOpenPinIds, blockedEdgeKeys, faultedNodeIds) {
-        const energized = new Map(); // pinId -> { sourceId, sourceName, feeder, distKm }
+    function computeEnergizedStateMap(pins, pinMap, adj, edgesMap, rootSourceIds, forcedOpenPinIds, blockedEdgeKeys, faultedNodeIds) {
+        const energized = new Map();
         const pq = [];
 
-        // ให้ CB และ RC มีลำดับความสำคัญระบุชื่อวงจรก่อน GEN รวมหน้าสถานี
         const activeSources = pins.filter((p) => {
-            if (!isPinPowerSource(p)) return false;
+            if (!rootSourceIds.has(p.id)) return false;
             if (forcedOpenPinIds.has(p.id) || faultedNodeIds.has(p.id) || isPinOpenSwitch(p)) return false;
             return true;
         }).sort((a, b) => (getPinEquipType(a) === 'GEN' ? 1 : 0) - (getPinEquipType(b) === 'GEN' ? 1 : 0));
@@ -343,8 +409,7 @@
                 if (!edgeObj || edgeObj.isOpenEdge) return;
                 const nbPin = pinMap.get(nb.toId);
                 if (!nbPin || forcedOpenPinIds.has(nb.toId) || isPinOpenSwitch(nbPin)) return;
-                // ไม่ไหลย้อนทะลุ CB/RC ของวงจรอื่นเพื่อรักษาชื่อฟีดเดอร์ของแต่ละสายให้แม่นยำ
-                if (isPinPowerSource(nbPin) && energized.has(nb.toId)) return;
+                if (rootSourceIds.has(nb.toId) && energized.has(nb.toId)) return;
 
                 const nd = cur.d + nb.lenKm;
                 const ex = energized.get(nb.toId);
@@ -368,13 +433,11 @@
     // ========================================================================
     function analyzeSwitchingPlanForTarget({ faultEdgeKey = '', faultPinId = '', faultPoint = null, faultAtSwitchPole = false }) {
         const baseTopo = buildNetworkTopology(preSimBackupJson);
-        const { pins, pinMap, adj, edges, edgesMap } = baseTopo;
+        const { pins, pinMap, adj, edges, edgesMap, rootSourceIds } = baseTopo;
         if (!edges.length) return { error: 'ยังไม่มีเส้นสายไฟในผัง SCADA สำหรับวิเคราะห์สับพ่วง' };
 
         const txRecordMap = loadTxLoadMapByPeaNo();
-
-        // สถานะการจ่ายไฟปกติก่อนเกิดเหตุ (Baseline)
-        const baseEnergized = computeEnergizedStateMap(pins, pinMap, adj, edgesMap, new Set(), new Set(), new Set());
+        const baseEnergized = computeEnergizedStateMap(pins, pinMap, adj, edgesMap, rootSourceIds, new Set(), new Set(), new Set());
 
         let seedEdges = [];
         let seedPassThroughPinId = '';
@@ -394,19 +457,17 @@
             const fp = pinMap.get(faultPinId);
             markerCoord = markerCoord || [Number(fp.lat), Number(fp.lon)];
             if (isPinIsolatingSwitch(fp) && !faultAtSwitchPole) {
-                // โหมดมาตรฐาน: เกิดฟอลต์โซนหลังสวิตช์ตัวที่เลือก -> ใช้สวิตช์ตัวนี้ปลดกั้นต้นทาง และกั้นช่วงสายด้านท้ายน้ำ
                 const fpDist = baseEnergized.get(fp.id)?.distKm ?? 0;
                 const downNbs = (adj.get(fp.id) || []).filter((nb) => {
                     const eObj = edgesMap.get(nb.edgeKey);
                     if (!eObj || eObj.isOpenEdge) return false;
                     const nbD = baseEnergized.get(nb.toId)?.distKm ?? Infinity;
-                    return nbD >= fpDist - 0.01 && !isPinPowerSource(pinMap.get(nb.toId));
+                    return nbD >= fpDist - 0.01 && !rootSourceIds.has(nb.toId);
                 });
                 const pickedNbs = downNbs.length > 0 ? downNbs : (adj.get(fp.id) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge);
                 seedEdges = pickedNbs.map((nb) => edgesMap.get(nb.edgeKey)).filter(Boolean);
                 targetTitle = `โซนสายด้านหลัง ${fp.name}`;
             } else {
-                // โหมดชำรุดที่จุดหมุด/ตัวอุปกรณ์โดยตรง -> ต้องขยายผ่านหมุดนี้ไปหาสวิตช์ตัวถัดไปทั้งด้านต้นทางและท้ายทาง
                 seedPassThroughPinId = fp.id;
                 seedEdges = (adj.get(fp.id) || []).map((nb) => edgesMap.get(nb.edgeKey)).filter((e) => e && !e.isOpenEdge);
                 targetTitle = `ชำรุดที่จุด ${fp.name}`;
@@ -417,7 +478,7 @@
             return { error: 'ไม่พบช่วงสายที่เชื่อมกับจุดที่เลือก กรุณาแตะเลือกเส้นสายบนแผนที่' };
         }
 
-        // ขั้นที่ 1: ขยายหาขอบเขต "โซนสายชำรุด (Faulted Copper Zone)" จนชนสวิตช์ปลดกั้นทุกด้าน
+        // ขั้นที่ 1: ขยายหาขอบเขตโซนสายเสียจนชนสวิตช์ปลดกั้นทุกด้าน (กั้นไม่ให้ข้าม GEN หน้าสถานี)
         const faultedEdgeKeys = new Set();
         const faultedInteriorNodes = new Set();
         const boundarySwitchIds = new Set();
@@ -428,7 +489,7 @@
 
         const inspectEndpoint = (pid) => {
             const p = pinMap.get(pid);
-            if (!p) return;
+            if (!p || getPinEquipType(p) === 'GEN') return;
             if (pid !== seedPassThroughPinId && isPinOpenSwitch(p)) {
                 alreadyOpenBoundaryIds.add(pid);
                 return;
@@ -460,16 +521,15 @@
             });
         }
 
-        // นับหม้อแปลงที่ติดอยู่ในโซนสายชำรุดโดยตรง (ต้องรอซ่อมสายจึงจ่ายไฟได้)
         let faultZoneTxCount = 0, faultZoneKva = 0;
         faultedInteriorNodes.forEach((nid) => {
             const tx = parsePinTransformerLoad(pinMap.get(nid), txRecordMap);
             if (tx) { faultZoneTxCount++; faultZoneKva += tx.ratedKva; }
         });
 
-        // ขั้นที่ 2: จำลองปลดสวิตช์ขอบเขตทั้งหมด เพื่อแยก "สวิตช์กั้นต้นทาง (มีไฟเลี้ยง)" กับ "สวิตช์กั้นท้ายทาง (ไฟดับรอพ่วง)"
+        // ขั้นที่ 2: จำลองปลดสวิตช์ขอบเขตทั้งหมดเพื่อแยกสวิตช์กั้นต้นทาง กับ สวิตช์กั้นท้ายทาง
         const postIsoEnergized = computeEnergizedStateMap(
-            pins, pinMap, adj, edgesMap,
+            pins, pinMap, adj, edgesMap, rootSourceIds,
             boundarySwitchIds, faultedEdgeKeys, faultedInteriorNodes
         );
 
@@ -480,29 +540,29 @@
         boundarySwitchIds.forEach((swId) => {
             const swPin = pinMap.get(swId);
             if (!swPin) return;
-            // เช็กว่าขั้วอีกฝั่งของสวิตช์ตัวนี้ (ที่ไม่ใช่ด้านโซนชำรุด) มีไฟเลี้ยงเข้ามาหรือไม่ หรือตัวมันเองคือ CB/RC ต้นทาง
-            const hasLiveFeedSide = isPinPowerSource(swPin) || (adj.get(swId) || []).some((nb) => {
+            const hasLiveFeedSide = rootSourceIds.has(swId) || (adj.get(swId) || []).some((nb) => {
                 if (faultedEdgeKeys.has(nb.edgeKey) || edgesMap.get(nb.edgeKey)?.isOpenEdge) return false;
                 return postIsoEnergized.has(nb.toId);
             });
 
-            if (hasLiveFeedSide) {
-                upstreamSwitches.push(swPin);
-            } else {
-                downstreamBoundarySet.add(swId);
-            }
+            if (hasLiveFeedSide) upstreamSwitches.push(swPin);
+            else downstreamBoundarySet.add(swId);
         });
 
-        // กรณีเวรฯ เผลอหรือตั้งใจกดปลด CB/RC ต้นทางในผังเป็น 'O' ไว้ก่อนแล้ว ให้ค้นหาเพื่อแจ้งเตือนสับคืนไฟช่วงต้นสาย
-        if (upstreamSwitches.length === 0) {
+        // หากสวิตช์กั้นต้นทางถูกเปิด 'O' ไว้ก่อนแล้ว ให้แสดงยืนยันในรายการตรวจสอบด้วย
+        if (upstreamSwitches.length === 0 && alreadyOpenBoundaryIds.size > 0) {
             alreadyOpenBoundaryIds.forEach((openSwId) => {
                 const opPin = pinMap.get(openSwId);
-                if (opPin && isPinPowerSource(opPin)) upstreamSwitches.push(opPin);
+                if (!opPin) return;
+                const hasLiveSide = rootSourceIds.has(openSwId) || (adj.get(openSwId) || []).some((nb) => {
+                    if (faultedEdgeKeys.has(nb.edgeKey) || edgesMap.get(nb.edgeKey)?.isOpenEdge) return false;
+                    return postIsoEnergized.has(nb.toId);
+                });
+                if (hasLiveSide) upstreamSwitches.push(opPin);
             });
         } else {
-            // เช็กว่าด้านต้นน้ำของ upstreamSwitches มี CB/RC ตัวไหนถูกเปิด 'O' ค้างไว้เพราะทริปหรือไม่
             upstreamSwitches.forEach((upSw) => {
-                if (isPinPowerSource(upSw)) return;
+                if (rootSourceIds.has(upSw.id)) return;
                 const visUp = new Set([upSw.id, ...Array.from(faultedInteriorNodes)]);
                 const uq = [upSw.id];
                 while (uq.length > 0) {
@@ -514,7 +574,7 @@
                         visUp.add(nb.toId);
                         const np = pinMap.get(nb.toId);
                         if (!np) return;
-                        if (isPinPowerSource(np) && isPinOpenSwitch(np)) {
+                        if (rootSourceIds.has(np.id) && isPinOpenSwitch(np)) {
                             if (!recloseSourceSwitches.some((x) => x.id === np.id)) recloseSourceSwitches.push(np);
                         } else if (!isPinOpenSwitch(np)) {
                             uq.push(nb.toId);
@@ -524,66 +584,14 @@
             });
         }
 
-        // ขั้นที่ 3: ค้นหากลุ่มสายส่วนดีที่ไฟดับหลังปลดกั้น (Healthy De-energized Islands)
+        // ขั้นที่ 3: ค้นหากลุ่มสายส่วนดีที่ไฟดับหลังปลดกั้น (รองรับทั้งกลุ่มหมุดและช่วงสายสั้นชนสวิตช์ Tie โดยตรง)
         const visitedHealthy = new Set();
+        const visitedHealthyEdges = new Set();
         const restorableIslands = [];
         const deadEndSpurSummary = { txCount: 0, kva: 0, lineKm: 0, pinCount: 0 };
 
-        // สร้างกราฟส่วนดีที่ไม่รวมโซนชำรุด และยังไม่สับสวิตช์ Tie
-        pins.forEach((startPin) => {
-            if (visitedHealthy.has(startPin.id)) return;
-            if (faultedInteriorNodes.has(startPin.id) || boundarySwitchIds.has(startPin.id)) return;
-            if (postIsoEnergized.has(startPin.id) || isPinOpenSwitch(startPin)) return;
-
-            // สำรวจเฉพาะโหนดที่มีสายเชื่อมอยู่จริง
-            const incidentHealthyEdges = (adj.get(startPin.id) || []).filter((nb) => !faultedEdgeKeys.has(nb.edgeKey));
-            if (incidentHealthyEdges.length === 0) return;
-
-            const islandNodes = new Set([startPin.id]);
-            const islandEdges = new Set();
-            const borderingDownstreamSwIds = new Set();
-            const openSwitchPinCandidates = new Set();
-            const openEdgeKeyCandidates = new Set();
-            const iq = [startPin.id];
-            visitedHealthy.add(startPin.id);
-
-            while (iq.length > 0) {
-                const uid = iq.shift();
-                (adj.get(uid) || []).forEach((nb) => {
-                    if (faultedEdgeKeys.has(nb.edgeKey)) return;
-                    const eObj = edgesMap.get(nb.edgeKey);
-                    if (!eObj) return;
-
-                    if (eObj.isOpenEdge) {
-                        openEdgeKeyCandidates.add(nb.edgeKey);
-                        return;
-                    }
-
-                    const nbPin = pinMap.get(nb.toId);
-                    if (!nbPin) return;
-
-                    if (boundarySwitchIds.has(nb.toId)) {
-                        if (downstreamBoundarySet.has(nb.toId)) borderingDownstreamSwIds.add(nb.toId);
-                        islandEdges.add(nb.edgeKey);
-                        return;
-                    }
-                    if (isPinOpenSwitch(nbPin)) {
-                        openSwitchPinCandidates.add(nb.toId);
-                        islandEdges.add(nb.edgeKey);
-                        return;
-                    }
-                    if (faultedInteriorNodes.has(nb.toId) || postIsoEnergized.has(nb.toId)) return;
-
-                    islandEdges.add(nb.edgeKey);
-                    if (!visitedHealthy.has(nb.toId)) {
-                        visitedHealthy.add(nb.toId);
-                        islandNodes.add(nb.toId);
-                        iq.push(nb.toId);
-                    }
-                });
-            }
-
-            // คำนวณโหลดหม้อแปลงและความยาวสายในโซนไฟดับส่วนดีนี้
+        const evaluateCandidateIsland = (islandNodes, islandEdges, borderingDownstreamSwIds, openSwitchPinCandidates, openEdgeKeyCandidates) => {
+            islandEdges.forEach((ek) => visitedHealthyEdges.add(ek));
             let txCount = 0, ratedKva = 0, demandKva = 0, lineKm = 0;
             islandNodes.forEach((nid) => {
                 const tx = parsePinTransformerLoad(pinMap.get(nid), txRecordMap);
@@ -592,20 +600,16 @@
             islandEdges.forEach((ek) => { lineKm += edgesMap.get(ek)?.lenKm || 0; });
             const estAmp22kV = Number((demandKva / (Math.sqrt(3) * DEFAULT_BUS_KV)).toFixed(1));
 
-            // ขั้นที่ 4: ตรวจสอบสวิตช์พ่วง (Tie Switch) ทุกตัวที่เกาะกับ Island นี้ พร้อมกฎ Safety Interlock
             const validTieOptions = [];
 
-            // 4.1 ตรวจสวิตช์หมุดที่สถานะปลดปกติ (st === 'O')
             openSwitchPinCandidates.forEach((tieId) => {
                 const tiePin = pinMap.get(tieId);
                 if (!tiePin || !TIE_CAPABLE_TYPES.has(getPinEquipType(tiePin))) return;
-
                 const tieNbs = adj.get(tieId) || [];
-                // กฎนิรภัย #1: ห้ามสับสวิตช์ Tie ที่มีขาข้างใดข้างหนึ่งต่อตรงเข้าโซนสายชำรุดโดยไม่มีสวิตช์กั้น!
+                // กฎนิรภัย: ห้ามสับสวิตช์ Tie ที่ต่อตรงเข้าโซนสายเสียโดยไม่มีสวิตช์กั้นเด็ดขาด
                 const touchesFaultDirectly = tieNbs.some((nb) => faultedEdgeKeys.has(nb.edgeKey) || faultedInteriorNodes.has(nb.toId));
                 if (touchesFaultDirectly) return;
 
-                // ค้นหาขาฝั่งที่มีไฟเลี้ยงปกติ (Backup Live Feeder)
                 let bestFeedInfo = null;
                 tieNbs.forEach((nb) => {
                     const eObj = edgesMap.get(nb.edgeKey);
@@ -636,13 +640,12 @@
                 }
             });
 
-            // 4.2 ตรวจเส้นจัมพ์ปลดปกติ (Open Wire / Manual N.O.)
             openEdgeKeyCandidates.forEach((ek) => {
                 const eObj = edgesMap.get(ek);
                 if (!eObj) return;
-                const uInIsland = islandNodes.has(eObj.uId);
-                const deadEndId = uInIsland ? eObj.uId : eObj.vId;
-                const liveSideId = uInIsland ? eObj.vId : eObj.uId;
+                const uInSide = islandNodes.has(eObj.uId) || borderingDownstreamSwIds.has(eObj.uId);
+                const deadEndId = uInSide ? eObj.uId : eObj.vId;
+                const liveSideId = uInSide ? eObj.vId : eObj.uId;
                 if (faultedInteriorNodes.has(liveSideId) || faultedInteriorNodes.has(deadEndId)) return;
 
                 const feed = postIsoEnergized.get(liveSideId);
@@ -665,16 +668,19 @@
 
             validTieOptions.sort((a, b) => a.backupDistKm - b.backupDistKm);
 
-            // ค้นหาชื่อหมุดหลักในโซนเพื่อใช้แสดงชื่อโซนที่เข้าใจง่าย
             const sampleNames = Array.from(islandNodes)
                 .map((nid) => pinMap.get(nid))
                 .filter((p) => p && !isNodeTTap(p, pins))
                 .slice(0, 2)
                 .map((p) => p.name);
+            const fallbackSwName = Array.from(borderingDownstreamSwIds).map((id) => pinMap.get(id)?.name).filter(Boolean)[0] || '';
+            const zoneLabel = sampleNames.length
+                ? `โซน ${sampleNames.join(' - ')}`
+                : (fallbackSwName ? `โซนท้ายสวิตช์ ${fallbackSwName}` : 'โซนปลายสายส่วนดี');
 
             if (validTieOptions.length > 0) {
                 restorableIslands.push({
-                    zoneLabel: sampleNames.length ? `โซน ${sampleNames.join(' - ')}` : 'โซนปลายสายส่วนดี',
+                    zoneLabel,
                     islandNodes,
                     islandEdges,
                     requiredDownstreamSwitches: Array.from(borderingDownstreamSwIds).map((id) => pinMap.get(id)).filter(Boolean),
@@ -690,9 +696,79 @@
                 deadEndSpurSummary.kva += ratedKva;
                 deadEndSpurSummary.lineKm += lineKm;
             }
+        };
+
+        // 3.1 สำรวจกลุ่มสายส่วนดีที่มีหมุดภายในโซน
+        pins.forEach((startPin) => {
+            if (visitedHealthy.has(startPin.id)) return;
+            if (faultedInteriorNodes.has(startPin.id) || boundarySwitchIds.has(startPin.id)) return;
+            if (postIsoEnergized.has(startPin.id) || isPinOpenSwitch(startPin)) return;
+
+            const incidentHealthyEdges = (adj.get(startPin.id) || []).filter((nb) => !faultedEdgeKeys.has(nb.edgeKey));
+            if (incidentHealthyEdges.length === 0) return;
+
+            const islandNodes = new Set([startPin.id]);
+            const islandEdges = new Set();
+            const borderingDownstreamSwIds = new Set();
+            const openSwitchPinCandidates = new Set();
+            const openEdgeKeyCandidates = new Set();
+            const iq = [startPin.id];
+            visitedHealthy.add(startPin.id);
+
+            while (iq.length > 0) {
+                const uid = iq.shift();
+                (adj.get(uid) || []).forEach((nb) => {
+                    if (faultedEdgeKeys.has(nb.edgeKey)) return;
+                    const eObj = edgesMap.get(nb.edgeKey);
+                    if (!eObj) return;
+
+                    if (eObj.isOpenEdge) {
+                        openEdgeKeyCandidates.add(nb.edgeKey);
+                        return;
+                    }
+                    const nbPin = pinMap.get(nb.toId);
+                    if (!nbPin) return;
+
+                    if (boundarySwitchIds.has(nb.toId)) {
+                        if (downstreamBoundarySet.has(nb.toId)) borderingDownstreamSwIds.add(nb.toId);
+                        islandEdges.add(nb.edgeKey);
+                        return;
+                    }
+                    if (isPinOpenSwitch(nbPin)) {
+                        openSwitchPinCandidates.add(nb.toId);
+                        islandEdges.add(nb.edgeKey);
+                        return;
+                    }
+                    if (faultedInteriorNodes.has(nb.toId) || postIsoEnergized.has(nb.toId)) return;
+
+                    islandEdges.add(nb.edgeKey);
+                    if (!visitedHealthy.has(nb.toId)) {
+                        visitedHealthy.add(nb.toId);
+                        islandNodes.add(nb.toId);
+                        iq.push(nb.toId);
+                    }
+                });
+            }
+
+            evaluateCandidateIsland(islandNodes, islandEdges, borderingDownstreamSwIds, openSwitchPinCandidates, openEdgeKeyCandidates);
         });
 
-        // รวบรวมเส้นประสำหรับวาดบนแผนที่
+        // 3.2 สำรวจช่วงสายสั้นจากสวิตช์กั้นท้ายทางที่ลากชนหมุด Tie (O) โดยตรงแบบไม่มีหมุดคั่นกลาง
+        downstreamBoundarySet.forEach((dswId) => {
+            (adj.get(dswId) || []).forEach((nb) => {
+                if (faultedEdgeKeys.has(nb.edgeKey) || visitedHealthyEdges.has(nb.edgeKey)) return;
+                const eObj = edgesMap.get(nb.edgeKey);
+                const nbPin = pinMap.get(nb.toId);
+                if (!eObj || !nbPin) return;
+
+                if (eObj.isOpenEdge) {
+                    evaluateCandidateIsland(new Set(), new Set([nb.edgeKey]), new Set([dswId]), new Set(), new Set([nb.edgeKey]));
+                } else if (isPinOpenSwitch(nbPin)) {
+                    evaluateCandidateIsland(new Set(), new Set([nb.edgeKey]), new Set([dswId]), new Set([nb.toId]), new Set());
+                }
+            });
+        });
+
         const faultPolylines = Array.from(faultedEdgeKeys).map((ek) => edgesMap.get(ek)?.pts).filter(Boolean);
 
         return {
@@ -705,6 +781,7 @@
             recloseSourceSwitches,
             restorableIslands,
             deadEndSpurSummary,
+            rootSourceIds,
             edgesMap
         };
     }
@@ -729,14 +806,12 @@
                 .bindPopup(`<div style="font-family:'Prompt',sans-serif;" class="text-xs font-bold text-rose-700">⚡ ${escHtml(plan.targetTitle)}</div>`);
         }
 
-        // ไฮไลต์โซนสายชำรุดที่ถูกปลดกั้นออก (สีแดงส้มประ)
         (plan.faultPolylines || []).forEach((pts) => {
             if (pts.length < 2) return;
             L.polyline(pts, { pane: 'scadaTieAdvisorPane', color: '#ef4444', weight: 8, opacity: 0.42, interactive: false }).addTo(tieLayerGroup);
             L.polyline(pts, { pane: 'scadaTieAdvisorPane', color: '#fef08a', weight: 2.5, dashArray: '5, 6', opacity: 0.95, interactive: false }).addTo(tieLayerGroup);
         });
 
-        // ป้ายสวิตช์ปลดกั้นต้นทาง (สีแดง)
         const addStepMarker = (pin, badgeTxt, bgHex, borderHex, roleDesc) => {
             const lat = Number(pin.lat), lon = Number(pin.lon);
             bounds.push([lat, lon]);
@@ -747,14 +822,14 @@
             });
             L.marker([lat, lon], { icon: ic, pane: 'scadaTieAdvisorPane' })
                 .addTo(tieLayerGroup)
-                .bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:200px;" class="text-xs space-y-1"><div class="font-extrabold text-slate-800">${escHtml(badgeTxt)} — ${escHtml(pin.name)}</div><div class="text-[11px] text-slate-600">${escHtml(roleDesc)}</div><a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving" target="_blank" rel="noopener" style="display:block;text-align:center;background:#2563eb;color:#fff;padding:4px 8px;border-radius:7px;font-weight:700;text-decoration:none;margin-top:4px;">🚗 นำทางไปสวิตช์นี้</a></div>`);
+                .bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:205px;" class="text-xs space-y-1"><div class="font-extrabold text-slate-800">${escHtml(badgeTxt)} — ${escHtml(pin.name)}</div><div class="text-[11px] text-slate-600">${escHtml(roleDesc)}</div><a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving" target="_blank" rel="noopener" style="display:block;text-align:center;background:#2563eb;color:#fff;padding:4px 8px;border-radius:7px;font-weight:700;text-decoration:none;margin-top:4px;">🚗 นำทางไปสวิตช์นี้</a></div>`);
         };
 
         plan.upstreamSwitches.forEach((sw) => {
-            addStepMarker(sw, '🔴 ปลดกั้นต้นทาง', '#dc2626', '#fde047', 'ปลดแยกจุดเสียออกจากสายหลักด้านต้นทาง');
+            const lbl = isPinOpenSwitch(sw) ? '🔴 กั้นต้นทาง (ปลดแล้ว)' : '🔴 ปลดกั้นต้นทาง';
+            addStepMarker(sw, lbl, '#dc2626', '#fde047', 'ปลดแยกจุดเสียออกจากสายหลักด้านต้นทาง');
         });
 
-        // วาดโซนที่ได้ไฟคืน (สีเขียวมรกต) + สวิตช์ปลดกั้นท้ายทาง + สวิตช์สับพ่วง Tie
         const drawnDownSw = new Set();
         plan.restorableIslands.forEach((isl, islIdx) => {
             isl.islandEdges.forEach((ek) => {
@@ -788,15 +863,23 @@
         else if (bounds.length === 1) capturedMap.setView(bounds[0], 15);
     }
 
+    function syncSimSandboxResetIfExited() {
+        if (preSimBackupJson && !window.PeaCore?.simSandbox?.active) {
+            preSimBackupJson = null;
+            document.getElementById('btnRestoreTieSim')?.classList.add('hidden');
+        }
+    }
+
     function previewTieAdvisorInSim() {
         if (!lastAdvisorPlan) return window.showToast?.('⚠️ กรุณาคำนวณแผนสับพ่วงก่อนจำลองผล');
+        syncSimSandboxResetIfExited();
+
         if (!preSimBackupJson) {
             preSimBackupJson = window.PeaCore?.rawStorageGet
                 ? (window.PeaCore.rawStorageGet(STORAGE_KEY_LABELS) || '[]')
                 : (localStorage.getItem(STORAGE_KEY_LABELS) || '[]');
         }
 
-        // เปิดโหมดซ้อมสับ-ปลด (Sandbox) อัตโนมัติเพื่อไม่ให้กระทบข้อมูลจริงบนคลาวด์
         if (!window.PeaCore?.simSandbox?.active) {
             const simBtn = document.getElementById('btnToggleScadaSimMode');
             if (simBtn) simBtn.click();
@@ -816,11 +899,9 @@
                 p.updatedAt = new Date().toISOString();
             };
 
-            // 1) ปลดกั้นสวิตช์ต้นทาง + สับคืนแหล่งจ่ายต้นสายกรณีเคยปลดค้าง
             lastAdvisorPlan.upstreamSwitches.forEach((sw) => setPinSwitchState(sw.id, 'O'));
             lastAdvisorPlan.recloseSourceSwitches.forEach((src) => setPinSwitchState(src.id, 'C'));
 
-            // 2) ปลดกั้นสวิตช์ท้ายทาง + สับสวิตช์พ่วง Tie ตามแผนที่เลือก
             lastAdvisorPlan.restorableIslands.forEach((isl, islIdx) => {
                 isl.requiredDownstreamSwitches.forEach((dsw) => setPinSwitchState(dsw.id, 'O'));
                 const chosen = isl.tieOptions[selectedOptionByIsland[islIdx] || 0] || isl.tieOptions[0];
@@ -841,6 +922,7 @@
 
             localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(workingPins));
             window.PeaCore?.notifyStorageUpdated?.([STORAGE_KEY_LABELS]);
+            if (typeof window.renderLabeledPlacesList === 'function') window.renderLabeledPlacesList();
             document.getElementById('btnRestoreTieSim')?.classList.remove('hidden');
             window.showToast?.('🧪 จำลองสับ-ปลดและจ่ายไฟพ่วงบนผังแล้ว (โหมดซ้อมปลอดภัย ไม่กระทบคลาวด์)');
         } catch (e) {
@@ -858,6 +940,7 @@
         }
         preSimBackupJson = null;
         window.PeaCore?.notifyStorageUpdated?.([STORAGE_KEY_LABELS]);
+        if (typeof window.renderLabeledPlacesList === 'function') window.renderLabeledPlacesList();
         document.getElementById('btnRestoreTieSim')?.classList.add('hidden');
         window.showToast?.('↩️ คืนค่าสถานะสวิตช์กลับสู่ผังปกติเรียบร้อยแล้ว');
     }
@@ -871,15 +954,18 @@
         let stepNo = 1;
 
         plan.upstreamSwitches.forEach((sw) => {
+            const alreadyOpen = isPinOpenSwitch(sw);
             steps.push({
                 no: stepNo++,
                 action: 'OPEN',
-                badge: '🔴 สั่งปลด (กั้นต้นทาง)',
+                badge: alreadyOpen ? '🔴 ตรวจสอบปลดกั้นต้นทาง (ปลดอยู่แล้ว)' : '🔴 สั่งปลด (กั้นต้นทาง)',
                 pinId: sw.id,
                 name: sw.name,
                 lat: Number(sw.lat),
                 lon: Number(sw.lon),
-                note: isPinPowerSource(sw) ? 'ปลดต้นทางแยกช่วงสายที่ชำรุด' : 'ปลดแยกโซนชำรุดเพื่อให้ช่วงต้นสายจ่ายไฟได้ตามปกติ'
+                note: plan.rootSourceIds?.has(sw.id)
+                    ? 'ปลดต้นทางแยกช่วงสายที่ชำรุด'
+                    : 'ปลดแยกโซนสายเสียเพื่อให้ช่วงต้นสายจ่ายไฟได้ตามปกติ'
             });
         });
 
@@ -909,7 +995,7 @@
                     name: dsw.name,
                     lat: Number(dsw.lat),
                     lon: Number(dsw.lon),
-                    note: `กั้นโซนชำรุดก่อนรับไฟพ่วงย้อนเข้า ${isl.zoneLabel}`
+                    note: `กั้นโซนสายเสียก่อนรับไฟพ่วงย้อนเข้า ${isl.zoneLabel}`
                 });
             });
         });
@@ -944,7 +1030,7 @@
         const lines = [
             `🔀 แผนลำดับสับ-ปลดสวิตช์พ่วงจ่ายไฟคืน (22kV)`,
             `⚡ จุดเกิดเหตุ : ${p.targetTitle}`,
-            `⚠️ กฎความปลอดภัย : ต้องปลดกั้นหัว-ท้ายโซนเสียให้ครบก่อนสับพ่วงเสมอ`,
+            `⚠️ กฎความปลอดภัย : ต้องปลดกั้นหัว-ท้ายโซนสายเสียให้ครบก่อนสับพ่วงเสมอ`,
             `━━━━━━━━━━━━━━━━━━`
         ];
         steps.forEach((s) => {
@@ -981,7 +1067,7 @@
                 const cls = active
                     ? 'bg-emerald-600 text-white border-emerald-300'
                     : 'bg-slate-800 text-slate-300 border-slate-600 hover:bg-slate-700';
-                return `<button type="button" onclick="selectTieAdvisorAltOption(${islIdx},${oIdx})" class="px-2 py-0.5 rounded-lg border text-[10px] font-bold ${cls}">${oIdx === 0 ? '⭐ แผน #1' : `สำรอง #${oIdx + 1}`}: ${escHtml(opt.tieName)} (${escHtml(opt.backupFeeder)} • ${opt.backupDistKm} กม.)</button>`;
+                return `<button type="button" onclick="selectTieAdvisorAltOption(${islIdx},${oIdx})" class="px-2 py-0.5 rounded-lg border text-[10px] font-bold whitespace-nowrap ${cls}">${oIdx === 0 ? '⭐ แผน #1' : `สำรอง #${oIdx + 1}`}: ${escHtml(opt.tieName)} (${escHtml(opt.backupFeeder)} • ${opt.backupDistKm} กม.)</button>`;
             }).join('');
             return `<div class="p-1.5 rounded-lg bg-slate-950/80 border border-emerald-500/30 space-y-1"><div class="text-[10px] text-emerald-300 font-bold">🔀 เลือกทางเลือกสับพ่วงสำหรับ ${escHtml(isl.zoneLabel)} (⚠️ เลือกสับพ่วงเพียง 1 จุด ห้ามสับชนกัน):</div><div class="flex flex-wrap gap-1">${btns}</div></div>`;
         }).filter(Boolean).join('');
@@ -995,12 +1081,12 @@
             : '';
 
         const stepsHtml = steps.length > 0
-            ? `<div class="space-y-1 max-h-44 overflow-y-auto pr-0.5">` + steps.map((s) => {
+            ? `<div class="space-y-1 max-h-40 overflow-y-auto pr-0.5">` + steps.map((s) => {
                 const rowBorder = s.action.startsWith('CLOSE') ? 'border-emerald-400/60 bg-emerald-950/40' : 'border-rose-400/50 bg-slate-950/90';
                 const badgeCol = s.action.startsWith('CLOSE') ? 'text-emerald-300' : 'text-rose-300';
                 return `<div class="flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border ${rowBorder} text-[10.5px] text-white">` +
                     `<button type="button" onclick="zoomToTieAdvisorStepPin(${s.lat},${s.lon})" class="flex-1 min-w-0 text-left truncate"><b class="${badgeCol}">ขั้นที่ ${s.no} • ${escHtml(s.badge)}:</b> <b>${escHtml(s.name)}</b> <span class="text-slate-300">(${escHtml(s.note)})</span></button>` +
-                    `<a href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving" target="_blank" rel="noopener" class="shrink-0 bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[9.5px] font-bold">🚗 ไปจุดนี้</a>` +
+                    `<a href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving" target="_blank" rel="noopener" class="shrink-0 bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[9.5px] font-bold whitespace-nowrap">🚗 ไปจุดนี้</a>` +
                     `</div>`;
             }).join('') + `</div>`
             : `<div class="p-2 rounded-lg bg-amber-950/80 border border-amber-400/40 text-[11px] text-amber-200">⚠️ ไม่พบสวิตช์ปลดกั้นรอบจุดที่เลือก กรุณาตรวจสอบการเชื่อมสายหรือประเภทหมุดสวิตช์ในผัง</div>`;
@@ -1023,7 +1109,7 @@
     }
 
     // ========================================================================
-    // 6. การโต้ตอบของผู้ใช้: จิ้มสายบนแผนที่, ดึงจุดฟอลต์อัตโนมัติ & แผงควบคุมหลัก
+    // 6. การโต้ตอบผู้ใช้, สลับพับแผงอัตโนมัติ (Accordion) & ปุ่มลัดเชื่อมผลฟอลต์
     // ========================================================================
     function populateTieTargetDropdowns() {
         const fdSel = document.getElementById('scadaTieFeederFilter');
@@ -1071,12 +1157,13 @@
         const btn = document.getElementById('btnTiePickOnMap');
         if (btn) {
             btn.textContent = '👆 แตะจุดเสียบนแผนที่';
-            btn.className = 'bg-amber-600 hover:bg-amber-500 text-white py-1.5 px-2.5 rounded-lg text-[11px] font-extrabold whitespace-nowrap shadow';
+            btn.className = 'flex-1 bg-amber-600 hover:bg-amber-500 text-white py-1.5 px-2 rounded-lg text-[11px] font-extrabold whitespace-nowrap shadow';
         }
     }
 
     function startTieAdvisorMapPickMode() {
         tryDiscoverMap();
+        syncSimSandboxResetIfExited();
         const mapEl = document.getElementById('labeledInteractiveMap');
         if (!capturedMap || !mapEl) return window.showToast?.('⚠️ แผนที่ยังไม่พร้อมใช้งาน');
 
@@ -1085,8 +1172,8 @@
         mapEl.classList.add('pea-tie-pick-cursor');
         const btn = document.getElementById('btnTiePickOnMap');
         if (btn) {
-            btn.textContent = '🎯 กำลังรอแตะสายไฟ... (กดซ้ำยกเลิก)';
-            btn.className = 'bg-emerald-600 text-white border border-amber-300 py-1.5 px-2.5 rounded-lg text-[11px] font-extrabold whitespace-nowrap shadow';
+            btn.textContent = '🎯 แตะบนเส้นสายไฟ... (กดซ้ำยกเลิก)';
+            btn.className = 'flex-1 bg-emerald-600 text-white border border-amber-300 py-1.5 px-2 rounded-lg text-[11px] font-extrabold whitespace-nowrap shadow';
         }
         window.showToast?.('👆 แตะลงบนเส้นสายไฟ 22kV ช่วงที่ชำรุดบนแผนที่ได้เลยครับ');
 
@@ -1105,6 +1192,8 @@
             }
             stopMapPickMode();
             selectedFaultEdgeKey = hit.edge.edgeKey;
+            const pinSel = document.getElementById('scadaTieFaultPinSelect');
+            if (pinSel) pinSel.value = '';
             selectedOptionByIsland = {};
             const res = analyzeSwitchingPlanForTarget({ faultEdgeKey: hit.edge.edgeKey, faultPoint: hit.point });
             if (res.error) return window.showToast?.('⚠️ ' + res.error);
@@ -1121,14 +1210,10 @@
         };
     }
 
-    // ดึงพิกัดจุดคาดการณ์ฟอลต์จาก scada-fault-locator.js มาวางแผนสับพ่วงต่อในคลิกเดียว
     async function importFaultToTieAdvisor(candLat = null, candLon = null) {
-        await toggleScadaTieAdvisorPanel(true);
-        tryDiscoverMap();
-
+        syncSimSandboxResetIfExited();
         let targetLat = Number(candLat), targetLon = Number(candLon);
         if (!candLat || isNaN(targetLat) || isNaN(targetLon)) {
-            // ค้นหาปุ่มพิกัดของจุดคาดการณ์อันดับ #1 จากกล่องผลลัพธ์วัดระยะฟอลต์โดยอัตโนมัติ
             const svBtn = document.querySelector('#scadaFaultResultBox button[onclick*="openFaultStreetView"]');
             const m = String(svBtn?.getAttribute('onclick') || '').match(/openFaultStreetView\(\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\)/);
             if (m) {
@@ -1137,8 +1222,11 @@
             }
         }
 
+        await toggleScadaTieAdvisorPanel(true);
+        tryDiscoverMap();
+
         if (isNaN(targetLat) || isNaN(targetLon)) {
-            return window.showToast?.('ℹ️ ยังไม่มีจุดคาดการณ์จากตัวคำนวณฟอลต์ (สามารถกด 👆 แตะจุดเสียบนแผนที่ได้โดยตรง)');
+            return window.showToast?.('ℹ️ ยังไม่มีจุดคาดการณ์จากตัวคำนวณฟอลต์ (กด 👆 แตะจุดเสียบนแผนที่ได้โดยตรง)');
         }
 
         const { edges } = buildNetworkTopology(preSimBackupJson);
@@ -1146,6 +1234,8 @@
         if (!hit) return window.showToast?.('⚠️ ไม่พบเส้นสายไฟบริเวณจุดคาดการณ์ฟอลต์');
 
         selectedFaultEdgeKey = hit.edge.edgeKey;
+        const pinSel = document.getElementById('scadaTieFaultPinSelect');
+        if (pinSel) pinSel.value = '';
         selectedOptionByIsland = {};
         const res = analyzeSwitchingPlanForTarget({ faultEdgeKey: hit.edge.edgeKey, faultPoint: hit.point });
         if (res.error) return window.showToast?.('⚠️ ' + res.error);
@@ -1157,6 +1247,7 @@
 
     function runScadaTieAdvisorAnalysis() {
         tryDiscoverMap();
+        syncSimSandboxResetIfExited();
         const pinId = document.getElementById('scadaTieFaultPinSelect')?.value || '';
         const faultAtPole = document.getElementById('scadaTieFaultScopeSelect')?.value === 'AT_PIN';
         if (!pinId && !selectedFaultEdgeKey) {
@@ -1202,6 +1293,7 @@
 
     function clearTieAdvisorOverlay(silent = false) {
         stopMapPickMode();
+        syncSimSandboxResetIfExited();
         if (preSimBackupJson) restoreTieAdvisorSimPreview();
         tieLayerGroup?.clearLayers();
         lastAdvisorPlan = null;
@@ -1224,9 +1316,34 @@
         }
     }
 
+    function onTieAdvisorScopeChange() {
+        if (document.getElementById('scadaTieFaultPinSelect')?.value) {
+            runScadaTieAdvisorAnalysis();
+        }
+    }
+
+    // ผูกระบบสลับพับแผงอัตโนมัติ (Accordion) ไม่ให้แผงฟอลต์กับแผงสับพ่วงกางซ้อนกันจนบังแผนที่บนมือถือ
+    function hookFaultPanelAccordion() {
+        if (typeof window.toggleScadaFaultLocatorPanel === 'function' && !window.toggleScadaFaultLocatorPanel.__tieAccordionHooked) {
+            const origToggleFault = window.toggleScadaFaultLocatorPanel;
+            window.toggleScadaFaultLocatorPanel = Object.assign(async function (forceOpen) {
+                const willOpen = typeof forceOpen === 'boolean'
+                    ? forceOpen
+                    : Boolean(document.getElementById('scadaFaultLocatorPanel')?.classList.contains('hidden'));
+                if (willOpen && panelOpen) await toggleScadaTieAdvisorPanel(false);
+                return origToggleFault.apply(this, arguments);
+            }, { __tieAccordionHooked: true });
+        }
+    }
+
     async function toggleScadaTieAdvisorPanel(forceOpen) {
+        syncSimSandboxResetIfExited();
+        hookFaultPanelAccordion();
         panelOpen = typeof forceOpen === 'boolean' ? forceOpen : !panelOpen;
         if (!panelOpen) stopMapPickMode();
+        if (panelOpen && typeof window.toggleScadaFaultLocatorPanel === 'function' && !document.getElementById('scadaFaultLocatorPanel')?.classList.contains('hidden')) {
+            await window.toggleScadaFaultLocatorPanel(false);
+        }
         document.getElementById('scadaTieAdvisorPanel')?.classList.toggle('hidden', !panelOpen);
         const btn = document.getElementById('btnToggleTieAdvisor');
         if (btn) {
@@ -1263,19 +1380,19 @@
         pnl.innerHTML =
             `<div class="p-2.5 rounded-xl bg-gradient-to-r from-teal-950/90 via-slate-900 to-slate-900 border border-teal-400/40 space-y-2">` +
             `<div class="flex flex-wrap items-center justify-between gap-1.5">` +
-            `<span class="text-[11.5px] font-extrabold text-teal-300">🔀 ระบบวางแผนปลดกั้นโซนชำรุด &amp; แนะนำสวิตช์พ่วงจ่ายไฟคืน (FLISR)</span>` +
+            `<span class="text-[11.5px] font-extrabold text-teal-300">🔀 วางแผนปลดกั้นโซนชำรุด &amp; แนะนำสวิตช์พ่วงจ่ายไฟคืน (FLISR)</span>` +
             `<button type="button" onclick="importFaultToTieAdvisor()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow whitespace-nowrap">🎯 ดึงจุดเสียจากผลคำนวณฟอลต์</button>` +
             `</div>` +
             `<div class="grid grid-cols-2 sm:grid-cols-12 gap-1.5 items-center">` +
             `<select id="scadaTieFeederFilter" onchange="onTieAdvisorFeederFilterChange()" class="col-span-1 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-teal-200 border border-slate-600 text-[11px] font-bold"><option value="ALL">ทุกวงจร</option></select>` +
             `<select id="scadaTieFaultPinSelect" onchange="onTieAdvisorTargetSelectChange()" class="col-span-1 sm:col-span-4 px-2 py-1.5 rounded-lg bg-slate-800 text-amber-300 border border-slate-600 text-[11px] font-bold"></select>` +
-            `<select id="scadaTieFaultScopeSelect" onchange="if(document.getElementById('scadaTieFaultPinSelect')?.value)runScadaTieAdvisorAnalysis();" class="col-span-2 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[10.5px] font-bold">` +
+            `<select id="scadaTieFaultScopeSelect" onchange="onTieAdvisorScopeChange()" class="col-span-2 sm:col-span-2 px-2 py-1.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-600 text-[10.5px] font-bold">` +
             `<option value="AFTER_PIN">⚡ สายช่วงหลังหมุดนี้</option>` +
             `<option value="AT_PIN">💥 ชำรุดที่ตัวหมุดนี้เอง</option></select>` +
             `<div class="col-span-2 sm:col-span-4 flex gap-1">` +
             `<button type="button" id="btnTiePickOnMap" onclick="startTieAdvisorMapPickMode()" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white py-1.5 px-2 rounded-lg text-[11px] font-extrabold whitespace-nowrap shadow">👆 แตะจุดเสียบนแผนที่</button>` +
             `<button type="button" onclick="runScadaTieAdvisorAnalysis()" class="bg-teal-600 hover:bg-teal-500 text-white py-1.5 px-2.5 rounded-lg text-[11px] font-extrabold whitespace-nowrap shadow">🔍 วิเคราะห์</button>` +
-            `<button type="button" onclick="clearTieAdvisorOverlay(false)" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-slate-500/60 py-1.5 px-2 rounded-lg text-[11px] font-extrabold whitespace-nowrap">🧹</button>` +
+            `<button type="button" onclick="clearTieAdvisorOverlay(false)" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-slate-500/60 py-1.5 px-2 rounded-lg text-[11px] font-extrabold whitespace-nowrap" title="ล้างแผนสับพ่วง">🧹</button>` +
             `</div></div>` +
             `<div id="scadaTieAdvisorResultBox" class="hidden space-y-1.5 pt-1 border-t border-slate-700/80"></div>` +
             `</div>`;
@@ -1283,7 +1400,6 @@
         return true;
     }
 
-    // แทรกปุ่มลัด "🔀 สับพ่วง" ต่อท้ายผลลัพธ์ของตัวคำนวณฟอลต์อัตโนมัติ (โดยไม่ต้องแก้ไขไฟล์ scada-fault-locator.js)
     function observeFaultLocatorResultBox() {
         const faultBox = document.getElementById('scadaFaultResultBox');
         if (!faultBox || faultBox.__tieObserverAttached) return;
@@ -1297,7 +1413,7 @@
                 if (!m) return;
                 const tieBtn = document.createElement('button');
                 tieBtn.type = 'button';
-                tieBtn.className = 'pea-quick-tie-btn shrink-0 bg-teal-600 hover:bg-teal-500 text-white px-1.5 py-1 rounded text-[9.5px] font-extrabold';
+                tieBtn.className = 'pea-quick-tie-btn shrink-0 bg-teal-600 hover:bg-teal-500 text-white px-1.5 py-1 rounded text-[9.5px] font-extrabold whitespace-nowrap';
                 tieBtn.title = 'วางแผนปลดกั้นและสับสวิตช์พ่วงสำหรับจุดนี้';
                 tieBtn.textContent = '🔀 พ่วงไฟ';
                 tieBtn.onclick = () => importFaultToTieAdvisor(parseFloat(m[1]), parseFloat(m[2]));
@@ -1315,6 +1431,7 @@
     });
 
     window.PeaCore?.onRealtimeChange?.((keys) => {
+        syncSimSandboxResetIfExited();
         if (!panelOpen || !Array.isArray(keys) || preSimBackupJson) return;
         if (keys.includes(STORAGE_KEY_LABELS) || keys.includes(STORAGE_KEY_DELETED)) {
             populateTieTargetDropdowns();
@@ -1325,6 +1442,7 @@
         toggleScadaTieAdvisorPanel,
         onTieAdvisorFeederFilterChange,
         onTieAdvisorTargetSelectChange,
+        onTieAdvisorScopeChange,
         startTieAdvisorMapPickMode,
         importFaultToTieAdvisor,
         runScadaTieAdvisorAnalysis,
@@ -1342,18 +1460,23 @@
         lastActiveScopeKey = getCurrentScopeKey();
         injectTieAdvisorStyles();
         hookLeafletMap();
+        hookFaultPanelAccordion();
         if (!injectTieAdvisorToolbarUI()) {
             const obs = new MutationObserver(() => {
                 hookLeafletMap();
+                hookFaultPanelAccordion();
                 if (injectTieAdvisorToolbarUI()) obs.disconnect();
             });
             obs.observe(document.getElementById('techMainApp'), { childList: true, subtree: true });
         }
         setInterval(() => {
             hookLeafletMap();
+            hookFaultPanelAccordion();
+            syncSimSandboxResetIfExited();
             observeFaultLocatorResultBox();
             const curScope = getCurrentScopeKey();
-            const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+            let isLogged = false;
+            try { isLogged = localStorage.getItem('elec_app_logged_in') === 'true'; } catch (e) {}
             if (!isLogged || (lastActiveScopeKey && curScope !== lastActiveScopeKey)) {
                 clearTieAdvisorOverlay(true);
                 if (!isLogged && panelOpen) toggleScadaTieAdvisorPanel(false);
@@ -1365,4 +1488,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initTieAdvisorModule);
     else initTieAdvisorModule();
 })();
-// ==================== จบไฟล์ scada-tie-advisor.js (v1.0) ====================
+// ==================== จบไฟล์ scada-tie-advisor.js (v1.1 Final) ====================
