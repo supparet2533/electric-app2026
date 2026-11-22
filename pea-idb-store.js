@@ -1,7 +1,7 @@
 // ============================================================================
-// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v2.1 (pea-idb-store.js)
-// ซิงค์คีย์ CA (overdue_ca_list) + แผนงาน PM + ป้องกัน Iframe บูตทับข้อมูลหน้าหลักครบ 100%
-// พาทที่ 1 / 2 : Config, RAM Cache, IndexedDB Core & Merge Helpers
+// 💾 PEA SMART GRID — HYBRID RAM + INDEXEDDB STORAGE ENGINE v2.2 (pea-idb-store.js)
+// ซิงค์คีย์ CA + แผนงาน PM + ประวัติวัดโหลดหม้อแปลง + สเกลฟอลต์ 22kV
+// รองรับโหมดจำลองสับพ่วง (scada-tie-advisor.js / simSandbox) 100% ทุกขนาดผังข้อมูล
 // ============================================================================
 (function () {
     'use strict';
@@ -21,6 +21,8 @@
         elec_app_auto_backup_snapshot: 50000,
         elec_cloud_group_backups_map: 100000,
         elec_labeled_places_list: 450000,
+        elec_tx_load_records_v1: 2500000, // เก็บแบบ Mirrored (RAM+IDB+LS) เพื่อให้หน้าฟอร์มแยกอ่านตรงได้ และย้ายลง IDB อัตโนมัติเมื่อโควตาเต็ม
+        elec_scada_22kv_feeder_calib_v1: 500000,
         default: 400000
     };
 
@@ -37,7 +39,9 @@
         'outageHistory',
         'overdue_ca_list',
         'elec_ca_overdue_list',
-        'elec_pm_calendar_plans_v1'
+        'elec_pm_calendar_plans_v1',
+        'elec_tx_load_records_v1',
+        'elec_scada_22kv_feeder_calib_v1'
     ]);
 
     const EMPTY_FALLBACK = {
@@ -53,7 +57,9 @@
         outageHistory: '[]',
         overdue_ca_list: '[]',
         elec_ca_overdue_list: '[]',
-        elec_pm_calendar_plans_v1: '[]'
+        elec_pm_calendar_plans_v1: '[]',
+        elec_tx_load_records_v1: '[]',
+        elec_scada_22kv_feeder_calib_v1: '{}'
     };
 
     const rawGet = Storage.prototype.getItem;
@@ -280,7 +286,7 @@
                 }
                 const map = new Map();
                 const getKey = (it) => {
-                    const explicitId = it?.id || it?.jobId || it?.logId || it?.uid || it?.timestamp || it?.dateTimeSaved;
+                    const explicitId = it?.id || it?.recordId || it?.jobId || it?.logId || it?.uid || it?.timestamp || it?.dateTimeSaved;
                     return explicitId ? `id_${explicitId}` : `raw_${JSON.stringify(it)}`;
                 };
                 idbData.forEach((it) => map.set(getKey(it), it));
@@ -297,8 +303,7 @@
         } catch (e) {}
         return idbStr;
     }
-    // ===== จบพาทที่ 1 / 2 ของไฟล์ pea-idb-store.js =====
-        // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ pea-idb-store.js (วางต่อจากพาทที่ 1) =====
+
     function dispatchSyntheticStorageEvent(key, newVal) {
         let ev = null;
         try {
@@ -336,11 +341,15 @@
             keysArr.forEach((key) => dispatchSyntheticStorageEvent(key, ramCache.get(key) ?? null));
         }
 
-        if (isInitialBoot && hasEquipUpdate && !simActive) {
-            if (rawGet.call(window.localStorage, 'elec_app_logged_in') === 'true' && typeof window.__onScadaRoleUpdated === 'function') {
-                window.__onScadaRoleUpdated();
-            } else {
-                window.renderLabeledPlacesList?.(true);
+        if (hasEquipUpdate && !simActive) {
+            window.refreshFaultSourceOptions?.();
+            window.onTieAdvisorFeederFilterChange?.();
+            if (isInitialBoot) {
+                if (rawGet.call(window.localStorage, 'elec_app_logged_in') === 'true' && typeof window.__onScadaRoleUpdated === 'function') {
+                    window.__onScadaRoleUpdated();
+                } else {
+                    window.renderLabeledPlacesList?.(true);
+                }
             }
         }
         if (keysArr.some((k) => k === 'elecReportsComplete_all' || k === 'fault_reports_all' || k === 'faultHistory' || k === 'outageHistory')) {
@@ -373,7 +382,7 @@
         }
     }
 
-    // ซิงค์ข้ามหน้าจอแยก (index.html <-> page2.html)
+    // ซิงค์ข้ามหน้าจอแยก (index.html <-> page2.html <-> tx-load-form.html)
     window.addEventListener('storage', function (e) {
         if (!e || e.isTrusted === false) return;
         if (e.key === null) {
@@ -412,10 +421,16 @@
             });
             return;
         }
-        bumpKeyVersion(e.key);
+        const ts = nextWriteTs();
+        const ver = bumpKeyVersion(e.key);
         pendingPreReadyOps.delete(e.key);
         hydratingOffloadedKeys.delete(e.key);
         ramCache.set(e.key, e.newValue);
+        // บันทึกข้อมูลที่เขียนมาจากแท็บฟอร์มแยก (เช่น tx-load-form.html) ลง IndexedDB อัตโนมัติ
+        if (isDbReady && dbInst) {
+            dirtyWriteQueue.set(e.key, { op: 'set', valStr: e.newValue, ts, ver, epoch: clearEpoch, offload: shouldOffloadKey(e.key, e.newValue) });
+            flushKeyWriteQueue(e.key);
+        }
     }, true);
 
     if (bc) {
@@ -509,7 +524,7 @@
                 savePhysTs(key, writeTs);
             } catch (quotaErr) {
                 offload = true;
-                ['elec_auto_backup_snapshot', 'elec_app_auto_backup_snapshot', 'elec_cloud_group_backups_map'].forEach((bkKey) => {
+                ['elec_auto_backup_snapshot', 'elec_app_auto_backup_snapshot', 'elec_cloud_group_backups_map', 'elec_tx_load_records_v1'].forEach((bkKey) => {
                     if (key !== bkKey && ramCache.has(bkKey)) {
                         const bkStr = ramCache.get(bkKey);
                         const bkVer = bumpKeyVersion(bkKey);
@@ -532,15 +547,37 @@
         dirtyWriteQueue.set(key, { op: 'del', ts: nextWriteTs(), ver, epoch: clearEpoch });
         flushKeyWriteQueue(key);
     }
-    // ===== จบพาทที่ 2 / 3 ของไฟล์ pea-idb-store.js =====
-        // ===== เริ่มพาทที่ 3 / 3 ของไฟล์ pea-idb-store.js (วางต่อจากพาทที่ 2 จนจบไฟล์) =====
+
+    // รองรับโหมดซ้อมสับ-ปลด (simSandbox ของ shared-core.js และ scada-tie-advisor.js) ทั้งขาอ่านและขาเขียน
+    const idbGetItemFn = function (key) {
+        if (this === window.localStorage) {
+            if (key === PENDING_PUSH_KEY && hydratingOffloadedKeys.size > 0) return null;
+            if (key === 'elec_labeled_places_list' &&
+                Storage.prototype.getItem === idbGetItemFn &&
+                window.localStorage.getItem === idbGetItemFn &&
+                window.PeaCore?.simSandbox?.active &&
+                typeof window.PeaCore.simSandbox.workingJson === 'string') {
+                return window.PeaCore.simSandbox.workingJson;
+            }
+            if (MANAGED_KEYS.has(key)) {
+                if (ramCache.has(key)) return ramCache.get(key);
+                const v = rawGet.call(this, key);
+                return isOffloadMarker(v) ? (EMPTY_FALLBACK[key] ?? null) : v;
+            }
+        }
+        return rawGet.call(this, key);
+    };
+
     const idbSetItemFn = function (key, value) {
         if (this !== window.localStorage || !MANAGED_KEYS.has(key)) {
             return rawSet.call(this, key, value);
         }
         const valStr = String(value ?? '');
         if (isOffloadMarker(valStr)) return;
-        if (key === 'elec_labeled_places_list' && Storage.prototype.setItem === idbSetItemFn && window.localStorage.setItem === idbSetItemFn && window.PeaCore?.simSandbox?.active) {
+        if (key === 'elec_labeled_places_list' &&
+            Storage.prototype.setItem === idbSetItemFn &&
+            window.localStorage.setItem === idbSetItemFn &&
+            window.PeaCore?.simSandbox?.active) {
             window.PeaCore.simSandbox.workingJson = valStr;
             return;
         }
@@ -560,8 +597,7 @@
                 } catch (e) {}
             }
             if (bc && valStr.length <= BC_INLINE_MAX_CHARS) {
-                try { bc.postMessage({ type: 'IDB_KV_SET', key, valStr, ts, senderId }); } catch (e) {}
-            }
+                try { bc.postMessage({ type: 'IDB_KV_SET', key, valStr, ts, senderId }); } catch (e) {} }
             return;
         }
 
@@ -569,18 +605,7 @@
         persistManagedKeyPhysical(key, valStr, ts, ver, true);
     };
 
-    Storage.prototype.getItem = function (key) {
-        if (this === window.localStorage) {
-            if (key === PENDING_PUSH_KEY && hydratingOffloadedKeys.size > 0) return null;
-            if (MANAGED_KEYS.has(key)) {
-                if (ramCache.has(key)) return ramCache.get(key);
-                const v = rawGet.call(this, key);
-                return isOffloadMarker(v) ? (EMPTY_FALLBACK[key] ?? null) : v;
-            }
-        }
-        return rawGet.call(this, key);
-    };
-
+    Storage.prototype.getItem = idbGetItemFn;
     Storage.prototype.setItem = idbSetItemFn;
 
     Storage.prototype.removeItem = function (key) {
@@ -725,11 +750,26 @@
         };
         bootSafeFetch.__peaIdbOuterGuarded = true;
         window.fetch = bootSafeFetch;
-    }
+    };
     ensureFetchBootGuarded();
 
     function attachPostCoreGuards() {
         ensureFetchBootGuarded();
+
+        // ป้องกัน PeaCore.rawStorageGet คืนค่า "__PEA_IDB_OFFLOAD__" ตอนที่ scada-tie-advisor.js หรือโหมดซ้อมดึงผังจริงก่อนจำลองสับพ่วง
+        if (window.PeaCore && typeof window.PeaCore.rawStorageGet === 'function' && !window.PeaCore.rawStorageGet.__peaIdbGuarded) {
+            const origRawGet = window.PeaCore.rawStorageGet;
+            const safeRawGet = function (key) {
+                if (MANAGED_KEYS.has(key) && ramCache.has(key)) {
+                    return ramCache.get(key);
+                }
+                const v = origRawGet.call(window.PeaCore, key);
+                return isOffloadMarker(v) ? (EMPTY_FALLBACK[key] ?? null) : v;
+            };
+            safeRawGet.__peaIdbGuarded = true;
+            window.PeaCore.rawStorageGet = safeRawGet;
+        }
+
         if (typeof window.pushAllJobsToCloud === 'function' && !window.pushAllJobsToCloud.__idbGuarded) {
             const origPush = window.pushAllJobsToCloud;
             const guardedPush = async function () {
@@ -748,6 +788,11 @@
     window.PeaIdbStore = {
         ready: readyPromise,
         isHydrating: () => !isDbReady || hydratingOffloadedKeys.size > 0,
+        getCommittedItem: (key) => {
+            if (MANAGED_KEYS.has(key) && ramCache.has(key)) return ramCache.get(key);
+            const v = rawGet.call(window.localStorage, key);
+            return isOffloadMarker(v) ? (EMPTY_FALLBACK[key] ?? null) : v;
+        },
         getStats() {
             const report = {};
             MANAGED_KEYS.forEach((k) => {
@@ -763,4 +808,4 @@
         }
     };
 })();
-// ==================== จบไฟล์ pea-idb-store.js (v2.1) ====================
+// ==================== จบไฟล์ pea-idb-store.js (v2.2) ====================
