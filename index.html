@@ -912,14 +912,14 @@
 
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 text-sm z-[1500]">แจ้งเตือนระบบ</div>
 
-       <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
+    <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=149"></script>
-    <script src="shared-core.js?v=149"></script>
-    <script src="main-app.js?v=149"></script>
-    <script src="pm-calendar.js?v=149"></script>
-    <script src="scada-fault-locator.js?v=149"></script>
-    <script src="pm-push.js?v=149"></script>
+    <script src="pea-idb-store.js?v=156"></script>
+    <script src="shared-core.js?v=156"></script>
+    <script src="main-app.js?v=156"></script>
+    <script src="pm-calendar.js?v=156"></script>
+    <script src="scada-fault-locator.js?v=156"></script>
+    <script src="pm-push.js?v=156"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
@@ -1015,6 +1015,7 @@
                         '#leftBrowserDock:not(.hidden), #stationModal:not(.hidden), #issueModal:not(.hidden), #tambonModal:not(.hidden), #apiKeyModal:not(.hidden), #meterLinkModal:not(.hidden), #backupModal:not(.hidden), #caModal:not(.hidden), #stripWordsModal:not(.hidden), #scadaCadImportModal:not(.hidden), #userManageModal:not(.hidden), #onlineUsersModal:not(.hidden), #pmCalendarModal:not(.hidden)'
                     ));
                     const hasUnsavedFormDraft = [
+                        'currA', 'currB', 'currC', 'currG', 'tab1QuickFaultAmpInput', 'tab1QuickFaultKmInput',
                         'deviceInput', 'disconnectDeviceInput', 'reporterInput', 'gpsInput',
                         'rawCustomerPasteInput', 'issueType', 'area', 'address', 'phone', 'gps'
                     ].some(function(id) {
