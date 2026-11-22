@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v147 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v157 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v157';
+const CACHE_NAME = 'pea-smart-tools-v158';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -21,6 +21,7 @@ const APP_SHELL_ASSETS = [
     './tech-jobs.js',
     './scada-engine.js',
     './scada-fault-locator.js',
+    './scada-tie-advisor.js',
     './pm-calendar.js',
     './pm-push.js',
     './manifest.json',
@@ -56,6 +57,7 @@ const REQUIRED_LOCAL_SHELL = new Set([
     './tech-jobs.js',
     './scada-engine.js',
     './scada-fault-locator.js',
+    './scada-tie-advisor.js',
     './pm-calendar.js'
 ]);
 
@@ -128,7 +130,7 @@ function isValidShellPayload(pathname, res, buf, destination = '') {
     if (isMainHtml && buf) {
         try {
             const text = new TextDecoder('utf-8').decode(buf);
-            if (!/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|pm-calendar)\.js/i.test(text)) {
+            if (!/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|scada-tie-advisor|pm-calendar)\.js/i.test(text)) {
                 return false;
             }
         } catch (e) {}
@@ -494,7 +496,7 @@ self.addEventListener('notificationclick', (event) => {
                     self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
                 );
             }
-            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
+            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null;
         })
     );
 });
