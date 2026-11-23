@@ -1,7 +1,7 @@
 // ============================================================================
-// 🔀⚡ PEA SMART GRID — AUTO TIE-SWITCH & ISOLATION ADVISOR v1.1 (scada-tie-advisor.js)
+// 🔀⚡ PEA SMART GRID — AUTO TIE-SWITCH & ISOLATION ADVISOR v1.2 (scada-tie-advisor.js)
 // วิเคราะห์แผนปลดกั้นโซนสายเสีย (หัว-ท้าย) + ค้นหาสวิตช์พ่วง (Tie Switch) จ่ายไฟคืนอัตโนมัติ
-// พร้อมล็อกนิรภัยกันสับชนจุดเสีย ประเมินโหลดหม้อแปลง (kVA/A) จำลองผลบนผัง & พับแผงอัตโนมัติ
+// รองรับล็อกนิรภัยป้าย LOTO, สายปลด (e.off), ประเมินโหลดหม้อแปลง (kVA/A) & จำลองผลบนผัง
 // ============================================================================
 (function () {
     'use strict';
@@ -19,7 +19,8 @@
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 
     let capturedMap = null;
     let tieLayerGroup = null;
@@ -82,6 +83,16 @@
         if (!L.Map.__peaTieAdvisorHooked) {
             L.Map.__peaTieAdvisorHooked = true;
             L.Map.addInitHook(function () { setTimeout(() => attachMapInstance(this), 0); });
+            ['invalidateSize', 'setView', 'fitBounds'].forEach((fn) => {
+                const orig = L.Map.prototype[fn];
+                if (typeof orig !== 'function' || orig.__peaTieWrapped) return;
+                const wrapped = function () {
+                    attachMapInstance(this);
+                    return orig.apply(this, arguments);
+                };
+                wrapped.__peaTieWrapped = true;
+                L.Map.prototype[fn] = wrapped;
+            });
         }
         tryDiscoverMap();
     }
@@ -96,7 +107,9 @@
 
     function normGrp(raw) {
         if (typeof window.normalizePeaGroupName === 'function') return window.normalizePeaGroupName(raw) || '';
-        return String(raw || '').trim().replace(/\s+/g, ' ');
+        let g = String(raw || '').trim().replace(/\s+/g, ' ');
+        g = g.replace(/^(กฟ[ก-ฮ]{1,2})\.\s+/, '$1.').replace(/^(กฟ[สฟจตอยภผกนฉ])\s+/, '$1.').replace(/^(กฟ[สฟจตอยภผกนฉ])(?![.\s]|[ก-ฮ]\.|$)/, '$1.');
+        return g.trim();
     }
 
     function getCurrentScopeKey() {
@@ -123,6 +136,25 @@
             const fallbackGrp = (p.ownerUser && typeof window.getUserGroupName === 'function') ? window.getUserGroupName(p.ownerUser) : '';
             return (normGrp(p.ownerGroup || fallbackGrp) || 'กฟส.บึง') === scopeKey;
         });
+    }
+
+    function getLiveCommittedLotoMap() {
+        const lotoMap = new Map();
+        try {
+            const rawStr = window.PeaCore?.rawStorageGet
+                ? window.PeaCore.rawStorageGet(STORAGE_KEY_LABELS)
+                : localStorage.getItem(STORAGE_KEY_LABELS);
+            const list = JSON.parse(rawStr || '[]');
+            (Array.isArray(list) ? list : []).forEach((p) => {
+                if (p?.id && p.scadaNode?.loto && String(p.scadaNode.loto).trim()) {
+                    lotoMap.set(p.id, {
+                        loto: String(p.scadaNode.loto).trim(),
+                        lotoBy: String(p.scadaNode.lotoBy || '').trim()
+                    });
+                }
+            });
+        } catch (e) {}
+        return lotoMap;
     }
 
     function loadTxLoadMapByPeaNo() {
@@ -188,12 +220,29 @@
         return (ISOLATING_SW_TYPES.has(t) || t === 'GEN') && String(pin?.scadaNode?.st || 'C').toUpperCase() === 'O';
     }
 
+    function hasPinLoto(pin, liveLotoMap = null) {
+        if (pin?.scadaNode?.loto && String(pin.scadaNode.loto).trim()) return true;
+        return Boolean(liveLotoMap && pin?.id && liveLotoMap.has(pin.id));
+    }
+
+    function getPinLotoMeta(pin, liveLotoMap = null) {
+        if (pin?.scadaNode?.loto && String(pin.scadaNode.loto).trim()) {
+            return {
+                reason: String(pin.scadaNode.loto).trim(),
+                by: String(pin.scadaNode.lotoBy || '').trim()
+            };
+        }
+        const live = liveLotoMap?.get(pin?.id);
+        return { reason: live?.loto || 'ติดป้ายห้ามสับไฟ', by: live?.lotoBy || '' };
+    }
+
     function isNodeTTap(pin, allPins) {
         if (!pin) return false;
         const t = getPinEquipType(pin);
         if (t !== 'TAP' && t !== 'PIN') return false;
         if (t === 'TAP' || pin.isTTap === true) return true;
-        if (/^(?:•\s*)?t-tap\b|จุดแทป|แทปสาย|หมุดแทป/i.test(`${pin.name || ''} ${pin.note || ''}`)) return true;
+        if (/^(?:•\s*)?t-tap\b|จุดแทป|แทปสาย|แทปกลางสาย|หมุดแทป/i.test(`${pin.name || ''} ${pin.note || ''}`)) return true;
+        if (Array.isArray(pin.scadaLines) && pin.scadaLines.some((l) => l && (l._ttapTrunk || l._ttapFromId))) return true;
         return Array.isArray(allPins) && allPins.some((p) => p && p.id !== pin.id && Array.isArray(p.scadaLines) && p.scadaLines.some((l) => l && l.to === pin.id && l._ttapId));
     }
 
@@ -214,7 +263,7 @@
         const txt = `${pin.name || ''} ${pin.note || ''}`;
         const mPea = txt.match(/\b(\d{2}-\d{5,7})\b/);
         const mKva = txt.match(/\b(30|50|75|100|125|160|200|250|315|400|500|630|800|1000|1250|1600|2000)\s*(?:kva|k\b)/i);
-        const isNamedTx = /หม้อแปลง|\bTR\b/i.test(txt);
+        const isNamedTx = eqT === 'TR' || /หม้อแปลง|\bTR\b/i.test(txt);
         if (!mPea && !mKva && !isNamedTx) return null;
 
         const peaNo = mPea ? mPea[1] : '';
@@ -228,7 +277,7 @@
         return { peaNo, ratedKva, demandKva, measured: Boolean(txRec) };
     }
 
-    // คัดแยกหมุดต้นทางจ่ายไฟหลัก (CB, GEN, เบรกเกอร์ -01 หรือ RC หัวสายของวงจร) ออกจาก RC กลางสาย
+    // คัดแยกหมุดต้นทางจ่ายไฟหลัก (CB, GEN, เบรกเกอร์สถานี F-xx / S-01 หรือ RC ต้นสาย) ออกจาก RC ลูกข่ายกลางสาย
     function detectRootPowerSourceIds(pins, pinMap, adj, edgesMap) {
         const rootIds = new Set();
         const busHubIds = new Set();
@@ -240,6 +289,7 @@
             }
         });
 
+        // รอบที่ 1: หมุด CB, GEN หรือ RC ที่เป็นเบรกเกอร์หน้าสถานีชัดเจน
         pins.forEach((p) => {
             const t = getPinEquipType(p);
             if (t === 'CB' || t === 'GEN') {
@@ -250,29 +300,41 @@
                 const nm = String(p.name || '').trim();
                 const closedNbs = (adj.get(p.id) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge);
                 const nearHub = closedNbs.some((nb) => busHubIds.has(nb.toId) && nb.lenKm <= 0.8);
-                if (/\b[A-Z]{2,4}\d{1,2}(?:S|CB|F)-0*1\b/i.test(nm) || /\(\s*CB\b/i.test(nm) || closedNbs.length <= 1 || nearHub) {
+                const isSubBreakerName = /\b[A-Z]{2,4}\d{1,2}(?:CB|F)-0*\d+\b/i.test(nm) ||
+                                         /\b[A-Z]{2,4}\d{1,2}S-0*1\b/i.test(nm) ||
+                                         /\(\s*CB\b|สถานี|สฟฟ/i.test(nm);
+                if (isSubBreakerName || nearHub) {
                     rootIds.add(p.id);
                 }
             }
         });
 
-        // กรณีวงจรนั้นใช้ RC รหัสอื่นเป็นหัวสาย (เช่น BNF03VS-101 [RC] แตกออก 2 กิ่งโดยไม่มี CB ในกลุ่มสาย) ให้ตั้งเป็นต้นทางจ่ายไฟอัตโนมัติ
+        // รอบที่ 2: วงจรที่ยังไม่มีเบรกเกอร์ต้นทาง ให้เลือก RC ต้นสายเพียง 1 ตัวต่อวงจร (ไม่ดึง RC ปลายสายซ้อน)
         const coveredFeeders = new Set();
         rootIds.forEach((id) => {
             const fd = extractPinFeederCode(pinMap.get(id));
             if (fd) coveredFeeders.add(fd);
         });
 
+        const rcByFeeder = new Map();
         pins.forEach((p) => {
             if (getPinEquipType(p) !== 'RC' || rootIds.has(p.id)) return;
             const fd = extractPinFeederCode(p);
-            if (fd && !coveredFeeders.has(fd)) {
-                rootIds.add(p.id);
-                coveredFeeders.add(fd);
-            }
+            if (!fd || coveredFeeders.has(fd)) return;
+            if (!rcByFeeder.has(fd)) rcByFeeder.set(fd, []);
+            rcByFeeder.get(fd).push(p);
+        });
+        rcByFeeder.forEach((rcList, fd) => {
+            rcList.sort((a, b) => {
+                const degA = (adj.get(a.id) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge).length;
+                const degB = (adj.get(b.id) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge).length;
+                return ((degA <= 1 ? 0 : 1) - (degB <= 1 ? 0 : 1)) || String(a.name || '').localeCompare(String(b.name || ''), 'th');
+            });
+            rootIds.add(rcList[0].id);
+            coveredFeeders.add(fd);
         });
 
-        // กันเหนียวกรณีไม่ระบุรหัส fd เลยในกลุ่มสายที่เชื่อมถึงกัน
+        // รอบที่ 3: กันเหนียวกรณีกลุ่มสายที่เชื่อมถึงกันไม่ระบุรหัส fd เลย
         const visComp = new Set();
         pins.forEach((p) => {
             if (visComp.has(p.id) || (adj.get(p.id) || []).length === 0) return;
@@ -289,8 +351,12 @@
                 });
             }
             if (!comp.some((id) => rootIds.has(id))) {
-                const firstRc = comp.find((id) => getPinEquipType(pinMap.get(id)) === 'RC');
-                if (firstRc) rootIds.add(firstRc);
+                const rcs = comp.filter((id) => getPinEquipType(pinMap.get(id)) === 'RC').sort((a, b) => {
+                    const degA = (adj.get(a) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge).length;
+                    const degB = (adj.get(b) || []).filter((nb) => !edgesMap.get(nb.edgeKey)?.isOpenEdge).length;
+                    return (degA <= 1 ? 0 : 1) - (degB <= 1 ? 0 : 1);
+                });
+                if (rcs[0]) rootIds.add(rcs[0]);
             }
         });
 
@@ -318,7 +384,7 @@
                 const orderedPts = p.id <= dst.id ? fwdPts : [...fwdPts].reverse();
                 const geomSig = orderedPts.map((pt) => `${pt[0].toFixed(5)},${pt[1].toFixed(5)}`).join(';');
                 const edgeKey = `${idA}__${idB}__${geomSig}`;
-                const isOpenEdge = Boolean(e.manualNO === true || String(e.st || '').toUpperCase() === 'O');
+                const isOpenEdge = Boolean(e.off || e.manualNO === true || String(e.st || '').toUpperCase() === 'O');
                 const fdCode = String(e.fd || '').trim().toUpperCase();
 
                 if (edgesMap.has(edgeKey)) {
@@ -436,6 +502,7 @@
         const { pins, pinMap, adj, edges, edgesMap, rootSourceIds } = baseTopo;
         if (!edges.length) return { error: 'ยังไม่มีเส้นสายไฟในผัง SCADA สำหรับวิเคราะห์สับพ่วง' };
 
+        const liveLotoMap = getLiveCommittedLotoMap();
         const txRecordMap = loadTxLoadMapByPeaNo();
         const baseEnergized = computeEnergizedStateMap(pins, pinMap, adj, edgesMap, rootSourceIds, new Set(), new Set(), new Set());
 
@@ -536,6 +603,19 @@
         const upstreamSwitches = [];
         const downstreamBoundarySet = new Set();
         const recloseSourceSwitches = [];
+        const lotoBlockedSwitches = [];
+
+        const addLotoBlocked = (pinObj, roleLabel) => {
+            if (!pinObj || lotoBlockedSwitches.some((x) => x.id === pinObj.id)) return;
+            const meta = getPinLotoMeta(pinObj, liveLotoMap);
+            lotoBlockedSwitches.push({
+                id: pinObj.id,
+                name: pinObj.name,
+                role: roleLabel,
+                reason: meta.reason,
+                by: meta.by
+            });
+        };
 
         boundarySwitchIds.forEach((swId) => {
             const swPin = pinMap.get(swId);
@@ -575,7 +655,8 @@
                         const np = pinMap.get(nb.toId);
                         if (!np) return;
                         if (rootSourceIds.has(np.id) && isPinOpenSwitch(np)) {
-                            if (!recloseSourceSwitches.some((x) => x.id === np.id)) recloseSourceSwitches.push(np);
+                            if (hasPinLoto(np, liveLotoMap)) addLotoBlocked(np, 'ต้นสาย');
+                            else if (!recloseSourceSwitches.some((x) => x.id === np.id)) recloseSourceSwitches.push(np);
                         } else if (!isPinOpenSwitch(np)) {
                             uq.push(nb.toId);
                         }
@@ -606,9 +687,13 @@
                 const tiePin = pinMap.get(tieId);
                 if (!tiePin || !TIE_CAPABLE_TYPES.has(getPinEquipType(tiePin))) return;
                 const tieNbs = adj.get(tieId) || [];
-                // กฎนิรภัย: ห้ามสับสวิตช์ Tie ที่ต่อตรงเข้าโซนสายเสียโดยไม่มีสวิตช์กั้นเด็ดขาด
+                // กฎนิรภัย: ห้ามสับสวิตช์ Tie ที่ต่อตรงเข้าโซนสายเสีย หรือติดป้ายห้ามสับไฟ (LOTO) เด็ดขาด
                 const touchesFaultDirectly = tieNbs.some((nb) => faultedEdgeKeys.has(nb.edgeKey) || faultedInteriorNodes.has(nb.toId));
                 if (touchesFaultDirectly) return;
+                if (hasPinLoto(tiePin, liveLotoMap)) {
+                    addLotoBlocked(tiePin, 'สวิตช์พ่วง');
+                    return;
+                }
 
                 let bestFeedInfo = null;
                 tieNbs.forEach((nb) => {
@@ -648,9 +733,12 @@
                 const liveSideId = uInSide ? eObj.vId : eObj.uId;
                 if (faultedInteriorNodes.has(liveSideId) || faultedInteriorNodes.has(deadEndId)) return;
 
+                const deadPin = pinMap.get(deadEndId), livePin = pinMap.get(liveSideId);
+                if (hasPinLoto(deadPin, liveLotoMap)) { addLotoBlocked(deadPin, 'จุดปลดสายพ่วง'); return; }
+                if (hasPinLoto(livePin, liveLotoMap)) { addLotoBlocked(livePin, 'จุดปลดสายพ่วง'); return; }
+
                 const feed = postIsoEnergized.get(liveSideId);
                 if (!feed) return;
-                const deadPin = pinMap.get(deadEndId), livePin = pinMap.get(liveSideId);
                 const midPt = eObj.pts[Math.floor(eObj.pts.length / 2)] || [Number(deadPin.lat), Number(deadPin.lon)];
                 validTieOptions.push({
                     mode: 'edge',
@@ -779,6 +867,7 @@
             faultZoneKva,
             upstreamSwitches,
             recloseSourceSwitches,
+            lotoBlockedSwitches,
             restorableIslands,
             deadEndSpurSummary,
             rootSourceIds,
@@ -889,12 +978,24 @@
         }
 
         try {
+            const liveLotoMap = getLiveCommittedLotoMap();
             const workingPins = JSON.parse(preSimBackupJson);
             const pinById = new Map(workingPins.map((p) => [p?.id, p]));
+
+            // อัปเดตป้าย LOTO ล่าสุดจากผังจริงเข้าสู่ผังซ้อม เพื่อห้ามสับทับจุดที่มีช่างแขวนป้าย
+            liveLotoMap.forEach((meta, pid) => {
+                const p = pinById.get(pid);
+                if (p) {
+                    p.scadaNode = Object.assign({}, p.scadaNode || { t: 'VS' }, { loto: meta.loto, lotoBy: meta.lotoBy });
+                }
+            });
 
             const setPinSwitchState = (pid, stateCode) => {
                 const p = pinById.get(pid);
                 if (!p) return;
+                if (stateCode === 'C' && hasPinLoto(p, liveLotoMap)) return;
+                const curSt = String(p.scadaNode?.st || 'C').toUpperCase();
+                if (curSt === stateCode) return;
                 p.scadaNode = Object.assign({}, p.scadaNode || { t: 'VS' }, { st: stateCode });
                 p.updatedAt = new Date().toISOString();
             };
@@ -912,9 +1013,11 @@
                     const edgeRec = lastAdvisorPlan.edgesMap.get(chosen.edgeKey);
                     (edgeRec?.rawRefs || []).forEach(({ ownerId, lineIdx }) => {
                         const op = pinById.get(ownerId);
-                        if (op?.scadaLines?.[lineIdx]) {
-                            op.scadaLines[lineIdx].st = 'C';
-                            op.scadaLines[lineIdx].manualNO = false;
+                        const ln = op?.scadaLines?.[lineIdx];
+                        if (ln) {
+                            delete ln.off;
+                            ln.manualNO = false;
+                            if (String(ln.st || '').toUpperCase() === 'O') ln.st = 'oh';
                         }
                     });
                 }
@@ -932,8 +1035,12 @@
 
     function restoreTieAdvisorSimPreview() {
         if (window.PeaCore?.simSandbox?.active) {
-            const simBtn = document.getElementById('btnToggleScadaSimMode');
-            if (simBtn) simBtn.click();
+            if (typeof window.toggleScadaSimMode === 'function') {
+                window.toggleScadaSimMode(false);
+            } else {
+                const simBtn = document.getElementById('btnToggleScadaSimMode');
+                if (simBtn) simBtn.click();
+            }
             if (window.PeaCore?.simSandbox?.active) window.PeaCore.exitSimSandbox(null);
         } else if (preSimBackupJson) {
             localStorage.setItem(STORAGE_KEY_LABELS, preSimBackupJson);
@@ -1025,14 +1132,18 @@
         if (!lastAdvisorPlan) return '';
         const p = lastAdvisorPlan;
         const steps = buildSwitchingOrderSteps(p);
-        if (!steps.length) return '';
+        if (!steps.length && !p.lotoBlockedSwitches?.length) return '';
 
         const lines = [
             `🔀 แผนลำดับสับ-ปลดสวิตช์พ่วงจ่ายไฟคืน (22kV)`,
             `⚡ จุดเกิดเหตุ : ${p.targetTitle}`,
-            `⚠️ กฎความปลอดภัย : ต้องปลดกั้นหัว-ท้ายโซนสายเสียให้ครบก่อนสับพ่วงเสมอ`,
-            `━━━━━━━━━━━━━━━━━━`
+            `⚠️ กฎความปลอดภัย : ต้องปลดกั้นหัว-ท้ายโซนสายเสียให้ครบก่อนสับพ่วงเสมอ`
         ];
+        if (p.lotoBlockedSwitches?.length) {
+            lines.push(`🔒 ห้ามสับทับป้าย LOTO : ${p.lotoBlockedSwitches.map((x) => `${x.name} (${x.reason})`).join(', ')}`);
+        }
+        lines.push(`━━━━━━━━━━━━━━━━━━`);
+
         steps.forEach((s) => {
             lines.push(
                 `ขั้นที่ ${s.no}) ${s.badge} : ${s.name}`,
@@ -1059,6 +1170,10 @@
         box.classList.remove('hidden');
 
         const steps = buildSwitchingOrderSteps(plan);
+        const lotoWarnHtml = plan.lotoBlockedSwitches?.length
+            ? `<div class="px-2.5 py-1.5 rounded-lg bg-red-950/90 border border-red-400/70 text-[10.5px] text-red-200 font-bold">🔒 <b>ระบบล็อกนิรภัยข้ามสวิตช์ติดป้าย LOTO อัตโนมัติ:</b> ${plan.lotoBlockedSwitches.map((x) => `${escHtml(x.name)} ("${escHtml(x.reason)}"${x.by ? ` • ${escHtml(x.by)}` : ''})`).join(', ')}</div>`
+            : '';
+
         const altSelectorsHtml = plan.restorableIslands.map((isl, islIdx) => {
             if (isl.tieOptions.length <= 1) return '';
             const curOpt = selectedOptionByIsland[islIdx] || 0;
@@ -1073,7 +1188,7 @@
         }).filter(Boolean).join('');
 
         const noTieNotice = plan.restorableIslands.length === 0
-            ? `<div class="px-2.5 py-1.5 rounded-lg bg-amber-950/80 border border-amber-400/40 text-[10.5px] text-amber-200">ℹ️ <b>ไม่มีสวิตช์พ่วง (Tie) ฝั่งท้ายน้ำของจุดนี้:</b> สามารถปลดกั้นต้นทางเพื่อจ่ายไฟคืนช่วงต้นสายหลักได้ทันที ส่วนปลายสายเป็นกิ่งตันต้องรอซ่อมจุดชำรุด${plan.deadEndSpurSummary.txCount > 0 ? ` (กระทบหม้อแปลงปลายตัน ${plan.deadEndSpurSummary.txCount} เครื่อง / ${plan.deadEndSpurSummary.kva.toLocaleString()} kVA)` : ''}</div>`
+            ? `<div class="px-2.5 py-1.5 rounded-lg bg-amber-950/80 border border-amber-400/40 text-[10.5px] text-amber-200">ℹ️ <b>ไม่มีสวิตช์พ่วง (Tie) ที่สับได้ฝั่งท้ายน้ำของจุดนี้:</b> สามารถปลดกั้นต้นทางเพื่อจ่ายไฟคืนช่วงต้นสายหลักได้ทันที ส่วนปลายสายต้องรอซ่อมจุดชำรุด${plan.deadEndSpurSummary.txCount > 0 ? ` (กระทบหม้อแปลง ${plan.deadEndSpurSummary.txCount} เครื่อง / ${plan.deadEndSpurSummary.kva.toLocaleString()} kVA)` : ''}</div>`
             : '';
 
         const faultTxNotice = plan.faultZoneTxCount > 0
@@ -1102,6 +1217,7 @@
             `<button type="button" onclick="copyTieAdvisorOrder(this)" class="bg-slate-700 hover:bg-slate-600 text-amber-300 border border-amber-400/50 px-2.5 py-1 rounded-lg text-[10px] font-extrabold whitespace-nowrap">📋 คัดลอก</button>` +
             `<button type="button" onclick="shareTieAdvisorOrderToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-extrabold whitespace-nowrap">💬 ส่งเข้า LINE</button>` +
             `</div></div>` +
+            lotoWarnHtml +
             altSelectorsHtml +
             noTieNotice +
             stepsHtml +
@@ -1168,6 +1284,11 @@
         if (!capturedMap || !mapEl) return window.showToast?.('⚠️ แผนที่ยังไม่พร้อมใช้งาน');
 
         if (isPickingOnMap) { stopMapPickMode(); return; }
+        window.toggleScadaDrawMode?.(false);
+        window.toggleScadaWireMoveMode?.(false);
+        window.toggleScadaPinMoveMode?.(false);
+        window.cancelPmMapInteractiveModes?.();
+
         isPickingOnMap = true;
         mapEl.classList.add('pea-tie-pick-cursor');
         const btn = document.getElementById('btnTiePickOnMap');
@@ -1180,8 +1301,15 @@
         let downPt = null;
         const onDown = (ev) => { downPt = { x: ev.clientX, y: ev.clientY }; };
         const onUp = (ev) => {
+            if (mapEl.classList.contains('scada-draw-cursor') ||
+                mapEl.classList.contains('scada-move-wire-active') ||
+                mapEl.classList.contains('scada-move-pin-active') ||
+                mapEl.classList.contains('pm-pin-drop-active-map')) {
+                stopMapPickMode();
+                return;
+            }
             if (!downPt || Math.hypot(ev.clientX - downPt.x, ev.clientY - downPt.y) > 8) return;
-            if (ev.target.closest?.('.leaflet-control-container')) return;
+            if (ev.target.closest?.('.leaflet-control-container, .leaflet-popup-pane')) return;
             const ll = capturedMap.mouseEventToLatLng(ev);
             if (!ll) return;
             const { edges } = buildNetworkTopology(preSimBackupJson);
@@ -1374,6 +1502,14 @@
             simBtn.parentElement.insertBefore(btn, simBtn);
         }
 
+        ['btnToggleScadaDrawMode', 'btnToggleWireMoveMode', 'btnTogglePinMoveMode', 'btnDropNewPmPinOnScada'].forEach((id) => {
+            const b = document.getElementById(id);
+            if (b && !b.__tieCancelBound) {
+                b.__tieCancelBound = true;
+                b.addEventListener('click', () => { if (isPickingOnMap) stopMapPickMode(); });
+            }
+        });
+
         const pnl = document.createElement('div');
         pnl.id = 'scadaTieAdvisorPanel';
         pnl.className = 'hidden pt-2 border-t border-teal-500/40 space-y-2 text-xs';
@@ -1426,15 +1562,46 @@
         injectQuickTieBtns();
     }
 
+    function hookRoleChangeCleanup() {
+        if (typeof window.__onScadaRoleUpdated === 'function' && !window.__onScadaRoleUpdated.__tieAdvisorHooked) {
+            const origRoleUpd = window.__onScadaRoleUpdated;
+            window.__onScadaRoleUpdated = Object.assign(function () {
+                const ret = origRoleUpd.apply(this, arguments);
+                const curScope = getCurrentScopeKey();
+                if (lastActiveScopeKey && curScope !== lastActiveScopeKey) {
+                    clearTieAdvisorOverlay(true);
+                    if (panelOpen) populateTieTargetDropdowns();
+                }
+                lastActiveScopeKey = curScope;
+                return ret;
+            }, { __tieAdvisorHooked: true });
+        }
+    }
+
     document.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape' && isPickingOnMap) stopMapPickMode();
     });
 
     window.PeaCore?.onRealtimeChange?.((keys) => {
         syncSimSandboxResetIfExited();
-        if (!panelOpen || !Array.isArray(keys) || preSimBackupJson) return;
+        if (!Array.isArray(keys)) return;
         if (keys.includes(STORAGE_KEY_LABELS) || keys.includes(STORAGE_KEY_DELETED)) {
-            populateTieTargetDropdowns();
+            if (panelOpen && !preSimBackupJson) populateTieTargetDropdowns();
+            // หากกำลังเปิดแผนสับพ่วงอยู่แล้วมีคนแขวน/ปลดป้าย LOTO สด ให้คำนวณเตือนใหม่ทันที
+            if (lastAdvisorPlan && !preSimBackupJson) {
+                const pinId = document.getElementById('scadaTieFaultPinSelect')?.value || '';
+                const faultAtPole = document.getElementById('scadaTieFaultScopeSelect')?.value === 'AT_PIN';
+                if (pinId || selectedFaultEdgeKey) {
+                    const updated = pinId
+                        ? analyzeSwitchingPlanForTarget({ faultPinId: pinId, faultAtSwitchPole: faultAtPole })
+                        : analyzeSwitchingPlanForTarget({ faultEdgeKey: selectedFaultEdgeKey, faultPoint: lastAdvisorPlan.markerCoord });
+                    if (!updated.error) {
+                        lastAdvisorPlan = updated;
+                        renderAdvisorMapOverlay(updated);
+                        renderAdvisorResultPanel(updated);
+                    }
+                }
+            }
         }
     });
 
@@ -1461,10 +1628,12 @@
         injectTieAdvisorStyles();
         hookLeafletMap();
         hookFaultPanelAccordion();
+        hookRoleChangeCleanup();
         if (!injectTieAdvisorToolbarUI()) {
             const obs = new MutationObserver(() => {
                 hookLeafletMap();
                 hookFaultPanelAccordion();
+                hookRoleChangeCleanup();
                 if (injectTieAdvisorToolbarUI()) obs.disconnect();
             });
             obs.observe(document.getElementById('techMainApp'), { childList: true, subtree: true });
@@ -1472,6 +1641,7 @@
         setInterval(() => {
             hookLeafletMap();
             hookFaultPanelAccordion();
+            hookRoleChangeCleanup();
             syncSimSandboxResetIfExited();
             observeFaultLocatorResultBox();
             const curScope = getCurrentScopeKey();
@@ -1488,4 +1658,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', initTieAdvisorModule);
     else initTieAdvisorModule();
 })();
-// ==================== จบไฟล์ scada-tie-advisor.js (v1.1 Final) ====================
+// ==================== จบไฟล์ scada-tie-advisor.js (v1.2 Final) ====================
