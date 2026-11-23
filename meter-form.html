@@ -591,7 +591,7 @@
   </div>
 </div>
 
-<script src="pea-idb-store.js?v=149"></script>
+<script src="pea-idb-store.js?v=163"></script>
 <script>
   const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   const THAI_COMBINING_MARKS_RE = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
@@ -633,7 +633,7 @@
 
   async function popOutToExternalBrowser() {
     saveLocalDraftState();
-    if (activeShortJobId && loadedRawJobRecord && navigator.onLine) {
+    if (activeShortJobId && activeShortJobId !== 'draft_preview' && navigator.onLine) {
       await syncMeterStateToCloud(true);
     }
     const u = new URL(window.location.href);
@@ -709,14 +709,16 @@
         };
       }
     });
-    return {
+      return {
       office: document.querySelector('.pea-office-name')?.textContent?.trim() || 'กฟส.บึง',
       jobFingerprint: activeDraftFingerprint || '',
+      hasBaseJobLoaded: Boolean(loadedRawJobRecord),
       fields,
       checks,
       sigs,
       updatedAt: Date.now()
     };
+
   }
 
   function applySavedFormState(saved, mergeOnlyNewerSigs = false) {
@@ -736,18 +738,21 @@
         }
         updateOfficeTexts(saved.office);
       }
-      if (saved.fields) {
+            if (saved.fields) {
         Object.entries(saved.fields).forEach(([id, val]) => {
           const el = document.getElementById(id);
-          if (el && val !== undefined && val !== null) el.value = val;
+          if (!el || val === undefined || val === null) return;
+          if (saved.hasBaseJobLoaded === false && String(val).trim() === '') return;
+          el.value = val;
         });
       }
-      if (saved.checks) {
+      if (saved.checks && saved.hasBaseJobLoaded !== false) {
         Object.entries(saved.checks).forEach(([id, boolVal]) => {
           const el = document.getElementById(id);
           if (el) el.checked = Boolean(boolVal);
         });
       }
+
     } else if (saved.fields) {
       ['newPeaInput', 'startUnitInput', 'causeOtherInput', 'name-sig1', 'name-sig2', 'name-sig3', 'name-sig4'].forEach(id => {
         const el = document.getElementById(id);
@@ -872,26 +877,11 @@
     };
   }
 
-  async function resolveCloudApiBaseUrl() {
+    async function resolveCloudApiBaseUrl() {
     try {
-      const isLogged = localStorage.getItem('elec_app_logged_in') === 'true';
-      const isAdm = (localStorage.getItem('elec_app_current_role') || '').trim() === 'admin';
-      if (isLogged && !isAdm) {
-        const branchNode = (localStorage.getItem('elec_cloud_user_api_url') || '').trim();
-        if (/^https:\/\/script\.google\.com\/macros\/s\//i.test(branchNode)) return branchNode.split('?')[0];
-      }
-      for (const k of ['elec_cloud_api_url', 'cloud_api_url_custom', 'pea_cached_cloud_url']) {
+      for (const k of ['elec_cloud_user_api_url', 'elec_cloud_api_url', 'cloud_api_url_custom', 'pea_cached_cloud_url']) {
         const v = (localStorage.getItem(k) || sessionStorage.getItem(k) || '').trim();
         if (/^https:\/\/script\.google\.com\/macros\/s\//i.test(v)) return v.split('?')[0];
-      }
-    } catch (e) {}
-    try {
-      const res = await fetch('./shared-core.js?v=149');
-      const txt = await res.text();
-      const m = txt.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/);
-      if (m) {
-        try { sessionStorage.setItem('pea_cached_cloud_url', m[0]); } catch (e) {}
-        return m[0];
       }
     } catch (e) {}
     return FALLBACK_CLOUD_API_URL;
@@ -1005,6 +995,7 @@
   async function loadJobByShortId(shortId, officeHint, alreadyAppliedLiveDraft = false) {
     activeShortJobId = shortId;
     activeOfficeGroup = officeHint || 'กฟส.บึง';
+    if (!isLoggedViewerRole()) document.getElementById('cloudSaveBtn').style.display = 'inline-flex';
     let foundLocally = false;
 
     const savedLocalDraft = (() => {
@@ -1059,7 +1050,8 @@
         const res = await fetch(url, { cache: 'no-store' });
         const data = await res.json();
 
-        if (data?.forbiddenMeterKey) {
+                if (data?.forbiddenMeterKey) {
+          document.getElementById('cloudSaveBtn').style.display = 'none';
           if (fetchBar) {
             fetchBar.textContent = '🔒 รหัสเข้าถึงใบรายงานไม่ถูกต้อง กรุณาเปิดจากลิงก์ในข้อความใบงาน';
             fetchBar.style.display = 'flex';
@@ -1273,14 +1265,18 @@
     return s;
   }
 
-  function normalizeGpsNavUrl(rawGps) {
+    function normalizeGpsNavUrl(rawGps) {
     const s = String(rawGps || '').trim();
     if (!s || s === '-') return '';
     if (/^https?:\/\//i.test(s)) return s;
-    if (/^(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(s)) return 'https://' + s;
+    if (/^(?:maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.|maps\.)?google\.[a-z.]+\/maps)/i.test(s)) return 'https://' + s;
     const m = s.match(/(?:lat(?:itude)?|ละติจูด)\s*[:：=]?\s*(-?\d{1,3}\.\d{3,})[\s,;\/|]*(?:long(?:itude)?|lon|lng|ลองจิจูด)\s*[:：=]?\s*\+?(-?\d{1,3}\.\d{3,})/i) ||
-              s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
-    if (m) return `https://www.google.com/maps?q=${m[1]},${m[2]}`;
+              s.match(/(-?\d{1,3}\.\d{3,})\s*(?:,|\s+)\s*\+?(-?\d{1,3}\.\d{3,})/);
+    if (m) {
+      let la = parseFloat(m[1]), lo = parseFloat(m[2]);
+      if (la >= 95 && la <= 108 && lo >= 4 && lo <= 23) { const t = la; la = lo; lo = t; }
+      if (Math.abs(la) <= 90 && Math.abs(lo) <= 180) return `https://www.google.com/maps?q=${la.toFixed(6)},${lo.toFixed(6)}`;
+    }
     return '';
   }
 
@@ -1370,14 +1366,24 @@
     }[ch]));
   }
 
-  function copyCaText(caVal, chipEl) {
-    if (!caVal || !navigator.clipboard) return;
-    navigator.clipboard.writeText(caVal).then(() => {
+    function copyCaText(caVal, chipEl) {
+    if (!caVal) return;
+    const showOk = () => {
       const old = chipEl.textContent;
       chipEl.textContent = '✅ คัดลอก CA แล้ว!';
       setTimeout(() => { chipEl.textContent = old; }, 1400);
-    }).catch(() => {});
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(caVal).then(showOk).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = caVal; ta.style.cssText = 'position:fixed;opacity:0;left:-9999px;';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); showOk(); } catch (e) {}
+      ta.remove();
+    }
   }
+
 
   function renderTopJobBadgesOnly(data) {
     if (!data) return;
@@ -1393,7 +1399,7 @@
 
     const chips = [];
     if (cl(data.jobLabel)) chips.push(`<span class="job-chip">📋 ${escapeSafeHtml(cl(data.jobLabel))}</span>`);
-    if (ca) chips.push(`<span class="job-chip ca-chip" title="แตะเพื่อคัดลอกเลข CA" onclick="copyCaText('${escapeSafeHtml(ca)}', this)">💳 CA: ${escapeSafeHtml(ca)}</span>`);
+    if (ca) chips.push(`<span class="job-chip ca-chip" title="แตะเพื่อคัดลอกเลข CA" data-ca="${escapeSafeHtml(ca)}" onclick="copyCaText(this.dataset.ca, this)">💳 CA: ${escapeSafeHtml(ca)}</span>`);
     if (oldPea) chips.push(`<span class="job-chip">📟 PEA เก่า: ${escapeSafeHtml(oldPea)}</span>`);
 
     const actionLinks = [];
@@ -1796,7 +1802,7 @@
 
   async function shareAsPDF() {
     saveLocalDraftState();
-    if (activeShortJobId && loadedRawJobRecord && navigator.onLine) {
+    if (activeShortJobId && activeShortJobId !== 'draft_preview' && navigator.onLine) {
       syncMeterStateToCloud(true);
     }
 
@@ -2143,88 +2149,98 @@
     closeSigModal();
     fitPaperToScreen();
     saveLocalDraftState();
-    if (activeShortJobId && loadedRawJobRecord && navigator.onLine) {
+    if (activeShortJobId && activeShortJobId !== 'draft_preview' && navigator.onLine) {
       syncMeterStateToCloud(true);
     }
   }
 
-  function getPointerPos(e) {
-    const rect = modalCanvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const cw = modalCanvas.offsetWidth;
-    const ch = modalCanvas.offsetHeight;
-
-    if (isLandscape) {
-      return {
-        x: (clientY - rect.top) * (cw / rect.height),
-        y: (rect.right - clientX) * (ch / rect.width)
-      };
-    }
-    return {
-      x: (clientX - rect.left) * (cw / rect.width),
-      y: (clientY - rect.top) * (ch / rect.height)
-    };
+    function getPointerPos(e) {
+  const rect = modalCanvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const ratio = Math.max(window.devicePixelRatio || 1, 1);
+  const cw = (modalCanvas.width / ratio) || modalCanvas.offsetWidth;
+  const ch = (modalCanvas.height / ratio) || modalCanvas.offsetHeight;
+  
+  if (isLandscape) {
+  return {
+  x: (clientY - rect.top) * (cw / rect.height),
+  y: (rect.right - clientX) * (ch / rect.width)
+  };
   }
-
+  return {
+  x: (clientX - rect.left) * (cw / rect.width),
+  y: (clientY - rect.top) * (ch / rect.height)
+  };
+  }
+  
   function startDraw(e) {
-    e.preventDefault();
-    isDrawing = true;
-    hasDrawn = true;
-    const pos = getPointerPos(e);
-    ctx.beginPath();
-    ctx.moveTo(pos.x, pos.y);
+  e.preventDefault();
+  isDrawing = true;
+  hasDrawn = true;
+  const pos = getPointerPos(e);
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
   }
-
+  
   function moveDraw(e) {
-    if (!isDrawing) return;
-    e.preventDefault();
-    const pos = getPointerPos(e);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
+  if (!isDrawing) return;
+  e.preventDefault();
+  const pos = getPointerPos(e);
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
   }
-
+  
   function endDraw() { isDrawing = false; }
-
+  
   modalCanvas.addEventListener('mousedown', startDraw);
   modalCanvas.addEventListener('mousemove', moveDraw);
   window.addEventListener('mouseup', endDraw);
-
+  
   modalCanvas.addEventListener('touchstart', startDraw, { passive: false });
   modalCanvas.addEventListener('touchmove', moveDraw, { passive: false });
   modalCanvas.addEventListener('touchend', endDraw);
-
+  
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', syncModalToViewport);
-    window.visualViewport.addEventListener('scroll', syncModalToViewport);
+  window.visualViewport.addEventListener('resize', syncModalToViewport);
+  window.visualViewport.addEventListener('scroll', syncModalToViewport);
   }
   window.addEventListener('resize', () => {
-    syncModalToViewport();
-    fitPaperToScreen();
+  syncModalToViewport();
+  fitPaperToScreen();
   });
-
-  function resetAll() {
-    if (isLoggedViewerRole()) return;
-    if (!confirm('ต้องการล้างข้อมูลและลายเซ็นในหน้านี้ทั้งหมดใช่หรือไม่?')) return;
-    const clearTs = String(Date.now());
-    document.querySelectorAll('.line-input').forEach(inp => inp.value = '');
-    document.querySelectorAll('#formPage input[type="checkbox"]').forEach(cb => cb.checked = false);
-    ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
-      const imgEl = document.getElementById('img-' + id);
-      const placeEl = document.getElementById('place-' + id);
-      imgEl.removeAttribute('src');
-      imgEl.style.display = 'none';
-      imgEl.dataset.signed = 'false';
-      imgEl.dataset.explicitCleared = 'true';
-      imgEl.dataset.signedTs = clearTs;
-      placeEl.style.display = 'inline';
-    });
-    try { localStorage.removeItem(getDraftStorageKey()); } catch (e) {}
-    document.getElementById('autoSavePill').style.display = 'none';
-    updateStatusLamps();
-    autoFillDateAndShift();
-    fitPaperToScreen();
+  window.addEventListener('online', () => {
+  if (activeShortJobId && activeShortJobId !== 'draft_preview' && !isLoggedViewerRole()) {
+  syncMeterStateToCloud(true);
   }
-</script>
+  });
+  
+  function resetAll() {
+  if (isLoggedViewerRole()) return;
+  if (!confirm('ต้องการล้างข้อมูลและลายเซ็นในหน้านี้ทั้งหมดใช่หรือไม่?')) return;
+  const clearTs = String(Date.now());
+  document.querySelectorAll('.line-input').forEach(inp => inp.value = '');
+  document.querySelectorAll('#formPage input[type="checkbox"]').forEach(cb => cb.checked = false);
+  ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
+  const imgEl = document.getElementById('img-' + id);
+  const placeEl = document.getElementById('place-' + id);
+  imgEl.removeAttribute('src');
+  imgEl.style.display = 'none';
+  imgEl.dataset.signed = 'false';
+  imgEl.dataset.explicitCleared = 'true';
+  imgEl.dataset.signedTs = clearTs;
+  placeEl.style.display = 'inline';
+  });
+  updateStatusLamps();
+  autoFillDateAndShift();
+  fitPaperToScreen();
+  if (activeShortJobId && activeShortJobId !== 'standalone') {
+  saveLocalDraftState();
+  } else {
+  try { localStorage.removeItem(getDraftStorageKey()); } catch (e) {}
+  document.getElementById('autoSavePill').style.display = 'none';
+  }
+  }
+  </script>
 </body>
 </html>
