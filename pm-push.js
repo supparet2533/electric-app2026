@@ -1,5 +1,5 @@
 // ============================================================================
-// 📲 PEA SMART GRID — FIREBASE WEB PUSH CLIENT MODULE v1.2.1 (pm-push.js)
+// 📲 PEA SMART GRID — FIREBASE WEB PUSH CLIENT MODULE v1.2.2 (pm-push.js)
 // ผูกเครื่องรับแจ้งเตือนแม้ปัดปิดแอป + ปลอดการชนกับ IndexedDB / โหมดซ้อม SCADA 100%
 // โปรเจกต์: SamSrikacha (samsrikacha-da210)
 // ============================================================================
@@ -24,6 +24,7 @@
     const SAVED_SCHED_SIG_KEY = 'elec_pm_push_sched_sig_v1';
     const PM_STORAGE_KEY = 'elec_pm_calendar_plans_v1';
     const PM_SYNC_CHANNEL = 'pea_pm_live_sync_v1';
+    const MAX_PUSH_SCHEDULE_ITEMS = 55; // ป้องกันเกินเพดาน 9 KB ของ PropertiesService ใน GAS
 
     const isEmbeddedFrame = Boolean(window.PeaCore?.isEmbeddedIframe || (window.self !== window.top));
     const scriptPromises = new Map();
@@ -33,6 +34,8 @@
     let syncDebounceTimer = null;
     let isSyncInFlight = false;
     let isEnablingPush = false;
+    let pendingOpenPmOnLogin = false;
+    let permBtnObserver = null;
 
     function notifyMsg(msg) {
         if (typeof window.showToast === 'function') window.showToast(msg);
@@ -70,11 +73,18 @@
     }
 
     function getUserGroup() {
-        const g = (typeof window.getCurrentUserGroup === 'function' ? window.getCurrentUserGroup() : '') ||
-                  localStorage.getItem('elec_app_current_group') ||
-                  localStorage.getItem('elec_pm_last_group_v1') ||
-                  'กฟส.บึง';
-        return normPushGrp(g) || 'กฟส.บึง';
+        const explicit = (typeof window.getCurrentUserGroup === 'function' ? window.getCurrentUserGroup() : '') ||
+                         localStorage.getItem('elec_app_current_group') ||
+                         localStorage.getItem('elec_pm_last_group_v1') ||
+                         localStorage.getItem('elec_last_logged_group_name') || '';
+        const normExp = normPushGrp(explicit);
+        if (normExp) return normExp;
+        try {
+            const plans = JSON.parse(localStorage.getItem(PM_STORAGE_KEY) || '[]');
+            const firstGrp = Array.isArray(plans) ? plans.find((p) => p && !p.pmDeleted && p.ownerGroup)?.ownerGroup : '';
+            if (normPushGrp(firstGrp)) return normPushGrp(firstGrp);
+        } catch (e) {}
+        return 'กฟส.บึง';
     }
 
     function loadScriptOnce(src) {
@@ -87,7 +97,7 @@
             s.onload = () => resolve(true);
             s.onerror = () => {
                 scriptPromises.delete(src);
-                reject(new Error('โหลดไลบรารี Firebase ไม่สำเร็จ'));
+                reject(new Error('โหลดไลบรารี Firebase ไม่สำเร็จ กรุณาเช็กอินเทอร์เน็ต'));
             };
             document.head.appendChild(s);
         });
@@ -115,12 +125,23 @@
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(payload)
         });
-        return res.json();
+        const data = await res.json().catch(() => null);
+        if (!data) throw new Error(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status})`);
+        return data;
+    }
+
+    function calcAbsDaysFromToday(isoStr) {
+        const m = String(isoStr || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return 999999;
+        const now = new Date();
+        const todayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const targetMs = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+        return Math.abs(Math.round((targetMs - todayMs) / 86400000));
     }
 
     // ซิงค์เฉพาะเมื่อตารางเวลาเปลี่ยนจริง (รอ IndexedDB พร้อม + ไม่ทำงานในโหมดซ้อม SCADA)
     async function syncStrippedScheduleToBackend(force = false) {
-        if (isEmbeddedFrame || isSyncInFlight) return;
+        if (isEmbeddedFrame || isSyncInFlight || navigator.onLine === false) return;
         if (localStorage.getItem('elec_app_logged_in') !== 'true' || isViewerOnly()) return;
         if (window.PeaCore?.simSandbox?.active) return;
 
@@ -138,7 +159,7 @@
             try {
                 const pins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]');
                 const del = JSON.parse(localStorage.getItem('elec_deleted_labeled_places_map') || '{}');
-                scadaDue = pins
+                scadaDue = (Array.isArray(pins) ? pins : [])
                     .filter((p) => {
                         if (!p?.id || !p.dueDate) return false;
                         const delIso = del[p.id];
@@ -157,21 +178,27 @@
             } catch (e) {}
         }
 
-        const stripped = (Array.isArray(rawPlans) ? rawPlans : [])
+        const activePlans = (Array.isArray(rawPlans) ? rawPlans : [])
             .filter((p) => p && p.id && !p.pmDeleted && p.status !== 'done' && (normPushGrp(p.ownerGroup) || 'กฟส.บึง') === grp)
             .map((p) => {
                 const cTimes = Array.isArray(p.customAlertTimes) ? p.customAlertTimes.filter(Boolean) : [];
+                const mode = p.alertMode || (cTimes.length > 0 ? 'both' : 'standard');
                 return {
                     id: p.id,
                     date: p.date,
                     notifyDaysBefore: Number(p.notifyDaysBefore ?? 3),
-                    alertMode: p.alertMode || (cTimes.length > 0 ? 'both' : 'standard'),
+                    alertMode: mode,
                     customAlertTimes: cTimes,
                     status: p.status || 'pending',
                     pmDeleted: false
                 };
             })
+            .filter((p) => p.alertMode !== 'off' && !(p.alertMode === 'custom_only' && p.customAlertTimes.length === 0));
+
+        const stripped = activePlans
             .concat(scadaDue)
+            .sort((a, b) => calcAbsDaysFromToday(a.date) - calcAbsDaysFromToday(b.date))
+            .slice(0, MAX_PUSH_SCHEDULE_ITEMS)
             .sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
         const sig = grp + '__' + JSON.stringify(stripped);
@@ -185,7 +212,7 @@
                 localStorage.setItem(SAVED_SCHED_SIG_KEY, sig);
             }
         } catch (e) {
-            // หากออฟไลน์จะลองซิงค์ใหม่รอบถัดไปอัตโนมัติ
+            // หากออฟไลน์จะลองซิงค์ใหม่เมื่อออนไลน์หรือรอบถัดไปอัตโนมัติ
         } finally {
             isSyncInFlight = false;
         }
@@ -202,6 +229,13 @@
         if (isViewerOnly()) {
             notifyMsg('🔒 บัญชีผู้สำรวจไม่สามารถผูกระบบแจ้งเตือนขณะปิดแอปหลังบ้านได้');
             return;
+        }
+        if (isEmbeddedFrame && window.top && window.top !== window.self) {
+            try {
+                if (typeof window.top.enableBackgroundPushAlerts === 'function') {
+                    return window.top.enableBackgroundPushAlerts();
+                }
+            } catch (e) {}
         }
         if (!('Notification' in window) || !('serviceWorker' in navigator)) {
             notifyMsg('⚠️ บน iPhone กรุณากดปุ่มแชร์ -> "เพิ่มไปยังหน้าจอโฮม" ก่อนเปิดแจ้งเตือนครับ');
@@ -220,15 +254,27 @@
                 return;
             }
 
-            let swReg = await navigator.serviceWorker.getRegistration();
+            let swReg = await navigator.serviceWorker.getRegistration('./');
             if (!swReg) await navigator.serviceWorker.register('./sw.js');
             swReg = await navigator.serviceWorker.ready;
 
             const messaging = await ensureFirebaseMessaging();
-            const token = await messaging.getToken({
-                vapidKey: FIREBASE_VAPID_PUBLIC_KEY,
-                serviceWorkerRegistration: swReg
-            });
+            let token = '';
+            try {
+                token = await messaging.getToken({
+                    vapidKey: FIREBASE_VAPID_PUBLIC_KEY,
+                    serviceWorkerRegistration: swReg
+                });
+            } catch (tokErr) {
+                try {
+                    const oldSub = await swReg.pushManager?.getSubscription();
+                    if (oldSub) await oldSub.unsubscribe();
+                } catch (e) {}
+                token = await messaging.getToken({
+                    vapidKey: FIREBASE_VAPID_PUBLIC_KEY,
+                    serviceWorkerRegistration: swReg
+                });
+            }
 
             if (!token) throw new Error('ไม่ได้รับรหัส FCM Token จากระบบ');
 
@@ -272,11 +318,22 @@
         }
     }
 
+    function attachPermBtnObserver(permBtn) {
+        if (!permBtn || permBtn.__pushObserved || typeof MutationObserver === 'undefined') return;
+        permBtn.__pushObserved = true;
+        permBtnObserver = new MutationObserver(() => {
+            if (!isEnablingPush) updatePushBtnUI();
+        });
+        permBtnObserver.observe(permBtn, { childList: true, characterData: true, subtree: true });
+    }
+
     function updatePushBtnUI() {
         window.requestPmBrowserNotificationPermission = enableBackgroundPushAlerts;
         hookOpenPmModalButtonSync();
         const permBtn = document.getElementById('pmNotifPermBtn');
         if (!permBtn || isEnablingPush) return;
+
+        attachPermBtnObserver(permBtn);
 
         const viewer = isViewerOnly();
         permBtn.classList.toggle('hidden', viewer);
@@ -286,12 +343,24 @@
         const granted = ('Notification' in window) && Notification.permission === 'granted';
         permBtn.onclick = () => enableBackgroundPushAlerts();
 
-        if (savedToken && granted) {
-            permBtn.textContent = '📲 แจ้งเตือนปิดแอป: เปิดแล้ว';
-            permBtn.className = 'bg-emerald-500/90 hover:bg-emerald-600 text-white border border-emerald-200/60 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow-sm';
+        const targetText = (savedToken && granted)
+            ? '📲 แจ้งเตือนปิดแอป: เปิดแล้ว'
+            : '📲 เปิดแจ้งเตือน (แม้ปิดแอป)';
+        const targetCls = (savedToken && granted)
+            ? 'bg-emerald-500/90 hover:bg-emerald-600 text-white border border-emerald-200/60 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow-sm'
+            : 'bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow-sm';
+
+        if (permBtn.textContent !== targetText) permBtn.textContent = targetText;
+        if (permBtn.className !== targetCls) permBtn.className = targetCls;
+    }
+
+    function triggerOpenPmFromNotification() {
+        if (localStorage.getItem('elec_app_logged_in') === 'true') {
+            pendingOpenPmOnLogin = false;
+            window.openPmCalendarModal?.();
         } else {
-            permBtn.textContent = '📲 เปิดแจ้งเตือน (แม้ปิดแอป)';
-            permBtn.className = 'bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow-sm';
+            pendingOpenPmOnLogin = true;
+            window.openPmCalendarModal?.();
         }
     }
 
@@ -314,6 +383,11 @@
     window.addEventListener('message', (e) => {
         if (e?.data?.type === 'PM_PLANS_SYNC') scheduleDebouncedPushSync();
     });
+    window.addEventListener('online', () => {
+        if (!isEmbeddedFrame && localStorage.getItem('elec_app_logged_in') === 'true' && !isViewerOnly()) {
+            scheduleDebouncedPushSync();
+        }
+    });
     try {
         if ('BroadcastChannel' in window) {
             const pmBc = new BroadcastChannel(PM_SYNC_CHANNEL);
@@ -323,14 +397,15 @@
 
     if ('serviceWorker' in navigator && !isEmbeddedFrame) {
         navigator.serviceWorker.addEventListener('message', (ev) => {
-            if (ev.data?.type === 'OPEN_PM_FROM_PUSH' && typeof window.openPmCalendarModal === 'function') {
-                window.openPmCalendarModal();
+            if (ev.data?.type === 'OPEN_PM_FROM_PUSH') {
+                triggerOpenPmFromNotification();
             }
         });
     }
 
     function bootPmPushClient() {
         window.requestPmBrowserNotificationPermission = enableBackgroundPushAlerts;
+        updatePushBtnUI();
         if (isEmbeddedFrame) return;
 
         let wasLoggedIn = localStorage.getItem('elec_app_logged_in') === 'true';
@@ -338,12 +413,12 @@
         setTimeout(() => {
             updatePushBtnUI();
             if (location.search.includes('openPm=1')) {
-                if (typeof window.openPmCalendarModal === 'function') window.openPmCalendarModal();
                 try {
                     const cleanUrl = new URL(location.href);
                     cleanUrl.searchParams.delete('openPm');
                     history.replaceState(null, '', cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
                 } catch (e) {}
+                triggerOpenPmFromNotification();
             }
         }, 1000);
 
@@ -356,12 +431,16 @@
         setInterval(() => {
             updatePushBtnUI();
             const nowLogged = localStorage.getItem('elec_app_logged_in') === 'true';
+            if (nowLogged && !wasLoggedIn && pendingOpenPmOnLogin) {
+                pendingOpenPmOnLogin = false;
+                setTimeout(() => window.openPmCalendarModal?.(), 250);
+            }
             if (nowLogged && !isViewerOnly()) {
                 if (!wasLoggedIn) scheduleDebouncedPushSync();
                 const savedToken = localStorage.getItem(PUSH_TOKEN_KEY);
                 const savedGrp = normPushGrp(localStorage.getItem(PUSH_TOKEN_GRP_KEY));
                 const curGrp = getUserGroup();
-                if (savedToken && savedGrp !== curGrp) {
+                if (savedToken && savedGrp !== curGrp && navigator.onLine !== false) {
                     localStorage.setItem(PUSH_TOKEN_GRP_KEY, curGrp);
                     const pageFile = location.pathname.includes('page2') ? './page2.html?openPm=1' : './index.html?openPm=1';
                     postToGas({ action: 'pmPushRegister', token: savedToken, group: curGrp, pageUrl: pageFile })
@@ -377,3 +456,4 @@
 
     window.enableBackgroundPushAlerts = enableBackgroundPushAlerts;
 })();
+// ==================== จบไฟล์ pm-push.js (v1.2.2) ====================
