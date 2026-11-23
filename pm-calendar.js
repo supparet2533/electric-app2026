@@ -24,7 +24,7 @@
     const PM_HAS_SESSION_HISTORY_KEY = 'elec_pm_has_session_history_v1';
 
     const DEFAULT_STANDARD_ALERT_TIMES = ['00:00', '07:00'];
-    const MAX_TOMBSTONE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+    const MAX_TOMBSTONE_AGE_MS = 35 * 24 * 60 * 60 * 1000;
     const MAX_DONE_CLOUD_AGE_MS = 60 * 24 * 60 * 60 * 1000;
     const MAX_CLOUD_SYNC_ITEMS = 60;
     const MAX_SHARD_JSON_CHARS = 18000;
@@ -919,13 +919,13 @@
     let isQuickInlineBoxVisible = false;
     let desktopModalWidthMode = '65vw';
 
-        function injectPmCalendarStyles() {
+            function injectPmCalendarStyles() {
         if (document.getElementById('peaPmCalendarStyles')) return;
         const st = document.createElement('style');
         st.id = 'peaPmCalendarStyles';
         st.textContent = `
             #toast { z-index: 1500 !important; }
-            #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1460 !important; }
+            #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
             #pmCalendarModal h3 { flex-wrap: wrap !important; row-gap: 0.25rem !important; }
             #pmHeaderGroupBadge { white-space: nowrap !important; flex-shrink: 0 !important; }
             .pm-day-cell { min-height: 60px; transition: all 0.15s ease; }
@@ -998,12 +998,15 @@
             #labeledInteractiveMap.pm-pin-drop-active-map .leaflet-scadaUnifiedLinesPane-pane *,
             #labeledInteractiveMap.pm-pin-drop-active-map .leaflet-overlay-pane svg,
             #labeledInteractiveMap.pm-pin-drop-active-map .leaflet-overlay-pane canvas,
+            #repairJobsMapCanvas.pm-pin-drop-active-map .leaflet-overlay-pane svg,
+            #repairJobsMapCanvas.pm-pin-drop-active-map .leaflet-overlay-pane canvas,
             #repairJobsLeafletMap.pm-pin-drop-active-map .leaflet-overlay-pane svg,
             #repairJobsLeafletMap.pm-pin-drop-active-map .leaflet-overlay-pane canvas { pointer-events: none !important; }
             body.role-viewer-readonly .pm-edit-only, body.scada-sim-active .pm-edit-only { display: none !important; }
         `;
         document.head.appendChild(st);
     }
+    
     function setPmDesktopModalWidth(widthVal) {
         desktopModalWidthMode = widthVal || '65vw';
         const dlg = document.querySelector('#pmCalendarModal .pm-calendar-dialog');
@@ -1166,17 +1169,17 @@
     function toggleShowPmPinsOnMaps() { showPmPinsOnMaps = !showPmPinsOnMaps; localStorage.setItem(PM_SHOW_MAP_PINS_KEY, String(showPmPinsOnMaps)); renderAllExternalPmMapLayers(); safeToast(showPmPinsOnMaps ? '📅 แสดงหมุดแผนงานบนแผนที่แล้ว' : '🚫 ซ่อนหมุดแผนงานชั่วคราว'); }
     function cyclePmMapFilterMode() { pmMapFilterMode = pmMapFilterMode === 'pending' ? 'alert' : 'pending'; localStorage.setItem(PM_MAP_FILTER_MODE_KEY, pmMapFilterMode); renderAllExternalPmMapLayers(); }
 
-    function updatePinDropBannerOnMaps() {
+        function updatePinDropBannerOnMaps() {
         document.querySelectorAll('.pm-pin-drop-banner').forEach(el => el.remove());
         const isMove = Boolean(pmPinMoveTargetId), isAny = pmPinDropModeActive || isMove;
         ['labeledInteractiveMap', 'pmCalendarEmbeddedMap'].forEach(id => document.getElementById(id)?.classList.toggle('pm-pin-drop-active-map', isAny));
-        document.getElementById('repairJobsLeafletMap')?.classList.toggle('pm-pin-drop-active-map', isMove);
+        ['repairJobsMapCanvas', 'repairJobsLeafletMap'].forEach(id => document.getElementById(id)?.classList.toggle('pm-pin-drop-active-map', isMove));
         updateScadaToolbarPmButtonsUI();
         const calDropBtn = document.getElementById('btnCalMapDropPin');
         if (calDropBtn) { calDropBtn.textContent = pmPinDropModeActive ? '❌ ยกเลิกปักหมุด' : '📍 จิ้มปักหมุดแผนใหม่'; calDropBtn.className = pmPinDropModeActive ? 'pointer-events-auto bg-amber-400 text-slate-950 border border-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg animate-pulse' : 'pm-edit-only pointer-events-auto bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg'; }
         if (!isAny) return;
         const msg = isMove ? '📍 โหมดย้ายหมุดแผนงาน: ลากหมุด หรือแตะจุดใหม่บนแผนที่เพื่อวาง' : '📍 โหมดปักหมุดแผนงาน: แตะจุดที่ต้องการบนแผนที่เพื่อสร้างแผนงานใหม่';
-        const targetMapIds = isMove ? ['labeledInteractiveMap', 'repairJobsLeafletMap', 'pmCalendarEmbeddedMap'] : ['labeledInteractiveMap', 'pmCalendarEmbeddedMap'];
+        const targetMapIds = isMove ? ['labeledInteractiveMap', 'repairJobsMapCanvas', 'repairJobsLeafletMap', 'pmCalendarEmbeddedMap'] : ['labeledInteractiveMap', 'pmCalendarEmbeddedMap'];
         targetMapIds.map(id => document.getElementById(id)?.parentElement).filter(Boolean).forEach(wrap => {
             if (window.getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
             const b = document.createElement('div');
@@ -1185,7 +1188,7 @@
             wrap.appendChild(b);
         });
     }
-
+    
     function cancelPmMapInteractiveModes() { pmPinDropModeActive = false; pmPinMoveTargetId = null; updatePinDropBannerOnMaps(); renderAllExternalPmMapLayers(); }
     function togglePmPinDropMode(forceState, targetMapType = 'scada') {
         if (!canManagePmSchedule()) { safeToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่ปักหมุดแผนงานได้'); return; }
