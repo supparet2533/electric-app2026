@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v157 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v163 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v162';
+const CACHE_NAME = 'pea-smart-tools-v163';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -210,6 +210,10 @@ self.addEventListener('install', (event) => {
                             await cache.put(assetUrl, res);
                         } catch (err) {
                             if (isRequired) throw err;
+                            const prevLocal = await caches.match(assetUrl, { ignoreSearch: true, ignoreVary: true }).catch(() => null);
+                            if (prevLocal) {
+                                await cache.put(assetUrl, prevLocal).catch(() => {});
+                            }
                         }
                     })
                 );
@@ -467,8 +471,12 @@ self.addEventListener('push', (event) => {
     }
 
     const title = payload.title || '🔔 แจ้งเตือนแผนงานบำรุงรักษา (PM)';
+    const iconUrl = resolveAppTargetUrl(payload.icon || './icon-main-192.png');
+    const badgeUrl = resolveAppTargetUrl(payload.badge || './icon-main-192.png');
     const options = {
         body: payload.body || 'มีแผนงานบำรุงรักษาถึงกำหนด แตะเพื่อเปิดดูรายละเอียด',
+        icon: iconUrl,
+        badge: badgeUrl,
         tag: payload.tag || 'pea-pm-summary-push',
         renotify: true,
         requireInteraction: true,
@@ -500,3 +508,4 @@ self.addEventListener('notificationclick', (event) => {
         })
     );
 });
+// ==================== จบไฟล์ sw.js (v163) ====================
