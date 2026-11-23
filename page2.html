@@ -370,14 +370,14 @@
     <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=159"></script>
-    <script src="shared-core.js?v=159"></script>
-    <script src="tech-jobs.js?v=159"></script>
-    <script src="scada-engine.js?v=159"></script>
-    <script src="pm-calendar.js?v=159"></script>
-    <script src="scada-fault-locator.js?v=159"></script>
-    <script src="scada-tie-advisor.js?v=159"></script>
-    <script src="pm-push.js?v=159"></script>
+    <script src="pea-idb-store.js?v=163"></script>
+    <script src="shared-core.js?v=163"></script>
+    <script src="tech-jobs.js?v=163"></script>
+    <script src="scada-engine.js?v=163"></script>
+    <script src="pm-calendar.js?v=163"></script>
+    <script src="scada-fault-locator.js?v=163"></script>
+    <script src="scada-tie-advisor.js?v=163"></script>
+    <script src="pm-push.js?v=163"></script>
 
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
     <script>
@@ -393,16 +393,17 @@
                 const hadSwController = Boolean(navigator.serviceWorker.controller);
                 let isSwReloading = false;
 
-                navigator.serviceWorker.addEventListener('controllerchange', function() {
-                    if (!hadSwController || isSwReloading) return;
-                    const tag = (document.activeElement && document.activeElement.tagName) || '';
-                    const isSimActive = document.body.classList.contains('scada-sim-active') ||
-                        Boolean(window.PeaCore && window.PeaCore.simSandbox && window.PeaCore.simSandbox.active);
-                    const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
-                        isSimActive ||
-                        Boolean(document.querySelector('#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaColorPaletteModal:not(.hidden), #pmCalendarModal:not(.hidden), #deletedEquipAuditModal:not(.hidden), #techOnlineModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden), #scadaFaultLocatorPanel:not(.hidden), #scadaTieAdvisorPanel:not(.hidden)'));
-
-                    if (!isTypingOrModal) {
+                                navigator.serviceWorker.addEventListener('controllerchange', function() {
+                            if (!hadSwController || isSwReloading) return;
+                            const tag = (document.activeElement && document.activeElement.tagName) || '';
+                            const isSimActive = document.body.classList.contains('scada-sim-active') ||
+                                Boolean(window.PeaCore && window.PeaCore.simSandbox && window.PeaCore.simSandbox.active);
+                            const hasPendingPush = localStorage.getItem('elec_tech_has_pending_push') === 'true';
+                            const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
+                                isSimActive || hasPendingPush ||
+                                Boolean(document.querySelector('#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaLotoPromptModal:not(.hidden), #scadaSimPlanModal:not(.hidden), #scadaColorPaletteModal:not(.hidden), #pmCalendarModal:not(.hidden), #pmPlanFormModal:not(.hidden), #clearEquipPasswordModal:not(.hidden), #deletedEquipAuditModal:not(.hidden), #techOnlineModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden), #scadaFaultLocatorPanel:not(.hidden), #scadaTieAdvisorPanel:not(.hidden)'));
+                            
+                            if (!isTypingOrModal) {
                         isSwReloading = true;
                         window.location.reload();
                     } else if (!document.getElementById('swUpdateReadyBar')) {
