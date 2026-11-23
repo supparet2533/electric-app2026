@@ -190,7 +190,7 @@
         }
     }
 
-    function pushCalibMapToCloud(branchGrp, updatedCalibMap) {
+        function pushCalibMapToCloud(branchGrp, updatedCalibMap) {
         if (typeof window.isViewerRole === 'function' && window.isViewerRole()) return;
         const targetGrp = normGrp(branchGrp) || getCurrentBranchForCalib();
         const regKey = CLOUD_CALIB_PREFIX + targetGrp;
@@ -201,7 +201,7 @@
         Object.entries(updatedCalibMap || {}).forEach(([k, rec]) => {
             if (!k || !rec || typeof rec !== 'object') return;
             const rMs = new Date(rec.updatedAt || 0).getTime() || 0;
-            if (rec.deleted && rMs > 0 && (nowMs - rMs > 30 * 86400000)) return;
+            if (rec.deleted && rMs > 0 && (nowMs - rMs > 35 * 86400000)) return;
             if ((rec.ownerGroup || targetGrp) !== targetGrp) return;
             compactCalib[k] = rec;
         });
@@ -234,12 +234,21 @@
                     action: 'patchDelta',
                     group: targetGrp,
                     forceSheetWrite: true,
-                    techLocDelta: { techLocations: { [regKey]: regEntry } }
+                    techLocDelta: {
+                        id: 'TECH_LOC_REGISTRY',
+                        jobType: 'tech_loc',
+                        dateTimeSaved: 'TECH_LOC_REGISTRY',
+                        techLocations: { [regKey]: regEntry },
+                        _keepBackups: true,
+                        _keepPins: true,
+                        _keepDelPins: true,
+                        _keepAuditLogs: true,
+                        updatedAt: nowIso
+                    }
                 })
             }).catch(() => {});
         }
     }
-
     function getSourceCalibRecord(sourcePinId) {
         if (!sourcePinId) return null;
         const map = pullCloudCalibIntoLocal();
@@ -815,7 +824,9 @@
                 const childPin = pinMap.get(child);
                 const spurTotalKm = re.groundLenKm + (maxSubtreeKm.get(child) || 0);
                 const isDfBranch = behindDfNode.has(u) || uPin?.scadaNode?.t === 'DF' || childPin?.scadaNode?.t === 'DF';
-                const isExplicitTap = Boolean(re.edge?._ttapTap && !re.edge?._ttapTrunk);
+                const uHasTrunkOut = Array.isArray(uPin?.scadaLines) && uPin.scadaLines.some((l) => l && l._ttapTrunk);
+                const isExplicitTap = Boolean((re.edge?._ttapTap || (isNodeTTap(uPin, pins) && uHasTrunkOut && !re.edge?._ttapId)) && !re.edge?._ttapTrunk);
+
                 const isShortSideSpur = uIsJunction && (idx !== longestChildIdx || isExplicitTap) && !re.edge?._ttapTrunk && spurTotalKm <= 2.3;
 
                 if (isDfBranch || isShortSideSpur) {
@@ -866,8 +877,8 @@
                     rawPhysEdges.push({ uId: p.id, vId: dst.id, groundLenKm, explicitCab, edge: e });
                 }
 
-                const isBypassedWire = Boolean(bypassOpenSet && (bypassOpenSet.has(p.id) || bypassOpenSet.has(dst.id)));
-                if (stopAtOpenSwitch && !isBypassedWire && (e.manualNO === true || e.st === 'O')) return;
+                                const isBypassedWire = Boolean(bypassOpenSet && (bypassOpenSet.has(p.id) || bypassOpenSet.has(dst.id)));
+                if (stopAtOpenSwitch && !isBypassedWire && (Boolean(e.off) || e.manualNO === true || e.st === 'O')) return;
                 if (seenActiveGeom.has(geomSig)) return;
                 seenActiveGeom.add(geomSig);
 
@@ -1098,7 +1109,19 @@
             if (rk && delReg[rk]) return;
             if (typeof window.canCurrentUserSeeJob === 'function' && !window.canCurrentUserSeeJob(j)) return;
 
-            const jMs = Number(j.createdAtMs || 0) || (j.timestamp ? new Date(j.timestamp).getTime() : 0);
+            let jMs = Number(j.createdAtMs || 0);
+            if (!jMs) {
+                const rawDt = String(j.timestamp || j.dateTimeSaved || '').trim();
+                const thM = rawDt.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2})[:.](\d{1,2}))?/);
+                if (thM) {
+                    let yr = parseInt(thM[3], 10) || 2569;
+                    if (yr > 2400) yr -= 543;
+                    jMs = new Date(yr, (parseInt(thM[2], 10) || 1) - 1, parseInt(thM[1], 10) || 1, parseInt(thM[4] || '0', 10), parseInt(thM[5] || '0', 10)).getTime() || 0;
+                } else if (rawDt) {
+                    const parsedT = new Date(rawDt).getTime();
+                    jMs = isNaN(parsedT) ? 0 : parsedT;
+                }
+            }
             if (jMs > 0 && Math.abs(nowMs - jMs) < 2 * 3600000) return;
 
             const rep = j.techReport || (rk ? closedReg[rk] : null);
@@ -1986,28 +2009,50 @@
             }
         }
 
-        let matchedFeederBreaker = null;
+                let matchedFeederBreaker = null;
         if (preferFeeder || preferStation) {
             const numM = String(preferFeeder).match(/(\d+)\s*$/), fNum = numM ? parseInt(numM[1], 10) : null;
             const cleanFd = String(preferFeeder).trim().toUpperCase().replace(/\s+/g, '');
-            const stPrefix = (String(preferStation || '').toUpperCase().match(/[A-Z]{2,4}/) || [''])[0];
+            const cleanSt = String(preferStation || '').trim().replace(/\s+/g, '');
+            const stPrefixes = [];
+            const engSt = (cleanSt.toUpperCase().match(/[A-Z]{2,4}/) || [''])[0];
+            if (engSt) stPrefixes.push(engSt);
+            if (/บ้านบึง/.test(cleanSt)) stPrefixes.push('BBA', 'BBB', 'BB');
+            else if (/บึง1/.test(cleanSt)) stPrefixes.push('BNF', 'BNG', 'BNA', 'BN1');
+            else if (/บึง2/.test(cleanSt)) stPrefixes.push('BNB', 'BN2');
+            else if (/บึง3/.test(cleanSt)) stPrefixes.push('BNC', 'BN3');
+            else if (/บึง4/.test(cleanSt)) stPrefixes.push('BND', 'BN4');
+            else if (/^บึง/.test(cleanSt)) stPrefixes.push('BN');
+            else if (/บ่อวิน1/.test(cleanSt)) stPrefixes.push('BWA', 'BWF', 'BW1');
+            else if (/บ่อวิน2/.test(cleanSt)) stPrefixes.push('BWB', 'BW2');
+            else if (/ปิ่นทอง1/.test(cleanSt)) stPrefixes.push('PTA', 'PT1');
+            else if (/ปิ่นทอง2/.test(cleanSt)) stPrefixes.push('PTB', 'PT2');
+            else if (/ปิ่นทอง3/.test(cleanSt)) stPrefixes.push('PTC', 'PT3');
+            else if (/เหมราช1/.test(cleanSt)) stPrefixes.push('HEA', 'HMA', 'HE1', 'HM1');
+            else if (/เหมราช2/.test(cleanSt)) stPrefixes.push('HEB', 'HMB', 'HE2', 'HM2');
+            else if (/เขาไม้แก้ว/.test(cleanSt)) stPrefixes.push('KMK', 'KMA', 'KM');
+            else if (/ปลวกแดง1/.test(cleanSt)) stPrefixes.push('PDA', 'PD1');
+            else if (/ปลวกแดง2/.test(cleanSt)) stPrefixes.push('PDB', 'PD2');
+            else if (/อีสเทิร์น/.test(cleanSt)) stPrefixes.push('ESC', 'ESB', 'ESA', 'ES');
+            else if (/อมตะ/.test(cleanSt)) stPrefixes.push('AMB', 'ACB', 'AMA', 'AC');
+
             const pool = sourceBreakers.length > 0 ? sourceBreakers : allCandidates;
             const scored = pool.map((b) => {
                 const bFd = String(b.scadaNode?.fd || '').toUpperCase().replace(/\s+/g, '');
                 const bTxt = `${bFd} ${b.name || ''} ${b.note || ''}`.toUpperCase();
+                const bTxtNoSpace = `${b.name || ''}${b.note || ''}`.replace(/\s+/g, '');
                 let score = (isSubstationBreakerOrSourceNode(b) ? 25 : 0) + ((bFd && cleanFd && bFd === cleanFd) ? 120 : 0);
                 if (fNum !== null) {
                     const fdM = Array.from(bTxt.matchAll(/(?:\b(?!KV)[A-Z]{2,4}\s*F?\s*0*(\d+)|\bF\s*0*(\d+)|วงจร\s*0*(\d+))(?![0-9]|KV)/gi));
                     if (fdM.some((m) => parseInt(m[1] || m[2] || m[3], 10) === fNum)) score += 65;
                     else if (Array.from(bTxt.matchAll(/\b(?:CB|RC)\s*-?\s*0*(\d+)(?![0-9])/gi)).some((m) => parseInt(m[1], 10) === fNum)) score += 45;
                 }
-                if (stPrefix && bTxt.includes(stPrefix)) score += 30;
-                if (preferStation && `${b.name || ''} ${b.note || ''}`.includes(preferStation.trim())) score += 25;
+                if (stPrefixes.some((px) => bFd.startsWith(px) || String(b.name || '').toUpperCase().startsWith(px) || bTxt.includes(px))) score += 40;
+                if (cleanSt && bTxtNoSpace.includes(cleanSt)) score += 30;
                 return { b, score };
             }).filter((x) => x.score >= 45).sort((a, b) => b.score - a.score);
             if (scored.length > 0) matchedFeederBreaker = scored[0].b;
         }
-
         let unmatchedDeviceHint = '';
         let matchedMustPassPin = null;
         const devPin = findMatchingPinByTextHint(preferDevice, allCandidates);
