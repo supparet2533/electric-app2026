@@ -8,7 +8,9 @@
 
     const CLOUD_USER_API_URL = "https://script.google.com/macros/s/AKfycbzLEIlMtJ2u9U8XsSCAbta_Df2mmhzlNN-O2ZKrxH4RiN8-DTyw8bIIn2PCzl9eokpI/exec";
     const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
-    const MAX_REGISTRY_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+        const MAX_REGISTRY_AGE_MS = 35 * 24 * 60 * 60 * 1000;
+    const MAX_OUTAGE_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+
     const MAX_STALE_LOC_AGE_MS = 14 * 24 * 60 * 60 * 1000;
     const ONLINE_THRESHOLD_MS = 180 * 1000;
     const CHANNEL_NAME = 'pea_smart_grid_hyper_v4';
@@ -535,19 +537,44 @@
         return out;
     }
 
+        function parseThaiOrIsoDateMs(rawVal) {
+        if (!rawVal) return 0;
+        if (typeof rawVal === 'number') return isNaN(rawVal) ? 0 : rawVal;
+        const s = String(rawVal).trim();
+        if (!s || s === '-') return 0;
+        const th = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/);
+        if (th) {
+            let yr = parseInt(th[3], 10) || 2569;
+            if (yr > 2400) yr -= 543;
+            const ms = new Date(
+                yr, (parseInt(th[2], 10) || 1) - 1, parseInt(th[1], 10) || 1,
+                parseInt(th[4] || '0', 10), parseInt(th[5] || '0', 10), parseInt(th[6] || '0', 10)
+            ).getTime();
+            if (!isNaN(ms) && ms > 0) return ms;
+        }
+        const isoD = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (isoD) {
+            let yr2 = parseInt(isoD[1], 10);
+            if (yr2 > 2400) yr2 -= 543;
+            const ms2 = new Date(yr2, parseInt(isoD[2], 10) - 1, parseInt(isoD[3], 10)).getTime();
+            if (!isNaN(ms2) && ms2 > 0) return ms2;
+        }
+        const t = new Date(s).getTime();
+        return isNaN(t) ? 0 : t;
+    }
+
     function parseJobTimeMs(item) {
         if (!item) return 0;
-        if (item.createdAtMs) return Number(item.createdAtMs) || 0;
-        if (item.timestamp) { const t = new Date(item.timestamp).getTime(); if (!isNaN(t)) return t; }
-        if (item.dateTimeSaved) {
-            const p = String(item.dateTimeSaved).trim().split(/\s+/), dp = (p[0] || '').split('/');
-            if (dp.length === 3) {
-                let yr = parseInt(dp[2], 10) || 2569; if (yr > 2400) yr -= 543;
-                const tp = (p[1] || '00:00:00').split(/[:.]/);
-                return new Date(yr, (parseInt(dp[1], 10) || 1) - 1, parseInt(dp[0], 10) || 1, parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2], 10) || 0).getTime() || 0;
-            }
-        }
+        if (item.createdAtMs && Number(item.createdAtMs) > 0) return Number(item.createdAtMs);
+        if (item.timestamp) { const t = parseThaiOrIsoDateMs(item.timestamp); if (t > 0) return t; }
+        if (item.dateTimeSaved) { const d = parseThaiOrIsoDateMs(item.dateTimeSaved); if (d > 0) return d; }
         return 0;
+    }
+
+    function isExpiredOutageJob(item, isFaultJob = false) {
+        if (!item || isFaultJob || item.jobType === 'fault' || item.jobType === 'tech_loc') return false;
+        const ms = parseJobTimeMs(item);
+        return ms > 0 && (Date.now() - ms > MAX_OUTAGE_RETENTION_MS);
     }
 
     function sanitizePinsBeforeWrite(rawValStr, updateRamNow = false) {
@@ -678,8 +705,21 @@
                 } else if (key === 'elec_cloud_group_backups_map') {
                     value = slimGroupBackupsJson(value);
                 } else if (key === 'elec_deleted_jobs_registry') {
-                    const mergedDelJobs = { ...JSON.parse(rawStorageGet('elec_deleted_jobs_registry') || '{}'), ...JSON.parse(value || '{}') };
-                    value = JSON.stringify(pruneDeletedJobsMap(mergedDelJobs));
+                    const mergedDelJobs = pruneDeletedJobsMap({ ...JSON.parse(rawStorageGet('elec_deleted_jobs_registry') || '{}'), ...JSON.parse(value || '{}') });
+                    value = JSON.stringify(mergedDelJobs);
+                    ['elecReportsComplete_all', 'fault_reports_all'].forEach(sk => {
+                        const isF = (sk === 'fault_reports_all');
+                        const curArr = JSON.parse(rawStorageGet(sk) || '[]');
+                        const nextArr = curArr.filter(it => {
+                            if (!it || isExpiredOutageJob(it, isF)) return false;
+                            const jk = isF ? it.timestamp : it.dateTimeSaved;
+                            if (!jk || !mergedDelJobs[jk]) return true;
+                            const delMs = Number(mergedDelJobs[jk]) || 0;
+                            const revMs = Math.max(Number(it.restoredAtMs || 0), parseThaiOrIsoDateMs(it.editedAt), parseThaiOrIsoDateMs(it.reopenedAt));
+                            return delMs > 0 && revMs > delMs;
+                        });
+                        if (nextArr.length !== curArr.length) rawStorageSet(sk, JSON.stringify(nextArr));
+                    });
                 } else if (key === 'elec_tech_locations_map') {
                     const curUser = (rawStorageGet('elec_app_current_user') || '').trim();
                     const role = rawStorageGet('elec_app_current_role') || 'user';
@@ -690,11 +730,11 @@
                     }
                     value = JSON.stringify(locObj);
                 } else if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
-                    const isF = (key === 'fault_reports_all'), arr = JSON.parse(value || '[]');
+                    const isF = (key === 'fault_reports_all');
+                    const arr = JSON.parse(value || '[]').filter(it => it && !isExpiredOutageJob(it, isF));
                     const closedReg = JSON.parse(rawStorageGet('elec_closed_jobs_registry') || '{}');
                     let closedDirty = false;
                     arr.forEach(item => {
-                        if (!item) return;
                         item.ownerGroup = getJobGroupName(item);
                         const jk = isF ? item.timestamp : item.dateTimeSaved;
                         if (item.reopenedAt) {
@@ -710,6 +750,7 @@
                     if (closedDirty) rawStorageSet('elec_closed_jobs_registry', JSON.stringify(closedReg));
                     value = JSON.stringify(arr);
                 }
+
             } catch (e) {} finally { isInternalSanitizing = false; }
         }
 
@@ -1217,8 +1258,8 @@
         return false;
     }
 
-    function applyIncomingPinDeltaPacket(deltaJsonStr) {
-        if (!deltaJsonStr || simSandbox.active) return;
+        function applyIncomingPinDeltaPacket(deltaJsonStr) {
+        if (!deltaJsonStr) return;
         isApplyingRemotePacket = true;
         try {
             const d = JSON.parse(deltaJsonStr);
@@ -1236,7 +1277,10 @@
             }
             if (delChanged) localStorage.setItem('elec_deleted_labeled_places_map', JSON.stringify(curDel));
 
-            const curPins = ramIndex.pinsRaw ? ramIndex.pinsList : JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]');
+            const curPins = simSandbox.active
+                ? JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]')
+                : (ramIndex.pinsRaw ? ramIndex.pinsList : JSON.parse(rawStorageGet('elec_labeled_places_list') || '[]'));
+
             const pinMap = new Map();
             curPins.forEach(p => {
                 if (!p?.id) return;
@@ -1260,6 +1304,24 @@
                 });
             }
 
+            // ขณะเปิดโหมดซ้อม: อัปเดตผังจริงเบื้องหลังและส่งต่อป้าย LOTO เข้าจอซ้อมทันทีใน 0.2 วินาที
+            if (simSandbox.active) {
+                if (pinsChanged) {
+                    const cleanRealStr = sanitizePinsBeforeWrite(JSON.stringify(Array.from(pinMap.values())), false);
+                    rawStorageSet('elec_labeled_places_list', cleanRealStr);
+                    lastSyncedLocalPinsStr = cleanRealStr;
+                }
+                if (delChanged) lastSyncedLocalDelPinsStr = rawStorageGet('elec_deleted_labeled_places_map') || '{}';
+                if ((pinsChanged || delChanged) && typeof window.__mergeCloudEquipRegistry === 'function') {
+                    window.__mergeCloudEquipRegistry({
+                        electricEquipmentPins: Array.from(pinMap.values()),
+                        deletedElectricEquipmentMap: curDel
+                    });
+                }
+                invalidateSheetCaches();
+                return;
+            }
+
             if (pinsChanged) {
                 localStorage.setItem('elec_labeled_places_list', JSON.stringify(Array.from(pinMap.values())));
                 seedMqttPinBaseline(ramIndex.pinsList);
@@ -1276,6 +1338,10 @@
 
     function applyIncomingLivePacket(key, incomingValStr) {
         if (!incomingValStr) return;
+        if (simSandbox.active && key === 'elec_labeled_places_list') {
+            try { applyIncomingPinDeltaPacket(JSON.stringify({ upserted: JSON.parse(incomingValStr || '[]') })); } catch (e) {}
+            return;
+        }
         if (simSandbox.active && key === 'elec_labeled_places_list') return;
         isApplyingRemotePacket = true;
         try {
@@ -1696,7 +1762,8 @@
         });
 
         rawJobs.forEach(j => {
-            if (!j || j.jobType === 'tech_loc') return;
+            if (!j || j.jobType === 'tech_loc' || isExpiredOutageJob(j, j.jobType === 'fault')) return;
+
             const rk = j.jobType === 'fault' ? j.timestamp : j.dateTimeSaved;
             if (!rk) return;
             const uk = (j.jobType === 'fault' ? 'F_' : 'O_') + rk;
