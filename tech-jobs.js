@@ -81,8 +81,10 @@
         return String(raw || '').trim().replace(/\s+/g, ' ').replace(/^(กฟ[สฟจตอ])\.?\s+/, '$1.').replace(/^(กฟ[สฟจตอ])(?![.\s])/, '$1.');
     }
 
+        const CALIB_LOC_PREFIX = '__FAULT_CALIB__';
+
     function isSysRegistryLoc(k, loc) {
-        return !k || k === Core.REGISTRY_LOC_KEY || String(k).startsWith(PM_LOC_PREFIX) || Boolean(loc && loc.isSystemRegistry);
+        return !k || k === Core.REGISTRY_LOC_KEY || String(k).startsWith(PM_LOC_PREFIX) || String(k).startsWith(CALIB_LOC_PREFIX) || Boolean(loc && loc.isSystemRegistry);
     }
 
     function escJsAttr(s) {
@@ -1031,9 +1033,9 @@
                     statusText: routeInfo.isArrived ? '📍 ถึงจุดเกิดเหตุแล้ว (กำลังตรวจสอบ)' : `อีกประมาณ ${routeInfo.durationMin} นาทีถึง (ถึง ~${etaTimeStr})`,
                     updatedAt: new Date(finishNowMs).toISOString(), needsMainSync: true
                 };
-                localStorage.setItem(storageKey, JSON.stringify(list));
-                localStorage.setItem('elec_tech_has_pending_push', 'true');
-                updateLiveNavDomElements();
+                        localStorage.setItem(storageKey, JSON.stringify(list));
+        markJobDirtyForPush(key);
+ updateLiveNavDomElements();
                 Core.unlockCloudWrite(25000);
                 if (routeInfo.isArrived) { showToast('📍 คุณเดินทางถึงจุดเกิดเหตุแล้ว!'); stopRealtimeGpsWatch(key); }
                 await pushAllJobsToCloud(true);
@@ -1134,8 +1136,7 @@
         delete list[idx].techNav;
         list[idx].navCancelledAt = safeCancelIso;
         localStorage.setItem(storageKey, JSON.stringify(list));
-        localStorage.setItem('elec_tech_has_pending_push', 'true');
-
+        markJobDirtyForPush(key);
         switchStatusTab('pending');
         showToast("↩️ ยกเลิกการเดินทางแล้ว ย้ายงานกลับไปช่อง 'รอแก้ไข'");
         await pushAllJobsToCloud(true);
@@ -1180,18 +1181,30 @@
         return `${cyc.getFullYear()}-${String(cyc.getMonth() + 1).padStart(2, '0')}-${String(cyc.getDate()).padStart(2, '0')}`;
     }
 
+        function parseTechDateTimeMs(rawStr) {
+        if (!rawStr) return 0;
+        if (typeof rawStr === 'number') return isNaN(rawStr) ? 0 : rawStr;
+        const s = String(rawStr).trim();
+        if (!s || s === '-') return 0;
+        const th = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/);
+        if (th) {
+            let yr = parseInt(th[3], 10) || 2569;
+            if (yr > 2400) yr -= 543;
+            const ms = new Date(
+                yr, (parseInt(th[2], 10) || 1) - 1, parseInt(th[1], 10) || 1,
+                parseInt(th[4] || '0', 10), parseInt(th[5] || '0', 10), parseInt(th[6] || '0', 10)
+            ).getTime();
+            if (!isNaN(ms) && ms > 0) return ms;
+        }
+        const t = new Date(s).getTime();
+        return isNaN(t) ? 0 : t;
+    }
+
     function getJobCreatedTimeMs(item) {
         if (!item) return 0;
-        if (item.createdAtMs) return Number(item.createdAtMs) || 0;
-        if (item.timestamp) { const t = new Date(item.timestamp).getTime(); if (!isNaN(t)) return t; }
-        if (item.dateTimeSaved) {
-            const parts = String(item.dateTimeSaved).trim().split(/\s+/), dp = (parts[0] || '').split('/');
-            if (dp.length === 3) {
-                let yr = parseInt(dp[2], 10) || 2569; if (yr > 2400) yr -= 543;
-                const tp = (parts[1] || '00:00:00').split(/[:.]/);
-                return new Date(yr, (parseInt(dp[1], 10) || 1) - 1, parseInt(dp[0], 10) || 1, parseInt(tp[0], 10) || 0, parseInt(tp[1], 10) || 0, parseInt(tp[2], 10) || 0).getTime() || 0;
-            }
-        }
+        if (item.createdAtMs && Number(item.createdAtMs) > 0) return Number(item.createdAtMs);
+        if (item.timestamp) { const t = parseTechDateTimeMs(item.timestamp); if (t > 0) return t; }
+        if (item.dateTimeSaved) { const d = parseTechDateTimeMs(item.dateTimeSaved); if (d > 0) return d; }
         return 0;
     }
 
@@ -1610,7 +1623,7 @@
                             }
                         }
 
-                        if (Array.isArray(locEntry.deletedEquipAuditLogs)) {
+                                               if (Array.isArray(locEntry.deletedEquipAuditLogs)) {
                             const logMap = new Map();
                             [...JSON.parse(localStorage.getItem('elec_deleted_equip_audit_logs') || '[]'), ...locEntry.deletedEquipAuditLogs].forEach(l => {
                                 if (l?.logId && !(effClearedTs > 0 && (new Date(l.deletedAt || 0).getTime() || 0) <= effClearedTs)) {
@@ -1619,11 +1632,13 @@
                             });
                             localStorage.setItem('elec_deleted_equip_audit_logs', JSON.stringify(Array.from(logMap.values())));
                         }
+                    } else if (typeof window.__mergeCloudEquipRegistry === 'function') {
+                        window.__mergeCloudEquipRegistry(locEntry);
                     }
                 }
 
                 mergeCloudJobsToLocal(data.jobs, true);
-                checkNewIncomingPendingJobs();
+ checkNewIncomingPendingJobs();
                 renderJobCards();
                 updateEquipNavFloatingBanner();
                 updateTechOnlineCountUI();
@@ -1873,16 +1888,20 @@
                 updatedAt: safeIso
             };
 
-            saveEquipCancelMap(cancelMap);
+                        saveEquipCancelMap(cancelMap);
             localStorage.setItem(EQUIP_NAV_STORAGE_KEY, JSON.stringify(navMap));
             localStorage.setItem('elec_tech_locations_map', JSON.stringify(locMap));
             localStorage.setItem('elec_tech_has_pending_push', 'true');
-
+            
+            if ((!targetKeyOpt || (curUser && isSameTechPerson(techName, curUser))) && typeof window.__stopScadaMapRoute === 'function') {
+                try { window.__stopScadaMapRoute(true); } catch (e) {}
+            }
             releaseScreenWakeLockIfIdle();
             updateEquipNavFloatingBanner();
             showToast(isArrived ? '✅ ถึงจุดติดตั้งอุปกรณ์เรียบร้อยแล้ว' : '↩️ ยกเลิกการเดินทางไปอุปกรณ์แล้ว');
             await pushAllJobsToCloud(true);
-        } finally {
+            }
+            finally {
             isStoppingEquipNavInternal = false;
         }
     }
@@ -2169,7 +2188,7 @@
     // ========================================================================
     let modalStagedPhotos = [];
 
-    function getJobDateDisplay(item) {
+        function getJobDateDisplay(item) {
         if (!item) return '-';
         if (item.reportDate && item.reportDate !== '-') {
             return normalizeThaiDateStr(item.reportDate) || item.reportDate;
@@ -2178,8 +2197,9 @@
             return normalizeThaiDateStr(item.dateTimeSaved) || String(item.dateTimeSaved).split(' ')[0];
         }
         if (item.timestamp) {
-            const d = new Date(item.timestamp);
-            if (!isNaN(d.getTime())) {
+            const ms = parseTechDateTimeMs(item.timestamp);
+            if (ms > 0) {
+                const d = new Date(ms);
                 return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear() + 543}`;
             }
         }
@@ -2200,8 +2220,9 @@
             return '3';
         }
         if (item.timestamp) {
-            const d = new Date(item.timestamp);
-            if (!isNaN(d.getTime())) {
+            const ms = parseTechDateTimeMs(item.timestamp);
+            if (ms > 0) {
+                const d = new Date(ms);
                 const mins = d.getHours() * 60 + d.getMinutes();
                 if (mins >= 30 && mins < 510) return '1';
                 if (mins >= 510 && mins < 990) return '2';
@@ -3118,9 +3139,11 @@
     // ========================================================================
     // 10. ส่งออกฟังก์ชันสู่ Global & เริ่มต้นระบบหน้าช่างอัตโนมัติ
     // ========================================================================
-        Object.assign(window, {
+            Object.assign(window, {
         handleTechLogin, handleTechLogout, checkTechAuth, goBackToMainPage, updateRoleNavigationUI,
         openTechOnlineModal, toggleGpsTracking, toggleSoundAlert, captureCurrentTechGpsForModal,
+        recordCurrentTechGpsLocation, calculateInstantRouteFallback, formatRealtimeNavHtml,
+        requestScreenWakeLock, releaseScreenWakeLockIfIdle,
         syncJobsFromCloud, pushAllJobsToCloud,
         switchStatusTab, selectShiftFilter, switchJobTypeAndPending,
         onTechDateInputChanged, setTechDateFilterToday, clearTechDateFilter,
