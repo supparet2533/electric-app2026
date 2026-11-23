@@ -167,7 +167,8 @@
     const drawTracker = { undoStack: [], redoStack: [] };
     const moveState = { active: false, subMode: 'grip', orthoSnap: false, selectedRef: null, undoStack: [] };
     const pinMoveState = { active: false, snapToWire: true, tapToPlace: false, selectedPinId: null, undoStack: [] };
-    const simState = { active: false, basePins: [], workingPins: [], steps: [], baseTopo: null, curTopo: null, lastDiff: null, expandedImpactTab: null };
+const simState = { active: false, basePins: [], workingPins: [], cloudSyncedRealPins: null, cloudDeletedMap: null, steps: [], baseTopo: null, curTopo: null, lastDiff: null, expandedImpactTab: null };
+
 
     function escScadaJsAttr(s) {
         return escapeHtmlStr(
@@ -240,11 +241,58 @@
         return km;
     }
 
-    function formatWireLengthText(km) {
+        function formatWireLengthText(km) {
         const m = Math.round((Number(km) || 0) * 1000);
         if (m <= 0) return '0 ม.';
         if (m < 1000) return `${m.toLocaleString('th-TH')} ม.`;
         return `${Number(km).toFixed(2)} กม. (${m.toLocaleString('th-TH')} ม.)`;
+    }
+
+    function formatRelayKmSingle(km) {
+        const val = Math.max(0, Number(km) || 0);
+        const m = Math.round(val * 1000);
+        return `${val.toFixed(2)} กม. (${m.toLocaleString('th-TH')} ม.)`;
+    }
+
+    function formatRelayKmSpan(nearKm, farKm) {
+        const n = Math.max(0, Number(nearKm) || 0);
+        const f = Math.max(n, Number(farKm) || 0);
+        if (Math.abs(f - n) < 0.005) return `${n.toFixed(2)} กม. (${Math.round(n * 1000).toLocaleString('th-TH')} ม.)`;
+        return `${n.toFixed(2)}–${f.toFixed(2)} กม.`;
+    }
+
+    function calcPointOffsetAlongEdgeKm(fromPin, edge, toPin, latlng) {
+        if (!fromPin || !toPin || !latlng || typeof calcHaversineKm !== 'function') return null;
+        const tLat = parseFloat(latlng.lat), tLon = parseFloat(latlng.lng ?? latlng.lon);
+        if (isNaN(tLat) || isNaN(tLon)) return null;
+        const pts = [[Number(fromPin.lat), Number(fromPin.lon)], ...(Array.isArray(edge?.w) ? edge.w : []), [Number(toPin.lat), Number(toPin.lon)]];
+        const cos = Math.cos((tLat * Math.PI) / 180) || 1;
+        let cumBeforeSeg = 0, bestDistSq = Infinity, bestArcKm = 0;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const aLat = Number(pts[i][0]), aLon = Number(pts[i][1]);
+            const bLat = Number(pts[i + 1][0]), bLon = Number(pts[i + 1][1]);
+            const segKm = Math.max(0, calcHaversineKm(aLat, aLon, bLat, bLon) || 0);
+            const dx = (bLon - aLon) * cos, dy = bLat - aLat, lSq = dx * dx + dy * dy;
+            const t = lSq > 1e-14 ? Math.max(0, Math.min(1, (((tLon - aLon) * cos * dx) + ((tLat - aLat) * dy)) / lSq)) : 0;
+            const pLat = aLat + t * dy, pLon = aLon + t * (bLon - aLon);
+            const dSq = ((tLon - pLon) * cos) ** 2 + (tLat - pLat) ** 2;
+            if (dSq < bestDistSq) {
+                bestDistSq = dSq;
+                bestArcKm = cumBeforeSeg + (t * segKm);
+            }
+            cumBeforeSeg += segKm;
+        }
+        return { arcFromStartKm: bestArcKm, totalKm: cumBeforeSeg };
+    }
+
+    function calcClickedWireCumKm(entry, brkSource, clickLL) {
+        if (!entry || !brkSource || brkSource.nearKm == null || !clickLL) return null;
+        const proj = calcPointOffsetAlongEdgeKm(entry.fromPin, entry.edge, entry.toPin, clickLL);
+        if (!proj) return null;
+        const offsetFromNearKm = brkSource.nearPinId === entry.toId
+            ? Math.max(0, proj.totalKm - proj.arcFromStartKm)
+            : proj.arcFromStartKm;
+        return Math.max(0, Number(brkSource.nearKm) + offsetFromNearKm);
     }
 
     function matchesPinSearchKeyword(pin, kwLower) {
@@ -868,8 +916,26 @@
         return reconnectedCount;
     }
 
-    window.__mergeCloudEquipRegistry = function (locReg) {
-        if (!locReg || simState.active) return;
+        window.__mergeCloudEquipRegistry = function (locReg) {
+        if (!locReg) return;
+        if (simState.active) {
+            if (locReg.deletedElectricEquipmentMap && typeof locReg.deletedElectricEquipmentMap === 'object') {
+                const nextDel = { ...(simState.cloudDeletedMap || {}) };
+                Object.entries(locReg.deletedElectricEquipmentMap).forEach(([pid, cDelIso]) => {
+                    if (pid && cDelIso && (!nextDel[pid] || String(cDelIso) > String(nextDel[pid]))) nextDel[pid] = cDelIso;
+                });
+                simState.cloudDeletedMap = pruneDeletedLabeledMap(nextDel);
+            }
+            if (Array.isArray(locReg.electricEquipmentPins)) {
+                simState.cloudSyncedRealPins = deduplicateEquipPins([
+                    ...(simState.cloudSyncedRealPins || simState.basePins || []),
+                    ...locReg.electricEquipmentPins
+                ]);
+                syncLiveCloudLotoIntoActiveSim(simState.cloudSyncedRealPins);
+            }
+            return;
+        }
+
         loadStoredLabeledPlaces();
         if (locReg.clearedAuditLogsTimestamp && locReg.clearedAuditLogsTimestamp > clearedAuditLogsTimestamp) {
             clearedAuditLogsTimestamp = locReg.clearedAuditLogsTimestamp;
@@ -2318,7 +2384,7 @@
         const latestPin = labeledPlaces.find(p => p?.id === currentlyOpenPopupPinId);
         if (!latestPin) return;
         const nSt = cachedTopology?.nodeStates?.get(latestPin.id);
-        const popSig = `${latestPin.updatedAt || ''}:${getEffectivePinColorKey(latestPin)}:${getPinEffectiveDisplayHex(latestPin)}:${JSON.stringify(latestPin.scadaNode || null)}:${nSt?.energized}:${nSt?.isUnmonitored}:${nSt?.primarySource?.breakerId || ''}:${nSt?.isParallel}:${nSt?.isTieTwoSources}:${nSt?.isBackfeed}:${nSt?.genSources?.length || 0}:${nSt?.terminalSources?.length || 0}:${simState.active}:${simState.steps.length}`;
+        const popSig = `${latestPin.updatedAt || ''}:${getEffectivePinColorKey(latestPin)}:${getPinEffectiveDisplayHex(latestPin)}:${JSON.stringify(latestPin.scadaNode || null)}:${nSt?.energized}:${nSt?.isUnmonitored}:${nSt?.primarySource?.breakerId || ''}:${nSt?.primarySource?.km ?? ''}:${nSt?.physSource?.km ?? ''}:${nSt?.isParallel}:${nSt?.isTieTwoSources}:${nSt?.isBackfeed}:${nSt?.genSources?.length || 0}:${nSt?.terminalSources?.length || 0}:${simState.active}:${simState.steps.length}`;
         if (mk.__openPopSig === popSig) return;
         mk.__openPopSig = popSig;
         const popObj = mk.getPopup?.();
@@ -2661,6 +2727,19 @@
         return sig;
     }
 
+                                                                                                function sortPhysBrkSources(arr, targetFd) {
+        return arr.sort((a, b) => {
+            const aZero = a.openCrossed === 0 ? 1 : 0;
+            const bZero = b.openCrossed === 0 ? 1 : 0;
+            if (aZero !== bZero) return bZero - aZero;
+            const aMatch = (targetFd && a.feeder === targetFd) ? 1 : 0;
+            const bMatch = (targetFd && b.feeder === targetFd) ? 1 : 0;
+            if (aMatch !== bMatch) return bMatch - aMatch;
+            if (a.openCrossed !== b.openCrossed) return a.openCrossed - b.openCrossed;
+            return (a.nearKm ?? a.km ?? 0) - (b.nearKm ?? b.km ?? 0);
+        });
+    }
+
     function computeUnifiedTopology(pinsInput) {
         const pins = Array.isArray(pinsInput) ? pinsInput : labeledPlaces.filter(canCurrentUserSeeEquipPin);
         const memoSig = buildTopologyMemoSig(pins);
@@ -2691,7 +2770,8 @@
                     }
                 }
                 const jp = edge.jp !== undefined ? Number(edge.jp) : (edge.st === 'ug' ? -1 : 0);
-                const entry = { edgeKey: `${fromPin.id}__${edgeIdx}`, fromId: fromPin.id, toId: toPin.id, fromPin, toPin, edgeIdx, edge, off: Boolean(edge.off), orderScore: (jp * 1e15) + (edge.cat || ((pins.length - pIdx) * 100 + edgeIdx)), sourcesMap: new Map(), genSourcesMap: new Map(), physDistByBrk: new Map() };
+                const segKm = calcEdgePolylineDistanceKm(fromPin, edge, toPin);
+                const entry = { edgeKey: `${fromPin.id}__${edgeIdx}`, fromId: fromPin.id, toId: toPin.id, fromPin, toPin, edgeIdx, edge, off: Boolean(edge.off), segKm, orderScore: (jp * 1e15) + (edge.cat || ((pins.length - pIdx) * 100 + edgeIdx)), sourcesMap: new Map(), genSourcesMap: new Map(), physDistByBrk: new Map(), physSourcesMap: new Map() };
                 edgesList.push(entry);
                 adjMap.get(fromPin.id).push({ neighborId: toPin.id, entry });
                 adjMap.get(toPin.id).push({ neighborId: fromPin.id, entry });
@@ -2702,7 +2782,7 @@
         pins.forEach(p => {
             const eqType = p?.scadaNode?.t || (isPinTTap(p, pins) ? 'TAP' : 'PIN');
             const st = isSwitchableScadaType(eqType) ? ((p?.scadaNode?.st === 'O' || p?.scadaNode?.st === 'F') ? p.scadaNode.st : 'C') : 'C';
-            rawNodes.set(p.id, { pin: p, eqType, st, conductingMap: new Map(), terminalMap: new Map(), genConductingMap: new Map() });
+            rawNodes.set(p.id, { pin: p, eqType, st, conductingMap: new Map(), terminalMap: new Map(), genConductingMap: new Map(), physMap: new Map() });
             if (isBreakerType(eqType)) {
                 const ownActiveOut = (p.scadaLines || []).find(l => l && !l.customSingleCol && !l.off && normHex(l.col));
                 const ownAnyOut = (p.scadaLines || []).find(l => l && normHex(l.col));
@@ -2726,19 +2806,74 @@
                     if (nb && !isBreakerType(nb.eqType) && !vis.has(neighborId)) { vis.set(neighborId, d + 1); q.push({ id: neighborId, d: d + 1 }); }
                 });
             }
+
+            const bestCost = new Map([[brk.breakerId, 0]]);
+            rawNodes.get(brk.breakerId)?.physMap.set(brk.breakerId, { ...brk, km: 0, openCrossed: 0, _cost: 0 });
+            const pq = [{ id: brk.breakerId, km: 0, openCrossed: 0, cost: 0 }];
+            while (pq.length > 0) {
+                let minIdx = 0;
+                for (let i = 1; i < pq.length; i++) if (pq[i].cost < pq[minIdx].cost) minIdx = i;
+                const cur = pq[minIdx]; pq[minIdx] = pq[pq.length - 1]; pq.pop();
+                if (cur.cost > (bestCost.get(cur.id) ?? Infinity) + 1e-6) continue;
+
+                (adjMap.get(cur.id) || []).forEach(({ neighborId, entry }) => {
+                    const segKm = entry.segKm || 0;
+                    const edgeOpen = cur.openCrossed + (entry.off ? 1 : 0);
+                    const edgeCost = (edgeOpen * 100000) + cur.km;
+                    const prevPE = entry.physSourcesMap.get(brk.breakerId);
+                    if (!prevPE || edgeCost < prevPE._cost - 1e-6) {
+                        entry.physSourcesMap.set(brk.breakerId, { ...brk, nearKm: cur.km, farKm: cur.km + segKm, nearPinId: cur.id, farPinId: neighborId, openCrossed: edgeOpen, _cost: edgeCost });
+                    }
+                    const nb = rawNodes.get(neighborId);
+                    if (!nb || isBreakerType(nb.eqType)) return;
+                    const nextKm = cur.km + segKm;
+                    const arrCost = (edgeOpen * 100000) + nextKm;
+                    const prevPN = nb.physMap.get(brk.breakerId);
+                    if (!prevPN || arrCost < prevPN._cost - 1e-6) {
+                        nb.physMap.set(brk.breakerId, { ...brk, km: nextKm, openCrossed: edgeOpen, _cost: arrCost });
+                    }
+                    const passOpen = edgeOpen + (nb.st === 'C' ? 0 : 1);
+                    const nextCost = (passOpen * 100000) + nextKm;
+                    if (nextCost < (bestCost.get(neighborId) ?? Infinity) - 1e-6) {
+                        bestCost.set(neighborId, nextCost);
+                        pq.push({ id: neighborId, km: nextKm, openCrossed: passOpen, cost: nextCost });
+                    }
+                });
+            }
         });
 
         closedBreakers.forEach(brk => {
-            const vis = new Map([[brk.breakerId, 0]]), q = [{ id: brk.breakerId, d: 0 }];
-            rawNodes.get(brk.breakerId)?.conductingMap.set(brk.breakerId, { ...brk, dist: 0 });
-            for (let h = 0; h < q.length; h++) {
-                const { id, d } = q[h];
+            const bestKm = new Map([[brk.breakerId, 0]]);
+            rawNodes.get(brk.breakerId)?.conductingMap.set(brk.breakerId, { ...brk, dist: 0, km: 0 });
+            const pq = [{ id: brk.breakerId, d: 0, km: 0 }];
+            while (pq.length > 0) {
+                let minIdx = 0;
+                for (let i = 1; i < pq.length; i++) if (pq[i].km < pq[minIdx].km) minIdx = i;
+                const { id, d, km } = pq[minIdx]; pq[minIdx] = pq[pq.length - 1]; pq.pop();
+                if (km > (bestKm.get(id) ?? Infinity) + 1e-6) continue;
+
                 (adjMap.get(id) || []).forEach(({ neighborId, entry }) => {
                     if (entry.off) return;
-                    if ((entry.sourcesMap.get(brk.breakerId)?.dist ?? Infinity) > d + 1) entry.sourcesMap.set(brk.breakerId, { ...brk, dist: d + 1 });
+                    const segKm = entry.segKm || 0;
+                    const nextKm = km + segKm;
+                    const nextD = d + 1;
+                    const prevES = entry.sourcesMap.get(brk.breakerId);
+                    if (!prevES || km < prevES.nearKm - 1e-6) {
+                        entry.sourcesMap.set(brk.breakerId, { ...brk, dist: prevES ? Math.min(prevES.dist, nextD) : nextD, km: nextKm, nearKm: km, farKm: nextKm, nearPinId: id, farPinId: neighborId });
+                    }
                     const nb = rawNodes.get(neighborId); if (!nb) return;
-                    if (nb.st === 'C') { if (!vis.has(neighborId)) { vis.set(neighborId, d + 1); nb.conductingMap.set(brk.breakerId, { ...brk, dist: d + 1 }); q.push({ id: neighborId, d: d + 1 }); } }
-                    else if ((nb.terminalMap.get(brk.breakerId)?.dist ?? Infinity) > d + 1) nb.terminalMap.set(brk.breakerId, { ...brk, dist: d + 1 });
+                    if (nb.st === 'C') {
+                        if (nextKm < (bestKm.get(neighborId) ?? Infinity) - 1e-6) {
+                            bestKm.set(neighborId, nextKm);
+                            nb.conductingMap.set(brk.breakerId, { ...brk, dist: nextD, km: nextKm });
+                            pq.push({ id: neighborId, d: nextD, km: nextKm });
+                        }
+                    } else {
+                        const prevTerm = nb.terminalMap.get(brk.breakerId);
+                        if (!prevTerm || nextKm < prevTerm.km - 1e-6) {
+                            nb.terminalMap.set(brk.breakerId, { ...brk, dist: nextD, km: nextKm });
+                        }
+                    }
                 });
             }
         });
@@ -2786,40 +2921,45 @@
 
         const edgeStates = new Map();
         edgesList.forEach(entry => {
-            const sources = Array.from(entry.sourcesMap.values()).sort((a, b) => a.dist - b.dist), savedCol = normHex(entry.edge.col) || '#10b981';
+            const eFd = normFd(entry.edge.fd);
+            const sources = Array.from(entry.sourcesMap.values()).sort((a, b) => (a.nearKm - b.nearKm) || (a.dist - b.dist));
+            const physSource = sortPhysBrkSources(Array.from(entry.physSourcesMap.values()), eFd)[0] || null;
+            const savedCol = normHex(entry.edge.col) || '#10b981';
             const genSources = Array.from(entry.genSourcesMap.values()).sort((a, b) => a.dist - b.dist);
             if (entry.off || sources.length === 0) {
-                edgeStates.set(entry.edgeKey, { ...entry, energized: false, color: '#ffffff', savedColor: savedCol, primarySource: null, sources: [], genSources: entry.off ? [] : genSources, isBackfeed: false, isParallel: false });
+                edgeStates.set(entry.edgeKey, { ...entry, energized: false, color: '#ffffff', savedColor: savedCol, primarySource: null, physSource, sources: [], genSources: entry.off ? [] : genSources, isBackfeed: false, isParallel: false });
                 return;
             }
-            const prim = sources[0], eFd = normFd(entry.edge.fd), pDist = entry.physDistByBrk.get(prim.breakerId) ?? 999999;
+            const prim = sources[0], pDist = entry.physDistByBrk.get(prim.breakerId) ?? 999999;
             const isBackfeed = Boolean(
                 (eFd && prim.feeder && eFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === eFd && !entry.sourcesMap.has(b.breakerId))) ||
                 (!entry.edge.customSingleCol && prim.wireColor && savedCol !== prim.wireColor && allBreakers.some(b => b.breakerId !== prim.breakerId && b.wireColor === savedCol && !entry.sourcesMap.has(b.breakerId) && !(eFd && prim.feeder && eFd === prim.feeder) && (entry.physDistByBrk.get(b.breakerId) ?? Infinity) < pDist))
             );
             const isEdgeParallel = Boolean(sources.length > 1 && !trimmedEdges.has(entry.edgeKey) && condAdj.has(entry.fromId) && condAdj.has(entry.toId) && hasDistinctBrkPair(reachBrksWithout(entry.fromId, entry.toId, entry.edgeKey), reachBrksWithout(entry.toId, entry.fromId, entry.edgeKey)));
             const dispCol = (isBackfeed && !entry.edge.customSingleCol && prim.wireColor) ? prim.wireColor : savedCol;
-            edgeStates.set(entry.edgeKey, { ...entry, energized: true, color: dispCol, savedColor: savedCol, primarySource: prim, sources: isEdgeParallel ? sources : [prim], genSources, isBackfeed, isParallel: isEdgeParallel });
+            edgeStates.set(entry.edgeKey, { ...entry, energized: true, color: dispCol, savedColor: savedCol, primarySource: prim, physSource, sources: isEdgeParallel ? sources : [prim], genSources, isBackfeed, isParallel: isEdgeParallel });
         });
 
         const nodeStates = new Map(), noBreakerInMap = allBreakers.length === 0;
         let energizedNodes = 0, deenergizedNodes = 0;
         rawNodes.forEach((tr, pinId) => {
-            const cond = Array.from(tr.conductingMap.values()).sort((a, b) => a.dist - b.dist);
-            const term = Array.from(tr.terminalMap.values()).sort((a, b) => a.dist - b.dist);
+            const nFd = normFd(tr.pin.scadaNode?.fd) || inferFeederFromCode(tr.pin.name);
+            const cond = Array.from(tr.conductingMap.values()).sort((a, b) => (a.km - b.km) || (a.dist - b.dist));
+            const term = Array.from(tr.terminalMap.values()).sort((a, b) => (a.km - b.km) || (a.dist - b.dist));
+            const physSource = sortPhysBrkSources(Array.from(tr.physMap.values()), nFd)[0] || null;
             const genSources = Array.from(tr.genConductingMap.values()).sort((a, b) => a.dist - b.dist);
             const ownPinHex = getPinEffectiveDisplayHex(tr.pin), hasNoWire = (adjMap.get(pinId)?.length || 0) === 0;
 
             if (isBreakerType(tr.eqType)) {
                 if (tr.st === 'C') energizedNodes++; else deenergizedNodes++;
                 const openBrkHasBackfeed = tr.st !== 'C' && term.length > 0;
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: tr.st === 'C', isStandalonePin: false, isUnmonitored: false, hasStandbyPower: openBrkHasBackfeed, primaryColor: ownPinHex, secondaryColor: term[0]?.wireColor || null, primarySource: cond[0] || term[0] || null, conductingSources: cond, terminalSources: term, genSources, isParallel: cond.length > 1, isTieTwoSources: openBrkHasBackfeed, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: tr.st === 'C', isStandalonePin: false, isUnmonitored: false, hasStandbyPower: openBrkHasBackfeed, primaryColor: ownPinHex, secondaryColor: term[0]?.wireColor || null, primarySource: cond[0] || term[0] || null, physSource, conductingSources: cond, terminalSources: term, genSources, isParallel: cond.length > 1, isTieTwoSources: openBrkHasBackfeed, isBackfeed: false });
             } else if (hasNoWire || noBreakerInMap) {
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: tr.eqType === 'PIN' && hasNoWire, isUnmonitored: true, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], genSources, isParallel: false, isTieTwoSources: false, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: tr.eqType === 'PIN' && hasNoWire, isUnmonitored: true, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: null, primarySource: null, physSource: null, conductingSources: [], terminalSources: [], genSources, isParallel: false, isTieTwoSources: false, isBackfeed: false });
             } else if (cond.length > 0) {
                 energizedNodes++;
-                const prim = cond[0], nFd = normFd(tr.pin.scadaNode?.fd);
-                const isBf = Boolean(nFd && prim.feeder && nFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === nFd && !tr.conductingMap.has(b.breakerId)));
+                const prim = cond[0], expFd = normFd(tr.pin.scadaNode?.fd);
+                const isBf = Boolean(expFd && prim.feeder && expFd !== prim.feeder && allBreakers.some(b => b.breakerId !== prim.breakerId && b.feeder === expFd && !tr.conductingMap.has(b.breakerId)));
                 let isNodeParallel = false, secCol = null;
                 if (cond.length > 1 && !trimmedNodes.has(pinId) && condAdj.has(pinId)) {
                     const branchSets = [];
@@ -2827,7 +2967,7 @@
                     for (let i = 0; i < branchSets.length && !isNodeParallel; i++) for (let j = i + 1; j < branchSets.length; j++) if (hasDistinctBrkPair(branchSets[i], branchSets[j])) { isNodeParallel = true; break; }
                     if (isNodeParallel) secCol = cond.find(c => c.breakerId !== prim.breakerId)?.wireColor || '#f59e0b';
                 }
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: secCol, primarySource: prim, conductingSources: isNodeParallel ? cond : [prim], terminalSources: term, genSources, isParallel: isNodeParallel, isTieTwoSources: false, isBackfeed: isBf });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: true, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: secCol, primarySource: prim, physSource, conductingSources: isNodeParallel ? cond : [prim], terminalSources: term, genSources, isParallel: isNodeParallel, isTieTwoSources: false, isBackfeed: isBf });
             } else if (term.length > 0) {
                 energizedNodes++;
                 const liveNeighborBrkSets = new Map();
@@ -2836,10 +2976,10 @@
                 let isRealTieTwoSources = false;
                 if (term.length >= 2 && sideSets.length >= 2) { for (let i = 0; i < sideSets.length && !isRealTieTwoSources; i++) for (let j = i + 1; j < sideSets.length; j++) if (hasDistinctBrkPair(sideSets[i], sideSets[j])) { isRealTieTwoSources = true; break; } }
                 const dispTerms = isRealTieTwoSources ? term : [term[0]];
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: true, primaryColor: ownPinHex, secondaryColor: isRealTieTwoSources ? (term.find(t => t.breakerId !== term[0].breakerId)?.wireColor || '#f59e0b') : null, primarySource: term[0], conductingSources: [], terminalSources: dispTerms, genSources, isParallel: false, isTieTwoSources: isRealTieTwoSources, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: true, primaryColor: ownPinHex, secondaryColor: isRealTieTwoSources ? (term.find(t => t.breakerId !== term[0].breakerId)?.wireColor || '#f59e0b') : null, primarySource: term[0], physSource, conductingSources: [], terminalSources: dispTerms, genSources, isParallel: false, isTieTwoSources: isRealTieTwoSources, isBackfeed: false });
             } else {
                 deenergizedNodes++;
-                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: null, primarySource: null, conductingSources: [], terminalSources: [], genSources, isParallel: false, isTieTwoSources: false, isBackfeed: false });
+                nodeStates.set(pinId, { eqType: tr.eqType, st: tr.st, energized: false, isStandalonePin: false, isUnmonitored: false, hasStandbyPower: false, primaryColor: ownPinHex, secondaryColor: null, primarySource: null, physSource, conductingSources: [], terminalSources: [], genSources, isParallel: false, isTieTwoSources: false, isBackfeed: false });
             }
         });
 
@@ -2848,7 +2988,7 @@
         topoMemoMap.set(memoSig, result);
         return result;
     }
-
+    
     function buildUnifiedNodeIcon(pin, nState) {
         const nd = pin?.scadaNode || {}, eqType = nState?.eqType || nd.t || (isPinTTap(pin, labeledPlaces) ? 'TAP' : 'PIN');
         const st = nState?.st || (isSwitchableScadaType(eqType) && (nd.st === 'O' || nd.st === 'F') ? nd.st : 'C');
@@ -3021,13 +3161,13 @@
     // ========================================================================
     // 10. เรนเดอร์เส้นสายส่งลง Canvas + บอลลูนชี้สายแสดงวงจรรับไฟจริง & ระยะสาย
     // ========================================================================
-    function buildWireHoverTooltipHtml(entry, eState, distKm) {
+        function buildWireHoverTooltipHtml(entry, eState, distKm) {
         const { fromPin, toPin, edge } = entry;
         const lineFd = normFd(edge.fd) || '-';
         const isUg = edge.st === 'ug';
         const dotCol = eState.energized ? eState.color : '#94a3b8';
         let statusLine = '';
-
+        
         if (entry.off) {
             statusLine = `<span style="color:#fda4af;font-weight:800;">🔌 จำลองปลดสาย (ไม่มีไฟ)</span> <span style="color:#94a3b8;">• สายประจำวงจร ${escapeHtmlStr(lineFd)}</span>`;
         } else if (!eState.energized) {
@@ -3053,17 +3193,48 @@
                 statusLine += ` <span style="color:#fde047;">• Ⓖ มี GEN พ่วง</span>`;
             }
         }
-
+        
+        const liveBrk = eState.energized ? eState.primarySource : null;
+        const refBrk = liveBrk || eState.physSource;
+        const relayLine = (refBrk && refBrk.nearKm != null) ?
+            `<div style="color:${liveBrk ? '#fde047' : '#7dd3fc'};font-size:10px;margin-top:1px;">🎯 ${liveBrk ? `สะสมจาก ${escapeHtmlStr(liveBrk.name)}` : `ระยะสายจาก ${escapeHtmlStr(refBrk.name)} (เทียบรีเลย์)`}: <b>${escapeHtmlStr(formatRelayKmSpan(refBrk.nearKm, refBrk.farKm))}</b></div>` :
+            '';
+        
         const specText = `${isUg ? '╍ UG.' : '⎯ OH'}${edge.lb ? ' ' + escapeHtmlStr(edge.lb) : ''}`;
-        return `<div><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:${escapeHtmlStr(dotCol)};border:1px solid #fff;margin-right:5px;vertical-align:middle;"></span>${statusLine}</div><div style="color:#cbd5e1;font-size:10px;margin-top:1px;">📍 ${escapeHtmlStr(fromPin.name)} ➔ ${escapeHtmlStr(toPin.name)} • ${specText} • 📏 <b>${escapeHtmlStr(formatWireLengthText(distKm))}</b></div>`;
+        return `<div><span style="display:inline-block;width:8px;height:8px;border-radius:9999px;background:${escapeHtmlStr(dotCol)};border:1px solid #fff;margin-right:5px;vertical-align:middle;"></span>${statusLine}</div><div style="color:#cbd5e1;font-size:10px;margin-top:1px;">📍 ${escapeHtmlStr(fromPin.name)} ➔ ${escapeHtmlStr(toPin.name)} • ${specText} • 📏 ท่อนนี้: <b>${escapeHtmlStr(formatWireLengthText(distKm))}</b></div>${relayLine}`;
     }
-
-        let lastRenderedLinesSig = '';
+    
+    function buildEdgeRelayDistanceHtml(entry, eState, clickLLOpt = null) {
+        const liveBrk = eState.energized ? eState.primarySource : null;
+        const refBrk = liveBrk || eState.physSource;
+        if (!refBrk || refBrk.nearKm == null) return '';
+        
+        const spanTxt = formatRelayKmSpan(refBrk.nearKm, refBrk.farKm);
+        const clickKm = clickLLOpt ? calcClickedWireCumKm(entry, refBrk, clickLLOpt) : null;
+        const titlePrefix = liveBrk ?
+            (eState.isBackfeed ? `🎯 สะสมจาก ${escapeHtmlStr(liveBrk.name)} (จ่ายย้อน)` : `🎯 สะสมจาก ${escapeHtmlStr(liveBrk.name)}`) :
+            `🎯 ระยะสายจาก ${escapeHtmlStr(refBrk.name)} (เทียบรีเลย์)`;
+        
+        let extraHtml = '';
+        if (clickKm !== null) {
+            extraHtml += `<div class="text-[10.5px] text-amber-900 font-extrabold pt-0.5 border-t border-amber-200/80 flex items-center justify-between gap-1"><span>📍 จุดที่แตะห่าง ${escapeHtmlStr(refBrk.name)}:</span><span>${escapeHtmlStr(formatRelayKmSingle(clickKm))}</span></div>`;
+        }
+        if (eState.isParallel && Array.isArray(eState.sources) && eState.sources.length > 1) {
+            const otherPar = eState.sources.slice(1).map(s => `${escapeHtmlStr(s.name)}: <b>${escapeHtmlStr(formatRelayKmSpan(s.nearKm, s.farKm))}</b>`).join(' • ');
+            if (otherPar) extraHtml += `<div class="text-[10px] text-amber-800">⚡ ขนานอีกด้าน (${otherPar})</div>`;
+        } else if (liveBrk && eState.isBackfeed && eState.physSource && eState.physSource.breakerId !== liveBrk.breakerId && eState.physSource.nearKm != null) {
+            const normClickKm = clickLLOpt ? calcClickedWireCumKm(entry, eState.physSource, clickLLOpt) : null;
+            extraHtml += `<div class="text-[10px] text-slate-600">📏 ผังปกติจาก ${escapeHtmlStr(eState.physSource.name)}: <b>${escapeHtmlStr(normClickKm !== null ? formatRelayKmSingle(normClickKm) : formatRelayKmSpan(eState.physSource.nearKm, eState.physSource.farKm))}</b></div>`;
+        }
+        
+        return `<div class="p-1.5 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-950 space-y-0.5 text-[10.5px]"><div class="flex items-center justify-between gap-1"><span class="font-bold">${titlePrefix}:</span><span class="font-extrabold text-amber-900">${escapeHtmlStr(spanTxt)}</span></div>${extraHtml}</div>`;
+    }
+    let lastRenderedLinesSig = '';
     let lastSyncedStorageSig = '';
-        let edgeSharedPopup = null;
+    let edgeSharedPopup = null;
     let isSwitchingSharedEdgePopup = false;
 
-    function getEquipStorageSyncSig() {
+        function getEquipStorageSyncSig() {
         return `${localStorage.getItem(STORAGE_KEY_LABELS) || ''}||${localStorage.getItem(STORAGE_KEY_DELETED_LABELS) || ''}||${localStorage.getItem(STORAGE_KEY_DELETED_AUDIT_LOGS) || ''}||${clearedAuditLogsTimestamp}||${getActiveEquipScopeLabel()}`;
     }
 
@@ -3250,7 +3421,7 @@
                 `<div class="scada-sim-edge-btn mt-1.5 p-2 rounded-xl bg-purple-950 border border-purple-400"><button type="button" onclick="simulateEdgePowerToggle('${sFromId}',${edgeIdx})" class="w-full py-1.5 px-2.5 rounded-lg font-extrabold text-[11px] ${entry.off ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}">🧪 ${entry.off ? 'ซ้อมต่อสายไฟช่วงนี้คืน' : 'ซ้อมปลดสายไฟช่วงนี้'}</button></div>` :
                 '';
             
-            const popupHtml = `<div style="font-family:'Prompt',sans-serif;min-width:250px;" class="space-y-1.5 text-xs"><div class="flex justify-between items-center gap-1"><span class="px-2 py-0.5 rounded font-extrabold text-white text-[10px]" style="background:${escapeHtmlStr(eState.energized ? eState.color : eState.savedColor)}">${escapeHtmlStr(headerCircuitTitle)}</span>${stBdg}</div><div class="font-bold text-slate-800">${escapeHtmlStr(fromPin.name)} ➔ ${escapeHtmlStr(toPin.name)}</div>${srcTxt}${genAlertHtml}<div class="text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200"><span>${isUg ? '╍ UG.' : '⎯ OH'} ${edge.lb ? `• <b>${escapeHtmlStr(edge.lb)}</b>` : ''}</span><span class="font-bold text-teal-800">📏 ${escapeHtmlStr(distLabel)}</span></div>${simEdgeHtml}<div class="scada-edit-only pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="startInteractiveWireMove('${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-sky-600 to-cyan-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">✋ จับขยับ / ดัดแนวสายไฟเส้นนี้</button><button type="button" onclick="openScadaColorPaletteModal('edge', '${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🎨 เปลี่ยนสีสายไฟ (แยกจากสีหมุด)</button><button type="button" onclick="cycleScadaEdgeJumpLayer('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">⌒ ชั้น: ${lMode}</button><button type="button" onclick="flipScadaEdgeJumpDir('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 กลับโค้ง</button><button type="button" onclick="createTTapOnScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 px-2 rounded-lg font-bold text-[10px]">✂️ แทปสาย (T-Tap) / แยกวงจรตรงนี้</button><button type="button" onclick="toggleScadaEdgePower('${sFromId}', ${edgeIdx})" class="bg-slate-100 text-slate-800 py-1 px-2 rounded-lg font-bold text-[10px]">${entry.off ? '⚡ ต่อสายคืน' : '🔌 จำลองปลดสาย'}</button><button type="button" onclick="toggleScadaEdgeUgStyle('${sFromId}', ${edgeIdx})" class="bg-sky-50 text-sky-800 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 OH / UG.</button><button type="button" onclick="cycleScadaEdgeSide('${sFromId}', ${edgeIdx})" class="bg-emerald-50 text-emerald-800 py-1 px-2 rounded-lg font-bold text-[10px]">↔️ สลับฝั่งขนาน (${Math.abs(laneOffset) > 0.3 ? `${laneOffset.toFixed(1)}px` : 'กลาง'})</button><button type="button" onclick="straightenScadaEdge('${sFromId}', ${edgeIdx})" class="bg-amber-50 text-amber-800 py-1 px-2 rounded-lg font-bold text-[10px]">📐 เส้นตรง</button><button type="button" onclick="deleteScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-rose-50 text-rose-600 py-1 px-2 rounded-lg font-bold text-[10px]">🗑️ ลบเส้นสายไฟช่วงนี้</button></div></div>`;
+                        const makeEdgePopupHtml = (clickLLOpt = null) => `<div style="font-family:'Prompt',sans-serif;min-width:250px;" class="space-y-1.5 text-xs"><div class="flex justify-between items-center gap-1"><span class="px-2 py-0.5 rounded font-extrabold text-white text-[10px]" style="background:${escapeHtmlStr(eState.energized ? eState.color : eState.savedColor)}">${escapeHtmlStr(headerCircuitTitle)}</span>${stBdg}</div><div class="font-bold text-slate-800">${escapeHtmlStr(fromPin.name)} ➔ ${escapeHtmlStr(toPin.name)}</div>${srcTxt}${genAlertHtml}<div class="text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200"><span>${isUg ? '╍ UG.' : '⎯ OH'} ${edge.lb ? `• <b>${escapeHtmlStr(edge.lb)}</b>` : ''}</span><span class="font-bold text-teal-800">📏 ท่อนนี้: ${escapeHtmlStr(distLabel)}</span></div>${buildEdgeRelayDistanceHtml(entry, eState, clickLLOpt)}${simEdgeHtml}<div class="scada-edit-only pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="startInteractiveWireMove('${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-sky-600 to-cyan-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">✋ จับขยับ / ดัดแนวสายไฟเส้นนี้</button><button type="button" onclick="openScadaColorPaletteModal('edge', '${sFromId}', ${edgeIdx})" class="col-span-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🎨 เปลี่ยนสีสายไฟ (แยกจากสีหมุด)</button><button type="button" onclick="cycleScadaEdgeJumpLayer('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">⌒ ชั้น: ${lMode}</button><button type="button" onclick="flipScadaEdgeJumpDir('${sFromId}', ${edgeIdx})" class="bg-teal-50 text-teal-800 border border-teal-200 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 กลับโค้ง</button><button type="button" onclick="createTTapOnScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 px-2 rounded-lg font-bold text-[10px]">✂️ แทปสาย (T-Tap) / แยกวงจรตรงนี้</button><button type="button" onclick="toggleScadaEdgePower('${sFromId}', ${edgeIdx})" class="bg-slate-100 text-slate-800 py-1 px-2 rounded-lg font-bold text-[10px]">${entry.off ? '⚡ ต่อสายคืน' : '🔌 จำลองปลดสาย'}</button><button type="button" onclick="toggleScadaEdgeUgStyle('${sFromId}', ${edgeIdx})" class="bg-sky-50 text-sky-800 py-1 px-2 rounded-lg font-bold text-[10px]">🔄 OH / UG.</button><button type="button" onclick="cycleScadaEdgeSide('${sFromId}', ${edgeIdx})" class="bg-emerald-50 text-emerald-800 py-1 px-2 rounded-lg font-bold text-[10px]">↔️ สลับฝั่งขนาน (${Math.abs(laneOffset) > 0.3 ? `${laneOffset.toFixed(1)}px` : 'กลาง'})</button><button type="button" onclick="straightenScadaEdge('${sFromId}', ${edgeIdx})" class="bg-amber-50 text-amber-800 py-1 px-2 rounded-lg font-bold text-[10px]">📐 เส้นตรง</button><button type="button" onclick="deleteScadaEdge('${sFromId}', ${edgeIdx})" class="col-span-2 bg-rose-50 text-rose-600 py-1 px-2 rounded-lg font-bold text-[10px]">🗑️ ลบเส้นสายไฟช่วงนี้</button></div></div>`;
             
             const hit = L.polyline(finalLL, { ...rOpt, pane: 'scadaUnifiedLinesPane', color: '#000', weight: 18, opacity: 0, interactive: true }).addTo(unifiedLinesLayer);
             if (enableDesktopHover) {
@@ -3262,7 +3433,7 @@
                     }
                 });
             }
-               hit.on('click', ev => {
+            hit.on('click', ev => {
                 if (isAnyEditModeActive()) return;
                 hit.closeTooltip?.();
                 if (ev) L.DomEvent.stop(ev);
@@ -3272,10 +3443,11 @@
                 currentlyOpenEdgePopup = { fromId: fromPin.id, edgeIdx, toId: toPin.id, fd: eFdNorm, latlng: clickLL };
                 const pop = ensureEdgeSharedPopup();
                 if (pop) {
-                    pop.__lastHtmlSig = `${popupHtml}::${simState.active ? 1 : 0}`;
+                    const clickPopupHtml = makeEdgePopupHtml(clickLL);
+                    pop.__lastHtmlSig = `${clickPopupHtml}::${simState.active ? 1 : 0}`;
                     isSwitchingSharedEdgePopup = true;
                     try {
-                        pop.setLatLng(clickLL).setContent(popupHtml);
+                        pop.setLatLng(clickLL).setContent(clickPopupHtml);
                         if (!leafletMap.hasLayer(pop)) {
                             leafletMap.openPopup(pop);
                         } else {
@@ -3290,12 +3462,11 @@
                     } finally {
                         isSwitchingSharedEdgePopup = false;
                     }
-
                 }
             });
-
+            
             if (savedEdgePop && entry.fromId === savedEdgePop.fromId && entry.toId === savedEdgePop.toId && (!savedEdgePop.fd || eFdNorm === savedEdgePop.fd)) {
-                matchedOpenEdgeHtml = popupHtml;
+                matchedOpenEdgeHtml = makeEdgePopupHtml(savedEdgePop.latlng || null);
             }
         });
         cachedUnderPolylinesPx = underPolys;
@@ -4067,6 +4238,35 @@
     // ========================================================================
     // 12. บอลลูน SCADA, ป้ายล็อก LOTO, กันนิ้วลั่น, จานสีแยกหมุด/สายไฟ & โหมดซ้อม
     // ========================================================================
+        function buildNodeRelayDistanceHtml(nState) {
+        if (!nState || nState.isStandalonePin) return '';
+        if (isBreakerType(nState.eqType)) {
+            const revTerm = (!nState.energized && nState.terminalSources?.[0]?.km != null)
+                ? `<div class="text-[9.5px] text-rose-700 font-bold">⚡ ไฟย้อนรอขั้วจาก ${escapeHtmlStr(nState.terminalSources[0].name)}: ${escapeHtmlStr(formatRelayKmSingle(nState.terminalSources[0].km))}</div>`
+                : '';
+            return `<div class="p-1.5 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-950 text-[10px] space-y-0.5"><div class="flex items-center justify-between gap-1"><span class="font-bold">🎯 ต้นทางวัดระยะรีเลย์:</span><span class="font-extrabold">0.00 กม. (0 ม.)</span></div>${revTerm}</div>`;
+        }
+        if (nState.energized && nState.primarySource?.km != null) {
+            const prim = nState.primarySource;
+            let subHtml = '';
+            if (nState.isParallel && Array.isArray(nState.conductingSources) && nState.conductingSources.length > 1) {
+                const others = nState.conductingSources.slice(1).map(s => `${escapeHtmlStr(s.name)}: <b>${escapeHtmlStr(formatRelayKmSingle(s.km))}</b>`).join(' • ');
+                if (others) subHtml += `<div class="text-[9.5px] text-amber-800">⚡ ขนานอีกด้าน (${others})</div>`;
+            } else if (nState.isBackfeed && nState.physSource && nState.physSource.breakerId !== prim.breakerId && nState.physSource.km != null) {
+                subHtml += `<div class="text-[9.5px] text-slate-600">📏 ผังปกติจาก ${escapeHtmlStr(nState.physSource.name)}: <b>${escapeHtmlStr(formatRelayKmSingle(nState.physSource.km))}</b></div>`;
+            }
+            return `<div class="p-1.5 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-950 text-[10px] space-y-0.5"><div class="flex items-center justify-between gap-1"><span class="font-bold">🎯 สะสมจาก ${escapeHtmlStr(prim.name)}:</span><span class="font-extrabold text-amber-900">${escapeHtmlStr(formatRelayKmSingle(prim.km))}</span></div>${subHtml}</div>`;
+        }
+        if (nState.hasStandbyPower && Array.isArray(nState.terminalSources) && nState.terminalSources.length > 0 && nState.terminalSources[0].km != null) {
+            const rows = nState.terminalSources.map(s => `<div class="flex items-center justify-between gap-1"><span>• จาก ${escapeHtmlStr(s.name)}:</span><span class="font-extrabold">${escapeHtmlStr(formatRelayKmSingle(s.km))}</span></div>`).join('');
+            return `<div class="p-1.5 rounded-lg bg-amber-50/90 border border-amber-300 text-amber-950 text-[10px] space-y-0.5"><div class="font-bold text-amber-900">🎯 ระยะสายสะสมมาถึงหัวสวิตช์:</div>${rows}</div>`;
+        }
+        if (nState.physSource?.km != null) {
+            return `<div class="p-1.5 rounded-lg bg-sky-50 border border-sky-300 text-sky-950 text-[10px] flex items-center justify-between gap-1"><span class="font-bold">🎯 ระยะสายจาก ${escapeHtmlStr(nState.physSource.name)} (เทียบรีเลย์):</span><span class="font-extrabold text-sky-900">${escapeHtmlStr(formatRelayKmSingle(nState.physSource.km))}</span></div>`;
+        }
+        return '';
+    }
+
     function enhanceOpenedPopup(popup) {
         const el = popup?.getElement?.(), html = popup?.getContent?.();
         if (!el || typeof html !== 'string') return;
@@ -4084,6 +4284,7 @@
                 : (isBrk ? (st === 'C' ? (nState.isParallel ? `⚡ <b>ต้นทางจ่ายไฟขนาน (CB):</b> ${escapeHtmlStr(nState.conductingSources.map(s => s.fullTitle).join(' + '))}` : `■ <b>ต้นทางจ่ายไฟหลัก (CB):</b> กำลังจ่ายไฟวงจร ${escapeHtmlStr(nState.primarySource?.feeder || nd.fd || '-')}`) : (nState.terminalSources?.length ? `🚨 <b class="text-rose-700">เบรกเกอร์ปลดอยู่ แต่มีไฟย้อนมารอที่ขั้วจาก:</b> ${escapeHtmlStr(nState.terminalSources.map(s => s.fullTitle).join(' ↔ '))}` : '⚪ <b>เบรกเกอร์ปลดอยู่</b>'))
                 : (nState.energized ? (nState.isParallel ? `⚡ <b>ขนานไฟ:</b> ${escapeHtmlStr(nState.conductingSources.map(s => s.fullTitle).join(' + '))}` : `🟢 <b>${nState.isBackfeed ? 'รับไฟย้อนจาก' : 'รับไฟจาก'}:</b> ${escapeHtmlStr(nState.primarySource?.fullTitle || '-')}`)
                 : (nState.hasStandbyPower ? `🟡 <b>ไฟมารอหัวสวิตช์จาก:</b> ${escapeHtmlStr(nState.terminalSources.map(s => s.fullTitle).join(' ↔ '))}` : '⚪ <b>ไม่มีไฟ</b>'))));
+            const relayDistBox = buildNodeRelayDistanceHtml(nState);
             const genAlertBox = (!nState.isUnmonitored && !nState.energized && nState.genSources?.length > 0)
                 ? `<div class="p-1.5 bg-rose-50 border border-rose-300 text-rose-800 rounded-lg font-bold text-[10px]">⚠️ ระวังไฟย้อนจาก GEN (${escapeHtmlStr(nState.genSources.map(g => g.name).join(', '))}) ในโซนปลดไฟ! เช็กไฟและลงกราวด์ก่อนทำงาน</div>`
                 : '';
@@ -4097,7 +4298,7 @@
             const swRealBtns = isSw ? `<div class="scada-edit-only space-y-1"><div class="grid grid-cols-3 gap-1"><button type="button" onclick="quickSwitchScadaState('${sPinId}','C')" class="${lotoOn ? 'bg-slate-400 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} py-1 rounded font-bold text-[10px]">${lotoOn ? '🔒 ห้ามสับ' : '🟢 สับ'}</button><button type="button" onclick="quickSwitchScadaState('${sPinId}','O')" class="bg-amber-500 hover:bg-amber-600 text-white py-1 rounded font-bold text-[10px]">⚪ ปลด</button><button type="button" onclick="quickSwitchScadaState('${sPinId}','F')" class="bg-rose-600 hover:bg-rose-700 text-white py-1 rounded font-bold text-[10px]">🔴 ทริป</button></div><button type="button" onclick="togglePinLotoLock('${sPinId}')" class="w-full py-1 px-2 rounded-lg font-extrabold text-[10px] border ${lotoOn ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-red-50 text-red-700 border-red-300'}">${lotoOn ? '🔓 ปลดป้ายล็อกห้ามสับ (LOTO)' : '🔒 แขวนป้ายห้ามสับ (มีช่างปฏิบัติงาน)'}</button></div>` : '';
 
             const pnl = document.createElement('div'); pnl.className = 'scada-popup-panel mt-2 pt-2 border-t border-slate-200 space-y-1.5 text-[11px]';
-            pnl.innerHTML = `${lotoBox}${simHtml}<button type="button" onclick="startSinglePinMoveFromPopup('${sPinId}')" class="scada-edit-only w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white py-1.5 px-2.5 rounded-lg font-extrabold text-[10px]">📍 ขยับ / ย้ายตำแหน่งหมุดนี้บนแผนที่</button><div class="flex justify-between gap-1 bg-slate-900 text-white px-2 py-1 rounded-lg"><span class="font-bold truncate">⚡ ${escapeHtmlStr(eqT)} ${nd.id ? `• ID ${escapeHtmlStr(nd.id)}` : ''} ${nd.fd ? `(${escapeHtmlStr(nd.fd)})` : ''}</span>${stBdg}</div><div class="p-2 rounded-lg border bg-slate-50 border-slate-300 text-slate-800 text-[10px]">${flowTxt}</div>${genAlertBox}${nd.lk ? `<div class="p-1.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg font-bold text-[10px]">⚠️ ${escapeHtmlStr(nd.lk)}</div>` : ''}${swAuditBox}${swRealBtns}<div class="scada-edit-only grid grid-cols-2 gap-1"><button type="button" onclick="openScadaNodeModal('${sPinId}')" class="bg-slate-100 text-slate-800 border border-slate-300 py-1 px-1.5 rounded font-bold text-[10px]">⚙️ ตั้งค่า SCADA</button><button type="button" onclick="startDrawFromPopupPin('${sPinId}')" class="bg-amber-100 text-amber-900 border border-amber-300 py-1 px-1.5 rounded font-bold text-[10px]">✏️ ลากสายต่อ</button></div>${canCurrentUserEditScada() ? `<div class="grid grid-cols-3 gap-1"><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','device')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">📟 เห็นฟอลต์</button><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','disconnect')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">🔌 ปลดจุดนี้</button><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','powerup')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">⚡ ชนจุดนี้</button></div>` : ''}${isPinTTap(pin, labeledPlaces) ? `<button type="button" onclick="quickDeleteTTapFromPopup('${sPinId}')" class="scada-edit-only w-full bg-rose-50 text-rose-700 border border-rose-300 py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🗑️ ลบจุด T-Tap (สมานสายหลักคืนอัตโนมัติ)</button>` : ''}`;
+            pnl.innerHTML = `${lotoBox}${simHtml}<button type="button" onclick="startSinglePinMoveFromPopup('${sPinId}')" class="scada-edit-only w-full bg-gradient-to-r from-teal-600 to-cyan-600 text-white py-1.5 px-2.5 rounded-lg font-extrabold text-[10px]">📍 ขยับ / ย้ายตำแหน่งหมุดนี้บนแผนที่</button><div class="flex justify-between gap-1 bg-slate-900 text-white px-2 py-1 rounded-lg"><span class="font-bold truncate">⚡ ${escapeHtmlStr(eqT)} ${nd.id ? `• ID ${escapeHtmlStr(nd.id)}` : ''} ${nd.fd ? `(${escapeHtmlStr(nd.fd)})` : ''}</span>${stBdg}</div><div class="p-2 rounded-lg border bg-slate-50 border-slate-300 text-slate-800 text-[10px]">${flowTxt}</div>${relayDistBox}${genAlertBox}${nd.lk ? `<div class="p-1.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg font-bold text-[10px]">⚠️ ${escapeHtmlStr(nd.lk)}</div>` : ''}${swAuditBox}${swRealBtns}<div class="scada-edit-only grid grid-cols-2 gap-1"><button type="button" onclick="openScadaNodeModal('${sPinId}')" class="bg-slate-100 text-slate-800 border border-slate-300 py-1 px-1.5 rounded font-bold text-[10px]">⚙️ ตั้งค่า SCADA</button><button type="button" onclick="startDrawFromPopupPin('${sPinId}')" class="bg-amber-100 text-amber-900 border border-amber-300 py-1 px-1.5 rounded font-bold text-[10px]">✏️ ลากสายต่อ</button></div>${canCurrentUserEditScada() ? `<div class="grid grid-cols-3 gap-1"><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','device')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">📟 เห็นฟอลต์</button><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','disconnect')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">🔌 ปลดจุดนี้</button><button type="button" onclick="sendEquipToMainFaultForm('${sPinId}','powerup')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 py-1 rounded font-bold text-[9px]">⚡ ชนจุดนี้</button></div>` : ''}${isPinTTap(pin, labeledPlaces) ? `<button type="button" onclick="quickDeleteTTapFromPopup('${sPinId}')" class="scada-edit-only w-full bg-rose-50 text-rose-700 border border-rose-300 py-1.5 px-2 rounded-lg font-extrabold text-[10px]">🗑️ ลบจุด T-Tap (สมานสายหลักคืนอัตโนมัติ)</button>` : ''}`;
             (el.querySelector('.leaflet-popup-content > div') || el.querySelector('.leaflet-popup-content'))?.appendChild(pnl);
             return;
         }
@@ -4112,7 +4313,7 @@
             }
         }
     }
-
+    
     function buildSwitchWarningPrompt(pinName, eqType, warn, nextState, nState) {
         const parts = [];
         if (warn) parts.push(`⚠️ คำเตือน Interlock (${pinName}):\n"${warn}"`);
@@ -4489,6 +4690,99 @@
         pnl.innerHTML = `<div class="p-2.5 rounded-xl bg-gradient-to-r from-purple-950/90 via-slate-900 to-indigo-950/90 border border-purple-400/50 space-y-2"><div class="flex flex-wrap justify-between gap-1.5"><div class="flex flex-wrap gap-1"><span class="bg-purple-600 text-white px-2 py-0.5 rounded text-[10px] font-extrabold">🧪 ซ้อม ${simState.steps.length} ขั้น</span><button type="button" onclick="toggleSimImpactDetailTab('outage')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-rose-400/50 text-rose-200">🔴 ดับเพิ่ม: ${cnt(d.newlyOutage)}</button><button type="button" onclick="toggleSimImpactDetailTab('restored')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-emerald-400/50 text-emerald-200">🟢 จ่ายคืน: ${cnt(d.newlyRestored)}</button><button type="button" onclick="toggleSimImpactDetailTab('backfeed')" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-indigo-400/50 text-indigo-200">🔄 ไฟย้อน: ${cnt(d.transferredOrBackfeed)}</button>${d.parallelNodes.length ? `<button type="button" onclick="toggleSimImpactDetailTab('parallel')" class="scada-sim-live-pill px-2 py-0.5 rounded text-[10px] font-extrabold bg-amber-500 text-slate-950">⚡ ขนาน 2 CB: ${d.parallelNodes.length}</button>` : ''}</div><div class="flex flex-wrap gap-1"><button type="button" onclick="undoScadaSimStep()" ${!simState.steps.length ? 'disabled' : ''} class="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-200 border border-slate-600 disabled:opacity-40">↩️ ย้อนขั้น</button><button type="button" onclick="resetScadaSimAll()" ${!simState.steps.length ? 'disabled' : ''} class="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-amber-300 border border-slate-600 disabled:opacity-40">🔄 เริ่มใหม่</button><button type="button" onclick="openScadaSimPlanModal()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-[#00B900] text-white">💬 สรุปส่ง LINE (${simState.steps.length})</button>${(canCurrentUserEditScada() && simState.steps.length) ? `<button type="button" onclick="applySimulatedStateToRealGrid()" class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold bg-amber-400 text-slate-950">⚡ นำไปใช้จริง</button>` : ''}</div></div>${detHtml}${stHtml}</div>`;
     }
 
+        function getLatestRealPinsSnapshot() {
+        const rawDel = typeof Core?.rawStorageGet === 'function'
+            ? safeJsonParse(Core.rawStorageGet(STORAGE_KEY_DELETED_LABELS), {})
+            : (!simState.active ? safeJsonParse(localStorage.getItem(STORAGE_KEY_DELETED_LABELS), {}) : {});
+        deletedLabeledMap = pruneDeletedLabeledMap({ ...deletedLabeledMap, ...(rawDel || {}), ...(simState.cloudDeletedMap || {}) });
+
+        let rawReal = [];
+        if (typeof Core?.rawStorageGet === 'function') {
+            const parsed = safeJsonParse(Core.rawStorageGet(STORAGE_KEY_LABELS), []);
+            if (Array.isArray(parsed)) rawReal = parsed;
+        } else if (!simState.active) {
+            const parsed = safeJsonParse(localStorage.getItem(STORAGE_KEY_LABELS), []);
+            if (Array.isArray(parsed)) rawReal = parsed;
+        }
+
+        const combined = simState.active
+            ? [...(simState.basePins || []), ...rawReal, ...(simState.cloudSyncedRealPins || [])]
+            : rawReal;
+        return deduplicateEquipPins(combined);
+    }
+
+    function syncLiveCloudLotoIntoActiveSim(latestRealOpt = null) {
+        if (!simState.active) return;
+        const latestReal = Array.isArray(latestRealOpt) ? latestRealOpt : getLatestRealPinsSnapshot();
+        const realById = new Map(latestReal.filter(Boolean).map(p => [p.id, p]));
+        const baseById = new Map((simState.basePins || []).filter(Boolean).map(p => [p.id, p]));
+        const newlyLockedNames = [];
+        let changedWorking = false;
+
+        simState.workingPins.forEach(wPin => {
+            if (!wPin?.id || !canCurrentUserSeeEquipPin(wPin)) return;
+            const rPin = realById.get(wPin.id);
+            if (!rPin) return;
+            const bPin = baseById.get(wPin.id);
+            const rLocked = isPinLotoLocked(rPin);
+            const wLocked = isPinLotoLocked(wPin);
+            const rReason = rPin.scadaNode?.loto || '';
+            const wReason = wPin.scadaNode?.loto || '';
+
+            if (rLocked && (!wLocked || rReason !== wReason)) {
+                if (!wPin.scadaNode) wPin.scadaNode = { t: rPin.scadaNode?.t || 'VS', st: 'O', col: getPinSavedColorHex(wPin) };
+                wPin.scadaNode.loto = rReason;
+                if (rPin.scadaNode?.lotoBy) wPin.scadaNode.lotoBy = rPin.scadaNode.lotoBy; else delete wPin.scadaNode.lotoBy;
+                if (rPin.scadaNode?.lotoAt) wPin.scadaNode.lotoAt = rPin.scadaNode.lotoAt; else delete wPin.scadaNode.lotoAt;
+                const wasSimSwitched = simState.steps.some(s => s && s.pinId === wPin.id && s.eqType !== 'LINE');
+                if (!wasSimSwitched && isSwitchableScadaType(wPin.scadaNode.t) && wPin.scadaNode.st === 'C') {
+                    wPin.scadaNode.st = 'O';
+                }
+                if (!isPinLotoLocked(bPin) || (bPin?.scadaNode?.loto || '') !== rReason) {
+                    newlyLockedNames.push(`${wPin.name} (${rReason})`);
+                }
+                changedWorking = true;
+            } else if (!rLocked && wLocked) {
+                const rMs = new Date(rPin.updatedAt || 0).getTime() || 0;
+                const bMs = new Date(bPin?.updatedAt || 0).getTime() || 0;
+                if (rMs > bMs && wPin.scadaNode) {
+                    delete wPin.scadaNode.loto;
+                    delete wPin.scadaNode.lotoBy;
+                    delete wPin.scadaNode.lotoAt;
+                    changedWorking = true;
+                }
+            }
+        });
+
+        simState.basePins = latestReal;
+        simState.baseTopo = null;
+        if (changedWorking) {
+            syncSimWorkingPinsToSandbox();
+            computeSimDiff();
+            renderSimToolbarPanel();
+            renderLabeledPlacesList(true);
+            scheduleUnifiedScadaRefresh();
+            if (newlyLockedNames.length > 0) {
+                showToast(`🔒 แจ้งเตือนด่วน: หน้างานแขวนป้าย LOTO ใหม่ที่ ${newlyLockedNames.join(', ')}`);
+            }
+        }
+    }
+
+    function findRealLotoConflictsForSim(latestRealList) {
+        const realById = new Map((latestRealList || []).filter(Boolean).map(p => [p.id, p]));
+        const simById = new Map((simState.workingPins || []).filter(Boolean).map(p => [p.id, p]));
+        const simSwitchedIds = new Set(simState.steps.filter(s => s && s.eqType !== 'LINE').map(s => s.pinId));
+        const conflicts = [];
+        simSwitchedIds.forEach(pid => {
+            const rPin = realById.get(pid);
+            const sPin = simById.get(pid);
+            if (rPin && isPinLotoLocked(rPin) && sPin?.scadaNode?.st === 'C') {
+                conflicts.push(rPin);
+            }
+        });
+        return conflicts;
+    }
+
     function toggleScadaSimMode(forceState, silent = false) {
         const next = typeof forceState === 'boolean' ? forceState : !simState.active;
         if (next && (isViewerRole() || localStorage.getItem('elec_app_logged_in') !== 'true')) return !silent && showToast(VIEWER_LOCK_MSG);
@@ -4498,6 +4792,8 @@
             if (scadaSettings.drawActive) toggleScadaDrawMode(false);
             if (moveState.active) toggleScadaWireMoveMode(false);
             if (pinMoveState.active) toggleScadaPinMoveMode(false);
+            simState.cloudSyncedRealPins = null;
+            simState.cloudDeletedMap = null;
             deletedLabeledMap = pruneDeletedLabeledMap(safeJsonParse(localStorage.getItem(STORAGE_KEY_DELETED_LABELS), {}));
             const rawReal = safeJsonParse(typeof Core?.rawStorageGet === 'function' ? Core.rawStorageGet(STORAGE_KEY_LABELS) : localStorage.getItem(STORAGE_KEY_LABELS), []);
             simState.basePins = deduplicateEquipPins(Array.isArray(rawReal) ? rawReal : []);
@@ -4506,7 +4802,9 @@
             Core?.enterSimSandbox?.(simState.workingPins); resetMapFiltersForScadaAction(); computeSimDiff();
             if (!silent) showToast('🧪 เปิดโหมดซ้อมสับ-ปลดแล้ว (ไม่กระทบผังจริงบน Cloud)');
         } else {
-            simState.active = false; simState.steps = []; Core?.exitSimSandbox?.(null); closeScadaSimPlanModal();
+            simState.active = false; simState.steps = [];
+            simState.cloudSyncedRealPins = null; simState.cloudDeletedMap = null;
+            Core?.exitSimSandbox?.(null); closeScadaSimPlanModal();
             if (!silent) showToast('🔄 ปิดโหมดซ้อมและคืนค่าผังวงจรจริงแล้ว');
         }
         leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
@@ -4529,7 +4827,7 @@
             leafletMap?.closePopup(); restoreMapFloatingUiIfNoPopup();
             const snap = JSON.stringify(simState.workingPins);
             tg.scadaNode.st = nextSt; syncSimWorkingPinsToSandbox();
-            simState.steps.push({ pinId: tg.id, codeName: tg.name, scadaId: tg.scadaNode.id || '', feeder: tg.scadaNode.fd || '', eqType: eqT, actionLabel: actLbl, interlockNote: warn, tieNote: (nextSt === 'C' && preN?.isTieTwoSources) ? `สับขนาน ${preN.terminalSources.map(s => s.name).join(' ↔ ')}` : '', lat: tg.lat, lon: tg.lon, snapshotBefore: snap });
+            simState.steps.push({ pinId: tg.id, codeName: tg.name, scadaId: tg.scadaNode.id || '', feeder: tg.scadaNode.fd || '', eqType: eqT, nextSt, actionLabel: actLbl, interlockNote: warn, tieNote: (nextSt === 'C' && preN?.isTieTwoSources) ? `สับขนาน ${preN.terminalSources.map(s => s.name).join(' ↔ ')}` : '', lat: tg.lat, lon: tg.lon, snapshotBefore: snap });
             computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
         };
         const promptMsg = buildSwitchWarningPrompt(tg.name, eqT, warn, nextSt, preN);
@@ -4545,38 +4843,92 @@
         simState.steps.push({ pinId: fP.id, codeName: `สายช่วง ${fP.name} ➔ ${tP ? tP.name : ''}`, scadaId: '', feeder: eg.fd || '', eqType: 'LINE', actionLabel: eg.off ? '🔌 จำลองปลดสายไฟ' : '⚡ จำลองต่อสายคืน', interlockNote: '', tieNote: '', lat: fP.lat, lon: fP.lon, snapshotBefore: snap });
         computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
     }
-    function undoScadaSimStep() { if (!simState.active || !simState.steps.length) return; simState.workingPins = JSON.parse(simState.steps.pop().snapshotBefore); syncSimWorkingPinsToSandbox(); computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
-    function resetScadaSimAll() { if (!simState.active) return; simState.workingPins = JSON.parse(JSON.stringify(simState.basePins)); simState.steps = []; syncSimWorkingPinsToSandbox(); computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+    function undoScadaSimStep() {
+        if (!simState.active || !simState.steps.length) return;
+        simState.workingPins = JSON.parse(simState.steps.pop().snapshotBefore);
+        syncLiveCloudLotoIntoActiveSim();
+        syncSimWorkingPinsToSandbox(); computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
+    }
+    function resetScadaSimAll() {
+        if (!simState.active) return;
+        simState.basePins = getLatestRealPinsSnapshot();
+        simState.workingPins = JSON.parse(JSON.stringify(simState.basePins));
+        simState.steps = []; syncSimWorkingPinsToSandbox(); computeSimDiff(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh();
+    }
     function toggleSimImpactDetailTab(k) { simState.expandedImpactTab = simState.expandedImpactTab === k ? null : k; renderSimToolbarPanel(); }
 
     function applySimulatedStateToRealGrid() {
         if (!simState.active || !canCurrentUserEditScada() || !simState.steps.length) return;
+
+        const alertLotoConflict = (conflicts, latestReal) => {
+            syncLiveCloudLotoIntoActiveSim(latestReal);
+            const detailLines = conflicts.map((rp, idx) => {
+                const nd = rp.scadaNode || {};
+                return `${idx + 1}) ${rp.name}: "${nd.loto}"\n   👷 ผู้แขวนป้าย: ${nd.lotoBy || '-'} (${nd.lotoAt || '-'})`;
+            }).join('\n');
+            showCustomAlert(
+                `⛔ บล็อกการนำไปใช้จริง! พบป้ายล็อกห้ามสับไฟ (LOTO) ล่าสุดจากหน้างาน:\n\n${detailLines}\n\nระบบได้อัปเดตสัญลักษณ์ 🔒 ลงบนแผนที่ซ้อมแล้ว กรุณากด "↩️ ย้อนขั้น" หรือเปลี่ยนจุดดังกล่าวเป็น "⚪ ซ้อมปลด" ก่อนนำไปใช้จริง`,
+                '🔒 ป้องกันการสับไฟทับป้ายล็อก (LOTO)'
+            );
+        };
+
+        const preCheckRealList = getLatestRealPinsSnapshot();
+        const preConflicts = findRealLotoConflictsForSim(preCheckRealList);
+        if (preConflicts.length > 0) return alertLotoConflict(preConflicts, preCheckRealList);
+
         showCustomConfirm(`ยืนยันนำสถานะที่ซ้อมไว้ (${simState.steps.length} ขั้นตอน) ไปอัปเดตลง "ผังวงจรจริง" และซิงค์ Cloud ทันทีหรือไม่?`, async () => {
-            deletedLabeledMap = pruneDeletedLabeledMap(safeJsonParse(localStorage.getItem(STORAGE_KEY_DELETED_LABELS), {}));
+            const freshRealList = getLatestRealPinsSnapshot();
+            const postConflicts = findRealLotoConflictsForSim(freshRealList);
+            if (postConflicts.length > 0) return alertLotoConflict(postConflicts, freshRealList);
+
             const curUser = formatTechDisplayName((localStorage.getItem('elec_app_current_user') || 'ผู้ใช้งาน').trim());
             const nowStr = new Date().toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + ' น.';
-            const touchedIds = new Set(simState.steps.map(s => s.pinId)), simById = new Map(simState.workingPins.filter(Boolean).map(p => [p.id, p]));
-            const latestRaw = safeJsonParse(typeof Core?.rawStorageGet === 'function' ? Core.rawStorageGet(STORAGE_KEY_LABELS) : localStorage.getItem(STORAGE_KEY_LABELS), []);
-            const baseRealList = Array.isArray(latestRaw) && latestRaw.length ? latestRaw : simState.workingPins;
+            const simSwitchedIds = new Set(simState.steps.filter(s => s && s.eqType !== 'LINE').map(s => s.pinId));
+            const simLineOwnerIds = new Set(simState.steps.filter(s => s && s.eqType === 'LINE').map(s => s.pinId));
+            const simById = new Map(simState.workingPins.filter(Boolean).map(p => [p.id, p]));
+            const baseRealList = freshRealList.length ? freshRealList : simState.workingPins;
+
             const mergedPins = deduplicateEquipPins(baseRealList.map(realPin => {
-                if (!realPin || !touchedIds.has(realPin.id)) return compactEquipPinForStorage(realPin);
+                if (!realPin || (!simSwitchedIds.has(realPin.id) && !simLineOwnerIds.has(realPin.id))) return compactEquipPinForStorage(realPin);
                 const simPin = simById.get(realPin.id); if (!simPin) return compactEquipPinForStorage(realPin);
                 const copy = JSON.parse(JSON.stringify(realPin));
-                copy.pinColor = simPin.pinColor;
-                if (simPin.scadaNode) {
-                    copy.scadaNode = JSON.parse(JSON.stringify(simPin.scadaNode));
-                    if (realPin.scadaNode?.st !== simPin.scadaNode.st) {
+
+                if (simSwitchedIds.has(realPin.id) && simPin.scadaNode) {
+                    if (!copy.scadaNode) copy.scadaNode = JSON.parse(JSON.stringify(simPin.scadaNode));
+                    let targetSt = simPin.scadaNode.st || 'C';
+                    if (isPinLotoLocked(realPin) && targetSt === 'C') targetSt = 'O';
+                    if (copy.scadaNode.st !== targetSt) {
+                        copy.scadaNode.st = targetSt;
                         copy.scadaNode.swBy = curUser;
                         copy.scadaNode.swAt = nowStr;
                     }
+                    if (isPinLotoLocked(realPin)) {
+                        copy.scadaNode.loto = realPin.scadaNode.loto;
+                        if (realPin.scadaNode.lotoBy) copy.scadaNode.lotoBy = realPin.scadaNode.lotoBy;
+                        if (realPin.scadaNode.lotoAt) copy.scadaNode.lotoAt = realPin.scadaNode.lotoAt;
+                    }
                 }
-                if (Array.isArray(simPin.scadaLines)) copy.scadaLines = JSON.parse(JSON.stringify(simPin.scadaLines));
+
+                if (simLineOwnerIds.has(realPin.id) && Array.isArray(copy.scadaLines) && Array.isArray(simPin.scadaLines)) {
+                    copy.scadaLines.forEach((rEdge, idx) => {
+                        if (!rEdge) return;
+                        const sEdge = (simPin.scadaLines[idx]?.to === rEdge.to && normFd(simPin.scadaLines[idx]?.fd) === normFd(rEdge.fd))
+                            ? simPin.scadaLines[idx]
+                            : simPin.scadaLines.find(l => l && l.to === rEdge.to && normFd(l.fd) === normFd(rEdge.fd));
+                        if (!sEdge) return;
+                        if (sEdge.off) rEdge.off = 1; else delete rEdge.off;
+                    });
+                }
+
                 copy.updatedAt = nextPinUpdatedIso(copy, 2000);
                 return compactEquipPinForStorage(copy);
             }).filter(Boolean));
+
             Core?.unlockCloudWrite?.(25000);
             simState.active = false; simState.steps = [];
+            simState.cloudSyncedRealPins = null; simState.cloudDeletedMap = null;
             Core?.exitSimSandbox?.(mergedPins);
+            localStorage.setItem(STORAGE_KEY_DELETED_LABELS, JSON.stringify(deletedLabeledMap));
             localStorage.setItem(STORAGE_KEY_LABELS, JSON.stringify(mergedPins));
             markEquipCloudPushPending();
             updateSimVisualChrome(); renderSimToolbarPanel(); renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); restoreMapFloatingUiIfNoPopup();
@@ -4588,10 +4940,13 @@
     function buildSimPlanText() {
         const title = document.getElementById('scadaSimPlanTitleInput')?.value.trim() || `แผนสับ-ปลดสวิตช์ (${getActiveEquipUserGroup()})`;
         const incGps = document.getElementById('scadaSimIncludeGpsChk')?.checked, incImp = document.getElementById('scadaSimIncludeImpactChk')?.checked, now = new Date();
+        const realMap = new Map(getLatestRealPinsSnapshot().map(p => [p.id, p]));
         const lines = [`📋 ${title}`, `🏢 พื้นที่: ${getActiveEquipUserGroup()} • 📅 ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear() + 543}`, '━━━━━━━━━━━━━━━━━━'];
         if (!simState.steps.length) lines.push('(ยังไม่ได้กดจำลองสับ-ปลดสวิตช์)');
         simState.steps.forEach((s, i) => {
             lines.push(`${i + 1}. ${s.actionLabel}`, `   ➔ ${s.codeName}${s.scadaId ? ` [ID ${s.scadaId}]` : ''}${s.feeder ? ` (วงจร ${s.feeder})` : ''}`);
+            const rPin = realMap.get(s.pinId);
+            if (s.nextSt === 'C' && rPin && isPinLotoLocked(rPin)) lines.push(`   🔒 [ห้ามสับเด็ดขาด! ติดป้าย LOTO: "${rPin.scadaNode.loto}"]`);
             if (s.tieNote) lines.push(`   ⚡ ${s.tieNote}`);
             if (s.interlockNote) lines.push(`   ⚠️ ข้อควรระวัง: ${s.interlockNote}`);
             if (incGps && s.lat && s.lon) lines.push(`   📍 https://www.google.com/maps?q=${Number(s.lat).toFixed(6)},${Number(s.lon).toFixed(6)}`);
@@ -4639,18 +4994,20 @@
         }
     };
 
-        window.__onScadaPinsSynced = () => {
-        if (simState.active) return;
+    window.__onScadaPinsSynced = () => {
+        if (simState.active) { syncLiveCloudLotoIntoActiveSim(); return; }
         if (getEquipStorageSyncSig() === lastSyncedStorageSig) return;
         if (activeDragCleanupFn) pendingRefreshAfterDrag = true;
         else { renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
     };
 
     Core?.onRealtimeChange?.(keys => {
-        if (!simState.active && Array.isArray(keys) && keys.some(k => k.includes('labeled') || k.includes('audit'))) {
-            if (getEquipStorageSyncSig() === lastSyncedStorageSig) return;
-            if (activeDragCleanupFn) pendingRefreshAfterDrag = true;
-            else { renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+        if (Array.isArray(keys) && keys.some(k => k.includes('labeled') || k.includes('audit'))) {
+            if (simState.active) syncLiveCloudLotoIntoActiveSim();
+            else if (getEquipStorageSyncSig() !== lastSyncedStorageSig) {
+                if (activeDragCleanupFn) pendingRefreshAfterDrag = true;
+                else { renderLabeledPlacesList(true); scheduleUnifiedScadaRefresh(); }
+            }
         }
         if (activeMapNav && Array.isArray(keys) && keys.some(k => k.includes('equip_nav') || k === 'elec_tech_locations_map')) {
             if (typeof window.getActiveEquipmentNavItems === 'function') {
@@ -4728,4 +5085,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapScadaEngineModule);
     else bootstrapScadaEngineModule();
 })();
-// ==================== จบไฟล์ scada-engine.js (v6.6) ====================
+// ==================== จบไฟล์ scada-engine.js (v6.7) ====================
