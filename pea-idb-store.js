@@ -249,12 +249,40 @@
         } catch (e) {}
     }
 
+        function parseIdbDateMs(val) {
+        if (!val) return 0;
+        if (typeof val === 'number') return isNaN(val) ? 0 : val;
+        const s = String(val).trim();
+        if (!s || s === '-') return 0;
+        const th = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/);
+        if (th) {
+            let yr = parseInt(th[3], 10) || 2569;
+            if (yr > 2400) yr -= 543;
+            const ms = new Date(
+                yr, (parseInt(th[2], 10) || 1) - 1, parseInt(th[1], 10) || 1,
+                parseInt(th[4] || '0', 10), parseInt(th[5] || '0', 10), parseInt(th[6] || '0', 10)
+            ).getTime();
+            if (!isNaN(ms) && ms > 0) return ms;
+        }
+        const ms = new Date(s).getTime();
+        return isNaN(ms) ? 0 : ms;
+    }
+
     function getItemRecencyMs(obj) {
         if (!obj || typeof obj !== 'object') return 0;
-        const iso = obj.updatedAt || obj.editedAt || obj.deletedAt || obj.savedAt || obj.timestamp || obj.dateTimeSaved;
-        if (!iso) return 0;
-        const ms = typeof iso === 'number' ? iso : new Date(iso).getTime();
-        return isNaN(ms) ? 0 : ms;
+        return Math.max(
+            parseIdbDateMs(obj.updatedAt),
+            parseIdbDateMs(obj.editedAt),
+            parseIdbDateMs(obj.techReport?.updatedAt),
+            parseIdbDateMs(obj.techNav?.updatedAt),
+            parseIdbDateMs(obj.reopenedAt),
+            parseIdbDateMs(obj.deletedAt),
+            parseIdbDateMs(obj.savedAt),
+            Number(obj.restoredAtMs || 0) || 0,
+            Number(obj.createdAtMs || 0) || 0,
+            parseIdbDateMs(obj.timestamp),
+            parseIdbDateMs(obj.dateTimeSaved)
+        );
     }
 
     function filterDeletedPinsJson(pinsJsonStr, delMapJsonStr) {
@@ -272,6 +300,28 @@
             return filtered.length !== pins.length ? JSON.stringify(filtered) : pinsJsonStr;
         } catch (e) {
             return pinsJsonStr;
+        }
+    }
+
+    function filterDeletedJobsJson(jobsJsonStr, isFault) {
+        if (!jobsJsonStr) return jobsJsonStr;
+        try {
+            const delRaw = rawGet.call(window.localStorage, 'elec_deleted_jobs_registry');
+            if (!delRaw || delRaw === '{}') return jobsJsonStr;
+            const jobs = JSON.parse(jobsJsonStr);
+            const delMap = JSON.parse(delRaw);
+            if (!Array.isArray(jobs) || !delMap || typeof delMap !== 'object') return jobsJsonStr;
+            const filtered = jobs.filter((it) => {
+                if (!it || typeof it !== 'object') return false;
+                const jk = isFault ? it.timestamp : it.dateTimeSaved;
+                if (!jk || !delMap[jk]) return true;
+                const delMs = parseIdbDateMs(delMap[jk]);
+                const revMs = Math.max(Number(it.restoredAtMs || 0) || 0, parseIdbDateMs(it.editedAt), parseIdbDateMs(it.reopenedAt));
+                return delMs > 0 && revMs > delMs;
+            });
+            return filtered.length !== jobs.length ? JSON.stringify(filtered) : jobsJsonStr;
+        } catch (e) {
+            return jobsJsonStr;
         }
     }
 
@@ -682,7 +732,10 @@
                     let merged = latestPreOp?.op === 'set' ? mergeOffloadedJson(key, env.val, latestPreOp.valStr) : env.val;
                     if (key === 'elec_labeled_places_list') {
                         merged = filterDeletedPinsJson(merged, ramCache.get('elec_deleted_labeled_places_map'));
+                    } else if (key === 'elecReportsComplete_all' || key === 'fault_reports_all') {
+                        merged = filterDeletedJobsJson(merged, key === 'fault_reports_all');
                     }
+
                     const ver = bumpKeyVersion(key);
                     ramCache.set(key, merged);
                     const needSyncDisk = merged !== env.val || (shouldOffloadKey(key, merged) !== isOffloadMarker(bootPhys));
