@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ระบบวัดโหลดหม้อแปลง — PEA Smart Grid</title>
     <meta name="theme-color" content="#1e3a8a">
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=149">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=163">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
@@ -149,11 +149,11 @@
             <div id="wiringGuideBody" class="p-3 sm:p-4 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/60">
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบนั่งร้าน / เสาคู่)</div>
-                    <img src="./tx-circuit-1.jpg?v=149" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-1.jpg?v=163" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบแขวนเสาเดี่ยว)</div>
-                    <img src="./tx-circuit-2.jpg?v=149" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-2.jpg?v=163" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
             </div>
         </div>
@@ -456,8 +456,8 @@
     <div id="toast" class="no-print print-hide fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
 
     <!-- โหลดแกนกลางระบบเพื่อแชร์บัญชีผู้ใช้ สิทธิ์ และสาขา กฟส. -->
-    <script src="pea-idb-store.js?v=149"></script>
-    <script src="shared-core.js?v=149"></script>
+    <script src="pea-idb-store.js?v=163"></script>
+    <script src="shared-core.js?v=163"></script>
 
     <script>
     (function () {
@@ -720,7 +720,7 @@
 
             document.getElementById('limit80Badge').textContent = `เพดาน 80% = ${st.limit80Amp} A (F/L ${st.flAmp} A)`;
 
-            // เตือนแรงดันตกปลายสาย (< 200V)
+            // เตือนแรงดันตกปลายสาย (ต่ำกว่า 200V)
             const lowVolts = [['A', st.vEnd.A], ['B', st.vEnd.B], ['C', st.vEnd.C]].filter(([, v]) => v !== null && v > 0 && v < 200);
             const warnEl = document.getElementById('lowVoltageWarnText');
             if (lowVolts.length > 0) {
@@ -825,7 +825,8 @@
 
             updateActivePdfManageBar();
         };
-
+        // ===== จบพาทที่ 1 / 2 ของไฟล์ tx-load-form.html =====
+                // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ tx-load-form.html (วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) =====
         // ตัดขอบว่างโปร่งใสรอบลายเซ็นอัตโนมัติ (ลดขนาด Base64 ลง 70-85% และจัดวางเหนือเส้นลงชื่อได้พอดี)
         function trimSignatureImageToCanvas(img) {
             if (!img) return null;
@@ -934,7 +935,7 @@
             }
         }
 
-        // ดึงรหัสหม้อแปลงจากหมุดอุปกรณ์ SCADA ของสาขาตัวเอง
+        // ดึงรหัสหม้อแปลงจากหมุดอุปกรณ์ SCADA ของสาขาตัวเอง (กรองหมุดที่ถูกลบออกอัตโนมัติ)
         window.openScadaTrSearchModal = function () {
             const m = document.getElementById('scadaTrModal');
             m.classList.remove('hidden'); m.classList.add('flex');
@@ -948,10 +949,12 @@
         window.renderScadaTrModalList = function () {
             const kw = (document.getElementById('scadaTrFilterInput')?.value || '').trim().toLowerCase();
             const myGrp = getActiveBranch();
-            let pins = [];
+            let pins = [], delMap = {};
             try { pins = JSON.parse(localStorage.getItem('elec_labeled_places_list') || '[]'); } catch (e) {}
+            try { delMap = JSON.parse(localStorage.getItem('elec_deleted_labeled_places_map') || '{}'); } catch (e) {}
             const list = pins.filter(p => {
                 if (!p?.id) return false;
+                if (delMap[p.id] && (new Date(p.updatedAt || 0).getTime() || 0) <= (new Date(delMap[p.id]).getTime() || 0)) return false;
                 const pGrp = (window.normalizePeaGroupName ? window.normalizePeaGroupName(p.ownerGroup) : p.ownerGroup) || 'กฟส.บึง';
                 if (!isAdminAllBranches() && pGrp !== myGrp) return false;
                 const txt = `${p.name || ''} ${p.note || ''}`.toLowerCase();
@@ -965,7 +968,7 @@
             }
             const esc = window.escapeHtmlStr || (s => s);
             box.innerHTML = list.map(p => {
-                const safeId = String(p.id).replace(/'/g, "\\'");
+                const safeId = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 return `<button type="button" onclick="pickScadaPinForTx('${safeId}')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-teal-400 hover:bg-teal-50/50 transition">
                     <div class="font-bold text-slate-800">⚡ ${esc(p.name)}</div>
                     ${p.note ? `<div class="text-[11px] text-slate-500">${esc(p.note)}</div>` : ''}
@@ -1033,6 +1036,8 @@
                 const data = await res.json().catch(() => ({}));
                 // Fallback อัตโนมัติกรณีหลังบ้านยังไม่ได้กด Deploy คำสั่ง deleteTxPdf
                 if (updatedRecord && data?.status === 'error' && /unknown action/i.test(String(data.message || ''))) {
+                    const cleanRec = { ...updatedRecord };
+                    delete cleanRec.pendingCloudSync;
                     window.PeaCore?.unlockCloudWrite?.(15000);
                     await fetch(apiUrl, {
                         method: 'POST',
@@ -1040,7 +1045,7 @@
                         body: JSON.stringify({
                             action: 'saveTxLoad',
                             group: targetGroup,
-                            record: updatedRecord
+                            record: cleanRec
                         })
                     });
                 }
@@ -1146,7 +1151,7 @@
             }
         };
 
-                window.saveTxLoadRecord = async function () {
+        window.saveTxLoadRecord = async function () {
             if (window.isViewerRole?.()) return window.showToast?.('🔒 สิทธิ์ผู้สำรวจไม่สามารถบันทึกข้อมูลได้');
             const st = collectFormState();
             if (!st.peaNo) {
@@ -1164,12 +1169,16 @@
             const idx = txRecords.findIndex(r => r.id === recId);
             const preservedGroup = (idx !== -1 && txRecords[idx].ownerGroup) ? txRecords[idx].ownerGroup : getActiveBranch();
 
-            // หากแก้ไขตัวเลขใหม่จนไม่ตรงกับ PDF เดิม ให้ล้างแคชลิงก์เก่าและซ่อนแถบเปิด PDF ทันที
-            if (!matchedPdfUrl && lastPdfCache.url) {
+            // หากแก้ไขตัวเลขใหม่จนไม่ตรงกับ PDF เดิม ให้ล้างทั้งไฟล์แคชและไฟล์เก่าของใบงานนี้บน Drive ทันที
+            if (!matchedPdfUrl) {
                 const orphanId = lastPdfCache.fileId || extractDriveFileId(lastPdfCache.url);
-                const savedOldId = (idx !== -1 && txRecords[idx]) ? (txRecords[idx].pdfFileId || extractDriveFileId(txRecords[idx].pdfUrl)) : '';
-                if (orphanId && orphanId !== savedOldId) {
+                const savedOldUrl = (idx !== -1 && txRecords[idx]) ? (txRecords[idx].pdfUrl || '') : '';
+                const savedOldId = (idx !== -1 && txRecords[idx]) ? (txRecords[idx].pdfFileId || extractDriveFileId(savedOldUrl)) : '';
+                if (orphanId) {
                     requestCloudDeletePdf({ id: '', group: preservedGroup, fileId: orphanId, pdfUrl: lastPdfCache.url }).catch(() => {});
+                }
+                if (savedOldId && savedOldId !== orphanId) {
+                    requestCloudDeletePdf({ id: '', group: preservedGroup, fileId: savedOldId, pdfUrl: savedOldUrl }).catch(() => {});
                 }
                 lastPdfCache = { fp: '', url: '', fileId: '' };
             }
@@ -1182,6 +1191,7 @@
                 pdfUrl: matchedPdfUrl || '',
                 pdfFileId: matchedPdfFileId || '',
                 pdfFp: matchedPdfUrl ? fp : '',
+                pendingCloudSync: true,
                 updatedAt: nowIso
             };
             if (idx !== -1) txRecords[idx] = record; else txRecords.unshift(record);
@@ -1194,43 +1204,95 @@
             window.showToast?.(`✅ บันทึกผลวัดโหลดลงสาขา ${record.ownerGroup} เรียบร้อย!`);
 
             const apiUrl = window.getActiveCloudApiUrl?.();
-            if (apiUrl && localStorage.getItem('elec_app_logged_in') === 'true') {
+            if (apiUrl && localStorage.getItem('elec_app_logged_in') === 'true' && navigator.onLine !== false) {
                 try {
+                    const cleanPayload = { ...record };
+                    delete cleanPayload.pendingCloudSync;
                     window.PeaCore?.unlockCloudWrite?.(15000);
-                    await fetch(apiUrl, {
+                    const res = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'saveTxLoad', group: record.ownerGroup, record })
+                        body: JSON.stringify({ action: 'saveTxLoad', group: record.ownerGroup, record: cleanPayload })
                     });
+                    const resJson = await res.json().catch(() => ({}));
+                    if (resJson?.status === 'ok') {
+                        loadLocalTxRecords();
+                        const sIdx = txRecords.findIndex(r => r.id === recId);
+                        if (sIdx !== -1 && txRecords[sIdx].updatedAt === nowIso) {
+                            delete txRecords[sIdx].pendingCloudSync;
+                            saveLocalTxRecords();
+                        }
+                    }
                 } catch (e) {}
             }
         };
-        
+
         window.syncTxLoadsFromCloud = async function (silent = true) {
+            if (window.PeaIdbStore?.ready) {
+                try { await Promise.race([window.PeaIdbStore.ready, new Promise(r => setTimeout(r, 1200))]); } catch (e) {}
+            }
             const apiUrl = window.getActiveCloudApiUrl?.();
             if (!apiUrl || localStorage.getItem('elec_app_logged_in') !== 'true') return;
             try {
+                // ดันรายการที่ค้างส่งตอนออฟไลน์ขึ้นคลาวด์ก่อนดึงข้อมูลรวม
+                if (!window.isViewerRole?.() && navigator.onLine !== false) {
+                    loadLocalTxRecords();
+                    const unsynced = txRecords.filter(r => r && !r.deleted && r.pendingCloudSync && canSeeTxRecord(r));
+                    let pushedAny = false;
+                    for (const ur of unsynced) {
+                        try {
+                            const cleanUr = { ...ur };
+                            delete cleanUr.pendingCloudSync;
+                            window.PeaCore?.unlockCloudWrite?.(15000);
+                            const pRes = await fetch(apiUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify({ action: 'saveTxLoad', group: cleanUr.ownerGroup || getActiveBranch(), record: cleanUr })
+                            });
+                            const pJson = await pRes.json().catch(() => ({}));
+                            if (pJson?.status === 'ok') {
+                                delete ur.pendingCloudSync;
+                                pushedAny = true;
+                            }
+                        } catch (e) {}
+                    }
+                    if (pushedAny) saveLocalTxRecords();
+                }
+
                 window.PeaCore?.forceCloudRead?.();
                 const grpParam = isAdminAllBranches() ? '' : `&group=${encodeURIComponent(getActiveBranch())}`;
                 const res = await fetch(`${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=listTxLoads${grpParam}&t=${Date.now()}`);
                 const data = await res.json();
                 if (data?.status === 'ok' && Array.isArray(data.records)) {
                     loadLocalTxRecords();
+                    const nowMs = Date.now();
+                    const cloudIds = new Set();
                     const byId = new Map(txRecords.map(r => [r.id, r]));
+
                     data.records.forEach(cr => {
                         if (!cr?.id) return;
+                        if (!cr.deleted) cloudIds.add(cr.id);
                         const ex = byId.get(cr.id);
                         if (!ex || (new Date(cr.updatedAt || 0).getTime() || 0) >= (new Date(ex.updatedAt || 0).getTime() || 0)) {
                             byId.set(cr.id, cr);
                         }
                     });
-                    txRecords = Array.from(byId.values()).filter(r => !r.deleted);
+
+                    txRecords = Array.from(byId.values()).filter(r => {
+                        if (!r?.id) return false;
+                        const updMs = new Date(r.updatedAt || 0).getTime() || 0;
+                        if (r.deleted) return (nowMs - updMs) <= 35 * 86400000;
+                        if (canSeeTxRecord(r) && !cloudIds.has(r.id) && !r.pendingCloudSync && (nowMs - updMs > 60000)) {
+                            return false;
+                        }
+                        return true;
+                    });
                     saveLocalTxRecords();
 
                     const activeId = (document.getElementById('editingRecordId')?.value || '').trim();
                     if (activeId) {
-                        const syncedActive = txRecords.find(r => r.id === activeId);
-                        if (syncedActive && !syncedActive.pdfUrl) {
+                        const syncedActive = txRecords.find(r => r.id === activeId && !r.deleted);
+                        if (!syncedActive || !syncedActive.pdfUrl) {
                             lastPdfCache = { fp: '', url: '', fileId: '' };
                         }
                     }
@@ -1304,7 +1366,15 @@
                 const target = txRecords.find(x => x.id === id);
                 const oldUrl = target?.pdfUrl || '';
                 const oldFileId = target?.pdfFileId || extractDriveFileId(oldUrl);
-                txRecords = txRecords.filter(x => x.id !== id);
+                const tIdx = txRecords.findIndex(x => x.id === id);
+                if (tIdx !== -1) {
+                    txRecords[tIdx] = {
+                        id,
+                        ownerGroup: target?.ownerGroup || getActiveBranch(),
+                        deleted: true,
+                        updatedAt: new Date().toISOString()
+                    };
+                }
                 saveLocalTxRecords();
                 if (document.getElementById('editingRecordId').value === id) resetTxLoadForm(false);
                 renderTxHistoryList();
@@ -1384,7 +1454,7 @@
             container.innerHTML = visible.map(r => {
                 const maxPct = Number(r.totals?.maxPct || 0);
                 const over = maxPct > LOAD_LIMIT_PCT;
-                const safeId = String(r.id).replace(/'/g, "\\'");
+                const safeId = String(r.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const safePdfHref = /^https?:\/\//i.test(r.pdfUrl || '') ? esc(r.pdfUrl) : '';
                 return `<div class="p-3 rounded-xl border ${over ? 'border-rose-300 bg-rose-50/30' : 'border-slate-200 bg-slate-50/60'} flex flex-col justify-between gap-2 text-xs">
                     <div>
@@ -1753,6 +1823,8 @@
                                 };
                                 saveLocalTxRecords();
                                 renderTxHistoryList();
+                                const cleanRec = { ...txRecords[idx] };
+                                delete cleanRec.pendingCloudSync;
                                 window.PeaCore?.unlockCloudWrite?.(15000);
                                 fetch(apiUrl, {
                                     method: 'POST',
@@ -1760,7 +1832,7 @@
                                     body: JSON.stringify({
                                         action: 'saveTxLoad',
                                         group: targetGrp,
-                                        record: txRecords[idx]
+                                        record: cleanRec
                                     })
                                 }).catch(() => {});
                             }
@@ -1854,10 +1926,13 @@
                 r.locationNote || '-', r.remark || '-', r.inspector || '-', r.pdfUrl || '-'
             ]);
             const fn = `TxLoad_${getActiveBranch()}_${getTodayThaiDate().replace(/\//g, '-')}.xlsx`;
-            if ((await window.ensureXlsxLibraryLoaded?.()) && typeof XLSX !== 'undefined') {
+            const xlsxReady = typeof XLSX !== 'undefined' ||
+                await (window.ensureXlsxLoaded?.() || window.ensureTechXlsxLoaded?.());
+            if (xlsxReady && typeof XLSX !== 'undefined') {
                 const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
                 XLSX.utils.book_append_sheet(wb, ws, 'ประวัติวัดโหลด');
                 XLSX.writeFile(wb, fn);
+                window.showToast?.('📊 ส่งออกไฟล์ Excel (.xlsx) สำเร็จ!');
             } else {
                 window.PeaCore?.downloadCsvFallback?.(headers, rows, fn);
             }
@@ -1953,7 +2028,7 @@
 
             const rawUser = localStorage.getItem('elec_app_current_user') || '';
             const cleanUser = window.formatTechDisplayName ? window.formatTechDisplayName(rawUser) : rawUser;
-            document.getElementById('inspectorNameInput').value = cleanUser.replace(/\s*กฟ[สฟจตอ]\..*$/, '').trim();
+            document.getElementById('inspectorNameInput').value = cleanUser.replace(/\s*กฟ[ก-ฮ]{1,3}\.?.*$/, '').trim();
             document.getElementById('flAmpInput').value = calcDefaultFullLoadAmp('3P', 160);
 
             if (q.has('pea') || q.has('kva') || q.has('req')) {
@@ -1984,6 +2059,12 @@
                 closeDiagramZoom();
                 closeSignatureModal();
                 closeScadaTrSearchModal();
+            }
+        });
+
+        window.addEventListener('online', function () {
+            if (!window.isViewerRole?.() && localStorage.getItem('elec_app_logged_in') === 'true') {
+                syncTxLoadsFromCloud(true);
             }
         });
 
