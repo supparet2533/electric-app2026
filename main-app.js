@@ -68,6 +68,32 @@
         return escapeHtmlStr(String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
     }
 
+        const PM_LOC_PREFIX = '__PM_SCHEDULE__';
+    const CALIB_LOC_PREFIX = '__FAULT_CALIB__';
+
+    function isMainSysRegistryLoc(k, loc) {
+        return !k || k === Core.REGISTRY_LOC_KEY || String(k).startsWith(PM_LOC_PREFIX) || String(k).startsWith(CALIB_LOC_PREFIX) || Boolean(loc && loc.isSystemRegistry);
+    }
+
+    function parseMainDateMs(rawStr) {
+        if (!rawStr) return 0;
+        if (typeof rawStr === 'number') return isNaN(rawStr) ? 0 : rawStr;
+        const s = String(rawStr).trim();
+        if (!s || s === '-') return 0;
+        const th = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?)?/);
+        if (th) {
+            let yr = parseInt(th[3], 10) || 2569;
+            if (yr > 2400) yr -= 543;
+            const ms = new Date(
+                yr, (parseInt(th[2], 10) || 1) - 1, parseInt(th[1], 10) || 1,
+                parseInt(th[4] || '0', 10), parseInt(th[5] || '0', 10), parseInt(th[6] || '0', 10)
+            ).getTime();
+            if (!isNaN(ms) && ms > 0) return ms;
+        }
+        const t = new Date(s).getTime();
+        return isNaN(t) ? 0 : t;
+    }
+
     function normalizeThaiDateMain(rawStr) {
         const tok = String(rawStr || '').trim().split(/\s+/)[0];
         if (!tok || tok === '-') return '';
@@ -815,7 +841,8 @@
         if (curUser) {
             const locMap = getTechLocationsMap(), nowIso = new Date().toISOString();
             Object.keys(locMap).forEach(k => {
-                if (k !== Core.REGISTRY_LOC_KEY && !String(k).startsWith('__PM_SCHEDULE__') && !locMap[k]?.isSystemRegistry && (isSameTechPerson(k, curUser) || isSameTechPerson(locMap[k]?.username, curUser))) {
+if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSameTechPerson(locMap[k]?.username, curUser))) {
+
                     locMap[k] = { ...locMap[k], isOnline: false, lastSeenAt: nowIso, updatedAt: nowIso };
                 }
             });
@@ -2567,8 +2594,8 @@
         loadOutageHistory();
         autoFillJobNo(true);
 
-        // ยิงข้อมูลใบงานด่วนแบบ keepalive เพื่อให้ข้อมูลขึ้นคลาวด์ทันทีแม้สลับหน้าจอไปแอป LINE
-                if (savedRecordForQuickPush && navigator.onLine) {
+                // ยิงข้อมูลใบงานด่วนแบบ keepalive ขึ้นคลาวด์ทันทีโดยไม่ยิง syncJobsWithFieldPage ซ้อนชนคิว Lock
+        if (savedRecordForQuickPush && navigator.onLine) {
             const apiUrl = getActiveCloudApiUrl();
             if (apiUrl) {
                 const cleanJob = { ...savedRecordForQuickPush, jobType: 'outage' };
@@ -2580,12 +2607,32 @@
                     upsertedJobs: [cleanJob],
                     removedJobKeys: []
                 });
-                fetch(apiUrl, {
-                    method: 'POST',
-                    keepalive: new Blob([quickBodyStr]).size < 55000,
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: quickBodyStr
-                }).catch(() => {});
+                if (new Blob([quickBodyStr]).size < 55000) {
+                    fetch(apiUrl, {
+                        method: 'POST',
+                        keepalive: true,
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: quickBodyStr
+                    }).then(r => r.json()).then(resData => {
+                        if (resData?.status === 'ok' && resData?.patched !== false && !resData?.skippedBusyRam) {
+                            const curList = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]');
+                            let cleared = false;
+                            curList.forEach(it => {
+                                if (it && it.dateTimeSaved === cleanJob.dateTimeSaved && it.pendingInitialUpload) {
+                                    delete it.pendingInitialUpload;
+                                    cleared = true;
+                                }
+                            });
+                            if (cleared) Core.rawStorageSet('elecReportsComplete_all', JSON.stringify(curList));
+                            Core.invalidateSheetCaches?.();
+                        } else {
+                            syncJobsWithFieldPage();
+                        }
+                    }).catch(() => {
+                        syncJobsWithFieldPage();
+                    });
+                    return;
+                }
             }
         }
         syncJobsWithFieldPage();
@@ -2724,7 +2771,7 @@
         }, '🗑️ ยืนยันการลบประวัติ');
     }
 
-    function loadFaultHistory() {
+        function loadFaultHistory() {
         Core.cleanReopenedAndCancelledJobsInStorage();
         tagUntaggedLocalJobsWithCurrentGroup();
         const delReg = getDeletedJobsRegistry();
@@ -2735,29 +2782,35 @@
             const selDate = document.getElementById('exportDateTab1')?.value || '';
             const allHistory = JSON.parse(localStorage.getItem('fault_reports_all') || '[]')
                 .filter(it => it && !(it.timestamp && delReg[it.timestamp]))
-                .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+                .sort((a, b) => parseMainDateMs(b.timestamp) - parseMainDateMs(a.timestamp));
             document.getElementById('statFaultTotal').textContent = String(allHistory.length);
             document.getElementById('statFault22kV').textContent = String(allHistory.filter(i => i.system === '22kV').length);
             document.getElementById('statFault115kV').textContent = String(allHistory.filter(i => i.system === '115kV').length);
-
+            
             let history = [...allHistory];
-            if (selDate) history = history.filter(it => { if (!it.timestamp) return false; const d = new Date(it.timestamp); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === selDate; });
+            if (selDate) history = history.filter(it => {
+                const ms = parseMainDateMs(it.timestamp);
+                if (!ms) return false;
+                const d = new Date(ms);
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === selDate;
+            });
             if (searchQ) history = history.filter(it => JSON.stringify(it).toLowerCase().includes(searchQ));
-
+            
             if (!history.length) { historyList.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">ไม่พบประวัติการบันทึกที่ค้นหา</p>'; return; }
             historyList.innerHTML = '';
             history.forEach(item => {
-                const safeKey = String(item.timestamp || '').replace(/'/g, "\\'");
+                const safeKey = escJsAttr(item.timestamp || '');
                 const photoHtml = buildMainHistoryPhotoStripHtml(item, item.timestamp);
+                const tsMs = parseMainDateMs(item.timestamp);
+                const tsLabel = tsMs > 0 ? new Date(tsMs).toLocaleString('th-TH') : String(item.timestamp || '-');
                 const div = document.createElement('div');
                 div.className = 'bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full';
-                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">⚡ ${escapeHtmlStr(item.circuit)} - 🏭 ${escapeHtmlStr(item.station)} (${escapeHtmlStr(item.system)})</span><span class="text-slate-400 shrink-0 whitespace-nowrap">⏰ ${escapeHtmlStr(item.time)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div>${photoHtml}<div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">${escapeHtmlStr(new Date(item.timestamp).toLocaleString('th-TH'))}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editFaultItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyFaultAgain('${safeKey}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteFaultItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
+                div.innerHTML = `<div class="flex justify-between items-start gap-2 font-bold text-slate-700"><span class="min-w-0 break-words">⚡ ${escapeHtmlStr(item.circuit)} - 🏭 ${escapeHtmlStr(item.station)} (${escapeHtmlStr(item.system)})</span><span class="text-slate-400 shrink-0 whitespace-nowrap">⏰ ${escapeHtmlStr(item.time)}</span></div><div class="text-slate-600 whitespace-pre-line break-all sm:break-words [overflow-wrap:anywhere] font-mono bg-slate-50 p-2.5 rounded-lg overflow-x-hidden max-w-full">${highlightMatch(item.formattedText, searchQ)}</div>${photoHtml}<div class="flex flex-wrap justify-between items-center pt-1.5 gap-1.5"><span class="text-[10px] text-slate-400 truncate">${escapeHtmlStr(tsLabel)}</span><div class="flex gap-1 shrink-0 ml-auto"><button type="button" onclick="editFaultItem('${safeKey}')" class="bg-amber-50 hover:bg-amber-100 text-amber-600 px-2 py-1 rounded font-medium">📝 แก้ไข</button><button type="button" onclick="copyFaultAgain('${safeKey}')" class="bg-blue-50 hover:bg-blue-100 text-blue-600 px-2 py-1 rounded font-medium">📋 คัดลอก</button><button type="button" onclick="deleteFaultItem('${safeKey}')" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 rounded font-medium">🗑️ ลบ</button></div></div>`;
                 historyList.appendChild(div);
             });
         }, null, []);
         if (typeof renderNavEtaBadgesInMainHistory === 'function') renderNavEtaBadgesInMainHistory();
     }
-
     function editFaultItem(ts) {
         if (!guardNotViewer()) return;
         const item = JSON.parse(Core.rawStorageGet('fault_reports_all') || '[]').find(h => h.timestamp === ts);
@@ -2895,7 +2948,7 @@
             else if (dF === 'custom') { const sv = document.getElementById('dashStartDate')?.value, ev = document.getElementById('dashEndDate')?.value; if (sv) { sDate = new Date(sv); sDate.setHours(0, 0, 0, 0); } if (ev) { eDate = new Date(ev); eDate.setHours(23, 59, 59, 999); } }
 
             const inRange = ms => (!sDate || ms >= sDate.getTime()) && (!eDate || ms <= eDate.getTime());
-            currentFilteredFaults = faults.filter(i => inRange(i.timestamp ? new Date(i.timestamp).getTime() : 0) && (sysF === 'all' || i.system === sysF));
+            currentFilteredFaults = faults.filter(i => inRange(parseMainDateMs(i.timestamp)) && (sysF === 'all' || i.system === sysF));
             currentFilteredOutages = outages.filter(i => inRange(parseOutageDateTimeToMs(i)) && (shF === 'all' || String(i.shift) === shF));
 
             document.getElementById('analyticsFaultCount').textContent = `${currentFilteredFaults.length} รายการ`;
@@ -2922,10 +2975,10 @@
             if (type === 'fault') {
                 const sd = document.getElementById('exportDateTab1')?.value || '';
                 let list = JSON.parse(localStorage.getItem('fault_reports_all') || '[]').filter(f => f && !(f.timestamp && delReg[f.timestamp]));
-                if (sd) list = list.filter(i => { const d = new Date(i.timestamp || 0); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === sd; });
+                if (sd) list = list.filter(i => { const d = new Date(parseMainDateMs(i.timestamp)) ; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === sd; });
                 if (!list.length) return showToast('ไม่มีข้อมูลสำหรับวันที่เลือก');
                 headers = ['วันที่บันทึก', 'เวลา', 'ระบบ', 'วงจร', 'สถานี', 'สภาพอากาศ', 'เหตุ', 'จำนวนครั้ง', 'T/L', 'โชว์เฟส', 'กระแส A', 'กระแส B', 'กระแส C', 'กระแส G', 'ระยะทาง', 'โซน', 'ปัจจุบันกระแส', 'อุปกรณ์เห็นฟอลต์', 'ปลดอุปกรณ์', 'จ่ายไฟชนอุปกรณ์', 'ผู้แจ้ง', 'พิกัด GPS', 'สถานะหน้างาน', 'สาเหตุจริง', 'การแก้ไข', 'เวลาเสร็จ', 'ช่างผู้ตรวจสอบ', 'รูปถ่ายหน้างาน (Drive)'];
-                rows = list.map(i => { const tr = i.techReport || closedReg[i.timestamp]; const pics = extractMainHistoryPhotos(i, i.timestamp).map(p => p.viewUrl).filter(Boolean).join('\n') || '-'; return [new Date(i.timestamp).toLocaleDateString('th-TH'), i.time, i.system, i.circuit, i.station, i.weather, i.cause, i.count, i.tlStatus, i.phase, i.currA, i.currB, i.currC, i.currG, i.distance, i.zone, i.presentCurr, i.device, i.disconnectDevice, i.powerUpToDevice, i.reporter, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-'), pics].map(c => String(c ?? '')); });
+                rows = list.map(i => { const tr = i.techReport || closedReg[i.timestamp]; const pics = extractMainHistoryPhotos(i, i.timestamp).map(p => p.viewUrl).filter(Boolean).join('\n') || '-'; return [(parseMainDateMs(i.timestamp) ? new Date(parseMainDateMs(i.timestamp)).toLocaleDateString('th-TH') : String(i.timestamp || '-')), i.time, i.system, i.circuit, i.station, i.weather, i.cause, i.count, i.tlStatus, i.phase, i.currA, i.currB, i.currC, i.currG, i.distance, i.zone, i.presentCurr, i.device, i.disconnectDevice, i.powerUpToDevice, i.reporter, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-'), pics].map(c => String(c ?? '')); });
                 filename = `Fault_Report_${sd || 'All'}.xlsx`; sheetName = 'รายงานเหตุ_TR_TL';
             } else {
                 const sd = document.getElementById('exportDateTab2')?.value || '';
@@ -3166,7 +3219,7 @@
         if (!coords?.lat || !coords?.lon) return null;
         const now = Date.now(), cands = [];
         Object.entries(locMap).forEach(([k, loc]) => {
-            if (k === Core.REGISTRY_LOC_KEY || String(k).startsWith('__PM_SCHEDULE__') || !loc || loc.isSystemRegistry || loc.isOnline === false || loc.gpsDisabled || isNaN(parseFloat(loc.lat)) || isNaN(parseFloat(loc.lon)) || !loc.username) return;
+            if (isMainSysRegistryLoc(k, loc) || !loc || loc.isOnline === false || loc.gpsDisabled || isNaN(parseFloat(loc.lat)) || isNaN(parseFloat(loc.lon)) || !loc.username) return;
             const seen = new Date(loc.lastSeenAt || loc.updatedAt || 0).getTime() || 0;
             if (!seen || (now - seen) > 180000) return;
             const tGrp = normGrp(getUserGroupName(loc.username) || loc.group || '');
@@ -3205,7 +3258,7 @@
         const cancelMap = { ...JSON.parse(Core.rawStorageGet('elec_cancelled_equip_nav_map') || '{}'), ...(locMap[Core.REGISTRY_LOC_KEY]?.equipCancelMap || {}) };
         const getNavMs = (nv) => !nv ? 0 : Math.max(Number(nv.departTimestamp || 0), new Date(nv.updatedAt || 0).getTime() || 0, Number(nv.cancelledAtMs || 0));
         Object.entries(locMap).forEach(([uK, obj]) => {
-            if (uK !== Core.REGISTRY_LOC_KEY && !String(uK).startsWith('__PM_SCHEDULE__') && !obj?.isSystemRegistry && obj?.activeEquipNav) {
+            if (!isMainSysRegistryLoc(uK, obj) && obj?.activeEquipNav) {
                 const nk = obj.activeEquipNav.id || normalizeMainEquipTechKey(obj.activeEquipNav.techName || uK, obj.activeEquipNav.ownerGroup || obj.group);
                 if (!navMap[nk] || getNavMs(obj.activeEquipNav) >= getNavMs(navMap[nk])) navMap[nk] = { ...obj.activeEquipNav, id: nk };
             }
@@ -3243,7 +3296,7 @@
         });
         if (realTechName && !locMap[realTechName]) locMap[realTechName] = { username: realTechName, group: ownerGrp, isOnline: true };
         Object.keys(locMap).forEach(uK => {
-            if (uK === Core.REGISTRY_LOC_KEY || String(uK).startsWith('__PM_SCHEDULE__') || locMap[uK]?.isSystemRegistry) return;
+            if (isMainSysRegistryLoc(uK, locMap[uK])) return;
             if ((realTechName && isSameTechPerson(uK, realTechName)) || locMap[uK]?.activeEquipNav?.id === scopedKey) {
                 locMap[uK].group = locMap[uK].group || ownerGrp;
                 locMap[uK].activeEquipNav = { id: scopedKey, techName: realTechName || uK, ownerGroup: ownerGrp, isTraveling: false, status: isArrived ? 'arrived' : 'cancelled', cancelledAtMs: safeMs, updatedAt: safeIso };
@@ -3597,7 +3650,7 @@
             }
 
             outages.sort((a, b) => parseOutageDateTimeToMs(b) - parseOutageDateTimeToMs(a));
-            faults.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+            faults.sort((a, b) => parseMainDateMs(b.timestamp) - parseMainDateMs(a.timestamp));
             outages = outages.slice(0, 300);
             faults = faults.slice(0, 300);
 
@@ -3762,16 +3815,19 @@
     }
     function syncScadaPinsIntoAutocomplete() { const pins = getVisibleScadaPinsInMain(); if (pins.length) saveEquipmentHistory(pins.map(p => `${p.name}${p.scadaNode?.id ? ` (ID ${p.scadaNode.id})` : ''}`)); }
 
-    function checkAndRenderFormScadaWarnings() {
+        function checkAndRenderFormScadaWarnings() {
         const box = document.getElementById('scadaFormLiveAlertBox'); if (!box) return;
         const inputs = [['อุปกรณ์เห็นฟอลต์', document.getElementById('deviceInput')?.value], ['ปลดอุปกรณ์', document.getElementById('disconnectDeviceInput')?.value], ['จ่ายไฟชนอุปกรณ์', document.getElementById('powerUpToDeviceInput')?.value]].filter(([, v]) => v && v.trim() && v.trim() !== '-');
         if (!inputs.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
         const pins = getVisibleScadaPinsInMain(), htmls = [];
         inputs.forEach(([role, val]) => {
-            const q = val.replace(/\(\s*ID\s*[^)]+\)/i, '').trim().toLowerCase(), p = pins.find(x => String(x.name || '').trim().toLowerCase() === q);
+            const q = val.replace(/(?:\(\s*ID\s*[^)]+\)|\[\s*ID\s*[^\]]+\])/i, '').trim().toLowerCase(), p = pins.find(x => String(x.name || '').trim().toLowerCase() === q);
             if (!p) return;
             const nd = p.scadaNode || {}, gpsUrl = `https://www.google.com/maps?q=${Number(p.lat).toFixed(6)},${Number(p.lon).toFixed(6)}`;
-            htmls.push(`<div class="p-2.5 rounded-xl border ${nd.lk || nd.st === 'F' ? 'bg-rose-50 border-rose-300' : 'bg-teal-50/80 border-teal-200'} text-xs space-y-0.5"><div class="flex justify-between gap-2"><span class="font-bold text-slate-800">⚡ ${escapeHtmlStr(role)}: <b class="text-teal-800">${escapeHtmlStr(p.name)}</b> ${nd.id ? `[ID ${escapeHtmlStr(nd.id)}]` : ''}</span><button type="button" onclick="applyScadaSwitchGpsToTab1('${gpsUrl}')" class="bg-white text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">📍 ใช้พิกัดจุดนี้</button></div>${nd.lk ? `<div class="text-rose-700 font-extrabold">🚨 คำเตือน Interlock: ${escapeHtmlStr(nd.lk)}</div>` : ''}</div>`);
+            const hasLoto = Boolean(nd.loto && String(nd.loto).trim());
+            const boxCls = hasLoto ? 'bg-red-50 border-red-400 ring-1 ring-red-300' : ((nd.lk || nd.st === 'F') ? 'bg-rose-50 border-rose-300' : 'bg-teal-50/80 border-teal-200');
+            const lotoHtml = hasLoto ? `<div class="text-red-700 font-extrabold">🔒 ติดป้ายห้ามสับไฟ (LOTO): "${escapeHtmlStr(nd.loto)}"${nd.lotoBy ? ` • 👷 ${escapeHtmlStr(nd.lotoBy)}` : ''}</div>` : '';
+            htmls.push(`<div class="p-2.5 rounded-xl border ${boxCls} text-xs space-y-0.5"><div class="flex justify-between gap-2"><span class="font-bold text-slate-800">⚡ ${escapeHtmlStr(role)}: <b class="text-teal-800">${escapeHtmlStr(p.name)}</b> ${nd.id ? `[ID ${escapeHtmlStr(nd.id)}]` : ''}</span><button type="button" onclick="applyScadaSwitchGpsToTab1('${gpsUrl}')" class="bg-white text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">📍 ใช้พิกัดจุดนี้</button></div>${lotoHtml}${nd.lk ? `<div class="text-rose-700 font-extrabold">🚨 คำเตือน Interlock: ${escapeHtmlStr(nd.lk)}</div>` : ''}</div>`);
         });
         box.innerHTML = htmls.join(''); box.classList.toggle('hidden', !htmls.length);
     }
@@ -3784,10 +3840,13 @@
         lastScadaPktTs = pkt.ts || Date.now(); switchTab('tab1');
         const sys = document.getElementById('systemSelect'); if (sys && !sys.value) { sys.value = '22kV'; updateCircuitDropdown(); }
         const mapId = { device: 'deviceInput', disconnect: 'disconnectDeviceInput', powerup: 'powerUpToDeviceInput' }[pkt.fieldRole];
-        if (mapId && pkt.code) {
-            document.getElementById(mapId).value = pkt.code;
-            if (pkt.fieldRole === 'disconnect') document.getElementById('powerUpToDeviceInput').value = pkt.code;
-            if (pkt.fieldRole === 'powerup' && !document.getElementById('powerUpTimeInput').value.trim()) { const n = new Date(); document.getElementById('powerUpTimeInput').value = `${String(n.getHours()).padStart(2, '0')}.${String(n.getMinutes()).padStart(2, '0')} น.`; }
+        const targetEl = mapId ? document.getElementById(mapId) : null;
+        if (targetEl && pkt.code) {
+            targetEl.value = pkt.code;
+            const pUpEl = document.getElementById('powerUpToDeviceInput');
+            const pTimeEl = document.getElementById('powerUpTimeInput');
+            if (pkt.fieldRole === 'disconnect' && pUpEl) pUpEl.value = pkt.code;
+            if (pkt.fieldRole === 'powerup' && pTimeEl && !pTimeEl.value.trim()) { const n = new Date(); pTimeEl.value = `${String(n.getHours()).padStart(2, '0')}.${String(n.getMinutes()).padStart(2, '0')} น.`; }
             saveEquipmentHistory([pkt.code]);
         }
         const gEl = document.getElementById('gpsInput'); if (gEl && pkt.gps && (pkt.fieldRole === 'device' || !gEl.value.trim())) { gEl.value = pkt.gps; gEl.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -3811,9 +3870,10 @@
             let lat = parseFloat(cols[1]), lon = parseFloat(cols[2]); if (!code || isNaN(lat) || isNaN(lon)) return;
             if (lat > 90 && lon < 90) { const t = lat; lat = lon; lon = t; }
             let eqT = (cols[3] || '').toUpperCase().trim();
-            if (!['PIN', 'TAP', 'VS', 'VSC', 'S', 'DF', 'RC', 'CB', 'VB', 'GEN'].includes(eqT)) {
-                eqT = /\bCB\b|^CB/i.test(code) ? 'CB' : (/RC/i.test(code) ? 'RC' : (/VB/i.test(code) ? 'VB' : (/DF|FCO/i.test(code) ? 'DF' : (/VS-?\d+/i.test(code) ? 'VS' : (/S-?\d+/i.test(code) ? 'S' : 'VS')))));
+            if (!['PIN', 'TAP', 'TR', 'VS', 'VSC', 'S', 'DF', 'RC', 'CB', 'VB', 'GEN'].includes(eqT)) {
+                eqT = /\bCB\b|^CB|RC/i.test(code) ? 'RC' : (/VB/i.test(code) ? 'VB' : (/DF|FCO/i.test(code) ? 'DF' : (/\bTR\b|หม้อแปลง/i.test(code) ? 'TR' : (/VS-?\d+/i.test(code) ? 'VS' : (/S-?\d+/i.test(code) ? 'S' : 'VS')))));
             }
+            if (eqT === 'CB') eqT = 'RC';
 
             const scId = (cols[4] || '').replace(/^ID\s*/i, '').trim(), fd = (cols[5] || '').toUpperCase().trim();
             const rawSt = (cols[6] || 'C').trim();
@@ -3825,7 +3885,13 @@
             const exIdx = pins.findIndex(p => normGrp(p?.ownerGroup || 'กฟส.บึง') === myGrp && String(p?.name || '').toLowerCase() === code.toLowerCase());
             if (exIdx !== -1) {
                 if (delMap[pins[exIdx].id]) { delete delMap[pins[exIdx].id]; delChanged = true; }
-                pins[exIdx] = { ...pins[exIdx], name: code, lat, lon, pinColor, scadaNode, ownerGroup: myGrp, updatedAt: nowIso };
+                const prevNd = pins[exIdx].scadaNode || {};
+                const mergedNd = {
+                    ...scadaNode,
+                    ...(prevNd.loto ? { loto: prevNd.loto, ...(prevNd.lotoBy ? { lotoBy: prevNd.lotoBy } : {}), ...(prevNd.lotoAt ? { lotoAt: prevNd.lotoAt } : {}) } : {})
+                };
+                if (prevNd.loto && mergedNd.st === 'C') mergedNd.st = 'O';
+                pins[exIdx] = { ...pins[exIdx], name: code, lat, lon, pinColor: prevNd.loto ? 'yellow' : pinColor, scadaNode: mergedNd, ownerGroup: myGrp, updatedAt: nowIso };
                 updated++;
             } else {
                 pins.unshift({ id: 'eqp_' + Date.now() + '_' + idx, name: code, note: lk, lat, lon, pinColor, scadaNode, ownerGroup: myGrp, ownerUser: curUser, updatedAt: nowIso });
