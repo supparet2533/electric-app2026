@@ -1,7 +1,7 @@
 // ============================================================================
-// 📅⏰ PEA SMART GRID — MAINTENANCE SCHEDULE & CUSTOM ALERT ENGINE v7.3 (pm-calendar.js)
-// ระบบปฏิทินแผนงานบำรุงรักษา + หมุดแผนงาน + ตั้งเวลาเตือนแยกแต่ละงาน + เตือนซ้ำทุกนาทีจนกว่าจะรับทราบ
-// พาทที่ 1 / 6 : Config, Safe Cross-Page Wrappers, Baseline Helpers & Quota-Safe Shard Builder
+// 📅⏰📷 PEA SMART GRID — MAINTENANCE SCHEDULE, PHOTO & CUSTOM ALERT ENGINE v7.4 (pm-calendar.js)
+// ระบบปฏิทินแผนงานบำรุงรักษา + แนบรูปหน้างานสูงสุด 3 รูป + ส่งรูปจริงเข้า LINE คู่คัดลอกข้อความ
+// พาทที่ 1 / 6 : Config, Safe Cross-Page Wrappers, Photo URL Helpers & Baseline Helpers
 // ============================================================================
 (function () {
     'use strict';
@@ -28,6 +28,11 @@
     const MAX_DONE_CLOUD_AGE_MS = 60 * 24 * 60 * 60 * 1000;
     const MAX_CLOUD_SYNC_ITEMS = 60;
     const MAX_SHARD_JSON_CHARS = 18000;
+
+    // ค่ากำหนดสำหรับระบบแนบรูปประกอบแผนงาน PM (สูงสุด 3 รูปต่อแผนงาน)
+    const MAX_PM_PHOTOS = 3;
+    const PM_PHOTO_MAX_DIM = 1280;
+    const PM_PHOTO_QUALITY = 0.80;
 
     const THAI_MONTHS = [
         'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
@@ -72,6 +77,20 @@
     const firedAlertTokensInSession = new Set();
     let lastRepeatAlertMinuteKey = '';
 
+    // สถานะจัดการรูปภาพประกอบแผนงาน PM, แคชไฟล์รูปใน RAM และตัวดูรูปเต็มจอ (Lightbox)
+    let tempFormPhotoIds = [];
+    let originalEditingPhotoIds = [];
+    let sessionModalUploadedIds = [];
+    let isUploadingModalPhotos = false;
+    let tempQuickPhotoIds = [];
+    let isUploadingQuickPhotos = false;
+    const pmPhotoBlobCache = new Map();
+    let lightboxPhotoIds = [];
+    let lightboxActiveIdx = 0;
+    let lightboxSourcePlanId = '';
+    let pendingShareFilesPayload = null;
+    let isSharingToLineBusy = false;
+
     let isPmSoundEnabled = localStorage.getItem(PM_SOUND_KEY) !== 'false';
     let isPmRepeatEveryMin = localStorage.getItem(PM_REPEAT_EVERY_MIN_KEY) !== 'false';
     let showScadaDuePins = localStorage.getItem(PM_SHOW_SCADA_DUE_KEY) !== 'false';
@@ -93,7 +112,7 @@
     }
 
     // ========================================================================
-    // 1. Safe Cross-Page Wrappers (ทำงานได้ทั้ง index.html และ page2.html โดยไม่เกิด ReferenceError)
+    // 1. Safe Cross-Page Wrappers & Photo Helpers
     // ========================================================================
     function rawGet(key) {
         return Core && typeof Core.rawStorageGet === 'function' ? Core.rawStorageGet(key) : localStorage.getItem(key);
@@ -130,6 +149,59 @@
         return String(raw || '').trim().replace(/\s+/g, ' ')
             .replace(/^(กฟ[สฟจตอ])\.?\s+/, '$1.')
             .replace(/^(กฟ[สฟจตอ])(?![.\s])/, '$1.');
+    }
+
+    function normalizePmPhotoIds(rawObjOrArr) {
+        const arr = Array.isArray(rawObjOrArr)
+            ? rawObjOrArr
+            : (Array.isArray(rawObjOrArr?.photoIds) ? rawObjOrArr.photoIds : (Array.isArray(rawObjOrArr?.ph) ? rawObjOrArr.ph : []));
+        const seen = new Set();
+        const out = [];
+        arr.forEach(id => {
+            const clean = String(id || '').trim();
+            if (/^[a-zA-Z0-9_-]{15,65}$/.test(clean) && !seen.has(clean)) {
+                seen.add(clean);
+                if (out.length < MAX_PM_PHOTOS) out.push(clean);
+            }
+        });
+        return out;
+    }
+    function getPmPhotoThumbUrl(fileId, size = 400) {
+        return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${size}`;
+    }
+    function getPmPhotoDirectUrl(fileId, size = 1280) {
+        return `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w${size}`;
+    }
+    function getPmPhotoDriveViewUrl(fileId) {
+        return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`;
+    }
+    function rememberPmPhotoBlob(fileId, blob) {
+        if (!fileId || !blob) return;
+        if (pmPhotoBlobCache.has(fileId)) pmPhotoBlobCache.delete(fileId);
+        pmPhotoBlobCache.set(fileId, blob);
+        if (pmPhotoBlobCache.size > 24) {
+            const oldestKey = pmPhotoBlobCache.keys().next().value;
+            if (oldestKey) pmPhotoBlobCache.delete(oldestKey);
+        }
+    }
+    function getActivePmCloudUrl() {
+        return (
+            (typeof window.getActiveCloudApiUrl === 'function' ? window.getActiveCloudApiUrl() : '') ||
+            rawGet(PM_LAST_API_URL_KEY) ||
+            rawGet('elec_cloud_user_api_url') ||
+            rawGet('elec_cloud_api_url') ||
+            window.CLOUD_API_URL ||
+            ''
+        ).trim();
+    }
+    function isMobileFileSharePreferred() {
+        if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+            return false;
+        }
+        const ua = navigator.userAgent || '';
+        if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua)) return true;
+        if (/Macintosh/i.test(ua) && Number(navigator.maxTouchPoints || 0) > 1) return true;
+        return false;
     }
 
     function normalizeTimeHHMM(rawStr) {
@@ -291,9 +363,10 @@
         return { icon: cat.icon, catName: cat.name, hex: cMeta.hex, grad: cMeta.grad };
     }
     // ===== จบพาทที่ 1 / 6 ของไฟล์ pm-calendar.js =====
-    // ===== เริ่มพาทที่ 2 / 6 ของไฟล์ pm-calendar.js (วางทับพาทที่ 2 / 6 เดิม) =====
+
+    // ===== เริ่มพาทที่ 2 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 2. จัดการคลังแผนงาน & บีบอัด Shard (กันนาฬิกาเพี้ยน + ล็อกโหมดเตือน + กันตกหล่นเกิน 60 งาน)
+    // 2. จัดการคลังแผนงาน & บีบอัด Shard (รองรับรหัสรูป ph สูงสุด 3 รูป ประหยัดโควตาชีต)
     // ========================================================================
     const MAX_RECENT_TRANSITION_QUOTA = 15;
     const RECENT_TRANSITION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -321,6 +394,8 @@
         if (p.equipCode) out.equipCode = p.equipCode;
         if (p.feeder) out.feeder = p.feeder;
         if (p.note) out.note = String(p.note).slice(0, 300);
+        const pIds = normalizePmPhotoIds(p);
+        if (pIds.length > 0) out.ph = pIds;
         if (!isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lon))) {
             out.lat = Number(Number(p.lat).toFixed(6));
             out.lon = Number(Number(p.lon).toFixed(6));
@@ -341,8 +416,12 @@
         const lat = hasCoord ? Number(Number(raw.lat).toFixed(6)) : null;
         const lon = hasCoord ? Number(Number(raw.lon).toFixed(6)) : null;
         const cTimes = normalizeCustomTimesArray(raw.customAlertTimes || []);
+        const photoIds = normalizePmPhotoIds(raw);
+        const cleanedRaw = { ...raw };
+        delete cleanedRaw.ph;
         return {
-            ...raw,
+            ...cleanedRaw,
+            photoIds,
             pinColor: raw.pinColor || 'auto',
             timeSlot: raw.timeSlot || '09.00-12.00',
             notifyDaysBefore: Number(raw.notifyDaysBefore ?? 3),
@@ -513,8 +592,8 @@
     }
 
     async function pullPmPlansWhileLoggedOut() {
-    if (isUserCurrentlyLoggedIn() || !(rawGet('elec_app_session_token') || '').trim()) return false;
-        const baseApiUrl = (rawGet(PM_LAST_API_URL_KEY) || (typeof window.getActiveCloudApiUrl === 'function' ? window.getActiveCloudApiUrl() : '')).trim();
+        if (isUserCurrentlyLoggedIn() || !(rawGet('elec_app_session_token') || '').trim()) return false;
+        const baseApiUrl = getActivePmCloudUrl();
         if (!baseApiUrl) return false;
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const timer = ctrl ? setTimeout(() => ctrl.abort(), 4500) : null;
@@ -559,22 +638,25 @@
     });
     window.addEventListener('storage', (e) => { if (e.key === PM_STORAGE_KEY && e.newValue) { try { mergeIncomingPmItems(JSON.parse(e.newValue)); } catch (err) {} } });
     // ===== จบพาทที่ 2 / 6 ของไฟล์ pm-calendar.js =====
-    // ===== เริ่มพาทที่ 3 / 6 ของไฟล์ pm-calendar.js (วางทับพาทที่ 3 / 6 เดิม) =====
+        // ===== เริ่มพาทที่ 3 / 6 ของไฟล์ pm-calendar.js =====
+    // ========================================================================
+    // 2.3 ตัวดักซิงค์คลาวด์, เอนจินบีบอัด/อัปโหลด/ดึงรูปภาพ PM & ระบบแจ้งเตือนตามเวลา
+    // ========================================================================
     let inFlightGasCount = 0;
     let pendingPmSyncSeq = 0;
     let ackedPmSyncSeq = 0;
     let hasPendingPmCloudSync = false;
     let fallbackCloudTimer = null;
 
-     const _origFetchForPm = window.fetch;
-    window.fetch = async function(input, init) {
+    const _origFetchForPm = window.fetch;
+    window.fetch = async function (input, init) {
         const urlStr = typeof input === 'string' ? input : (input?.url || '');
         const isGas = urlStr.includes('script.google.com');
         let didAttachPmWrite = false;
         let attachedSyncSeq = 0;
-        
+
         if (isGas && init && init.method === 'POST' && typeof init.body === 'string' && (isUserCurrentlyLoggedIn() || hasPendingPmCloudSync)) {
-                        if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
+            if (init.body.includes('"saveJobs"') || init.body.includes('"patchDelta"')) {
                 try {
                     loadPmPlansFromStorage();
                     const bodyObj = JSON.parse(init.body);
@@ -640,7 +722,218 @@
             if (isGas) inFlightGasCount = Math.max(0, inFlightGasCount - 1);
         }
     };
-    
+
+    // ========================================================================
+    // 2.4 เอนจินจัดการรูปภาพแผนงาน PM (ย่อรูป <canvas>, อัปโหลด Drive, ลบรูปเก่า & ดึงไฟล์แชร์ LINE)
+    // ========================================================================
+    function getPmAuthPayloadFields() {
+        const authUser = (rawGet('elec_app_current_user') || rawGet(PM_LAST_USER_KEY) || '').trim();
+        const authToken = (
+            rawGet('elec_app_session_token') ||
+            rawGet('elec_app_auth_token') ||
+            rawGet('elec_tech_session_token') ||
+            ''
+        ).trim();
+        return { authUser, authToken };
+    }
+
+    async function postPmGasAction(payload) {
+        const apiUrl = getActivePmCloudUrl();
+        if (!apiUrl || !apiUrl.includes('script.google.com')) {
+            throw new Error('ไม่พบลิงก์ Google Apps Script สำหรับจัดการรูปภาพ');
+        }
+        if (Core?.unlockCloudWrite) Core.unlockCloudWrite(20000);
+        const authFields = getPmAuthPayloadFields();
+        const bodyObj = {
+            ...authFields,
+            group: getActivePmGroup(),
+            ...payload
+        };
+        const res = await window.fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(bodyObj)
+        });
+        const data = await res.json().catch(() => null);
+        if (!data) throw new Error(`เซิร์ฟเวอร์ตอบกลับผิดรูปแบบ (HTTP ${res.status})`);
+        return data;
+    }
+
+    function loadImageElementFromFile(file) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            let objUrl = '';
+            try { objUrl = URL.createObjectURL(file); } catch (e) {}
+            if (objUrl) {
+                img.onload = () => { URL.revokeObjectURL(objUrl); resolve(img); };
+                img.onerror = () => {
+                    URL.revokeObjectURL(objUrl);
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                        const img2 = new Image();
+                        img2.onload = () => resolve(img2);
+                        img2.onerror = () => reject(new Error('อ่านไฟล์รูปภาพไม่สำเร็จ'));
+                        img2.src = ev.target.result;
+                    };
+                    reader.onerror = () => reject(new Error('อ่านไฟล์รูปภาพไม่สำเร็จ'));
+                    reader.readAsDataURL(file);
+                };
+                img.src = objUrl;
+            } else {
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject(new Error('อ่านไฟล์รูปภาพไม่สำเร็จ'));
+                    img.src = ev.target.result;
+                };
+                reader.onerror = () => reject(new Error('อ่านไฟล์รูปภาพไม่สำเร็จ'));
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    async function compressImageFileForPm(file) {
+        if (!file || !String(file.type || '').startsWith('image/')) {
+            throw new Error('กรุณาเลือกเฉพาะไฟล์รูปภาพเท่านั้น');
+        }
+        const img = await loadImageElementFromFile(file);
+        let w = img.naturalWidth || img.width || 800;
+        let h = img.naturalHeight || img.height || 600;
+        if (w > PM_PHOTO_MAX_DIM || h > PM_PHOTO_MAX_DIM) {
+            const ratio = Math.min(PM_PHOTO_MAX_DIM / w, PM_PHOTO_MAX_DIM / h);
+            w = Math.max(1, Math.round(w * ratio));
+            h = Math.max(1, Math.round(h * ratio));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', PM_PHOTO_QUALITY);
+        const blob = await new Promise(res => {
+            if (typeof canvas.toBlob === 'function') {
+                canvas.toBlob(b => res(b), 'image/jpeg', PM_PHOTO_QUALITY);
+            } else {
+                res(null);
+            }
+        });
+        return { dataUrl, blob };
+    }
+
+    async function uploadSinglePmPhotoFile(file, labelHint = 'PM') {
+        const { dataUrl, blob } = await compressImageFileForPm(file);
+        const cleanHint = String(labelHint || 'Plan').replace(/[\\/:*?"<>|#%\r\n]+/g, '_').slice(0, 28).trim() || 'Plan';
+        const res = await postPmGasAction({
+            action: 'uploadJobPhoto',
+            jobLabel: `PM_${cleanHint}`,
+            mimeType: 'image/jpeg',
+            base64Data: dataUrl
+        });
+        if (!res || res.status === 'error' || res.ok === false || !res.fileId) {
+            throw new Error(res?.message || 'อัปโหลดรูปขึ้น Google Drive ไม่สำเร็จ');
+        }
+        if (blob) rememberPmPhotoBlob(res.fileId, blob);
+        return String(res.fileId).trim();
+    }
+
+    function trashUnusedPmPhotoIdsInBackground(candidateIds) {
+        const ids = normalizePmPhotoIds(candidateIds);
+        if (!ids.length || !isUserCurrentlyLoggedIn() || safeIsViewer()) return;
+        loadPmPlansFromStorage();
+        const stillUsed = new Set();
+        pmPlans.forEach(p => {
+            if (p && !p.pmDeleted) normalizePmPhotoIds(p).forEach(fid => stillUsed.add(fid));
+        });
+        const unusedIds = ids.filter(fid => !stillUsed.has(fid));
+        if (!unusedIds.length) return;
+        unusedIds.forEach(fid => pmPhotoBlobCache.delete(fid));
+        postPmGasAction({ action: 'deleteJobPhoto', fileIds: unusedIds }).catch(() => {});
+    }
+
+    function base64ToBlobPm(b64Str, mimeType = 'image/jpeg') {
+        const bin = atob(String(b64Str || '').replace(/\s+/g, ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: mimeType });
+    }
+
+    async function fetchPmPhotoFilesForShare(photoIds) {
+        const cleanIds = normalizePmPhotoIds(photoIds);
+        if (!cleanIds.length) return [];
+
+        const blobById = new Map();
+        const missingIds = [];
+        cleanIds.forEach(fid => {
+            if (pmPhotoBlobCache.has(fid)) blobById.set(fid, pmPhotoBlobCache.get(fid));
+            else missingIds.push(fid);
+        });
+
+        // ดึงผ่าน Apps Script แบบรวมชุดเดียวก่อน (ปลอดปัญหา CORS 100% บนมือถือทุกเครื่อง)
+        if (missingIds.length > 0 && navigator.onLine !== false) {
+            try {
+                const gasRes = await postPmGasAction({ action: 'getJobPhotoBase64', fileIds: missingIds });
+                if (gasRes && Array.isArray(gasRes.files)) {
+                    gasRes.files.forEach(f => {
+                        if (f?.fileId && f.base64Data) {
+                            const b = base64ToBlobPm(f.base64Data, f.mimeType || 'image/jpeg');
+                            rememberPmPhotoBlob(f.fileId, b);
+                            blobById.set(f.fileId, b);
+                        }
+                    });
+                }
+            } catch (e) {}
+        }
+
+        // Fallback กรณีหลังบ้านยังไม่ได้อัปเดตฟังก์ชันเสริม ให้ลองดึงตรงจากลิงก์ภาพ Drive
+        const stillMissing = cleanIds.filter(fid => !blobById.has(fid));
+        if (stillMissing.length > 0 && navigator.onLine !== false) {
+            await Promise.all(stillMissing.map(async fid => {
+                for (const url of [getPmPhotoDirectUrl(fid, 1280), getPmPhotoThumbUrl(fid, 1000)]) {
+                    try {
+                        const r = await fetch(url, { mode: 'cors', credentials: 'omit' });
+                        if (r.ok) {
+                            const b = await r.blob();
+                            if (b && b.size > 0 && String(b.type || '').startsWith('image/')) {
+                                rememberPmPhotoBlob(fid, b);
+                                blobById.set(fid, b);
+                                break;
+                            }
+                        }
+                    } catch (e) {}
+                }
+            }));
+        }
+
+        const files = [];
+        cleanIds.forEach((fid, idx) => {
+            const b = blobById.get(fid);
+            if (!b) return;
+            const ext = String(b.type || '').includes('png') ? 'png' : 'jpg';
+            try {
+                files.push(new File([b], `PEA_PM_${idx + 1}.${ext}`, { type: b.type || 'image/jpeg' }));
+            } catch (e) {}
+        });
+        return files;
+    }
+
+    function buildPmPhotoStripHtml(item, sizeMode = 'card') {
+        const pIds = normalizePmPhotoIds(item);
+        if (!pIds.length) return '';
+        const safePlanId = String(item.id || '').replace(/'/g, "\\'");
+        const boxCls = sizeMode === 'popup'
+            ? 'w-14 h-14 rounded-lg'
+            : (sizeMode === 'banner' ? 'w-11 h-11 rounded-lg' : 'w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] rounded-xl');
+        const thumbs = pIds.map((fid, idx) => {
+            const thumbSrc = safeEscHtml(getPmPhotoThumbUrl(fid, 400));
+            const fallbackSrc = safeEscHtml(getPmPhotoDirectUrl(fid, 800));
+            return `<button type="button" onclick="event.stopPropagation(); openPmPhotoLightbox('${safePlanId}', ${idx})" title="แตะเพื่อขยายดูรูปที่ ${idx + 1}/${pIds.length}" class="relative ${boxCls} overflow-hidden border border-slate-300 bg-slate-100 shrink-0 group shadow-sm hover:ring-2 hover:ring-indigo-500 transition"><img src="${thumbSrc}" loading="lazy" onerror="if(!this.dataset.fbk){this.dataset.fbk='1';this.src='${fallbackSrc}';}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"><span class="absolute bottom-0.5 right-0.5 bg-slate-900/80 text-white text-[8.5px] font-extrabold px-1 rounded">${idx + 1}/${pIds.length}</span></button>`;
+        }).join('');
+        return `<div class="flex items-center gap-1.5 overflow-x-auto py-0.5">${thumbs}</div>`;
+    }
+
     async function savePmPlansAndSync(pushCloud = true) {
         rememberActiveAuthForLoggedOutAlerts();
         pmPlans = prunePmPlansArray(pmPlans);
@@ -656,7 +949,7 @@
         } finally { isSyncingPmInternal = false; }
         if (typeof refreshPmAllViews === 'function') refreshPmAllViews();
         checkAndTriggerScheduledPmAlerts(false);
-        
+
         if (pushCloud && !isEmbed) {
             const targetSeq = ++pendingPmSyncSeq;
             hasPendingPmCloudSync = true;
@@ -673,7 +966,7 @@
                     fallbackCloudTimer = setTimeout(() => runFallbackCheck(attempt + 1), 2500);
                     return;
                 }
-                const apiUrl = (typeof window.getActiveCloudApiUrl === 'function' ? window.getActiveCloudApiUrl() : rawGet(PM_LAST_API_URL_KEY) || '').trim();
+                const apiUrl = getActivePmCloudUrl();
                 if (apiUrl && apiUrl.includes('script.google.com')) {
                     loadPmPlansFromStorage();
                     const freshLocMap = writePmShardsIntoLocMap(safeGetLocMap());
@@ -683,6 +976,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
+                            ...getPmAuthPayloadFields(),
                             action: 'patchDelta',
                             group: targetGroupParam,
                             techLocDelta: { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', techLocations: freshLocMap, updatedAt: new Date().toISOString() }
@@ -697,6 +991,7 @@
             fallbackCloudTimer = setTimeout(() => runFallbackCheck(0), 5000);
         }
     }
+
     function syncPmPlansFromLocationsMap() {
         if (isSyncingPmInternal) return false;
         const locMap = safeGetLocMap(), incomingList = [];
@@ -716,7 +1011,7 @@
             const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
             return pins.filter(p => p?.id && p.dueDate && !delMap[p.id] && ((role === 'admin' && !explicitGroup) || normPmGrp(p.ownerGroup || 'กฟส.บึง') === getActivePmGroup()))
                 .map(p => ({
-                    id: 'scada_due_' + p.id, isScadaPinDue: true, linkedPinId: p.id,
+                    id: 'scada_due_' + p.id, isScadaPinDue: true, linkedPinId: p.id, photoIds: [],
                     title: `ครบกำหนดหมุด: ${p.name}`, category: 'scada', pinColor: 'auto',
                     alertMode: 'standard', customAlertTimes: [],
                     date: String(p.dueDate).trim(), timeSlot: '08.30 น.', notifyDaysBefore: 3,
@@ -912,14 +1207,15 @@
         if (typeof showPmAlertSummaryModal === 'function') showPmAlertSummaryModal(roundTitle, triggeredItems);
     }
     // ===== จบพาทที่ 3 / 6 ของไฟล์ pm-calendar.js =====
-    // ===== เริ่มพาทที่ 4 / 6 ของไฟล์ pm-calendar.js (วางทับพาทที่ 4 / 6 เดิม) =====
+
+    // ===== เริ่มพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 4. สไตล์ชีต, แถบเครื่องมือผัง SCADA & แบนเนอร์แจ้งเตือนหน้าช่าง
+    // 4. สไตล์ชีต, แถบเครื่องมือผัง SCADA, แบนเนอร์หน้าช่าง & บอลลูนหมุดพร้อมรูปภาพ
     // ========================================================================
     let isQuickInlineBoxVisible = false;
     let desktopModalWidthMode = '65vw';
 
-            function injectPmCalendarStyles() {
+    function injectPmCalendarStyles() {
         if (document.getElementById('peaPmCalendarStyles')) return;
         const st = document.createElement('style');
         st.id = 'peaPmCalendarStyles';
@@ -989,6 +1285,7 @@
             .pm-plan-pin-head { position: relative; z-index: 2; width: 30px; height: 30px; border-radius: 10px 10px 10px 3px; transform: rotate(-45deg); border: 2.5px solid #ffffff; box-shadow: 0 4px 10px rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; }
             .pm-plan-pin-head > span { transform: rotate(45deg); font-size: 15px; line-height: 1; }
             .pm-plan-pin-date { position: absolute; top: -9px; right: -12px; z-index: 4; background: #0f172a; color: #fde047; border: 1.5px solid #ffffff; border-radius: 9999px; padding: 0 4px; font-size: 8.5px; font-weight: 800; line-height: 13px; white-space: nowrap; box-shadow: 0 2px 5px rgba(0,0,0,0.4); }
+            .pm-plan-pin-cam { position: absolute; bottom: 5px; left: -5px; z-index: 4; background: #4f46e5; color: #ffffff; border: 1.5px solid #ffffff; border-radius: 9999px; width: 15px; height: 15px; font-size: 8.5px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.35); }
             .pm-plan-pin-pulse { position: absolute; top: -3px; left: -1px; width: 36px; height: 36px; border-radius: 9999px; animation: pmPinRingWave 1.7s infinite ease-out; pointer-events: none; z-index: 1; }
             @keyframes pmPinRingWave { 0% { transform: scale(0.8); opacity: 0.9; } 100% { transform: scale(1.65); opacity: 0; } }
             .pm-plan-pin-moving .pm-plan-pin-head { box-shadow: 0 0 0 4px #22d3ee, 0 6px 14px rgba(0,0,0,0.5) !important; }
@@ -1006,7 +1303,7 @@
         `;
         document.head.appendChild(st);
     }
-    
+
     function setPmDesktopModalWidth(widthVal) {
         desktopModalWidthMode = widthVal || '65vw';
         const dlg = document.querySelector('#pmCalendarModal .pm-calendar-dialog');
@@ -1099,29 +1396,34 @@
         }
         stripWrap.classList.remove('hidden');
         const allowDone = canCompletePmTask();
-        const rowsHtml = isTechStripCollapsed ? '' : `<div class="p-2.5 space-y-1.5 bg-white max-h-48 overflow-y-auto">${candidates.slice(0, 6).map(item => {
-            const cat = getCategoryMeta(item.category), alCfg = getPlanEffectiveAlertConfig(item), safeId = String(item.id).replace(/'/g, "\\'"), hasCoord = !isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon));
+        const rowsHtml = isTechStripCollapsed ? '' : `<div class="p-2.5 space-y-1.5 bg-white max-h-56 overflow-y-auto">${candidates.slice(0, 6).map(item => {
+            const cat = getCategoryMeta(item.category), alCfg = getPlanEffectiveAlertConfig(item), safeId = String(item.id).replace(/'/g, "\\'"), hasCoord = !isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon)), pCount = normalizePmPhotoIds(item).length;
             const badge = item.daysLeft < 0 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">เลย ${Math.abs(item.daysLeft)} วัน</span>` : (item.daysLeft === 0 ? `<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">📌 วันนี้</span>` : `<span class="bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold px-1.5 py-0.5 rounded">อีก ${item.daysLeft} วัน</span>`);
-            return `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs"><div class="min-w-0 flex-1"><div class="flex items-center gap-1.5 flex-wrap">${badge}<span class="font-bold text-slate-800 truncate">${cat.icon} ${safeEscHtml(item.title)}</span><span class="text-[10px] text-indigo-700 font-semibold">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[10px] text-teal-700 font-semibold mt-0.5">⚡ ${safeEscHtml(item.equipCode)}</div>` : ''}</div><div class="flex items-center gap-1 shrink-0">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">✅ เสร็จ</button>` : ''}</div></div>`;
+            return `<div class="p-2 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs"><div class="min-w-0 flex-1 space-y-1"><div class="flex items-center gap-1.5 flex-wrap">${badge}<span class="font-bold text-slate-800 truncate">${cat.icon} ${safeEscHtml(item.title)}</span><span class="text-[10px] text-indigo-700 font-semibold">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[10px] text-teal-700 font-semibold">⚡ ${safeEscHtml(item.equipCode)}</div>` : ''}${pCount > 0 ? buildPmPhotoStripHtml(item, 'banner') : ''}</div><div class="flex items-center gap-1 shrink-0">${pCount > 0 ? `<button type="button" onclick="openPmPhotoLightbox('${safeId}', 0)" class="bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 px-2 py-1 rounded-lg text-[10px] font-bold">🖼️ รูป (${pCount})</button>` : ''}${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-bold">✅ เสร็จ</button>` : ''}</div></div>`;
         }).join('')}</div>`;
         const nextBannerHtml = `<div class="rounded-2xl border-2 border-indigo-400/80 overflow-hidden shadow-sm bg-white"><div class="bg-gradient-to-r from-indigo-900 via-blue-900 to-teal-800 px-3 py-2 text-white flex items-center justify-between gap-2"><div onclick="openPmCalendarModal()" class="cursor-pointer flex items-center gap-1.5 min-w-0 flex-1"><span>📅</span><span class="text-xs font-extrabold truncate">หมุดแผนบำรุงรักษา (PM): แจ้งเตือน ${candidates.length} รายการ</span></div><div class="flex items-center gap-1 shrink-0"><button type="button" onclick="openPmCalendarModal()" class="bg-white/20 hover:bg-white/30 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">ปฏิทิน/แมพ</button><button type="button" onclick="togglePmTechStripCollapse()" class="bg-white/15 hover:bg-white/25 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">${isTechStripCollapsed ? '🔽 ขยาย' : '🔼 ย่อ'}</button></div></div>${rowsHtml}</div>`;
         if (nextBannerHtml !== lastRenderedTechStripSig || stripWrap.innerHTML === '') { stripWrap.innerHTML = nextBannerHtml; lastRenderedTechStripSig = nextBannerHtml; }
     }
 
     // ========================================================================
-    // 5. เอนจินวาด "หมุดแผนงาน" บนแผนที่ (จับแมพเดิมอัตโนมัติ + ซ่อนป๊อปอัปก่อนโฟกัสแมพทุกหน้า)
+    // 5. เอนจินวาด "หมุดแผนงาน" บนแผนที่ (พร้อมสัญลักษณ์กล้อง & รูปตัวอย่างในป๊อปอัป)
     // ========================================================================
     function buildPmPlanMarkerIcon(item, isMovingThis = false) {
         const vis = getPlanPinVisualTheme(item), daysLeft = calcDaysUntil(item.date, getTodayIso()), isUrgent = item.status !== 'done' && daysLeft <= 0;
+        const hasPhotos = normalizePmPhotoIds(item).length > 0;
         const pulseHtml = isUrgent ? `<div class="pm-plan-pin-pulse" style="background:${daysLeft < 0 ? 'rgba(225,29,72,0.58)' : 'rgba(245,158,11,0.58)'};"></div>` : '';
-        return L.divIcon({ className: isMovingThis ? 'pm-plan-pin-moving' : '', html: `<div class="pm-plan-pin-wrap" style="${item.status === 'done' ? 'opacity:0.55;filter:grayscale(0.5);' : ''}">${pulseHtml}<div class="pm-plan-pin-date">${safeEscHtml(formatThaiDayMonthShort(item.date))}</div><div class="pm-plan-pin-head" style="background:${vis.grad};"><span>${vis.icon}</span></div></div>`, iconSize: [34, 40], iconAnchor: [17, 34], popupAnchor: [0, -32] });
+        const camBadge = hasPhotos ? `<div class="pm-plan-pin-cam">📷</div>` : '';
+        return L.divIcon({ className: isMovingThis ? 'pm-plan-pin-moving' : '', html: `<div class="pm-plan-pin-wrap" style="${item.status === 'done' ? 'opacity:0.55;filter:grayscale(0.5);' : ''}">${pulseHtml}<div class="pm-plan-pin-date">${safeEscHtml(formatThaiDayMonthShort(item.date))}</div>${camBadge}<div class="pm-plan-pin-head" style="background:${vis.grad};"><span>${vis.icon}</span></div></div>`, iconSize: [34, 40], iconAnchor: [17, 34], popupAnchor: [0, -32] });
     }
 
     function buildPmPlanPopupHtml(item) {
         const vis = getPlanPinVisualTheme(item), alCfg = getPlanEffectiveAlertConfig(item), daysLeft = calcDaysUntil(item.date, getTodayIso()), isDone = item.status === 'done', safeId = String(item.id).replace(/'/g, "\\'");
+        const pCount = normalizePmPhotoIds(item).length;
         const statusTag = isDone ? '<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">✅ เสร็จสิ้นแล้ว</span>' : (daysLeft < 0 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">🚨 เลยกำหนด ${Math.abs(daysLeft)} วัน</span>` : (daysLeft === 0 ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 กำหนดวันนี้</span>' : `<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-full">🗓️ อีก ${daysLeft} วัน</span>`));
         const allowEdit = !item.isScadaPinDue && canManagePmSchedule(), allowDone = !item.isScadaPinDue && canCompletePmTask();
-        return `<div style="font-family:'Prompt',sans-serif;min-width:245px;" class="space-y-1.5 text-xs"><div class="flex items-center justify-between gap-1"><span class="px-2 py-0.5 rounded text-white text-[10px] font-extrabold" style="background:${vis.hex}">${vis.icon} หมุดแผนงาน PM</span>${statusTag}</div><div class="font-extrabold text-slate-900 text-sm break-words pt-0.5">${safeEscHtml(item.title)}</div><div class="text-[11px] text-slate-600 space-y-0.5"><div>📅 <b>วันที่:</b> ${formatThaiDateFull(item.date)} (${safeEscHtml(item.timeSlot || '-')})</div><div>⏰ <b>เวลาเตือน:</b> <span class="text-indigo-700 font-bold">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div>⚡ <b>อุปกรณ์:</b> ${safeEscHtml(item.equipCode)} ${item.feeder ? `(วงจร ${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div>📝 <b>รายละเอียด:</b> ${safeEscHtml(item.note)}</div>` : ''}</div><div class="pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="navigatePmPlanGps('${safeId}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">🗺️ นำทาง Maps</button><button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" style="background:#00B900;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">💬 แชร์ LINE</button>${allowDone ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="col-span-2" style="background:${isDone ? '#64748b' : '#059669'};color:#fff;padding:5px 8px;border-radius:8px;font-weight:800;font-size:11px;">${isDone ? '↩️ คืนสถานะรอดำเนินการ' : '✅ บันทึกดำเนินงานเสร็จสิ้น'}</button>` : ''}${allowEdit ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">✏️ แก้ไข/ตั้งเวลา</button><button type="button" onclick="startMovePmPlanPinOnMap('${safeId}')" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">📍 ย้ายจุดหมุด</button>` : ''}</div></div>`;
+        const photoStripHtml = pCount > 0 ? `<div class="pt-1">${buildPmPhotoStripHtml(item, 'popup')}</div>` : '';
+        const lineBtnLabel = pCount > 0 ? `💬 ส่ง LINE + ${pCount} รูป` : '💬 แชร์ LINE';
+        return `<div style="font-family:'Prompt',sans-serif;min-width:250px;" class="space-y-1.5 text-xs"><div class="flex items-center justify-between gap-1"><span class="px-2 py-0.5 rounded text-white text-[10px] font-extrabold" style="background:${vis.hex}">${vis.icon} หมุดแผนงาน PM</span>${statusTag}</div><div class="font-extrabold text-slate-900 text-sm break-words pt-0.5">${safeEscHtml(item.title)}</div><div class="text-[11px] text-slate-600 space-y-0.5"><div>📅 <b>วันที่:</b> ${formatThaiDateFull(item.date)} (${safeEscHtml(item.timeSlot || '-')})</div><div>⏰ <b>เวลาเตือน:</b> <span class="text-indigo-700 font-bold">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div>⚡ <b>อุปกรณ์:</b> ${safeEscHtml(item.equipCode)} ${item.feeder ? `(วงจร ${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div>📝 <b>รายละเอียด:</b> ${safeEscHtml(item.note)}</div>` : ''}</div>${photoStripHtml}<div class="pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="navigatePmPlanGps('${safeId}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">🗺️ นำทาง Maps</button><button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" style="background:#00B900;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">${lineBtnLabel}</button>${allowDone ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="col-span-2" style="background:${isDone ? '#64748b' : '#059669'};color:#fff;padding:5px 8px;border-radius:8px;font-weight:800;font-size:11px;">${isDone ? '↩️ คืนสถานะรอดำเนินการ' : '✅ บันทึกดำเนินงานเสร็จสิ้น'}</button>` : ''}${allowEdit ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">✏️ แก้ไข/รูปภาพ</button><button type="button" onclick="startMovePmPlanPinOnMap('${safeId}')" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">📍 ย้ายจุดหมุด</button>` : ''}</div></div>`;
     }
 
     function renderPmPinsOnTargetMap(mapInstance, layerGroup, storeObj, forExternalMap = true) {
@@ -1138,8 +1440,9 @@
             const ang = (idx * 55) * (Math.PI / 180), rad = idx > 0 ? 0.00011 * Math.ceil(idx / 5) : 0;
             const dispLat = baseLat + Math.sin(ang) * rad, dispLon = baseLon + Math.cos(ang) * rad;
             const isMoving = (pmPinMoveTargetId === item.id) && canManagePmSchedule(), vis = getPlanPinVisualTheme(item);
+            const photoSig = normalizePmPhotoIds(item).join(',');
             const tipHtml = `${vis.icon} ${safeEscHtml(item.title)} (${formatThaiDayMonthShort(item.date)})`, popupHtml = buildPmPlanPopupHtml(item);
-            const iconSig = `${item.status}|${item.date}|${vis.grad}|${vis.icon}|${calcDaysUntil(item.date, todayIso)}|${isMoving ? 1 : 0}`;
+            const iconSig = `${item.status}|${item.date}|${vis.grad}|${vis.icon}|${calcDaysUntil(item.date, todayIso)}|${isMoving ? 1 : 0}|${photoSig}`;
             const existing = storeObj[item.id];
             if (existing && Boolean(existing._pmIsMoving) === isMoving) {
                 const prevLL = existing.getLatLng();
@@ -1167,9 +1470,9 @@
         if (calendarMapInstance && calendarPmLayer) renderPmPinsOnTargetMap(calendarMapInstance, calendarPmLayer, calendarPmMarkersById, false);
     }
     function toggleShowPmPinsOnMaps() { showPmPinsOnMaps = !showPmPinsOnMaps; localStorage.setItem(PM_SHOW_MAP_PINS_KEY, String(showPmPinsOnMaps)); renderAllExternalPmMapLayers(); safeToast(showPmPinsOnMaps ? '📅 แสดงหมุดแผนงานบนแผนที่แล้ว' : '🚫 ซ่อนหมุดแผนงานชั่วคราว'); }
-    function cyclePmMapFilterMode() { pmMapFilterMode = pmMapFilterMode === 'pending' ? 'alert' : 'pending'; localStorage.setItem(PM_MAP_FILTER_MODE_KEY, pmMapFilterMode); renderAllExternalPmMapLayers(); }
+    function cyclePmMapFilterMode() { pmMapFilterMode = pmMapFilterMode === 'alert' ? 'alert' : 'pending'; pmMapFilterMode = pmMapFilterMode === 'pending' ? 'alert' : 'pending'; localStorage.setItem(PM_MAP_FILTER_MODE_KEY, pmMapFilterMode); renderAllExternalPmMapLayers(); }
 
-        function updatePinDropBannerOnMaps() {
+    function updatePinDropBannerOnMaps() {
         document.querySelectorAll('.pm-pin-drop-banner').forEach(el => el.remove());
         const isMove = Boolean(pmPinMoveTargetId), isAny = pmPinDropModeActive || isMove;
         ['labeledInteractiveMap', 'pmCalendarEmbeddedMap'].forEach(id => document.getElementById(id)?.classList.toggle('pm-pin-drop-active-map', isAny));
@@ -1188,7 +1491,7 @@
             wrap.appendChild(b);
         });
     }
-    
+
     function cancelPmMapInteractiveModes() { pmPinDropModeActive = false; pmPinMoveTargetId = null; updatePinDropBannerOnMaps(); renderAllExternalPmMapLayers(); }
     function togglePmPinDropMode(forceState, targetMapType = 'scada') {
         if (!canManagePmSchedule()) { safeToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่ปักหมุดแผนงานได้'); return; }
@@ -1241,11 +1544,10 @@
     }
 
     function bindSingleLeafletMapEvents(map) {
-    if (!map || map.__pmHookBound) return;
-    const mapDom = map.getContainer?.(),
-        containerId = mapDom?.id || '';
-    const isRepairMap = (containerId === 'repairJobsLeafletMap' || containerId === 'repairJobsMapCanvas');
-    if (containerId !== 'labeledInteractiveMap' && !isRepairMap) return;
+        if (!map || map.__pmHookBound) return;
+        const mapDom = map.getContainer?.(), containerId = mapDom?.id || '';
+        const isRepairMap = (containerId === 'repairJobsLeafletMap' || containerId === 'repairJobsMapCanvas');
+        if (containerId !== 'labeledInteractiveMap' && !isRepairMap) return;
         map.__pmHookBound = true;
         if (mapDom && !mapDom.__pmCtxGuardBound) {
             mapDom.__pmCtxGuardBound = true;
@@ -1279,46 +1581,46 @@
     }
 
     const probedLeafletContainerIds = new Set();
-        function discoverExistingLeafletMaps() {
-    if (typeof L === 'undefined' || !L.Map) return;
-    if (!scadaMapRef && window.__labeledLeafletMap) bindSingleLeafletMapEvents(window.__labeledLeafletMap);
-    if (scadaMapRef && repairMapRef) return;
-    let needResize = false;
-    [['labeledInteractiveMap', scadaMapRef], ['repairJobsMapCanvas', repairMapRef], ['repairJobsLeafletMap', repairMapRef]].forEach(([id, ref]) => {
-        if (ref || probedLeafletContainerIds.has(id)) return;
-        const el = document.getElementById(id);
-        if (el && (el._leaflet_id || el.classList.contains('leaflet-container'))) { probedLeafletContainerIds.add(id); needResize = true; }
-    });
-    if (needResize) setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
-}
-
-function bindLeafletMapHooks() {
-    if (typeof L === 'undefined' || !L.Map) return;
-    if (!L.Map.__pmInitHookAdded) {
-        L.Map.__pmInitHookAdded = true;
-        L.Map.addInitHook(function () { setTimeout(() => bindSingleLeafletMapEvents(this), 50); });
-        ['invalidateSize', 'setView', 'addLayer'].forEach(fnName => {
-            const orig = L.Map.prototype[fnName];
-            if (typeof orig === 'function' && !orig.__pmWrapped) {
-                const wrapped = function (...args) {
-                    if (!this.__pmHookBound) {
-                        const cid = this._container?.id || '';
-                        if (cid === 'labeledInteractiveMap' || cid === 'repairJobsMapCanvas' || cid === 'repairJobsLeafletMap') {
-                            setTimeout(() => bindSingleLeafletMapEvents(this), 0);
-                        }
-                    }
-                    return orig.apply(this, args);
-                };
-                wrapped.__pmWrapped = true; L.Map.prototype[fnName] = wrapped;
-            }
+    function discoverExistingLeafletMaps() {
+        if (typeof L === 'undefined' || !L.Map) return;
+        if (!scadaMapRef && window.__labeledLeafletMap) bindSingleLeafletMapEvents(window.__labeledLeafletMap);
+        if (scadaMapRef && repairMapRef) return;
+        let needResize = false;
+        [['labeledInteractiveMap', scadaMapRef], ['repairJobsMapCanvas', repairMapRef], ['repairJobsLeafletMap', repairMapRef]].forEach(([id, ref]) => {
+            if (ref || probedLeafletContainerIds.has(id)) return;
+            const el = document.getElementById(id);
+            if (el && (el._leaflet_id || el.classList.contains('leaflet-container'))) { probedLeafletContainerIds.add(id); needResize = true; }
         });
+        if (needResize) setTimeout(() => window.dispatchEvent(new Event('resize')), 60);
     }
-    discoverExistingLeafletMaps();
-}
+
+    function bindLeafletMapHooks() {
+        if (typeof L === 'undefined' || !L.Map) return;
+        if (!L.Map.__pmInitHookAdded) {
+            L.Map.__pmInitHookAdded = true;
+            L.Map.addInitHook(function () { setTimeout(() => bindSingleLeafletMapEvents(this), 50); });
+            ['invalidateSize', 'setView', 'addLayer'].forEach(fnName => {
+                const orig = L.Map.prototype[fnName];
+                if (typeof orig === 'function' && !orig.__pmWrapped) {
+                    const wrapped = function (...args) {
+                        if (!this.__pmHookBound) {
+                            const cid = this._container?.id || '';
+                            if (cid === 'labeledInteractiveMap' || cid === 'repairJobsMapCanvas' || cid === 'repairJobsLeafletMap') {
+                                setTimeout(() => bindSingleLeafletMapEvents(this), 0);
+                            }
+                        }
+                        return orig.apply(this, args);
+                    };
+                    wrapped.__pmWrapped = true; L.Map.prototype[fnName] = wrapped;
+                }
+            });
+        }
+        discoverExistingLeafletMaps();
+    }
     // ===== จบพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
-    // ===== เริ่มพาทที่ 5 / 6 ของไฟล์ pm-calendar.js (วางทับพาทที่ 5 / 6 เดิม) =====
+        // ===== เริ่มพาทที่ 5 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 6. สร้าง DOM หน้าต่างปฏิทิน (65% บนคอม) & ปุ่มสลับเตือนรัวซ้ำทุกนาที
+    // 6. สร้าง DOM ปฏิทิน, ช่องแนบรูป 3 รูป, ตัวดูภาพเต็มจอ (Lightbox) & ส่งรูปเข้า LINE
     // ========================================================================
     function injectPmModalsDOM() {
         if (document.getElementById('pmCalendarModal')) return;
@@ -1328,7 +1630,7 @@ function bindLeafletMapHooks() {
         document.body.insertAdjacentHTML('beforeend', `
             <div id="pmCalendarModal" class="fixed inset-0 bg-slate-950/70 hidden z-[1320] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm"><div class="pm-calendar-dialog bg-white rounded-2xl shadow-2xl w-full max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200" style="--pm-desktop-w: 65vw;">
                 <div class="px-4 py-3 bg-gradient-to-r from-indigo-900 via-blue-800 to-teal-700 text-white flex flex-wrap justify-between items-center gap-2 shrink-0">
-                    <div class="flex items-center gap-2"><span class="text-lg">📅</span><div><h3 class="font-bold text-sm sm:text-base flex items-center gap-2"><span>ปฏิทิน &amp; หมุดแผนงานบำรุงรักษา (PM)</span><span id="pmHeaderGroupBadge" class="bg-white/20 text-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-md">-</span></h3><p class="text-[10px] text-blue-100">ตั้งเวลาเตือนรายแผนงานอิสระ + รอบ 00.00 / 07.00 น. (ทำงานแม้อยู่หน้าล็อกอิน)</p></div></div>
+                    <div class="flex items-center gap-2"><span class="text-lg">📅</span><div><h3 class="font-bold text-sm sm:text-base flex items-center gap-2"><span>ปฏิทิน &amp; หมุดแผนงานบำรุงรักษา (PM)</span><span id="pmHeaderGroupBadge" class="bg-white/20 text-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-md">-</span></h3><p class="text-[10px] text-blue-100">แนบรูปหน้างานสูงสุด 3 รูป + ตั้งเวลาเตือนอิสระ + ส่งรูปจริงเข้า LINE</p></div></div>
                     <div class="flex flex-wrap items-center gap-1.5">
                         <div class="hidden lg:inline-flex items-center bg-slate-900/45 border border-white/20 rounded-xl p-0.5 mr-1"><button type="button" id="pmDesktopWBtn-65vw" onclick="setPmDesktopModalWidth('65vw')" class="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-extrabold text-[10px]">65%</button><button type="button" id="pmDesktopWBtn-80vw" onclick="setPmDesktopModalWidth('80vw')" class="px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]">80%</button><button type="button" id="pmDesktopWBtn-95vw" onclick="setPmDesktopModalWidth('95vw')" class="px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]">95%</button></div>
                         <button type="button" id="pmNotifPermBtn" onclick="requestPmBrowserNotificationPermission()" class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold">📲 แจ้งเตือนเครื่อง</button>
@@ -1359,6 +1661,20 @@ function bindLeafletMapHooks() {
                     <div class="p-3 bg-indigo-50/85 border border-indigo-200 rounded-xl space-y-2"><label class="block font-extrabold text-indigo-950">⏰ เงื่อนไขเวลาแจ้งเตือนของงานนี้</label><select id="pmAlertModeSelect" onchange="onPmAlertModeChange(this.value)" class="w-full px-2.5 py-2 bg-white font-bold text-indigo-900 border-indigo-300"><option value="standard">🔔 มาตรฐาน (เตือนรอบ 00:00 น. และ 07:00 น.)</option><option value="both">🔔+⏰ เตือนรอบมาตรฐาน + เวลาที่ตั้งเองด้านล่าง</option><option value="custom_only">⏰ เตือนเฉพาะเวลาที่ตั้งเองเท่านั้น</option><option value="off">🔕 ปิดเสียง/ปิดป๊อปอัปแจ้งเตือนสำหรับงานนี้</option></select><div id="pmCustomTimesSection" class="hidden space-y-2 pt-1"><div class="flex items-center gap-1.5"><input type="time" id="pmCustomTimePickerInput" value="08:30" class="flex-1 px-2.5 py-1.5 bg-white font-mono font-bold text-slate-800 border-indigo-300"><button type="button" onclick="addPmCustomTimeChip()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-sm">➕ เพิ่มเวลาเตือน</button></div><div class="flex flex-wrap gap-1 items-center"><span class="text-[10px] text-slate-500 font-semibold">ด่วน:</span>${presetTimesBtns}</div><div id="pmCustomTimeChipsWrap" class="flex flex-wrap gap-1.5 pt-0.5"></div></div></div>
                     <div class="p-2.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-2"><label class="block font-bold text-teal-900">⚡ ผูกกับหมุดอุปกรณ์ในผัง SCADA (ดึงพิกัดอัตโนมัติ)</label><select id="pmScadaPinPicker" onchange="onPmScadaEquipPick(this.value)" class="w-full px-2.5 py-1.5 bg-white text-xs font-semibold text-slate-700"><option value="">-- เลือกอุปกรณ์จากผัง SCADA --</option></select><div class="grid grid-cols-2 gap-2"><input type="text" id="pmEquipCodeInput" placeholder="รหัสอุปกรณ์ เช่น BNF06VS-01" class="px-2.5 py-1.5 bg-white font-semibold"><input type="text" id="pmFeederInput" placeholder="วงจร เช่น BNF06" class="px-2.5 py-1.5 bg-white font-semibold uppercase"></div></div>
                     <div class="space-y-1.5"><div class="flex flex-wrap items-center justify-between gap-1"><label class="font-bold text-slate-700">📍 พิกัดหมุดแผนงาน</label><div class="flex gap-1"><button type="button" onclick="togglePmFormMiniMap()" class="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-lg font-bold">🗺️ จิ้มเลือกบนแมพ</button><button type="button" onclick="fillPmCurrentMobileGps()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg font-bold">📍 พิกัดฉัน</button></div></div><input type="text" id="pmCoordInput" oninput="onPmCoordTextManualInput(this.value)" placeholder="วางพิกัด เช่น 13.1361, 101.0322 หรือลิงก์ Google Maps" class="w-full px-3 py-2 bg-white font-mono"><div id="pmFormMiniMapWrap" class="hidden rounded-xl overflow-hidden border-2 border-indigo-300"><div class="bg-indigo-900 text-white text-[10px] font-bold px-2.5 py-1 flex justify-between"><span>👆 แตะบนแผนที่หรือลากหมุดเพื่อเลือกจุดปฏิบัติงาน</span><button type="button" onclick="togglePmFormMiniMap(false)">✕ ซ่อนแมพ</button></div><div id="pmFormMiniLeafletMap" class="w-full h-44 bg-slate-100"></div></div></div>
+                    <div class="p-3 bg-violet-50/80 border border-violet-200 rounded-xl space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <label class="font-extrabold text-violet-950 flex items-center gap-1">📷 รูปภาพประกอบหน้างาน <span id="pmModalPhotoCountBadge" class="bg-violet-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">0/${MAX_PM_PHOTOS}</span></label>
+                            <div class="flex items-center gap-1">
+                                <button type="button" id="pmModalBtnCamera" onclick="triggerPmPhotoInput('modal', 'camera')" class="bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow-sm">📸 ถ่ายรูป</button>
+                                <button type="button" id="pmModalBtnGallery" onclick="triggerPmPhotoInput('modal', 'gallery')" class="bg-white hover:bg-violet-100 text-violet-800 border border-violet-300 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow-sm">🖼️ เลือกรูป</button>
+                            </div>
+                        </div>
+                        <input type="file" id="pmModalCameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePmModalPhotoSelect(event)">
+                        <input type="file" id="pmModalGalleryInput" accept="image/*" multiple class="hidden" onchange="handlePmModalPhotoSelect(event)">
+                        <div id="pmModalPhotoUploadStatus" class="hidden text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg animate-pulse">⏳ กำลังย่อขนาดและอัปโหลดรูปภาพขึ้นคลาวด์...</div>
+                        <div id="pmModalPhotoPreviewWrap" class="flex flex-wrap gap-2"></div>
+                        <p class="text-[10px] text-slate-500">แนบได้สูงสุด ${MAX_PM_PHOTOS} รูป (เมื่อกดส่ง LINE บนมือถือ ระบบจะแนบไฟล์รูปจริงพร้อมคัดลอกข้อความให้อัตโนมัติ)</p>
+                    </div>
                     <div><label class="block font-bold text-slate-700 mb-1">👷 ผู้รับผิดชอบ / รายละเอียดงาน</label><textarea id="pmNoteInput" rows="2" placeholder="ระบุผู้รับผิดชอบ หรือสิ่งที่ต้องเตรียม..." class="w-full px-3 py-2 bg-white"></textarea></div>
                 </div>
                 <div class="p-3 bg-slate-50 border-t flex items-center justify-between gap-2"><button type="button" id="pmDeleteBtnInModal" onclick="deletePmPlanFromModal()" class="hidden px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs">🗑️ ลบหมุดแผน</button><div class="flex gap-2 ml-auto"><button type="button" onclick="closePmPlanFormModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" id="pmSaveSubmitBtn" onclick="savePmPlanFromModal()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs shadow">💾 บันทึกหมุดแผนงาน</button></div></div>
@@ -1368,11 +1684,251 @@ function bindLeafletMapHooks() {
                 <div class="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-2 text-[11px]"><span id="pmAlertRepeatStatusHint" class="font-extrabold text-rose-700">🔊 เตือนซ้ำทุก 1 นาที จนกว่าจะกดรับทราบ</span><button type="button" id="pmPopupRepeatMinToggleBtn" onclick="togglePmRepeatEveryMinSetting()" class="shrink-0 bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded-lg font-extrabold text-[10.5px] shadow-sm transition">🔁 เตือนซ้ำ: เปิด</button></div>
                 <div id="pmAlertPopupBody" class="p-4 space-y-2 overflow-y-auto flex-1 bg-slate-50 text-xs"></div>
                 <div class="p-3 bg-white border-t flex flex-wrap items-center justify-between gap-2"><button type="button" onclick="shareDailyOrAlertSummaryToLine()" class="px-3 py-2 bg-[#00B900] hover:bg-[#009900] text-white rounded-xl text-xs font-extrabold">💬 ส่งเข้า LINE</button><div class="flex gap-1.5"><button type="button" id="pmAlertModalCalOrLoginBtn" onclick="document.getElementById('pmAlertPopupModal').classList.add('hidden'); openPmCalendarModal();" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold">📅 ดูปฏิทิน/แมพ</button><button type="button" onclick="acknowledgeCurrentPmAlertRound()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold shadow">✅ รับทราบรอบนี้</button></div></div>
-            </div></div>`);
+            </div></div>
+                       <div id="pmPhotoLightboxModal" onclick="if(event.target===this) closePmPhotoLightbox();" class="fixed inset-0 bg-slate-950/92 hidden z-[1490] flex flex-col items-center justify-between p-3 sm:p-5 backdrop-blur-md select-none">
+                <div class="w-full max-w-3xl flex items-center justify-between gap-2 text-white pt-[env(safe-area-inset-top)]">
+                    <span id="pmLightboxCounter" class="bg-white/15 px-3 py-1 rounded-full text-xs font-extrabold">รูปที่ 1 / 1</span>
+                    <button type="button" onclick="closePmPhotoLightbox()" class="bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-1 rounded-xl text-xs font-extrabold shadow">✕ ปิดรูป</button>
+                </div>
+                <div class="relative flex-1 w-full max-w-4xl flex items-center justify-center my-2 overflow-hidden">
+                    <button type="button" id="pmLightboxPrevBtn" onclick="stepPmPhotoLightbox(-1)" class="hidden absolute left-2 z-10 w-10 h-10 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white border border-white/30 font-extrabold text-base items-center justify-center shadow-xl">◀</button>
+                    <img id="pmLightboxImg" src="" alt="รูปประกอบแผนงาน PM" class="max-w-full max-h-[75dvh] object-contain rounded-xl shadow-2xl border border-white/15">
+                    <button type="button" id="pmLightboxNextBtn" onclick="stepPmPhotoLightbox(1)" class="hidden absolute right-2 z-10 w-10 h-10 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white border border-white/30 font-extrabold text-base items-center justify-center shadow-xl">▶</button>
+                </div>
+                <div class="w-full max-w-xl flex flex-wrap items-center justify-center gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                    <a id="pmLightboxDriveLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-white/15 hover:bg-white/25 text-white px-3.5 py-2 rounded-xl text-xs font-bold border border-white/20">🔗 เปิดไฟล์ต้นฉบับ Drive</a>
+                    <button type="button" id="pmLightboxShareLineBtn" onclick="shareFromPmPhotoLightbox()" class="hidden bg-[#00B900] hover:bg-[#009900] text-white px-4 py-2 rounded-xl text-xs font-extrabold shadow-lg">💬 ส่งรูป+ข้อความเข้า LINE</button>
+                </div>
+            </div>
+            <div id="pmLineShareReadyModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1495] flex items-center justify-center p-4 backdrop-blur-sm">
+                <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-5 space-y-3.5 border-2 border-[#00B900] text-center">
+                    <div class="text-3xl">📸💬</div>
+                    <h4 class="font-extrabold text-slate-900 text-sm">เตรียมรูปภาพและคัดลอกข้อความแล้ว!</h4>
+                    <p id="pmLineShareReadyDesc" class="text-xs text-slate-600 leading-relaxed">ระบบคัดลอกข้อความแผนงานไว้ในคลิปบอร์ดแล้ว แตะปุ่มสีเขียวด้านล่างเพื่อเลือกแอป <b>LINE</b> ส่งรูปภาพ จากนั้นกด<b>วางข้อความ</b>ในแชทได้เลยครับ</p>
+                    <div class="space-y-2 pt-1">
+                        <button type="button" onclick="confirmPendingPmLineFileShare()" class="w-full bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-2.5 rounded-xl text-xs shadow-lg">💬 แตะเพื่อส่งรูปภาพเข้า LINE</button>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="fallbackPendingPmLineTextOnly()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-[11px]">ส่งเฉพาะข้อความ+ลิงก์</button>
+                            <button type="button" onclick="closePmLineShareReadyModal()" class="px-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold py-2 rounded-xl text-[11px]">ยกเลิก</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`);
     }
 
     // ========================================================================
-    // 7. ช่องพิมพ์แผนงานด่วน (กันปุ่มบันทึกค้างเมื่อเน็ตสะดุด + พิมพ์ด้วยเสียง)
+    // 6.2 ฟังก์ชันจัดการเลือกรูป, พรีวิวรูปย่อ & เปิดขยายภาพเต็มจอ (Lightbox)
+    // ========================================================================
+    function renderPmModalPhotoPreviews() {
+        const wrap = document.getElementById('pmModalPhotoPreviewWrap');
+        const badge = document.getElementById('pmModalPhotoCountBadge');
+        const camBtn = document.getElementById('pmModalBtnCamera');
+        const galBtn = document.getElementById('pmModalBtnGallery');
+        tempFormPhotoIds = normalizePmPhotoIds(tempFormPhotoIds);
+        if (badge) badge.textContent = `${tempFormPhotoIds.length}/${MAX_PM_PHOTOS}`;
+        const isFull = tempFormPhotoIds.length >= MAX_PM_PHOTOS || isUploadingModalPhotos;
+        if (camBtn) camBtn.disabled = isFull;
+        if (galBtn) galBtn.disabled = isFull;
+        if (!wrap) return;
+        if (!tempFormPhotoIds.length) {
+            wrap.innerHTML = '<span class="text-[10.5px] text-slate-400 italic">ยังไม่มีรูปแนบ</span>';
+            return;
+        }
+        wrap.innerHTML = tempFormPhotoIds.map((fid, idx) => {
+            const thumbSrc = safeEscHtml(getPmPhotoThumbUrl(fid, 400));
+            const fallbackSrc = safeEscHtml(getPmPhotoDirectUrl(fid, 800));
+            return `<div class="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-violet-300 bg-white shadow-sm group"><img src="${thumbSrc}" onclick="openPmRawPhotoLightbox(${idx}, 'modal')" onerror="if(!this.dataset.fbk){this.dataset.fbk='1';this.src='${fallbackSrc}';}" class="w-full h-full object-cover cursor-pointer"><button type="button" onclick="removePmModalPhotoAt(${idx})" title="ลบรูปนี้" class="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold flex items-center justify-center shadow">&times;</button><span class="pointer-events-none absolute bottom-0.5 left-1 bg-slate-900/75 text-white text-[9px] font-bold px-1 rounded">${idx + 1}</span></div>`;
+        }).join('');
+    }
+
+    function renderPmQuickPhotoPreviews() {
+        const wrap = document.getElementById('pmQuickPhotoPreviewWrap');
+        const cntEl = document.getElementById('pmQuickPhotoCountTxt');
+        tempQuickPhotoIds = normalizePmPhotoIds(tempQuickPhotoIds);
+        if (cntEl) cntEl.textContent = `${tempQuickPhotoIds.length}/${MAX_PM_PHOTOS}`;
+        if (!wrap) return;
+        if (!tempQuickPhotoIds.length) {
+            wrap.classList.add('hidden');
+            wrap.innerHTML = '';
+            return;
+        }
+        wrap.classList.remove('hidden');
+        wrap.innerHTML = tempQuickPhotoIds.map((fid, idx) => {
+            const thumbSrc = safeEscHtml(getPmPhotoThumbUrl(fid, 320));
+            const fallbackSrc = safeEscHtml(getPmPhotoDirectUrl(fid, 600));
+            return `<div class="relative w-14 h-14 rounded-xl overflow-hidden border border-violet-300 bg-white shadow-sm shrink-0"><img src="${thumbSrc}" onclick="openPmRawPhotoLightbox(${idx}, 'quick')" onerror="if(!this.dataset.fbk){this.dataset.fbk='1';this.src='${fallbackSrc}';}" class="w-full h-full object-cover cursor-pointer"><button type="button" onclick="removePmQuickPhotoAt(${idx})" class="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] font-extrabold flex items-center justify-center">&times;</button></div>`;
+        }).join('');
+    }
+
+    function triggerPmPhotoInput(targetMode, sourceType) {
+        if (!canManagePmSchedule()) return;
+        const curList = targetMode === 'quick' ? tempQuickPhotoIds : tempFormPhotoIds;
+        if (curList.length >= MAX_PM_PHOTOS) {
+            safeToast(`⚠️ แนบรูปภาพได้สูงสุด ${MAX_PM_PHOTOS} รูปต่อ 1 แผนงานครับ`);
+            return;
+        }
+        const inputId = targetMode === 'quick'
+            ? (sourceType === 'camera' ? 'pmQuickCameraInput' : 'pmQuickGalleryInput')
+            : (sourceType === 'camera' ? 'pmModalCameraInput' : 'pmModalGalleryInput');
+        const inp = document.getElementById(inputId);
+        if (inp) { inp.value = ''; inp.click(); }
+    }
+
+    async function handlePmModalPhotoSelect(event) {
+        const files = Array.from(event?.target?.files || []);
+        if (event?.target) event.target.value = '';
+        if (!files.length || !canManagePmSchedule()) return;
+        const remain = MAX_PM_PHOTOS - tempFormPhotoIds.length;
+        if (remain <= 0) { safeToast(`⚠️ แนบรูปครบ ${MAX_PM_PHOTOS} รูปแล้ว`); return; }
+        const picked = files.slice(0, remain);
+        if (files.length > remain) safeToast(`ℹ️ เลือกเพิ่มได้อีก ${remain} รูป (สูงสุด ${MAX_PM_PHOTOS} รูป/แผนงาน)`);
+
+        const statusEl = document.getElementById('pmModalPhotoUploadStatus');
+        isUploadingModalPhotos = true;
+        statusEl?.classList.remove('hidden');
+        renderPmModalPhotoPreviews();
+
+        const titleHint = (document.getElementById('pmTitleInput')?.value || 'PM').trim();
+        let okCount = 0;
+        try {
+            for (let i = 0; i < picked.length; i++) {
+                if (statusEl) statusEl.textContent = `⏳ กำลังอัปโหลดรูปที่ ${i + 1}/${picked.length}...`;
+                const fid = await uploadSinglePmPhotoFile(picked[i], titleHint);
+                if (fid) {
+                    tempFormPhotoIds.push(fid);
+                    sessionModalUploadedIds.push(fid);
+                    okCount++;
+                    renderPmModalPhotoPreviews();
+                }
+            }
+            if (okCount > 0) safeToast(`📷 แนบรูปภาพสำเร็จ ${okCount} รูป`);
+        } catch (err) {
+            safeToast(`❌ อัปโหลดรูปไม่สำเร็จ: ${err?.message || err}`);
+        } finally {
+            isUploadingModalPhotos = false;
+            statusEl?.classList.add('hidden');
+            renderPmModalPhotoPreviews();
+        }
+    }
+
+    function removePmModalPhotoAt(idx) {
+        const removed = tempFormPhotoIds.splice(idx, 1)[0];
+        renderPmModalPhotoPreviews();
+        if (removed && sessionModalUploadedIds.includes(removed) && !originalEditingPhotoIds.includes(removed)) {
+            sessionModalUploadedIds = sessionModalUploadedIds.filter(id => id !== removed);
+            trashUnusedPmPhotoIdsInBackground([removed]);
+        }
+    }
+
+    async function handlePmQuickPhotoSelect(event) {
+        const files = Array.from(event?.target?.files || []);
+        if (event?.target) event.target.value = '';
+        if (!files.length || !canManagePmSchedule()) return;
+        const remain = MAX_PM_PHOTOS - tempQuickPhotoIds.length;
+        if (remain <= 0) { safeToast(`⚠️ แนบรูปครบ ${MAX_PM_PHOTOS} รูปแล้ว`); return; }
+        const picked = files.slice(0, remain);
+
+        const statusEl = document.getElementById('pmQuickPhotoUploadStatus');
+        isUploadingQuickPhotos = true;
+        statusEl?.classList.remove('hidden');
+        const titleHint = (document.getElementById('pmQuickTitleInput')?.value || 'PM').trim();
+        let okCount = 0;
+        try {
+            for (let i = 0; i < picked.length; i++) {
+                if (statusEl) statusEl.textContent = `⏳ กำลังอัปโหลดรูป ${i + 1}/${picked.length}...`;
+                const fid = await uploadSinglePmPhotoFile(picked[i], titleHint);
+                if (fid) {
+                    tempQuickPhotoIds.push(fid);
+                    okCount++;
+                    renderPmQuickPhotoPreviews();
+                }
+            }
+            if (okCount > 0) safeToast(`📷 แนบรูปด่วนสำเร็จ ${okCount} รูป`);
+        } catch (err) {
+            safeToast(`❌ อัปโหลดรูปไม่สำเร็จ: ${err?.message || err}`);
+        } finally {
+            isUploadingQuickPhotos = false;
+            statusEl?.classList.add('hidden');
+            renderPmQuickPhotoPreviews();
+        }
+    }
+
+    function removePmQuickPhotoAt(idx) {
+        const removed = tempQuickPhotoIds.splice(idx, 1)[0];
+        renderPmQuickPhotoPreviews();
+        if (removed) trashUnusedPmPhotoIdsInBackground([removed]);
+    }
+
+    function refreshPmLightboxView() {
+        const modal = document.getElementById('pmPhotoLightboxModal');
+        const imgEl = document.getElementById('pmLightboxImg');
+        const cntEl = document.getElementById('pmLightboxCounter');
+        const prevBtn = document.getElementById('pmLightboxPrevBtn');
+        const nextBtn = document.getElementById('pmLightboxNextBtn');
+        const driveLink = document.getElementById('pmLightboxDriveLink');
+        const shareBtn = document.getElementById('pmLightboxShareLineBtn');
+        if (!modal || !imgEl || !lightboxPhotoIds.length) return;
+
+        const fid = lightboxPhotoIds[lightboxActiveIdx] || lightboxPhotoIds[0];
+        delete imgEl.dataset.fbk;
+        imgEl.onerror = function () {
+            if (!this.dataset.fbk) {
+                this.dataset.fbk = '1';
+                this.src = getPmPhotoThumbUrl(fid, 1200);
+            }
+        };
+        imgEl.src = getPmPhotoDirectUrl(fid, 1600);
+        if (cntEl) cntEl.textContent = `📷 รูปที่ ${lightboxActiveIdx + 1} / ${lightboxPhotoIds.length}`;
+        if (driveLink) driveLink.href = getPmPhotoDriveViewUrl(fid);
+        const hasMulti = lightboxPhotoIds.length > 1;
+        if (prevBtn) { prevBtn.classList.toggle('hidden', !hasMulti); prevBtn.classList.toggle('flex', hasMulti); }
+        if (nextBtn) { nextBtn.classList.toggle('hidden', !hasMulti); nextBtn.classList.toggle('flex', hasMulti); }
+        if (shareBtn) shareBtn.classList.toggle('hidden', !lightboxSourcePlanId);
+        modal.classList.remove('hidden');
+    }
+
+    function openPmPhotoLightbox(planId, startIdx = 0) {
+        injectPmModalsDOM();
+        const item = getAllVisibleCalendarItems().find(x => x.id === planId);
+        const pIds = normalizePmPhotoIds(item);
+        if (!pIds.length) return;
+        lightboxPhotoIds = pIds;
+        lightboxActiveIdx = Math.max(0, Math.min(Number(startIdx) || 0, pIds.length - 1));
+        lightboxSourcePlanId = planId;
+        refreshPmLightboxView();
+    }
+
+    function openPmRawPhotoLightbox(startIdx = 0, mode = 'modal') {
+        injectPmModalsDOM();
+        const pIds = normalizePmPhotoIds(mode === 'quick' ? tempQuickPhotoIds : tempFormPhotoIds);
+        if (!pIds.length) return;
+        lightboxPhotoIds = pIds;
+        lightboxActiveIdx = Math.max(0, Math.min(Number(startIdx) || 0, pIds.length - 1));
+        lightboxSourcePlanId = '';
+        refreshPmLightboxView();
+    }
+
+    function stepPmPhotoLightbox(delta) {
+        if (lightboxPhotoIds.length <= 1) return;
+        lightboxActiveIdx = (lightboxActiveIdx + delta + lightboxPhotoIds.length) % lightboxPhotoIds.length;
+        refreshPmLightboxView();
+    }
+
+    function closePmPhotoLightbox() {
+        document.getElementById('pmPhotoLightboxModal')?.classList.add('hidden');
+        const imgEl = document.getElementById('pmLightboxImg');
+        if (imgEl) imgEl.src = '';
+    }
+
+    function shareFromPmPhotoLightbox() {
+        if (!lightboxSourcePlanId) return;
+        const pid = lightboxSourcePlanId;
+        closePmPhotoLightbox();
+        shareSinglePmPlanToLine(pid);
+    }
+
+    // ========================================================================
+    // 7. ช่องพิมพ์แผนงานด่วน (รองรับแนบรูปสูงสุด 3 รูป + พิมพ์ด้วยเสียง)
     // ========================================================================
     function syncQuickAlertTimeLabel() {
         const inp = document.getElementById('pmQuickAlertTimeInput'), ph = document.getElementById('pmQuickAlertTimePlaceholder'), clr = document.getElementById('pmQuickAlertTimeClearBtn');
@@ -1394,9 +1950,30 @@ function bindLeafletMapHooks() {
             <div class="relative flex items-center gap-1.5"><div class="relative flex-1"><input type="text" id="pmQuickTitleInput" onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitQuickInlinePmPlan(); }" placeholder="🏷️ พิมพ์ชื่อแผนงาน..." class="w-full px-3 py-2 pr-9 text-xs font-semibold text-slate-800 bg-white border border-indigo-300 rounded-xl focus:outline-none"><button type="button" onclick="startPmQuickVoiceInput()" title="พูดเพื่อพิมพ์แผนงาน" class="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 p-1 text-sm leading-none">🎙️</button></div><button type="button" id="pmQuickSubmitBtn" onclick="submitQuickInlinePmPlan()" class="shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-3 py-2 rounded-xl text-xs shadow-sm transition">💾 บันทึก</button></div>
             <div class="grid grid-cols-12 gap-2 items-end"><div class="col-span-7"><label for="pmQuickCategorySelect" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">📂 ประเภทงาน</label><select id="pmQuickCategorySelect" class="w-full px-2 py-1.5 text-[11px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg">${catOptions}</select></div><div class="col-span-5"><label for="pmQuickTimeInput" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">🕒 ช่วงเวลาทำงาน</label><input type="text" id="pmQuickTimeInput" value="09.00-12.00" placeholder="09.00-12.00" class="w-full px-2 py-1.5 text-[11px] font-semibold text-center text-slate-700 bg-white border border-slate-300 rounded-lg"></div></div>
             <div class="bg-amber-50/95 border border-amber-300 rounded-xl px-2.5 py-1.5 flex items-center justify-between gap-2"><label for="pmQuickAlertTimeInput" class="text-[11px] font-extrabold text-amber-900 flex items-center gap-1 shrink-0 cursor-pointer"><span>🔔 เวลาเตือนพิเศษ:</span></label><div class="flex items-center gap-1 flex-1 justify-end min-w-0"><div class="relative flex-1 max-w-[155px]"><input type="time" id="pmQuickAlertTimeInput" onclick="if(this.showPicker){try{this.showPicker();}catch(e){}}" onchange="syncQuickAlertTimeLabel()" oninput="syncQuickAlertTimeLabel()" title="ตั้งเวลาเตือนพิเศษเฉพาะงานนี้ (เว้นว่าง = เตือนรอบ 00:00 และ 07:00 น.)" class="w-full px-2.5 py-1 text-[11px] font-mono font-extrabold text-indigo-900 bg-white border border-amber-400 rounded-lg focus:outline-none cursor-pointer"><span id="pmQuickAlertTimePlaceholder" class="pointer-events-none absolute inset-y-[2px] left-2 right-6 flex items-center gap-1 bg-white text-[10.5px] font-bold text-amber-700 truncate">⏰ แตะตั้งเวลา</span></div><button type="button" id="pmQuickAlertTimeClearBtn" onclick="clearQuickAlertTimeInput()" title="ล้างเวลาเตือนพิเศษ" class="hidden shrink-0 w-6 h-6 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-600 border border-rose-200 font-extrabold text-xs items-center justify-center">&times;</button></div></div>
-            <div><label for="pmQuickCoordInput" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">📍 พิกัดหมุดแผนงาน (ถ้ามี)</label><input type="text" id="pmQuickCoordInput" onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitQuickInlinePmPlan(); }" placeholder="วางพิกัด Lat, Lon หรือลิงก์ Google Maps" class="w-full px-2.5 py-1.5 text-[10.5px] font-mono text-slate-700 bg-white border border-slate-300 rounded-lg"></div>`;
+            <div><label for="pmQuickCoordInput" class="block text-[10px] font-bold text-slate-600 mb-0.5 pl-0.5">📍 พิกัดหมุดแผนงาน (ถ้ามี)</label><input type="text" id="pmQuickCoordInput" onkeydown="if(event.key==='Enter'){ event.preventDefault(); submitQuickInlinePmPlan(); }" placeholder="วางพิกัด Lat, Lon หรือลิงก์ Google Maps" class="w-full px-2.5 py-1.5 text-[10.5px] font-mono text-slate-700 bg-white border border-slate-300 rounded-lg"></div>
+            <div class="bg-violet-50/90 border border-violet-200 rounded-xl px-2.5 py-1.5 space-y-1.5">
+                <div class="flex items-center justify-between gap-1.5">
+                    <span class="text-[10.5px] font-extrabold text-violet-900">📷 รูปประกอบ (<span id="pmQuickPhotoCountTxt">0/${MAX_PM_PHOTOS}</span>)</span>
+                    <div class="flex items-center gap-1">
+                        <button type="button" onclick="triggerPmPhotoInput('quick', 'camera')" class="bg-violet-600 hover:bg-violet-700 text-white px-2 py-0.5 rounded-lg text-[10px] font-bold">📸 ถ่ายรูป</button>
+                        <button type="button" onclick="triggerPmPhotoInput('quick', 'gallery')" class="bg-white hover:bg-violet-100 text-violet-800 border border-violet-300 px-2 py-0.5 rounded-lg text-[10px] font-bold">🖼️ เลือกรูป</button>
+                    </div>
+                </div>
+                <input type="file" id="pmQuickCameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePmQuickPhotoSelect(event)">
+                <input type="file" id="pmQuickGalleryInput" accept="image/*" multiple class="hidden" onchange="handlePmQuickPhotoSelect(event)">
+                <div id="pmQuickPhotoUploadStatus" class="hidden text-[10px] font-bold text-amber-700 animate-pulse">⏳ กำลังอัปโหลดรูป...</div>
+                <div id="pmQuickPhotoPreviewWrap" class="hidden flex items-center gap-1.5 overflow-x-auto pt-0.5"></div>
+            </div>`;
         listHdr.parentElement.insertBefore(box, listHdr);
         syncQuickAlertTimeLabel(); updateQuickInlineBoxUI();
+    }
+
+    function discardUnsavedQuickPhotos() {
+        if (!tempQuickPhotoIds.length) return;
+        const unsaved = [...tempQuickPhotoIds];
+        tempQuickPhotoIds = [];
+        renderPmQuickPhotoPreviews();
+        trashUnusedPmPhotoIdsInBackground(unsaved);
     }
 
     function updateQuickInlineBoxUI() {
@@ -1414,9 +1991,11 @@ function bindLeafletMapHooks() {
     function togglePmQuickInlineBox(forceState) {
         if (!canManagePmSchedule()) { safeToast('🔒 เฉพาะแอดมินและผู้ใช้งานทั่วไปเท่านั้นที่เพิ่มแผนงานได้'); return; }
         injectQuickAddBoxIntoCalendar();
-        isQuickInlineBoxVisible = typeof forceState === 'boolean' ? forceState : !isQuickInlineBoxVisible;
+        const nextState = typeof forceState === 'boolean' ? forceState : !isQuickInlineBoxVisible;
+        if (!nextState && isQuickInlineBoxVisible) discardUnsavedQuickPhotos();
+        isQuickInlineBoxVisible = nextState;
         if (isQuickInlineBoxVisible && currentFilterStatus !== 'day') { currentFilterStatus = 'day'; renderPmSelectedDayList(); }
-        syncQuickAlertTimeLabel(); updateQuickInlineBoxUI();
+        syncQuickAlertTimeLabel(); renderPmQuickPhotoPreviews(); updateQuickInlineBoxUI();
         if (isQuickInlineBoxVisible) setTimeout(() => document.getElementById('pmQuickTitleInput')?.focus(), 60);
     }
     function focusQuickInlineInputForDate(isoStr) {
@@ -1437,9 +2016,18 @@ function bindLeafletMapHooks() {
     }
     function expandQuickInputToFullModal() {
         if (!canManagePmSchedule()) return;
+        if (isUploadingQuickPhotos) { safeToast('⏳ กรุณารออัปโหลดรูปสักครู่ก่อนขยายฟอร์ม'); return; }
         const typedTitle = (document.getElementById('pmQuickTitleInput')?.value || '').trim(), typedCat = document.getElementById('pmQuickCategorySelect')?.value || 'tree';
         const typedTime = (document.getElementById('pmQuickTimeInput')?.value || '').trim(), typedAlertTime = normalizeTimeHHMM(document.getElementById('pmQuickAlertTimeInput')?.value || ''), typedCoord = (document.getElementById('pmQuickCoordInput')?.value || '').trim();
+        const carriedPhotos = [...tempQuickPhotoIds];
+        tempQuickPhotoIds = [];
+        renderPmQuickPhotoPreviews();
         openPmPlanFormModal(null, selectedDateIso || getTodayIso());
+        if (carriedPhotos.length > 0) {
+            tempFormPhotoIds = normalizePmPhotoIds(carriedPhotos);
+            sessionModalUploadedIds.push(...tempFormPhotoIds);
+            renderPmModalPhotoPreviews();
+        }
         if (typedTitle) document.getElementById('pmTitleInput').value = typedTitle;
         if (typedCat) document.getElementById('pmCategorySelect').value = typedCat;
         if (typedTime) document.getElementById('pmTimeSlotInput').value = typedTime;
@@ -1449,6 +2037,7 @@ function bindLeafletMapHooks() {
 
     async function submitQuickInlinePmPlan() {
         if (!canManagePmSchedule()) return;
+        if (isUploadingQuickPhotos) { safeToast('⏳ กรุณารออัปโหลดรูปภาพให้เสร็จก่อนกดบันทึกครับ'); return; }
         const titleEl = document.getElementById('pmQuickTitleInput'), catEl = document.getElementById('pmQuickCategorySelect');
         const timeEl = document.getElementById('pmQuickTimeInput'), alertTimeEl = document.getElementById('pmQuickAlertTimeInput');
         const coordEl = document.getElementById('pmQuickCoordInput'), submitBtn = document.getElementById('pmQuickSubmitBtn');
@@ -1465,8 +2054,10 @@ function bindLeafletMapHooks() {
         }
         const targetDate = selectedDateIso || getTodayIso(), customT = normalizeTimeHHMM(alertTimeEl?.value || ''), myGrp = getActivePmGroup();
         const curUser = (rawGet('elec_app_current_user') || 'admin').trim(), nowIso = nextPmUpdatedIso(safeGetLocMap()[PM_LOC_PREFIX + myGrp]?.updatedAt);
+        const finalQuickPhotos = normalizePmPhotoIds(tempQuickPhotoIds);
         const newPlan = {
             id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title: rawTitle, category: catEl?.value || 'tree', pinColor: 'auto',
+            photoIds: finalQuickPhotos,
             alertMode: customT ? 'both' : 'standard', customAlertTimes: customT ? [customT] : [], alertBaselineAt: getMinuteFloorIso(), createdAt: nowIso, date: targetDate,
             timeSlot: (timeEl?.value || '').trim() || '09.00-12.00', notifyDaysBefore: 3, repeatMonths: 0, equipCode: '', feeder: '', note: '',
             lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null,
@@ -1474,10 +2065,11 @@ function bindLeafletMapHooks() {
             status: 'pending', ownerGroup: myGrp, createdBy: curUser, updatedBy: curUser, updatedAt: nowIso
         };
         loadPmPlansFromStorage(); pmPlans.push(newPlan); preAckPastSlotsForPlanToday(newPlan);
+        tempQuickPhotoIds = []; renderPmQuickPhotoPreviews();
         if (titleEl) titleEl.value = ''; if (coordEl) coordEl.value = ''; if (alertTimeEl) alertTimeEl.value = '';
         syncQuickAlertTimeLabel(); currentFilterStatus = 'day';
         await savePmPlansAndSync(true);
-        safeToast(`✅ บันทึกแผนงานวันที่ ${formatThaiDateShort(targetDate)} เรียบร้อยแล้ว`);
+        safeToast(`✅ บันทึกแผนงานวันที่ ${formatThaiDateShort(targetDate)}${finalQuickPhotos.length ? ` (พร้อมรูป ${finalQuickPhotos.length} รูป)` : ''} เรียบร้อยแล้ว`);
         titleEl?.focus();
     }
 
@@ -1495,7 +2087,7 @@ function bindLeafletMapHooks() {
     }
 
     // ========================================================================
-    // 8. ตารางปฏิทินรายเดือน (65% จอคอม), แผนที่หมุดแผนงาน & รายการงานรายวัน
+    // 8. ตารางปฏิทินรายเดือน, แผนที่หมุดแผนงาน & การ์ดงานรายวันพร้อมแถบรูปภาพ
     // ========================================================================
     async function initCalendarEmbeddedMap() {
         const mapEl = document.getElementById('pmCalendarEmbeddedMap'); if (!mapEl) return;
@@ -1556,7 +2148,7 @@ function bindLeafletMapHooks() {
         const scrollWrap = calModal?.querySelector('.pm-desktop-split');
         if (scrollWrap) { scrollWrap.scrollTop = 0; requestAnimationFrame(() => { scrollWrap.scrollTop = 0; }); }
     }
-    function closePmCalendarModal() { isQuickInlineBoxVisible = false; cancelPmMapInteractiveModes(); document.getElementById('pmCalendarModal')?.classList.add('hidden'); }
+    function closePmCalendarModal() { discardUnsavedQuickPhotos(); isQuickInlineBoxVisible = false; cancelPmMapInteractiveModes(); document.getElementById('pmCalendarModal')?.classList.add('hidden'); }
     function changePmCalendarMonth(delta) { const d = new Date(viewYear, viewMonth + delta, 1); viewYear = d.getFullYear(); viewMonth = d.getMonth(); renderPmCalendarGrid(); renderPmSelectedDayList(); }
     function jumpPmCalendarToday() { const now = new Date(); viewYear = now.getFullYear(); viewMonth = now.getMonth(); selectedDateIso = toLocalIsoDate(now); currentFilterStatus = 'day'; renderPmCalendarGrid(); renderPmSelectedDayList(); updateQuickInlineBoxUI(); }
     function selectPmCalendarDate(isoStr) { selectedDateIso = isoStr; currentFilterStatus = 'day'; renderPmCalendarGrid(); renderPmSelectedDayList(); updateQuickInlineBoxUI(); }
@@ -1584,8 +2176,8 @@ function bindLeafletMapHooks() {
             const iso = `${monthPrefix}${String(day).padStart(2, '0')}`, dayTasks = byDate.get(iso) || [], isToday = (iso === todayIso), isSel = (iso === selectedDateIso);
             const hasOverdue = dayTasks.some(t => t.status !== 'done' && calcDaysUntil(t.date, todayIso) < 0);
             const barsHtml = dayTasks.slice(0, 3).map(t => {
-                const vis = getPlanPinVisualTheme(t), doneStyle = t.status === 'done' ? 'opacity:0.45;text-decoration:line-through;' : '', pinDot = (!isNaN(parseFloat(t.lat)) && !isNaN(parseFloat(t.lon))) ? '📍' : '';
-                return `<div class="truncate text-[9.5px] text-white font-bold px-1 rounded leading-tight" style="background:${vis.hex};${doneStyle}">${pinDot}${vis.icon} ${safeEscHtml(t.title)}</div>`;
+                const vis = getPlanPinVisualTheme(t), doneStyle = t.status === 'done' ? 'opacity:0.45;text-decoration:line-through;' : '', pinDot = (!isNaN(parseFloat(t.lat)) && !isNaN(parseFloat(t.lon))) ? '📍' : '', camDot = normalizePmPhotoIds(t).length > 0 ? '📷' : '';
+                return `<div class="truncate text-[9.5px] text-white font-bold px-1 rounded leading-tight" style="background:${vis.hex};${doneStyle}">${pinDot}${camDot}${vis.icon} ${safeEscHtml(t.title)}</div>`;
             }).join('');
             const moreHtml = dayTasks.length > 3 ? `<div class="text-[9px] font-extrabold text-indigo-700 leading-none">+อีก ${dayTasks.length - 3} งาน</div>` : '';
             cells.push(`<div onclick="selectPmCalendarDate('${iso}')" class="cursor-pointer pm-day-cell rounded-xl border p-1 flex flex-col items-stretch text-left bg-white ${isSel ? 'pm-day-selected' : 'border-slate-200'} ${isToday ? 'ring-2 ring-amber-400' : ''}"><div class="flex items-center justify-between w-full mb-0.5"><span class="text-[11px] font-extrabold ${isToday ? 'bg-amber-400 text-slate-950 px-1.5 rounded-full' : 'text-slate-700'}">${day}</span>${hasOverdue ? '<span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>' : (dayTasks.length > 0 ? `<span class="text-[9px] font-bold text-slate-400">${dayTasks.length}</span>` : '')}</div><div class="space-y-0.5 overflow-hidden flex-1">${barsHtml}${moreHtml}</div></div>`);
@@ -1601,15 +2193,16 @@ function bindLeafletMapHooks() {
         if (currentFilterStatus === 'alert') { items = getAlertCandidatesForToday(); if (hdrEl) hdrEl.innerHTML = `<span>🔔 งานถึงกำหนด / เตือนล่วงหน้า (${items.length})</span>`; }
         else if (currentFilterStatus === 'all') { items = getAllVisibleCalendarItems().filter(it => String(it.date || '').startsWith(monthPrefix)); if (hdrEl) hdrEl.innerHTML = `<span>📋 แผนงานทั้งเดือน ${THAI_MONTHS[viewMonth]} (${items.length})</span>`; }
         else { items = getAllVisibleCalendarItems().filter(it => it.date === selectedDateIso); if (hdrEl) hdrEl.innerHTML = `<span>📌 ${formatThaiDateFull(selectedDateIso)} (${items.length} งาน)</span>`; }
-        if (!items.length) { listEl.innerHTML = `<div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-400">ยังไม่มีแผนงานในวันนี้ กดปุ่ม <b>➕ ปักแผนใหม่</b> ด้านบนเพื่อเพิ่มแผนงานได้เลยครับ</div>`; return; }
+        if (!items.length) { listEl.innerHTML = `<div class="text-center py-8 px-4 bg-slate-50 rounded-2xl border border-dashed border-slate-300 text-xs text-slate-400">ยังไม่มีแผนงานในวันนี้ กดปุ่ม <b>➕ ปักแผนใหม่</b> ด้านบนเพื่อเพิ่มแผนงานและรูปภาพได้เลยครับ</div>`; return; }
         const allowEdit = canManagePmSchedule(), allowDone = canCompletePmTask();
         listEl.innerHTML = items.map(item => {
             const cat = getCategoryMeta(item.category), alCfg = getPlanEffectiveAlertConfig(item), isDone = item.status === 'done';
             const daysLeft = calcDaysUntil(item.date, todayIso), safeId = String(item.id).replace(/'/g, "\\'"), hasCoord = !isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon));
+            const pCount = normalizePmPhotoIds(item).length;
             const dueBadge = isDone ? '<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full">✅ เสร็จแล้ว</span>'
                 : (daysLeft < 0 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">🚨 เลย ${Math.abs(daysLeft)} วัน</span>`
                 : (daysLeft === 0 ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 วันนี้</span>' : `<span class="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">อีก ${daysLeft} วัน</span>`));
-            return `<div class="p-3 rounded-2xl border ${isDone ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 shadow-sm'} space-y-1.5 text-xs"><div class="flex items-start justify-between gap-2"><div class="space-y-0.5 min-w-0 flex-1"><div class="flex items-center gap-1 flex-wrap"><span class="border text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.pillCls}">${cat.icon} ${cat.name}</span>${hasCoord ? '<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📍 มีหมุด</span>' : ''}</div><div ${(!item.isScadaPinDue && allowEdit) ? `onclick="quickEditPmPlanTitle('${safeId}')" title="คลิกเพื่อแก้ข้อความด่วน"` : ''} class="font-extrabold text-slate-800 text-xs sm:text-sm break-words ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:text-indigo-700' : ''} ${isDone ? 'line-through' : ''}">${safeEscHtml(item.title)}</div></div><div class="shrink-0 flex items-center gap-1">${dueBadge}${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="quickDeletePmPlanCard('${safeId}')" class="text-slate-300 hover:text-rose-600 font-bold text-sm px-1" title="ลบแผนงาน">&times;</button>` : ''}</div></div><div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600"><span>📅 ${formatThaiDateShort(item.date)} (${safeEscHtml(item.timeSlot || '-')})</span><span>• เตือนล่วงหน้า ${Number(item.notifyDaysBefore ?? 3)} วัน</span><span ${(!item.isScadaPinDue && allowEdit) ? `onclick="openPmPlanFormModal('${safeId}')" title="คลิกเพื่อตั้งเวลาเตือนของงานนี้"` : ''} class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.5 rounded font-bold text-[10px] ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:bg-indigo-100' : ''}">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[11px] font-bold text-teal-800">⚡ อุปกรณ์: ${safeEscHtml(item.equipCode)} ${item.feeder ? `(${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${safeEscHtml(item.note)}</div>` : ''}<div class="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5"><div class="flex flex-wrap gap-1">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">💬 LINE</button>${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg text-[10px] font-bold">✏️ แก้ไข/เวลาเตือน</button>` : ''}</div>${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="${isDone ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">${isDone ? '↩️ เปิดใหม่' : '✅ เสร็จสิ้น'}</button>` : ''}</div></div>`;
+            return `<div class="p-3 rounded-2xl border ${isDone ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 shadow-sm'} space-y-1.5 text-xs"><div class="flex items-start justify-between gap-2"><div class="space-y-0.5 min-w-0 flex-1"><div class="flex items-center gap-1 flex-wrap"><span class="border text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.pillCls}">${cat.icon} ${cat.name}</span>${hasCoord ? '<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📍 มีหมุด</span>' : ''}${pCount > 0 ? `<span onclick="openPmPhotoLightbox('${safeId}', 0)" class="cursor-pointer bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📷 ${pCount} รูป</span>` : ''}</div><div ${(!item.isScadaPinDue && allowEdit) ? `onclick="quickEditPmPlanTitle('${safeId}')" title="คลิกเพื่อแก้ข้อความด่วน"` : ''} class="font-extrabold text-slate-800 text-xs sm:text-sm break-words ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:text-indigo-700' : ''} ${isDone ? 'line-through' : ''}">${safeEscHtml(item.title)}</div></div><div class="shrink-0 flex items-center gap-1">${dueBadge}${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="quickDeletePmPlanCard('${safeId}')" class="text-slate-300 hover:text-rose-600 font-bold text-sm px-1" title="ลบแผนงาน">&times;</button>` : ''}</div></div><div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600"><span>📅 ${formatThaiDateShort(item.date)} (${safeEscHtml(item.timeSlot || '-')})</span><span>• เตือนล่วงหน้า ${Number(item.notifyDaysBefore ?? 3)} วัน</span><span ${(!item.isScadaPinDue && allowEdit) ? `onclick="openPmPlanFormModal('${safeId}')" title="คลิกเพื่อตั้งเวลาเตือนของงานนี้"` : ''} class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.5 rounded font-bold text-[10px] ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:bg-indigo-100' : ''}">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[11px] font-bold text-teal-800">⚡ อุปกรณ์: ${safeEscHtml(item.equipCode)} ${item.feeder ? `(${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${safeEscHtml(item.note)}</div>` : ''}${pCount > 0 ? buildPmPhotoStripHtml(item, 'card') : ''}<div class="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5"><div class="flex flex-wrap gap-1">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">${pCount > 0 ? `💬 LINE (${pCount} รูป)` : '💬 LINE'}</button>${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg text-[10px] font-bold">✏️ แก้ไข/รูป</button>` : ''}</div>${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="${isDone ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">${isDone ? '↩️ เปิดใหม่' : '✅ เสร็จสิ้น'}</button>` : ''}</div></div>`;
         }).join('');
     }
 
@@ -1624,8 +2217,9 @@ function bindLeafletMapHooks() {
         const loggedOutHeader = !isLogged ? `<div class="p-2.5 rounded-xl bg-slate-900 text-amber-300 border border-amber-400/60 text-[11px] font-bold">🔒 แจ้งเตือนอัตโนมัติขณะออกจากระบบ (🏢 ${safeEscHtml(getActivePmGroup())})</div>` : '';
         bodyEl.innerHTML = loggedOutHeader + candidates.map(c => {
             const cat = getCategoryMeta(c.category), alCfg = getPlanEffectiveAlertConfig(c), safeId = String(c.id).replace(/'/g, "\\'"), hasCoord = !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lon));
+            const pCount = normalizePmPhotoIds(c).length;
             const badge = c.daysLeft < 0 ? `<span class="bg-rose-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">เลยกำหนด ${Math.abs(c.daysLeft)} วัน</span>` : (c.daysLeft === 0 ? `<span class="bg-amber-500 text-slate-950 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 วันนี้ (${safeEscHtml(c.timeSlot || '-')})</span>` : `<span class="bg-sky-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">อีก ${c.daysLeft} วัน (${formatThaiDateShort(c.date)})</span>`);
-            return `<div class="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-1"><div class="flex items-center justify-between gap-2">${badge}<span class="text-[10px] font-bold text-indigo-700">${safeEscHtml(alCfg.badgeLabel)}</span></div><div class="font-extrabold text-slate-800 text-xs sm:text-sm">${cat.icon} ${safeEscHtml(c.title)}</div>${hasCoord ? `<div class="pt-1 flex gap-1.5">${isLogged ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุดบนแมพ</button>` : ''}<button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง Maps</button></div>` : ''}</div>`;
+            return `<div class="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-1.5"><div class="flex items-center justify-between gap-2">${badge}<span class="text-[10px] font-bold text-indigo-700">${safeEscHtml(alCfg.badgeLabel)}</span></div><div class="font-extrabold text-slate-800 text-xs sm:text-sm">${cat.icon} ${safeEscHtml(c.title)}</div>${pCount > 0 ? buildPmPhotoStripHtml(c, 'popup') : ''}<div class="pt-1 flex flex-wrap gap-1.5">${hasCoord && isLogged ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุดบนแมพ</button>` : ''}${hasCoord ? `<button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง Maps</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">${pCount > 0 ? `💬 LINE (${pCount} รูป)` : '💬 LINE'}</button></div></div>`;
         }).join('');
         const calOrLoginBtn = document.getElementById('pmAlertModalCalOrLoginBtn');
         if (calOrLoginBtn) {
@@ -1674,9 +2268,10 @@ function bindLeafletMapHooks() {
         };
     }
     // ===== จบพาทที่ 5 / 6 ของไฟล์ pm-calendar.js =====
-    // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js (วางทับพาทที่ 6 / 6 เดิม จนจบไฟล์) =====
+
+    // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 9. ตั้งเวลาเตือนรายแผนงาน, มินิแมพปลอด Race, แปลงลิงก์ปลอดภัย & บันทึก/ลบ/ทำซ้ำ
+    // 9. ฟอร์มบันทึกแผนงานพร้อมรูปภาพ + ส่งรูปจริงเข้า LINE คู่คัดลอกข้อความอัตโนมัติ
     // ========================================================================
     function renderPmCustomTimeChips() {
         const wrap = document.getElementById('pmCustomTimeChipsWrap'); if (!wrap) return;
@@ -1803,10 +2398,11 @@ function bindLeafletMapHooks() {
         const modal = document.getElementById('pmPlanFormModal'), titleHdr = document.getElementById('pmPlanFormTitle'), delBtn = document.getElementById('pmDeleteBtnInModal'), modeSel = document.getElementById('pmAlertModeSelect');
         if (!modal) return;
         syncFormMiniMapMarker(NaN, NaN, false);
+        sessionModalUploadedIds = [];
         let shouldOpenMiniMap = false;
         if (editingPlanId) {
             const target = pmPlans.find(p => p.id === editingPlanId && !p.pmDeleted); if (!target) return;
-            if (titleHdr) titleHdr.textContent = '✏️ แก้ไขข้อมูล / ตั้งเวลาเตือนแผนงาน';
+            if (titleHdr) titleHdr.textContent = '✏️ แก้ไขข้อมูล / รูปภาพ / เวลาเตือนแผนงาน';
             populatePmScadaPinPicker(target.linkedPinId || ''); selectPmFormPinColor(target.pinColor || 'auto');
             document.getElementById('pmTitleInput').value = target.title || ''; document.getElementById('pmCategorySelect').value = target.category || 'scada';
             document.getElementById('pmDateInput').value = target.date || getTodayIso(); document.getElementById('pmTimeSlotInput').value = target.timeSlot || '09.00-12.00';
@@ -1814,6 +2410,9 @@ function bindLeafletMapHooks() {
             tempFormCustomTimes = normalizeCustomTimesArray(target.customAlertTimes || []);
             const effMode = target.alertMode || (tempFormCustomTimes.length > 0 ? 'both' : 'standard');
             if (modeSel) modeSel.value = effMode; onPmAlertModeChange(effMode);
+            originalEditingPhotoIds = normalizePmPhotoIds(target);
+            tempFormPhotoIds = [...originalEditingPhotoIds];
+            renderPmModalPhotoPreviews();
             document.getElementById('pmEquipCodeInput').value = target.equipCode || ''; document.getElementById('pmFeederInput').value = target.feeder || '';
             const hasC = !isNaN(parseFloat(target.lat)) && !isNaN(parseFloat(target.lon));
             document.getElementById('pmCoordInput').value = hasC ? `${Number(target.lat).toFixed(6)}, ${Number(target.lon).toFixed(6)}` : (target.gpsLink || '');
@@ -1826,6 +2425,9 @@ function bindLeafletMapHooks() {
             document.getElementById('pmDateInput').value = presetDate || selectedDateIso || getTodayIso(); document.getElementById('pmTimeSlotInput').value = '09.00-12.00';
             document.getElementById('pmNotifyBeforeSelect').value = '3'; document.getElementById('pmRepeatMonthsSelect').value = '0';
             tempFormCustomTimes = []; if (modeSel) modeSel.value = 'standard'; onPmAlertModeChange('standard');
+            originalEditingPhotoIds = [];
+            tempFormPhotoIds = [];
+            renderPmModalPhotoPreviews();
             document.getElementById('pmEquipCodeInput').value = ''; document.getElementById('pmFeederInput').value = '';
             document.getElementById('pmCoordInput').value = (presetLat != null && presetLon != null) ? `${Number(presetLat).toFixed(6)}, ${Number(presetLon).toFixed(6)}` : '';
             document.getElementById('pmNoteInput').value = ''; delBtn?.classList.add('hidden');
@@ -1836,10 +2438,25 @@ function bindLeafletMapHooks() {
         togglePmFormMiniMap(shouldOpenMiniMap);
         setTimeout(() => document.getElementById('pmTitleInput')?.focus(), 80);
     }
-    function closePmPlanFormModal() { editingPlanId = null; togglePmFormMiniMap(false); document.getElementById('pmPlanFormModal')?.classList.add('hidden'); }
+
+    function closePmPlanFormModal(skipOrphanClean = false) {
+        if (!skipOrphanClean && sessionModalUploadedIds.length > 0) {
+            const orphans = sessionModalUploadedIds.filter(id => !originalEditingPhotoIds.includes(id));
+            sessionModalUploadedIds = [];
+            if (orphans.length > 0) trashUnusedPmPhotoIdsInBackground(orphans);
+        } else {
+            sessionModalUploadedIds = [];
+        }
+        editingPlanId = null;
+        tempFormPhotoIds = [];
+        originalEditingPhotoIds = [];
+        togglePmFormMiniMap(false);
+        document.getElementById('pmPlanFormModal')?.classList.add('hidden');
+    }
 
     async function savePmPlanFromModal() {
         if (!canManagePmSchedule()) return;
+        if (isUploadingModalPhotos) { safeToast('⏳ กรุณารออัปโหลดรูปภาพให้เสร็จก่อนกดบันทึกครับ'); return; }
         const title = (document.getElementById('pmTitleInput')?.value || '').trim(), category = document.getElementById('pmCategorySelect')?.value || 'scada';
         const pinColor = document.getElementById('pmPinColorInput')?.value || 'auto', dateVal = (document.getElementById('pmDateInput')?.value || '').trim();
         const timeSlot = (document.getElementById('pmTimeSlotInput')?.value || '').trim() || '09.00-12.00';
@@ -1871,6 +2488,9 @@ function bindLeafletMapHooks() {
         const curUser = (rawGet('elec_app_current_user') || 'admin').trim(), myGroup = getActivePmGroup();
         const cleanNotify = isNaN(notifyDaysBefore) ? 3 : notifyDaysBefore, cleanRepeat = isNaN(repeatMonths) ? 0 : repeatMonths;
         const gpsLink = parsedCoord ? `https://www.google.com/maps?q=${parsedCoord.lat.toFixed(6)},${parsedCoord.lon.toFixed(6)}` : '';
+        const finalPhotoIds = normalizePmPhotoIds(tempFormPhotoIds);
+        const removedOldPhotos = originalEditingPhotoIds.filter(fid => !finalPhotoIds.includes(fid));
+
         let savedRecord = null;
         if (editingPlanId) {
             const idx = pmPlans.findIndex(p => p.id === editingPlanId);
@@ -1878,20 +2498,21 @@ function bindLeafletMapHooks() {
                 const prev = pmPlans[idx];
                 const alertChanged = (prev.date !== dateVal) || ((prev.alertMode || 'standard') !== alertMode) || (Number(prev.notifyDaysBefore ?? 3) !== cleanNotify) || (JSON.stringify(normalizeCustomTimesArray(prev.customAlertTimes || [])) !== JSON.stringify(customAlertTimes));
                 const nextBaseline = alertChanged ? getMinuteFloorIso() : (prev.alertBaselineAt || prev.createdAt || getMinuteFloorIso());
-                pmPlans[idx] = { ...prev, title, category, pinColor, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: nextBaseline, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, ownerGroup: normPmGrp(prev.ownerGroup || myGroup) || myGroup, updatedBy: curUser, updatedAt: nextPmUpdatedIso(prev.updatedAt) };
+                pmPlans[idx] = { ...prev, title, category, pinColor, photoIds: finalPhotoIds, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: nextBaseline, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, ownerGroup: normPmGrp(prev.ownerGroup || myGroup) || myGroup, updatedBy: curUser, updatedAt: nextPmUpdatedIso(prev.updatedAt) };
                 savedRecord = pmPlans[idx];
             }
         } else {
             const nowIso = nextPmUpdatedIso(safeGetLocMap()[PM_LOC_PREFIX + myGroup]?.updatedAt);
-            savedRecord = { id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title, category, pinColor, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: getMinuteFloorIso(), createdAt: nowIso, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, status: 'pending', ownerGroup: myGroup, createdBy: curUser, updatedBy: curUser, updatedAt: nowIso };
+            savedRecord = { id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title, category, pinColor, photoIds: finalPhotoIds, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: getMinuteFloorIso(), createdAt: nowIso, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, status: 'pending', ownerGroup: myGroup, createdBy: curUser, updatedBy: curUser, updatedAt: nowIso };
             pmPlans.push(savedRecord);
         }
         if (savedRecord) preAckPastSlotsForPlanToday(savedRecord);
         const qTitle = document.getElementById('pmQuickTitleInput'); if (qTitle) qTitle.value = '';
         selectedDateIso = dateVal; const [y, m] = dateVal.split('-').map(Number); if (y && m) { viewYear = y; viewMonth = m - 1; }
-        currentFilterStatus = 'day'; closePmPlanFormModal();
+        currentFilterStatus = 'day'; closePmPlanFormModal(true);
         await savePmPlansAndSync(true);
-        safeToast(parsedCoord ? '📍 บันทึกหมุดแผนงานและเวลาเตือนเรียบร้อย!' : '✅ บันทึกแผนงานและเวลาเตือนเรียบร้อย!');
+        if (removedOldPhotos.length > 0) trashUnusedPmPhotoIdsInBackground(removedOldPhotos);
+        safeToast(parsedCoord ? '📍 บันทึกหมุดแผนงานและรูปภาพเรียบร้อย!' : '✅ บันทึกแผนงานและรูปภาพเรียบร้อย!');
     }
 
     function deletePmPlanById(planId, closeFormAfter = false) {
@@ -1899,10 +2520,13 @@ function bindLeafletMapHooks() {
         loadPmPlansFromStorage();
         const target = pmPlans.find(p => p.id === planId && !p.pmDeleted); if (!target) return;
         safeConfirm(`ต้องการลบแผนงาน "${target.title}" ออกจากปฏิทินและแผนที่ใช่หรือไม่?`, async function () {
+            const photosToClean = [...normalizePmPhotoIds(target), ...(closeFormAfter ? sessionModalUploadedIds : [])];
             const idx = pmPlans.findIndex(p => p.id === planId);
             if (idx !== -1) pmPlans[idx] = { id: pmPlans[idx].id, ownerGroup: normPmGrp(pmPlans[idx].ownerGroup || getActivePmGroup()) || getActivePmGroup(), pmDeleted: true, updatedAt: nextPmUpdatedIso(pmPlans[idx].updatedAt) };
-            if (closeFormAfter) closePmPlanFormModal();
-            await savePmPlansAndSync(true); safeToast('🗑️ ลบหมุดแผนงานเรียบร้อยแล้ว');
+            if (closeFormAfter) closePmPlanFormModal(true);
+            await savePmPlansAndSync(true);
+            if (photosToClean.length > 0) trashUnusedPmPhotoIdsInBackground(photosToClean);
+            safeToast('🗑️ ลบหมุดแผนงานเรียบร้อยแล้ว');
         }, '🗑️ ยืนยันการลบแผนงาน');
     }
     function deletePmPlanFromModal() { if (editingPlanId) deletePmPlanById(editingPlanId, true); }
@@ -1921,7 +2545,7 @@ function bindLeafletMapHooks() {
         if (nextStatus === 'done' && Number(plan.repeatMonths) > 0 && !plan.spawnedNextCycle) {
             spawnedNextDate = addMonthsToIsoDate(plan.date, Number(plan.repeatMonths)); plan.spawnedNextCycle = true;
             const spawnedIso = nextPmUpdatedIso(nowIso);
-            pmPlans.push({ ...plan, id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), date: spawnedNextDate, status: 'pending', alertBaselineAt: getMinuteFloorIso(), createdAt: spawnedIso, completedAt: undefined, completedBy: undefined, spawnedNextCycle: undefined, updatedAt: spawnedIso });
+            pmPlans.push({ ...plan, id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), photoIds: normalizePmPhotoIds(plan), date: spawnedNextDate, status: 'pending', alertBaselineAt: getMinuteFloorIso(), createdAt: spawnedIso, completedAt: undefined, completedBy: undefined, spawnedNextCycle: undefined, updatedAt: spawnedIso });
         }
         scadaMapRef?.closePopup(); repairMapRef?.closePopup(); calendarMapInstance?.closePopup();
         await savePmPlansAndSync(true);
@@ -1929,9 +2553,9 @@ function bindLeafletMapHooks() {
     }
 
     // ========================================================================
-    // 10. นำทาง GPS, แชร์ LINE, Excel, ปุ่มเตือนซ้ำทุกนาที & นาฬิกาปลอดการยิงซ้อน
+    // 10. นำทาง GPS, ส่งรูปจริงเข้า LINE คู่คัดลอกข้อความ, Excel & นาฬิกาแจ้งเตือน
     // ========================================================================
-        function navigatePmPlanGps(itemId) {
+    function navigatePmPlanGps(itemId) {
         const item = getAllVisibleCalendarItems().find(x => x.id === itemId); if (!item) return;
         const lat = parseFloat(item.lat), lon = parseFloat(item.lon), hasCoord = !isNaN(lat) && !isNaN(lon);
         if (isUserCurrentlyLoggedIn() && item.linkedPinId && typeof window.startLabeledPlaceNavigation === 'function') {
@@ -1957,26 +2581,131 @@ function bindLeafletMapHooks() {
         if (!win && !(Core && Core.isEmbeddedIframe)) window.location.href = mapsUrl;
     }
 
-    function shareSinglePmPlanToLine(itemId) {
-        const item = getAllVisibleCalendarItems().find(x => x.id === itemId); if (!item) return;
+    function buildSinglePmPlanShareTexts(item) {
         const cat = getCategoryMeta(item.category), alCfg = getPlanEffectiveAlertConfig(item);
-        const lines = [`📅 หมุดแผนงานบำรุงรักษา (${normPmGrp(item.ownerGroup || getActivePmGroup())})`, `${cat.icon} ประเภท : ${cat.name}`, `🏷️ เรื่อง : ${item.title}`, `🗓️ กำหนดการ : ${formatThaiDateFull(item.date)} (${item.timeSlot || '-'})`, `⏰ แจ้งเตือน : ${alCfg.badgeLabel}`];
+        const lines = [
+            `📅 หมุดแผนงานบำรุงรักษา (${normPmGrp(item.ownerGroup || getActivePmGroup())})`,
+            `${cat.icon} ประเภท : ${cat.name}`,
+            `🏷️ เรื่อง : ${item.title}`,
+            `🗓️ กำหนดการ : ${formatThaiDateFull(item.date)} (${item.timeSlot || '-'})`,
+            `⏰ แจ้งเตือน : ${alCfg.badgeLabel}`
+        ];
         if (item.equipCode) lines.push(`⚡ อุปกรณ์ : ${item.equipCode}${item.feeder ? ` (วงจร ${item.feeder})` : ''}`);
         if (item.note) lines.push(`📝 รายละเอียด : ${item.note}`);
-        if (!isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon))) lines.push(`📍 พิกัดหมุด : https://www.google.com/maps?q=${Number(item.lat).toFixed(6)},${Number(item.lon).toFixed(6)}`);
-        const txt = lines.join('\n'); copyPmTextSafe(txt, '💬 คัดลอกแผนงานและกำลังเปิดแอป LINE...'); window.open('https://line.me/R/share?text=' + encodeURIComponent(txt), '_blank');
+        if (!isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon))) {
+            lines.push(`📍 พิกัดหมุด : https://www.google.com/maps?q=${Number(item.lat).toFixed(6)},${Number(item.lon).toFixed(6)}`);
+        }
+        const baseText = lines.join('\n');
+        const pIds = normalizePmPhotoIds(item);
+        if (!pIds.length) return { baseText, textWithLinks: baseText };
+        const linkLines = pIds.map((fid, i) => `🖼️ รูปที่ ${i + 1} : ${getPmPhotoDriveViewUrl(fid)}`);
+        return { baseText, textWithLinks: `${baseText}\n${linkLines.join('\n')}` };
     }
-    function shareDailyOrAlertSummaryToLine() {
+
+    function closePmLineShareReadyModal() {
+        pendingShareFilesPayload = null;
+        document.getElementById('pmLineShareReadyModal')?.classList.add('hidden');
+    }
+
+    async function confirmPendingPmLineFileShare() {
+        const payload = pendingShareFilesPayload;
+        closePmLineShareReadyModal();
+        if (!payload || !Array.isArray(payload.files) || !payload.files.length) return;
+        copyPmTextSafe(payload.baseText);
+        try {
+            const shareData = navigator.canShare({ files: payload.files, text: payload.baseText })
+                ? { files: payload.files, text: payload.baseText }
+                : { files: payload.files };
+            await navigator.share(shareData);
+            safeToast('📋 ส่งรูปสำเร็จ! ข้อความอยู่ในคลิปบอร์ดแล้ว กดวางในห้อง LINE ได้เลยครับ');
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            copyPmTextSafe(payload.textWithLinks);
+            window.open('https://line.me/R/share?text=' + encodeURIComponent(payload.textWithLinks), '_blank');
+        }
+    }
+
+    function fallbackPendingPmLineTextOnly() {
+        const payload = pendingShareFilesPayload;
+        closePmLineShareReadyModal();
+        if (!payload) return;
+        copyPmTextSafe(payload.textWithLinks, '💬 คัดลอกแผนงานพร้อมลิงก์รูปแล้ว กำลังเปิด LINE...');
+        window.open('https://line.me/R/share?text=' + encodeURIComponent(payload.textWithLinks), '_blank');
+    }
+
+    async function shareSinglePmPlanToLine(itemId) {
+        const item = getAllVisibleCalendarItems().find(x => x.id === itemId); if (!item) return;
+        const { baseText, textWithLinks } = buildSinglePmPlanShareTexts(item);
+        const pIds = normalizePmPhotoIds(item);
+
+        // กรณีไม่มีรูปแนบ หรือเปิดบนคอมพิวเตอร์: ส่งข้อความพร้อมลิงก์รูปผ่าน LINE URL มาตรฐานทันที
+        if (!pIds.length || !isMobileFileSharePreferred()) {
+            copyPmTextSafe(textWithLinks, '💬 คัดลอกแผนงานและกำลังเปิดแอป LINE...');
+            window.open('https://line.me/R/share?text=' + encodeURIComponent(textWithLinks), '_blank');
+            return;
+        }
+
+        // กรณีเปิดบนมือถือและมีรูปแนบ (1-3 รูป): คัดลอกข้อความรอไว้ในคลิปบอร์ดทันที แล้วแนบไฟล์รูปจริงส่งเข้า LINE
+        if (isSharingToLineBusy) return;
+        isSharingToLineBusy = true;
+        copyPmTextSafe(baseText);
+        safeToast(`⏳ กำลังเตรียมรูปภาพ ${pIds.length} รูป ส่งเข้า LINE (คัดลอกข้อความให้แล้ว)...`);
+
+        try {
+            const files = await fetchPmPhotoFilesForShare(pIds);
+            if (files.length > 0 && typeof navigator.canShare === 'function' && navigator.canShare({ files })) {
+                const shareData = navigator.canShare({ files, text: baseText })
+                    ? { files, text: baseText }
+                    : { files };
+                try {
+                    await navigator.share(shareData);
+                    safeToast('📋 คัดลอกข้อความไว้แล้ว! หลังส่งรูป กดวางข้อความในห้อง LINE ได้เลยครับ');
+                    return;
+                } catch (shareErr) {
+                    if (shareErr && shareErr.name === 'AbortError') return;
+                    // กรณีดาวน์โหลดรูปหลายใบจนเวลาคลิกหมดอายุ (iOS Safari / WebView) ให้เด้งปุ่มแตะยืนยัน 1 ครั้ง
+                    injectPmModalsDOM();
+                    pendingShareFilesPayload = { files, baseText, textWithLinks };
+                    const descEl = document.getElementById('pmLineShareReadyDesc');
+                    if (descEl) descEl.innerHTML = `เตรียมรูปภาพครบ <b>${files.length} รูป</b> และ<b>คัดลอกข้อความไว้แล้ว</b> แตะปุ่มสีเขียวเพื่อเลือกห้อง <b>LINE</b> ส่งรูป แล้วกดวางข้อความต่อได้เลยครับ`;
+                    document.getElementById('pmLineShareReadyModal')?.classList.remove('hidden');
+                    return;
+                }
+            }
+            copyPmTextSafe(textWithLinks, '💬 คัดลอกแผนงานพร้อมลิงก์รูปแล้ว กำลังเปิด LINE...');
+            window.open('https://line.me/R/share?text=' + encodeURIComponent(textWithLinks), '_blank');
+        } finally {
+            isSharingToLineBusy = false;
+        }
+    }
+
+    async function shareDailyOrAlertSummaryToLine() {
         const alerts = getAlertCandidatesForToday(), list = alerts.length > 0 ? alerts : getAllVisibleCalendarItems().filter(i => i.date === selectedDateIso);
         if (!list.length) { safeToast('⚠️ ไม่มีรายการแผนงานสำหรับส่งสรุปเข้า LINE'); return; }
+        // หากในวันนั้นมีแผนงานเพียง 1 รายการและมีรูปภาพ ให้ส่งโหมดรูปจริงคู่คัดลอกข้อความอัตโนมัติ
+        if (list.length === 1 && normalizePmPhotoIds(list[0]).length > 0 && isMobileFileSharePreferred()) {
+            return shareSinglePmPlanToLine(list[0].id);
+        }
         const hdr = alerts.length > 0 ? `🔔 สรุปแจ้งเตือนแผนงานบำรุงรักษา (${getActivePmGroup()})\n📅 ณ ${formatThaiDateFull(getTodayIso())}` : `📅 แผนงานบำรุงรักษา (${getActivePmGroup()})\n🗓️ ${formatThaiDateFull(selectedDateIso)}`;
-        const body = list.slice(0, 15).map((it, idx) => { const cat = getCategoryMeta(it.category), dTag = it.daysLeft !== undefined ? (it.daysLeft < 0 ? `[เลย ${Math.abs(it.daysLeft)} วัน] ` : (it.daysLeft === 0 ? '[วันนี้] ' : `[อีก ${it.daysLeft} วัน] `)) : ''; const gps = (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `\n   📍 https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : ''; return `${idx + 1}. ${dTag}${cat.icon} ${it.title} (${formatThaiDateShort(it.date)})${gps}`; }).join('\n');
-        const full = `${hdr}\n━━━━━━━━━━━━━━━━━━\n${body}`; copyPmTextSafe(full, '💬 คัดลอกสรุปแผนงานและกำลังเปิด LINE...'); window.open('https://line.me/R/share?text=' + encodeURIComponent(full), '_blank');
+        const body = list.slice(0, 15).map((it, idx) => {
+            const cat = getCategoryMeta(it.category), pIds = normalizePmPhotoIds(it);
+            const dTag = it.daysLeft !== undefined ? (it.daysLeft < 0 ? `[เลย ${Math.abs(it.daysLeft)} วัน] ` : (it.daysLeft === 0 ? '[วันนี้] ' : `[อีก ${it.daysLeft} วัน] `)) : '';
+            const gps = (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `\n   📍 https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '';
+            const pics = pIds.length > 0 ? `\n   🖼️ รูป (${pIds.length}): ${pIds.map(fid => getPmPhotoDriveViewUrl(fid)).join(' , ')}` : '';
+            return `${idx + 1}. ${dTag}${cat.icon} ${it.title} (${formatThaiDateShort(it.date)})${gps}${pics}`;
+        }).join('\n');
+        const full = `${hdr}\n━━━━━━━━━━━━━━━━━━\n${body}`;
+        copyPmTextSafe(full, '💬 คัดลอกสรุปแผนงานและกำลังเปิด LINE...');
+        window.open('https://line.me/R/share?text=' + encodeURIComponent(full), '_blank');
     }
+
     async function exportPmPlansToExcel() {
         const items = getAllVisibleCalendarItems(); if (!items.length) { safeToast('⚠️ ยังไม่มีข้อมูลแผนงานสำหรับส่งออก'); return; }
-        const myGrp = getActivePmGroup(), headers = ['ลำดับ', 'กลุ่มสังกัด', 'วันที่กำหนด', 'เวลาปฏิบัติงาน', 'ประเภทงาน', 'หัวข้อแผนงาน', 'เงื่อนไขเวลาเตือน', 'เตือนล่วงหน้า(วัน)', 'รหัสอุปกรณ์', 'วงจร', 'รายละเอียด', 'สถานะ', 'ผู้ทำเสร็จ', 'ลิงก์พิกัดหมุด'];
-        const rows = items.map((it, i) => [String(i + 1), normPmGrp(it.ownerGroup || myGrp), formatThaiDateShort(it.date), it.timeSlot || '-', getCategoryMeta(it.category).name, it.title || '-', getPlanEffectiveAlertConfig(it).badgeLabel, String(it.notifyDaysBefore ?? 3), it.equipCode || '-', it.feeder || '-', it.note || '-', it.status === 'done' ? 'เสร็จสิ้นแล้ว' : 'รอดำเนินการ', it.completedBy || '-', (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '-']);
+        const myGrp = getActivePmGroup(), headers = ['ลำดับ', 'กลุ่มสังกัด', 'วันที่กำหนด', 'เวลาปฏิบัติงาน', 'ประเภทงาน', 'หัวข้อแผนงาน', 'เงื่อนไขเวลาเตือน', 'เตือนล่วงหน้า(วัน)', 'รหัสอุปกรณ์', 'วงจร', 'รายละเอียด', 'สถานะ', 'ผู้ทำเสร็จ', 'ลิงก์พิกัดหมุด', 'ลิงก์รูปภาพประกอบ'];
+        const rows = items.map((it, i) => {
+            const pIds = normalizePmPhotoIds(it);
+            return [String(i + 1), normPmGrp(it.ownerGroup || myGrp), formatThaiDateShort(it.date), it.timeSlot || '-', getCategoryMeta(it.category).name, it.title || '-', getPlanEffectiveAlertConfig(it).badgeLabel, String(it.notifyDaysBefore ?? 3), it.equipCode || '-', it.feeder || '-', it.note || '-', it.status === 'done' ? 'เสร็จสิ้นแล้ว' : 'รอดำเนินการ', it.completedBy || '-', (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '-', pIds.length > 0 ? pIds.map(fid => getPmPhotoDriveViewUrl(fid)).join(' | ') : '-'];
+        });
         const fn = `PM_Schedule_${myGrp.replace(/\s+/g, '_')}_${getTodayIso()}.xlsx`;
         if ((await loadPmXlsxSafe()) && typeof XLSX !== 'undefined') { const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([headers, ...rows]); XLSX.utils.book_append_sheet(wb, ws, 'หมุดแผนงาน_PM'); XLSX.writeFile(wb, fn); safeToast(`📊 ส่งออกไฟล์ Excel (${items.length} แผนงาน) สำเร็จ!`); }
         else if (Core && typeof Core.downloadCsvFallback === 'function') Core.downloadCsvFallback(headers, rows, fn);
@@ -2046,7 +2775,7 @@ function bindLeafletMapHooks() {
         });
     }
 
-    Object.assign(window, {
+        Object.assign(window, {
         openPmCalendarModal: _safeOpenPmCalendarModal, closePmCalendarModal, setPmDesktopModalWidth, changePmCalendarMonth, jumpPmCalendarToday,
         selectPmCalendarDate, setPmListStatusFilter, toggleShowScadaDueOnCalendar, togglePmTechStripCollapse,
         switchCalendarLeftViewMode, fitCalendarEmbeddedMapPins, toggleShowPmPinsOnMaps, cyclePmMapFilterMode,
@@ -2057,10 +2786,13 @@ function bindLeafletMapHooks() {
         selectPmFormPinColor, togglePmFormMiniMap, onPmCoordTextManualInput, onPmScadaEquipPick, fillPmCurrentMobileGps,
         openPmPlanFormModal, closePmPlanFormModal, savePmPlanFromModal, deletePmPlanFromModal, quickDeletePmPlanCard,
         togglePmPlanCompleteStatus, navigatePmPlanGps, shareSinglePmPlanToLine, shareDailyOrAlertSummaryToLine,
-        exportPmPlansToExcel, togglePmSoundSetting, togglePmRepeatEveryMinSetting, requestPmBrowserNotificationPermission, acknowledgeCurrentPmAlertRound
+        exportPmPlansToExcel, togglePmSoundSetting, togglePmRepeatEveryMinSetting, requestPmBrowserNotificationPermission, acknowledgeCurrentPmAlertRound,
+        triggerPmPhotoInput, handlePmModalPhotoSelect, removePmModalPhotoAt, handlePmQuickPhotoSelect, removePmQuickPhotoAt,
+        openPmPhotoLightbox, openPmRawPhotoLightbox, closePmPhotoLightbox, stepPmPhotoLightbox, shareFromPmPhotoLightbox,
+        confirmPendingPmLineFileShare, fallbackPendingPmLineTextOnly, closePmLineShareReadyModal
     });
 
-        function ensureSwitchTechTabWrapped() {
+    function ensureSwitchTechTabWrapped() {
         if (typeof window.switchTechMainTab === 'function' && !window.switchTechMainTab.__pmWrapped) {
             const origSwitch = window.switchTechMainTab;
             const wrapped = function (...args) {
@@ -2091,7 +2823,7 @@ function bindLeafletMapHooks() {
             if (nowLogged !== lastKnownLoginState) {
                 lastKnownLoginState = nowLogged;
                 if (nowLogged) { rememberActiveAuthForLoggedOutAlerts(); syncPmPlansFromLocationsMap(); refreshPmAllViews(); }
-                else { closePmPlanFormModal(); closePmCalendarModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
+                else { closePmPlanFormModal(); closePmCalendarModal(); closePmPhotoLightbox(); closePmLineShareReadyModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
             }
         }, 1200);
         setTimeout(async () => { ensureSwitchTechTabWrapped(); rememberActiveAuthForLoggedOutAlerts(); if (!isUserCurrentlyLoggedIn()) await pullPmPlansWhileLoggedOut(); else syncPmPlansFromLocationsMap(); if (isUserCurrentlyLoggedIn()) refreshPmAllViews(); checkAndTriggerScheduledPmAlerts(false); }, 1400);
@@ -2103,4 +2835,4 @@ function bindLeafletMapHooks() {
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapPmCalendarModule);
     else bootstrapPmCalendarModule();
 })();
-// ==================== จบไฟล์ pm-calendar.js ====================
+// ==================== จบไฟล์ pm-calendar.js (v7.4) ====================
