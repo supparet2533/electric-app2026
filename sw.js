@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v163 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v165 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v164';
+const CACHE_NAME = 'pea-smart-tools-v165';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -10,6 +10,7 @@ const APP_SHELL_ASSETS = [
     './',
     './index.html',
     './page2.html',
+    './outage-map.html',
     './meter-form.html',
     './tx-load-form.html',
     './tx-circuit-1.jpg',
@@ -127,10 +128,14 @@ function isValidShellPayload(pathname, res, buf, destination = '') {
     const baseDirPath = self.location.pathname.replace(/[^/]*$/, '');
     const isMainHtml = pathname === baseDirPath ||
                        /(?:^\/$|\/(?:index|page2)(?:\.html)?$|^\.\/$|^\.\/(?:index|page2)(?:\.html)?$)/i.test(pathname);
-    if (isMainHtml && buf) {
+    const isOutageHtml = /(?:\/outage-map(?:\.html)?$|^\.\/outage-map\.html$)/i.test(pathname);
+    if ((isMainHtml || isOutageHtml) && buf) {
         try {
             const text = new TextDecoder('utf-8').decode(buf);
-            if (!/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|scada-tie-advisor|pm-calendar)\.js/i.test(text)) {
+            if (isMainHtml && !/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|scada-tie-advisor|pm-calendar)\.js/i.test(text)) {
+                return false;
+            }
+            if (isOutageHtml && !text.includes('outageRadarMap')) {
                 return false;
             }
         } catch (e) {}
@@ -309,7 +314,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2, /meter-form, /tx-load-form) + Timeout 5 วิ
+    // 2. ไฟล์ระบบ HTML / JS / CSS / JSON: รองรับทั้ง URL ปกติและ Pretty URLs (/page2, /outage-map, /meter-form, /tx-load-form) + Timeout 5 วิ
     const isAppShellFile = url.origin === self.location.origin &&
         (req.mode === 'navigate' || /\.(?:html|js|mjs|css|json|webmanifest)$/i.test(url.pathname) || url.pathname.endsWith('/'));
 
@@ -317,6 +322,7 @@ self.addEventListener('fetch', (event) => {
         const baseDirPath = self.location.pathname.replace(/[^/]*$/, '');
         const cleanCacheKey = url.origin + url.pathname;
         const isPage2Route = /\/page2(?:\.html)?$/i.test(url.pathname);
+        const isOutageMapRoute = /\/outage-map(?:\.html)?$/i.test(url.pathname);
         const isMeterFormRoute = /\/meter-form(?:\.html)?$/i.test(url.pathname);
         const isTxLoadFormRoute = /\/tx-load-form(?:\.html)?$/i.test(url.pathname);
         const isRootOrIndex = url.pathname === baseDirPath || /\/index(?:\.html)?$/i.test(url.pathname);
@@ -326,6 +332,8 @@ self.addEventListener('fetch', (event) => {
             mirrorKey = url.origin + (url.pathname === baseDirPath ? baseDirPath + 'index.html' : baseDirPath);
         } else if (isPage2Route) {
             mirrorKey = url.origin + baseDirPath + 'page2.html';
+        } else if (isOutageMapRoute) {
+            mirrorKey = url.origin + baseDirPath + 'outage-map.html';
         } else if (isMeterFormRoute) {
             mirrorKey = url.origin + baseDirPath + 'meter-form.html';
         } else if (isTxLoadFormRoute) {
@@ -406,7 +414,9 @@ self.addEventListener('fetch', (event) => {
                     if (cachedFallback) return cachedFallback;
                     if (req.mode === 'navigate' && cache) {
                         let fallbackPage = null;
-                        if (isMeterFormRoute) {
+                        if (isOutageMapRoute) {
+                            fallbackPage = await cache.match('./outage-map.html', { ignoreSearch: true, ignoreVary: true });
+                        } else if (isMeterFormRoute) {
                             fallbackPage = await cache.match('./meter-form.html', { ignoreSearch: true, ignoreVary: true });
                         } else if (isTxLoadFormRoute) {
                             fallbackPage = await cache.match('./tx-load-form.html', { ignoreSearch: true, ignoreVary: true });
@@ -491,10 +501,16 @@ self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const baseDir = self.location.origin + self.location.pathname.replace(/[^/]*$/, '');
     const targetFullUrl = resolveAppTargetUrl(event.notification.data?.url);
+    const standaloneRe = /(?:outage-map|meter-form|tx-load-form)(?:\.html)?(?:$|[?#])/i;
+    const isTargetStandalone = standaloneRe.test(targetFullUrl);
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            const appClients = clientList.filter((c) => c.url.startsWith(baseDir) && c.frameType !== 'nested');
+            const appClients = clientList.filter((c) =>
+                c.url.startsWith(baseDir) &&
+                c.frameType !== 'nested' &&
+                (isTargetStandalone || !standaloneRe.test(c.url))
+            );
             const topClient = appClients.find((c) => c.focused) ||
                               appClients.find((c) => c.visibilityState === 'visible') ||
                               appClients[0];
@@ -508,4 +524,4 @@ self.addEventListener('notificationclick', (event) => {
         })
     );
 });
-// ==================== จบไฟล์ sw.js (v163) ====================
+// ==================== จบไฟล์ sw.js (v165) ====================
