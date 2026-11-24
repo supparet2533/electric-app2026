@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v165 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v168 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v166';
+const CACHE_NAME = 'pea-smart-tools-v168';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -75,6 +75,7 @@ const STATIC_CDN_HOSTS = [
 const MAP_TILE_HOST_RE = /^(?:(?:mt|khms)\d?\.google\.com|(?:[a-z0-9-]+\.)?tile\.openstreetmap\.org|(?:[a-z0-9-]+\.)?basemaps\.cartocdn\.com|server\.arcgisonline\.com)$/i;
 
 const BYPASS_HOSTS = [
+    'workers.dev',
     'script.google.com',
     'script.googleusercontent.com',
     'drive.google.com',
@@ -524,4 +525,4 @@ self.addEventListener('notificationclick', (event) => {
         })
     );
 });
-// ==================== จบไฟล์ sw.js (v165) ====================
+// ==================== จบไฟล์ sw.js (v168) ====================
