@@ -2318,7 +2318,7 @@
         };
     }
     // ===== จบพาทที่ 5 / 6 ของไฟล์ pm-calendar.js ===== 
-        // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js =====
+    // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
     // 9. ฟอร์มบันทึกแผนงาน + เอนจินวาดโซนเรดาร์ประชาชน (วงกลม / ปักมุม / ลากนิ้วตีกรอบ)
     // ========================================================================
@@ -2499,25 +2499,39 @@
         if (!wrap || !mapCanvas) return;
         isMiniMapFullscreen = typeof forceState === 'boolean' ? forceState : !isMiniMapFullscreen;
         if (isMiniMapFullscreen) {
-            wrap.className = 'fixed inset-0 z-[1460] bg-slate-950 flex flex-col';
-            mapCanvas.className = 'w-full flex-1 bg-slate-100';
+            wrap.className = 'fixed inset-0 z-[1460] bg-slate-950 flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]';
+            mapCanvas.style.height = 'auto';
+            mapCanvas.style.flex = '1 1 0%';
             if (fsBtn) fsBtn.textContent = '✅ เสร็จ / ย่อกลับ';
         } else {
-            wrap.className = `${isFormMiniMapOpen ? '' : 'hidden '}rounded-xl overflow-hidden border-2 border-indigo-300`;
-            mapCanvas.className = `w-full ${tempPubEnabled ? 'h-72 sm:h-80' : 'h-44'} bg-slate-100`;
+            wrap.className = `${isFormMiniMapOpen ? '' : 'hidden '}relative rounded-xl overflow-hidden border-2 border-indigo-300`;
+            mapCanvas.style.flex = '';
+            mapCanvas.style.height = tempPubEnabled ? '300px' : '185px';
             if (fsBtn) fsBtn.textContent = '⛶ ขยายเต็มจอ';
         }
-        setTimeout(() => formMiniMap?.invalidateSize(), 90);
+        if (formMiniMap) mapCanvas.classList.add('leaflet-container');
+        setTimeout(() => formMiniMap?.invalidateSize(), 60);
+        setTimeout(() => formMiniMap?.invalidateSize(), 220);
     }
 
     function updatePmZoneDrawToolbarUI() {
         ensurePmOutageZoneUiInjected();
+        if (!document.getElementById('pmLeafletTileFixStyle')) {
+            const fixSt = document.createElement('style');
+            fixSt.id = 'pmLeafletTileFixStyle';
+            fixSt.textContent = '#pmFormMiniLeafletMap img, #pmCalendarEmbeddedMap img, .leaflet-container img, .leaflet-container svg { max-width: none !important; max-height: none !important; }';
+            document.head.appendChild(fixSt);
+        }
         const tb = document.getElementById('pmZoneDrawToolbar'), cfgBody = document.getElementById('pmPubOutageConfigBody');
         const chk = document.getElementById('pmPubOutageEnableChk'), mapCanvas = document.getElementById('pmFormMiniLeafletMap'), hdrHint = document.getElementById('pmMiniMapHdrHint');
         if (chk) chk.checked = tempPubEnabled;
         cfgBody?.classList.toggle('hidden', !tempPubEnabled);
         tb?.classList.toggle('hidden', !tempPubEnabled);
-        if (!isMiniMapFullscreen && mapCanvas) mapCanvas.className = `w-full ${tempPubEnabled ? 'h-72 sm:h-80' : 'h-44'} bg-slate-100`;
+        if (!isMiniMapFullscreen && mapCanvas) {
+            mapCanvas.style.flex = '';
+            mapCanvas.style.height = tempPubEnabled ? '300px' : '185px';
+        }
+        if (formMiniMap && mapCanvas) mapCanvas.classList.add('leaflet-container');
 
         ['circle', 'poly_click', 'poly_lasso'].forEach(m => {
             const b = document.getElementById('pmDrawModeBtn-' + m);
@@ -2555,7 +2569,7 @@
                 container.style.touchAction = '';
                 container.style.cursor = '';
             }
-            setTimeout(() => formMiniMap?.invalidateSize(), 60);
+            setTimeout(() => formMiniMap?.invalidateSize(), 80);
         }
     }
 
@@ -2759,9 +2773,12 @@
         if (!isFormMiniMapOpen && isMiniMapFullscreen) togglePmMiniMapFullscreen(false);
         wrap.classList.toggle('hidden', !isFormMiniMapOpen);
         if (!isFormMiniMapOpen) { syncFormMiniMapMarker(NaN, NaN, false); return; }
+        updatePmZoneDrawToolbarUI();
         if (!(await ensureLeafletReady()) || typeof L === 'undefined' || !isFormMiniMapOpen || reqSeq !== miniMapSyncSeq) return;
         if (!formMiniMap) {
-            const defCenter = window.lastKnownTechCoords ? [window.lastKnownTechCoords.lat, window.lastKnownTechCoords.lon] : [13.1361, 101.0322];
+            const kc = window.lastKnownTechCoords;
+            const kcLat = parseFloat(kc?.lat), kcLon = parseFloat(kc?.lon ?? kc?.lng);
+            const defCenter = (!isNaN(kcLat) && !isNaN(kcLon) && Math.abs(kcLat) > 0.1) ? [kcLat, kcLon] : [13.1361, 101.0322];
             formMiniMap = L.map('pmFormMiniLeafletMap').setView(defCenter, 14);
             const gHyb = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' }).addTo(formMiniMap);
             const gStr = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' });
@@ -2790,6 +2807,7 @@
             });
         }
         updatePmZoneDrawToolbarUI();
+        requestAnimationFrame(() => formMiniMap?.invalidateSize());
         setTimeout(async () => {
             if (!isFormMiniMapOpen || reqSeq !== miniMapSyncSeq || !formMiniMap) return;
             formMiniMap.invalidateSize();
@@ -2803,6 +2821,7 @@
             if (tempPubEnabled && formZoneShapeLayer?.getBounds) {
                 try { formMiniMap.fitBounds(formZoneShapeLayer.getBounds(), { padding: [24, 24], maxZoom: 16 }); } catch (e) {}
             }
+            setTimeout(() => formMiniMap?.invalidateSize(), 180);
         }, 100);
     }
 
@@ -2847,8 +2866,10 @@
                 safeToast(`📍 ดึงพิกัดสำเร็จ (${la.toFixed(6)}, ${lo.toFixed(6)})`);
             },
             () => {
-                if (window.lastKnownTechCoords && coordEl) {
-                    const la = Number(window.lastKnownTechCoords.lat.toFixed(6)), lo = Number(window.lastKnownTechCoords.lon.toFixed(6));
+                const kc = window.lastKnownTechCoords;
+                const kcLat = parseFloat(kc?.lat), kcLon = parseFloat(kc?.lon ?? kc?.lng);
+                if (!isNaN(kcLat) && !isNaN(kcLon) && coordEl) {
+                    const la = Number(kcLat.toFixed(6)), lo = Number(kcLon.toFixed(6));
                     coordEl.value = `${la.toFixed(6)}, ${lo.toFixed(6)}`;
                     if (tempZoneType === 'c') tempCircleCenter = [Number(la.toFixed(5)), Number(lo.toFixed(5))];
                     if (isFormMiniMapOpen) { syncFormMiniMapMarker(la, lo, true); renderFormZoneOverlay(); }
