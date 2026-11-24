@@ -105,10 +105,9 @@
     </footer>
 
     <script>
-        // กรณีต้องการล็อกลิงก์ Web App (/exec) ตายตัว สามารถวางในเครื่องหมายคำพูดด้านล่าง (หากเว้นว่างระบบจะค้นหาจากลิงก์และระบบหลักอัตโนมัติ)
-        const MANUAL_GAS_EXEC_URL = '';
+        // 🛡️ เชื่อมต่อผ่าน Cloudflare Worker Edge Proxy เท่านั้น (ซ่อนลิงก์หลังบ้าน 100%)
+        const PUBLIC_RADAR_PROXY_URL = 'https://pea-outage-radar.samsrikacha2533.workers.dev';
         const NEAR_EDGE_BUFFER_METERS = 120;
-        const GAS_URL_REGEX = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/i;
         const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
         const TH_DAYS = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 
@@ -164,7 +163,7 @@
 
         function haversineMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000, rad = x => x * Math.PI / 180;
-            const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+            const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1); 
             const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
             return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
@@ -210,45 +209,7 @@
         }
 
         async function discoverPublicApiUrl() {
-            const params = new URLSearchParams(window.location.search);
-            const scriptId = (params.get('s') || '').trim();
-            if (/^[A-Za-z0-9_-]{25,120}$/.test(scriptId)) {
-                const built = `https://script.google.com/macros/s/${scriptId}/exec`;
-                try { localStorage.setItem('pea_pub_outage_api_v1', built); } catch (e) {}
-                return built;
-            }
-            const urlParam = (params.get('u') || params.get('api') || '').trim();
-            if (GAS_URL_REGEX.test(urlParam)) {
-                const cleanExec = urlParam.split('?')[0];
-                try { localStorage.setItem('pea_pub_outage_api_v1', cleanExec); } catch (e) {}
-                return cleanExec;
-            }
-            if (GAS_URL_REGEX.test(MANUAL_GAS_EXEC_URL)) return MANUAL_GAS_EXEC_URL.split('?')[0];
-
-            try {
-                const candidates = [
-                    localStorage.getItem('pea_pub_outage_api_v1'),
-                    localStorage.getItem('elec_cloud_user_api_url'),
-                    localStorage.getItem('elec_cloud_api_url'),
-                    localStorage.getItem('elec_pm_last_api_url_v1')
-                ];
-                for (const c of candidates) {
-                    const trimmed = String(c || '').trim();
-                    if (GAS_URL_REGEX.test(trimmed)) return trimmed.split('?')[0];
-                }
-            } catch (e) {}
-
-            for (const path of ['./shared-core.js', './pea-core.js', './index.html', './page2.html']) {
-                try {
-                    const txt = await fetch(path, { cache: 'no-cache' }).then(r => r.ok ? r.text() : '');
-                    const m = txt.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/);
-                    if (m) {
-                        try { localStorage.setItem('pea_pub_outage_api_v1', m[0]); } catch (e) {}
-                        return m[0];
-                    }
-                } catch (e) {}
-            }
-            return '';
+            return PUBLIC_RADAR_PROXY_URL.replace(/\/+$/, '');
         }
 
         function initMap() {
@@ -412,7 +373,6 @@
             let decoded = raw;
             try { decoded = decodeURIComponent(raw); } catch (e) {}
 
-            // รองรับพิกัดองศา DMS จากแอป Google Maps เช่น 13°08'10.0"N 101°01'55.9"E
             const dms = decoded.match(/(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([NSns])[\s,]+(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([EWew])/);
             if (dms) {
                 let la = Number(dms[1]) + Number(dms[2]) / 60 + Number(dms[3]) / 3600;
@@ -448,6 +408,10 @@
                         body: JSON.stringify({ action: 'resolveShortUrl', url: shortLinkMatch[0] }),
                         signal: sCtrl ? sCtrl.signal : undefined
                     }).then(x => x.json());
+                    if (r && r.rateLimited) {
+                        showNoticeInBox('⏳ มีผู้ใช้งานแปลงลิงก์สั้นจำนวนมากในขณะนี้', r.message || 'กรุณาแตะเลือกจุดบนแผนที่ดาวเทียมโดยตรง หรือวางพิกัดตัวเลข Lat, Lon');
+                        return;
+                    }
                     if (r && !isNaN(parseFloat(r.lat)) && !isNaN(parseFloat(r.lon))) {
                         inspectUserCoordinate(Number(r.lat), Number(r.lon), true);
                         return;
@@ -463,6 +427,10 @@
 
         function onBranchChange(newGrp) {
             activeGroup = newGrp;
+            try {
+                const safeG = /\s/.test(activeGroup) ? encodeURIComponent(activeGroup) : activeGroup;
+                window.history.replaceState(null, '', `${window.location.pathname}?g=${safeG}`);
+            } catch (e) {}
             loadOutagePlans(true);
         }
 
@@ -481,10 +449,6 @@
             try {
                 if (!activeApiUrl) activeApiUrl = await discoverPublicApiUrl();
                 if (seq !== currentLoadSeq) return;
-                if (!activeApiUrl) {
-                    msgEl.textContent = '⚠️ ยังไม่ได้เชื่อมต่อลิงก์เซิร์ฟเวอร์ กรุณาเปิดจากลิงก์ประชาสัมพันธ์ของการไฟฟ้า';
-                    return;
-                }
 
                 const reqGroup = activeGroup;
                 const navType = performance.getEntriesByType?.('navigation')?.[0]?.type;
@@ -518,8 +482,6 @@
             } catch (err) {
                 if (seq !== currentLoadSeq) return;
                 console.error(err);
-                activeApiUrl = '';
-                try { localStorage.removeItem('pea_pub_outage_api_v1'); } catch (e) {}
                 msgEl.textContent = '⚠️ ไม่สามารถดึงข้อมูลแผนดับไฟได้ในขณะนี้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่';
                 retryBtn.classList.remove('hidden');
             } finally {
@@ -543,12 +505,19 @@
         }
 
         (function init() {
-            const p = new URLSearchParams(window.location.search);
-            const gParam = (p.get('g') || p.get('group') || '').trim();
+            try { localStorage.removeItem('pea_pub_outage_api_v1'); } catch (e) {}
+            const urlObj = new URL(window.location.href);
+            const gParam = (urlObj.searchParams.get('g') || urlObj.searchParams.get('group') || '').trim();
             if (gParam) {
                 activeGroup = gParam;
                 const sel = document.getElementById('branchSelect');
                 if (sel) sel.innerHTML = `<option value="${escHtml(activeGroup)}" class="text-slate-900" selected>🏢 ${escHtml(activeGroup)}</option>`;
+            }
+            if (urlObj.searchParams.has('s') || urlObj.searchParams.has('u') || urlObj.searchParams.has('api')) {
+                try {
+                    const safeG = /\s/.test(activeGroup) ? encodeURIComponent(activeGroup) : activeGroup;
+                    window.history.replaceState(null, '', `${urlObj.pathname}?g=${safeG}`);
+                } catch (e) {}
             }
             initMap();
             loadOutagePlans(false);
