@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ระบบเรดาร์ตรวจสอบพื้นที่แผนดับไฟล่วงหน้า — กฟภ.</title>
+    <meta name="theme-color" content="#1e1b4b">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: 'Prompt', sans-serif; background: #0f172a; color: #1e293b; min-height: 100dvh; }
+        @keyframes radarSweep {
+            0% { transform: scale(0.45); opacity: 0.9; }
+            100% { transform: scale(2.4); opacity: 0; }
+        }
+        .user-radar-ring {
+            position: absolute; inset: -14px; border-radius: 9999px;
+            border: 3px solid #38bdf8; background: rgba(56,189,248,0.22);
+            animation: radarSweep 1.9s ease-out infinite; pointer-events: none;
+        }
+        .zone-today-pulse { animation: zoneBlink 2s ease-in-out infinite; }
+        @keyframes zoneBlink { 0%, 100% { fill-opacity: 0.22; } 50% { fill-opacity: 0.40; } }
+    </style>
+</head>
+<body class="bg-slate-100 flex flex-col min-h-[100dvh]">
+
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-indigo-950 via-purple-900 to-slate-900 text-white px-4 pt-[max(0.85rem,env(safe-area-inset-top))] pb-3.5 shadow-lg">
+        <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-full bg-amber-400/15 border border-amber-300/60 flex items-center justify-center text-lg shadow">📡</div>
+                <div>
+                    <h1 class="text-sm sm:text-base font-extrabold tracking-wide text-amber-300">เรดาร์ตรวจสอบพื้นที่แผนดับไฟล่วงหน้า</h1>
+                    <p class="text-[11px] text-purple-200">การไฟฟ้าส่วนภูมิภาค (แตะบนแผนที่ หรือกดเช็กพิกัด GPS ปัจจุบัน)</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <select id="branchSelect" onchange="onBranchChange(this.value)" class="px-2.5 py-1.5 rounded-xl bg-white/15 text-white border border-white/25 text-xs font-bold focus:outline-none">
+                    <option value="กฟส.บึง" class="text-slate-900">🏢 กฟส.บึง</option>
+                </select>
+                <button type="button" onclick="loadOutagePlans(true)" class="bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-xl text-xs font-bold border border-white/20">🔄 รีเฟรช</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl w-full mx-auto flex-1 p-3 sm:p-4 space-y-3">
+        <!-- แถบเครื่องมือตรวจสอบพิกัดด้วยตนเอง -->
+        <div class="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200 space-y-2.5">
+            <div class="flex flex-col sm:flex-row gap-2">
+                <button type="button" id="btnCheckMyGps" onclick="checkCurrentMobileGps()" class="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow flex items-center justify-center gap-1.5 shrink-0">
+                    📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)
+                </button>
+                <div class="flex gap-1.5 flex-1">
+                    <input type="text" id="manualCoordInput" onkeydown="if(event.key==='Enter') checkManualCoordInput()" placeholder="หรือวางพิกัด Lat, Lon / ลิงก์ Google Maps บ้านของคุณ..." class="flex-1 min-w-0 px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-500">
+                    <button type="button" onclick="checkManualCoordInput()" class="bg-slate-800 hover:bg-slate-900 text-amber-300 font-extrabold px-3.5 py-2 rounded-xl text-xs shrink-0">ค้นหา</button>
+                </div>
+            </div>
+
+            <!-- กล่องแสดงผลการตรวจเช็กเรดาร์ -->
+            <div id="radarResultBox" class="hidden rounded-2xl p-3.5 border-2 transition-all"></div>
+        </div>
+
+        <!-- ตัวกรองช่วงวัน & คำอธิบายสีเรดาร์ -->
+        <div class="flex flex-wrap items-center justify-between gap-2 px-1">
+            <div class="inline-flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm text-[11px] font-extrabold gap-1 flex-wrap">
+                <button type="button" id="flt-all" onclick="setDateFilter('all')" class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white">ทั้งหมด (<span id="cnt-all">0</span>)</button>
+                <button type="button" id="flt-today" onclick="setDateFilter('today')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🔴 วันนี้ (<span id="cnt-today">0</span>)</button>
+                <button type="button" id="flt-tomorrow" onclick="setDateFilter('tomorrow')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🟠 พรุ่งนี้ (<span id="cnt-tomorrow">0</span>)</button>
+                <button type="button" id="flt-7days" onclick="setDateFilter('7days')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🗓️ 7 วันข้างหน้า</button>
+            </div>
+            <div class="flex items-center gap-2.5 text-[10.5px] font-bold text-slate-600">
+                <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block"></i> ดับไฟวันนี้</span>
+                <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></i> พรุ่งนี้</span>
+                <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-violet-600 inline-block"></i> ล่วงหน้า</span>
+            </div>
+        </div>
+
+        <!-- แผนที่เรดาร์ -->
+        <div class="relative rounded-2xl overflow-hidden border-2 border-slate-300 shadow-md bg-slate-200">
+            <div id="outageRadarMap" class="w-full h-[54dvh] sm:h-[480px] z-0"></div>
+            <div class="absolute bottom-2.5 left-2.5 z-[420] flex gap-1.5">
+                <button type="button" onclick="fitAllZonesOnMap()" class="bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg">🎯 ดูพื้นที่แผนดับไฟทั้งหมด</button>
+            </div>
+            <div id="mapLoadingOverlay" class="absolute inset-0 z-[450] bg-slate-900/55 backdrop-blur-[2px] flex items-center justify-center text-white text-xs font-extrabold">
+                ⏳ กำลังโหลดข้อมูลโซนเรดาร์แผนดับไฟ...
+            </div>
+        </div>
+
+        <!-- รายการแผนดับไฟตามกำหนดการ -->
+        <div class="bg-white rounded-2xl p-3.5 sm:p-4 border border-slate-200 shadow-sm space-y-2.5">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xs sm:text-sm font-extrabold text-slate-800">📋 รายการพื้นที่แจ้งแผนดับไฟปฏิบัติงาน</h2>
+                <span id="lastUpdatedLabel" class="text-[10px] text-slate-400">-</span>
+            </div>
+            <div id="outagePlanList" class="grid grid-cols-1 md:grid-cols-2 gap-2.5"></div>
+        </div>
+    </main>
+
+    <footer class="text-center text-[11px] text-slate-400 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        หมายเหตุ: เวลาจ่ายไฟอาจเร็วหรือช้ากว่ากำหนดขึ้นอยู่กับสภาพหน้างานและความปลอดภัยของระบบไฟฟ้า
+    </footer>
+
+    <script>
+        // กรณีต้องการล็อกลิงก์ Web App (/exec) ตายตัว สามารถวางในเครื่องหมายคำพูดด้านล่าง (หากเว้นว่างระบบจะค้นหาจากระบบหลักอัตโนมัติ)
+        const MANUAL_GAS_EXEC_URL = '';
+        const NEAR_EDGE_BUFFER_METERS = 120;
+        const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+        const TH_DAYS = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+
+        let activeApiUrl = '';
+        let activeGroup = 'กฟส.บึง';
+        let allPlans = [];
+        let dateFilter = 'all';
+        let map = null, zonesLayer = null, userMarker = null;
+        let zoneLayersById = {};
+        let lastCheckedLatLon = null;
+
+        function escHtml(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function getTodayIsoBkk() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        function calcDaysFromToday(isoStr) {
+            const [y, m, d] = String(isoStr || '').split('-').map(Number);
+            const [ty, tm, td] = getTodayIsoBkk().split('-').map(Number);
+            if (!y || !ty) return 999;
+            return Math.round((new Date(y, m - 1, d) - new Date(ty, tm - 1, td)) / 86400000);
+        }
+        function formatThaiDate(isoStr) {
+            const [y, m, d] = String(isoStr || '').split('-').map(Number);
+            if (!y || !m || !d) return isoStr || '-';
+            return `${TH_DAYS[new Date(y, m - 1, d).getDay()]} ${d} ${TH_MONTHS[m - 1]} ${y + 543}`;
+        }
+
+        function haversineMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371000, rad = x => x * Math.PI / 180;
+            const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+            return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function isPointInPoly(lat, lon, pts) {
+            if (!Array.isArray(pts) || pts.length < 3) return false;
+            let inside = false;
+            for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                const yi = pts[i][0], xi = pts[i][1], yj = pts[j][0], xj = pts[j][1];
+                const intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        function distToPolyEdgeMeters(lat, lon, pts) {
+            const mLat = 111320, mLon = 111320 * Math.cos(lat * Math.PI / 180);
+            let minD = Infinity;
+            for (let i = 0; i < pts.length; i++) {
+                const j = (i + 1) % pts.length;
+                const ax = (pts[i][1] - lon) * mLon, ay = (pts[i][0] - lat) * mLat;
+                const bx = (pts[j][1] - lon) * mLon, by = (pts[j][0] - lat) * mLat;
+                const dx = bx - ax, dy = by - ay, lenSq = dx * dx + dy * dy;
+                const t = lenSq > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lenSq)) : 0;
+                const d = Math.hypot(ax + t * dx, ay + t * dy);
+                if (d < minD) minD = d;
+            }
+            return minD;
+        }
+
+        function evaluatePointAgainstPlan(lat, lon, plan) {
+            const z = plan.zone;
+            if (!z) return { inside: false, edgeMeters: Infinity };
+            if (z.t === 'c') {
+                const dist = haversineMeters(lat, lon, z.c[0], z.c[1]);
+                return { inside: dist <= z.r, edgeMeters: Math.max(0, Math.round(dist - z.r)) };
+            }
+            if (z.t === 'p') {
+                const inside = isPointInPoly(lat, lon, z.p);
+                return { inside, edgeMeters: inside ? 0 : Math.round(distToPolyEdgeMeters(lat, lon, z.p)) };
+            }
+            return { inside: false, edgeMeters: Infinity };
+        }
+
+        async function discoverPublicApiUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const urlParam = (params.get('u') || params.get('api') || '').trim();
+            if (urlParam.includes('script.google.com')) {
+                localStorage.setItem('pea_pub_outage_api_v1', urlParam);
+                return urlParam;
+            }
+            if (MANUAL_GAS_EXEC_URL.includes('script.google.com')) return MANUAL_GAS_EXEC_URL;
+            const saved = (localStorage.getItem('pea_pub_outage_api_v1') || '').trim();
+            if (saved.includes('script.google.com')) return saved;
+            try {
+                const txt = await fetch('./shared-core.js', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '');
+                const m = txt.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/);
+                if (m) { localStorage.setItem('pea_pub_outage_api_v1', m[0]); return m[0]; }
+            } catch (e) {}
+            return '';
+        }
+
+        function initMap() {
+            map = L.map('outageRadarMap').setView([13.1361, 101.0322], 12);
+            const gHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' }).addTo(map);
+            const gStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' });
+            L.control.layers({ '🛰️ ดาวเทียม (เห็นหลังคาบ้าน)': gHybrid, '🗺️ แผนที่ถนน': gStreet }, null, { position: 'topright' }).addTo(map);
+            zonesLayer = L.layerGroup().addTo(map);
+            map.on('click', e => { if (e.latlng) inspectUserCoordinate(e.latlng.lat, e.latlng.lng, false); });
+        }
+
+        function getFilteredPlans() {
+            return allPlans.filter(p => {
+                const d = calcDaysFromToday(p.date);
+                if (d < 0) return false;
+                if (dateFilter === 'today') return d === 0;
+                if (dateFilter === 'tomorrow') return d === 1;
+                if (dateFilter === '7days') return d <= 7;
+                return true;
+            });
+        }
+
+        function getZoneTheme(daysLeft) {
+            if (daysLeft === 0) return { stroke: '#e11d48', fill: '#f43f5e', badgeCls: 'bg-rose-600 text-white', tag: '🔴 ดับไฟวันนี้', cls: 'zone-today-pulse' };
+            if (daysLeft === 1) return { stroke: '#ea580c', fill: '#fb923c', badgeCls: 'bg-orange-500 text-white', tag: '🟠 พรุ่งนี้', cls: '' };
+            return { stroke: '#7c3aed', fill: '#8b5cf6', badgeCls: 'bg-violet-600 text-white', tag: `🗓️ อีก ${daysLeft} วัน`, cls: '' };
+        }
+
+        function renderRadarZonesAndList() {
+            zonesLayer.clearLayers();
+            zoneLayersById = {};
+            const validAll = allPlans.filter(p => calcDaysFromToday(p.date) >= 0);
+            document.getElementById('cnt-all').textContent = validAll.length;
+            document.getElementById('cnt-today').textContent = validAll.filter(p => calcDaysFromToday(p.date) === 0).length;
+            document.getElementById('cnt-tomorrow').textContent = validAll.filter(p => calcDaysFromToday(p.date) === 1).length;
+
+            const list = getFilteredPlans();
+            list.forEach(p => {
+                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft), z = p.zone;
+                const opts = { color: th.stroke, weight: 2.8, fillColor: th.fill, fillOpacity: dLeft === 0 ? 0.28 : 0.20, className: th.cls };
+                const lyr = z.t === 'c' ? L.circle(z.c, { ...opts, radius: z.r }) : L.polygon(z.p, opts);
+                lyr.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:220px;" class="space-y-1 text-xs"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><div class="font-extrabold text-slate-900 text-sm pt-0.5">${escHtml(p.title)}</div><div class="text-blue-700 font-bold">🗓️ ${formatThaiDate(p.date)} (${escHtml(p.timeSlot)} น.)</div>${p.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`);
+                lyr.on('click', ev => { if (ev.latlng) inspectUserCoordinate(ev.latlng.lat, ev.latlng.lng, false); });
+                lyr.addTo(zonesLayer);
+                zoneLayersById[p.id] = lyr;
+            });
+
+            const listEl = document.getElementById('outagePlanList');
+            if (!list.length) {
+                listEl.innerHTML = '<div class="col-span-full text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">✅ ไม่มีแผนดับไฟในช่วงเวลาที่เลือก</div>';
+                return;
+            }
+            listEl.innerHTML = list.map(p => {
+                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft), safeId = String(p.id).replace(/'/g, "\\'");
+                return `<div onclick="focusSingleZone('${safeId}')" class="cursor-pointer p-3 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 transition space-y-1 text-xs"><div class="flex items-center justify-between gap-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><span class="font-bold text-slate-600">⏰ ${escHtml(p.timeSlot)} น.</span></div><div class="font-extrabold text-slate-900 text-sm">${escHtml(p.title)}</div><div class="text-[11px] font-bold text-indigo-700">📅 ${formatThaiDate(p.date)}</div>${p.detail ? `<div class="text-[11px] text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`;
+            }).join('');
+        }
+
+        function focusSingleZone(planId) {
+            const lyr = zoneLayersById[planId];
+            if (!lyr) return;
+            map.fitBounds(lyr.getBounds(), { padding: [40, 40], maxZoom: 16 });
+            lyr.openPopup();
+        }
+
+        function fitAllZonesOnMap() {
+            const layers = Object.values(zoneLayersById);
+            if (!layers.length) return;
+            const fg = L.featureGroup(layers);
+            map.fitBounds(fg.getBounds(), { padding: [35, 35], maxZoom: 15 });
+        }
+
+        function setDateFilter(flt) {
+            dateFilter = flt;
+            ['all', 'today', 'tomorrow', '7days'].forEach(k => {
+                const b = document.getElementById('flt-' + k);
+                if (b) b.className = (k === flt) ? 'px-2.5 py-1 rounded-lg bg-indigo-600 text-white' : 'px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100';
+            });
+            renderRadarZonesAndList();
+        }
+
+        function inspectUserCoordinate(lat, lon, flyToPoint = true) {
+            lastCheckedLatLon = [lat, lon];
+            const icon = L.divIcon({
+                className: '',
+                html: '<div style="position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;"><div class="user-radar-ring"></div><div style="position:relative;z-index:2;width:28px;height:28px;border-radius:9999px;background:#0284c7;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;font-size:14px;">🏠</div></div>',
+                iconSize: [30, 30], iconAnchor: [15, 15]
+            });
+            if (!userMarker) {
+                userMarker = L.marker([lat, lon], { icon, draggable: true, zIndexOffset: 950 }).addTo(map);
+                userMarker.on('dragend', ev => { const ll = ev.target.getLatLng(); inspectUserCoordinate(ll.lat, ll.lng, false); });
+            } else userMarker.setLatLng([lat, lon]);
+            if (flyToPoint) map.setView([lat, lon], Math.max(map.getZoom(), 16));
+
+            const activePlans = allPlans.filter(p => calcDaysFromToday(p.date) >= 0);
+            const hits = [], nearHits = [];
+            let nearestMeters = Infinity;
+
+            activePlans.forEach(p => {
+                const res = evaluatePointAgainstPlan(lat, lon, p);
+                if (res.inside) hits.push(p);
+                else {
+                    if (res.edgeMeters <= NEAR_EDGE_BUFFER_METERS) nearHits.push({ plan: p, dist: res.edgeMeters });
+                    if (res.edgeMeters < nearestMeters) nearestMeters = res.edgeMeters;
+                }
+            });
+
+            const box = document.getElementById('radarResultBox');
+            box.classList.remove('hidden');
+            const coordTxt = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+
+            if (hits.length > 0) {
+                box.className = 'rounded-2xl p-3.5 border-2 border-rose-500 bg-rose-50 text-rose-950 space-y-2';
+                box.innerHTML = `<div class="font-extrabold text-sm text-rose-700">🚨 พิกัดที่เลือก (${coordTxt}) อยู่ในเขตแผนดับไฟ ${hits.length} รายการ!</div>` +
+                    hits.map(h => `<div class="p-2.5 bg-white rounded-xl border border-rose-200 text-xs space-y-0.5"><div class="font-extrabold text-slate-900">${escHtml(h.title)}</div><div class="font-bold text-rose-700">🗓️ ${formatThaiDate(h.date)} • เวลา ${escHtml(h.timeSlot)} น.</div>${h.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(h.detail)}</div>` : ''}</div>`).join('');
+            } else if (nearHits.length > 0) {
+                box.className = 'rounded-2xl p-3.5 border-2 border-amber-400 bg-amber-50 text-amber-950 space-y-1.5';
+                box.innerHTML = `<div class="font-extrabold text-sm text-amber-800">⚠️ อยู่ใกล้ขอบเขตแผนดับไฟ (ห่างแนวเขตเพียง ${nearHits[0].dist} เมตร)</div><p class="text-xs text-amber-900">อาจได้รับผลกระทบหากรับไฟต่อเนื่องจากหม้อแปลงชุดเดียวกัน:</p>` +
+                    nearHits.map(n => `<div class="p-2 bg-white rounded-xl border border-amber-200 text-xs"><b>${escHtml(n.plan.title)}</b> — ${formatThaiDate(n.plan.date)} (${escHtml(n.plan.timeSlot)} น.)</div>`).join('');
+            } else {
+                const distInfo = isFinite(nearestMeters) ? ` (ห่างจากเขตแผนดับไฟที่ใกล้ที่สุด ${(nearestMeters >= 1000 ? (nearestMeters / 1000).toFixed(2) + ' กม.' : nearestMeters + ' ม.')})` : '';
+                box.className = 'rounded-2xl p-3.5 border-2 border-emerald-400 bg-emerald-50 text-emerald-950';
+                box.innerHTML = `<div class="font-extrabold text-xs sm:text-sm text-emerald-800">✅ พิกัด (${coordTxt}) ไม่อยู่ในเขตแผนดับไฟตามกำหนดการ${distInfo}</div><div class="text-[11px] text-emerald-700 mt-0.5">สามารถลากหมุด 🏠 หรือแตะจุดอื่นบนแผนที่ดาวเทียมเพื่อตรวจสอบซ้ำได้ทันที</div>`;
+            }
+        }
+
+        function checkCurrentMobileGps() {
+            if (!navigator.geolocation) { alert('เบราว์เซอร์ของคุณไม่รองรับการดึงพิกัด GPS'); return; }
+            const btn = document.getElementById('btnCheckMyGps');
+            btn.disabled = true; btn.textContent = '⏳ กำลังจับสัญญาณดาวเทียม GPS...';
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    btn.disabled = false; btn.textContent = '📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)';
+                    inspectUserCoordinate(pos.coords.latitude, pos.coords.longitude, true);
+                },
+                () => {
+                    btn.disabled = false; btn.textContent = '📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)';
+                    alert('ไม่สามารถดึงพิกัด GPS ได้ กรุณาเปิด Location ในมือถือ หรือแตะเลือกหลังคาบ้านบนแผนที่โดยตรง');
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
+
+        async function checkManualCoordInput() {
+            const raw = (document.getElementById('manualCoordInput')?.value || '').trim();
+            if (!raw) return;
+            const m = raw.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || raw.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/) || raw.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+            if (m) {
+                let la = parseFloat(m[1]), lo = parseFloat(m[2]);
+                if (Math.abs(la) > 90 && Math.abs(lo) <= 90) { const t = la; la = lo; lo = t; }
+                inspectUserCoordinate(la, lo, true);
+                return;
+            }
+            if (/(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(raw) && activeApiUrl) {
+                try {
+                    const r = await fetch(activeApiUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'resolveShortUrl', url: raw }) }).then(x => x.json());
+                    if (r && !isNaN(parseFloat(r.lat)) && !isNaN(parseFloat(r.lon))) { inspectUserCoordinate(Number(r.lat), Number(r.lon), true); return; }
+                } catch (e) {}
+            }
+            alert('รูปแบบพิกัดไม่ถูกต้อง กรุณาวางพิกัด เช่น 13.1361, 101.0322 หรือแตะเลือกจุดบนแผนที่โดยตรง');
+        }
+
+        function onBranchChange(newGrp) {
+            activeGroup = newGrp;
+            loadOutagePlans(true);
+        }
+
+        async function loadOutagePlans(forceFresh = false) {
+            const overlay = document.getElementById('mapLoadingOverlay');
+            overlay.classList.remove('hidden');
+            try {
+                if (!activeApiUrl) activeApiUrl = await discoverPublicApiUrl();
+                if (!activeApiUrl) { overlay.textContent = '⚠️ ยังไม่ได้เชื่อมต่อลิงก์เซิร์ฟเวอร์'; return; }
+
+                const cacheKey = `pea_pub_plans_${activeGroup}`;
+                if (!forceFresh) {
+                    const cached = sessionStorage.getItem(cacheKey);
+                    if (cached) {
+                        const parsed = JSON.parse(cached);
+                        if (Date.now() - parsed.ts < 180000) {
+                            applyLoadedData(parsed.data);
+                            overlay.classList.add('hidden');
+                            return;
+                        }
+                    }
+                }
+                const sep = activeApiUrl.includes('?') ? '&' : '?';
+                const res = await fetch(`${activeApiUrl}${sep}action=getPublicOutages&group=${encodeURIComponent(activeGroup)}`, { cache: 'no-store' });
+                const data = await res.json();
+                sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+                applyLoadedData(data);
+            } catch (err) {
+                console.error(err);
+            } finally {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function applyLoadedData(data) {
+            allPlans = Array.isArray(data?.plans) ? data.plans : [];
+            const sel = document.getElementById('branchSelect');
+            if (Array.isArray(data?.groups) && data.groups.length > 0 && sel) {
+                sel.innerHTML = data.groups.map(g => `<option value="${escHtml(g)}" class="text-slate-900" ${g === activeGroup ? 'selected' : ''}>🏢 ${escHtml(g)}</option>`).join('');
+            }
+            document.getElementById('lastUpdatedLabel').textContent = 'อัปเดตล่าสุด: ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+            renderRadarZonesAndList();
+            if (lastCheckedLatLon) inspectUserCoordinate(lastCheckedLatLon[0], lastCheckedLatLon[1], false);
+            else if (Object.keys(zoneLayersById).length > 0) fitAllZonesOnMap();
+        }
+
+        (function init() {
+            const p = new URLSearchParams(window.location.search);
+            if (p.get('g') || p.get('group')) activeGroup = (p.get('g') || p.get('group')).trim();
+            initMap();
+            loadOutagePlans(false);
+        })();
+    </script>
+</body>
+</html>
