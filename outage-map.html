@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         body { font-family: 'Prompt', sans-serif; background: #0f172a; color: #1e293b; min-height: 100dvh; }
+        .leaflet-container img, .leaflet-container svg { max-width: none !important; max-height: none !important; }
         @keyframes radarSweep {
             0% { transform: scale(0.45); opacity: 0.9; }
             100% { transform: scale(2.4); opacity: 0; }
@@ -54,7 +55,7 @@
                 </button>
                 <div class="flex gap-1.5 flex-1">
                     <input type="text" id="manualCoordInput" onkeydown="if(event.key==='Enter') checkManualCoordInput()" placeholder="หรือวางพิกัด Lat, Lon / ลิงก์ Google Maps บ้านของคุณ..." class="flex-1 min-w-0 px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-500">
-                    <button type="button" onclick="checkManualCoordInput()" class="bg-slate-800 hover:bg-slate-900 text-amber-300 font-extrabold px-3.5 py-2 rounded-xl text-xs shrink-0">ค้นหา</button>
+                    <button type="button" id="btnSearchManualCoord" onclick="checkManualCoordInput()" class="bg-slate-800 hover:bg-slate-900 text-amber-300 font-extrabold px-3.5 py-2 rounded-xl text-xs shrink-0">ค้นหา</button>
                 </div>
             </div>
 
@@ -83,8 +84,9 @@
             <div class="absolute bottom-2.5 left-2.5 z-[420] flex gap-1.5">
                 <button type="button" onclick="fitAllZonesOnMap()" class="bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg">🎯 ดูพื้นที่แผนดับไฟทั้งหมด</button>
             </div>
-            <div id="mapLoadingOverlay" class="absolute inset-0 z-[450] bg-slate-900/55 backdrop-blur-[2px] flex items-center justify-center text-white text-xs font-extrabold">
-                ⏳ กำลังโหลดข้อมูลโซนเรดาร์แผนดับไฟ...
+            <div id="mapLoadingOverlay" class="absolute inset-0 z-[450] bg-slate-900/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 p-4 text-center text-white text-xs font-extrabold">
+                <span id="mapOverlayMsg">⏳ กำลังโหลดข้อมูลโซนเรดาร์แผนดับไฟ...</span>
+                <button type="button" id="mapOverlayRetryBtn" onclick="loadOutagePlans(true)" class="hidden bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-1.5 rounded-xl text-xs font-extrabold shadow">🔄 ลองโหลดใหม่อีกครั้ง</button>
             </div>
         </div>
 
@@ -103,9 +105,10 @@
     </footer>
 
     <script>
-        // กรณีต้องการล็อกลิงก์ Web App (/exec) ตายตัว สามารถวางในเครื่องหมายคำพูดด้านล่าง (หากเว้นว่างระบบจะค้นหาจากระบบหลักอัตโนมัติ)
+        // กรณีต้องการล็อกลิงก์ Web App (/exec) ตายตัว สามารถวางในเครื่องหมายคำพูดด้านล่าง (หากเว้นว่างระบบจะค้นหาจากลิงก์และระบบหลักอัตโนมัติ)
         const MANUAL_GAS_EXEC_URL = '';
         const NEAR_EDGE_BUFFER_METERS = 120;
+        const GAS_URL_REGEX = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec(?:\?.*)?$/i;
         const TH_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
         const TH_DAYS = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 
@@ -116,20 +119,43 @@
         let map = null, zonesLayer = null, userMarker = null;
         let zoneLayersById = {};
         let lastCheckedLatLon = null;
+        let currentLoadSeq = 0;
 
         function escHtml(s) {
-            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
+
+        function fmtTimeSlot(ts) {
+            const clean = String(ts || '09.00-16.00').replace(/\s*น\.?\s*$/g, '').trim();
+            return (clean || '09.00-16.00') + ' น.';
+        }
+
+        function showNoticeInBox(titleTxt, subTxt = '') {
+            const box = document.getElementById('radarResultBox');
+            if (!box) return;
+            box.classList.remove('hidden');
+            box.className = 'rounded-2xl p-3.5 border-2 border-amber-400 bg-amber-50 text-amber-950 space-y-1';
+            box.innerHTML = `<div class="font-extrabold text-xs sm:text-sm text-amber-900">${escHtml(titleTxt)}</div>` +
+                (subTxt ? `<div class="text-[11px] text-amber-800">${escHtml(subTxt)}</div>` : '');
+        }
+
         function getTodayIsoBkk() {
-            const d = new Date();
-            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const bkk = new Date(Date.now() + 7 * 3600000);
+            return `${bkk.getUTCFullYear()}-${String(bkk.getUTCMonth() + 1).padStart(2, '0')}-${String(bkk.getUTCDate()).padStart(2, '0')}`;
         }
+
         function calcDaysFromToday(isoStr) {
             const [y, m, d] = String(isoStr || '').split('-').map(Number);
             const [ty, tm, td] = getTodayIsoBkk().split('-').map(Number);
             if (!y || !ty) return 999;
-            return Math.round((new Date(y, m - 1, d) - new Date(ty, tm - 1, td)) / 86400000);
+            return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
         }
+
         function formatThaiDate(isoStr) {
             const [y, m, d] = String(isoStr || '').split('-').map(Number);
             if (!y || !m || !d) return isoStr || '-';
@@ -172,11 +198,11 @@
         function evaluatePointAgainstPlan(lat, lon, plan) {
             const z = plan.zone;
             if (!z) return { inside: false, edgeMeters: Infinity };
-            if (z.t === 'c') {
+            if (z.t === 'c' && Array.isArray(z.c)) {
                 const dist = haversineMeters(lat, lon, z.c[0], z.c[1]);
                 return { inside: dist <= z.r, edgeMeters: Math.max(0, Math.round(dist - z.r)) };
             }
-            if (z.t === 'p') {
+            if (z.t === 'p' && Array.isArray(z.p)) {
                 const inside = isPointInPoly(lat, lon, z.p);
                 return { inside, edgeMeters: inside ? 0 : Math.round(distToPolyEdgeMeters(lat, lon, z.p)) };
             }
@@ -185,19 +211,43 @@
 
         async function discoverPublicApiUrl() {
             const params = new URLSearchParams(window.location.search);
-            const urlParam = (params.get('u') || params.get('api') || '').trim();
-            if (urlParam.includes('script.google.com')) {
-                localStorage.setItem('pea_pub_outage_api_v1', urlParam);
-                return urlParam;
+            const scriptId = (params.get('s') || '').trim();
+            if (/^[A-Za-z0-9_-]{25,120}$/.test(scriptId)) {
+                const built = `https://script.google.com/macros/s/${scriptId}/exec`;
+                try { localStorage.setItem('pea_pub_outage_api_v1', built); } catch (e) {}
+                return built;
             }
-            if (MANUAL_GAS_EXEC_URL.includes('script.google.com')) return MANUAL_GAS_EXEC_URL;
-            const saved = (localStorage.getItem('pea_pub_outage_api_v1') || '').trim();
-            if (saved.includes('script.google.com')) return saved;
+            const urlParam = (params.get('u') || params.get('api') || '').trim();
+            if (GAS_URL_REGEX.test(urlParam)) {
+                const cleanExec = urlParam.split('?')[0];
+                try { localStorage.setItem('pea_pub_outage_api_v1', cleanExec); } catch (e) {}
+                return cleanExec;
+            }
+            if (GAS_URL_REGEX.test(MANUAL_GAS_EXEC_URL)) return MANUAL_GAS_EXEC_URL.split('?')[0];
+
             try {
-                const txt = await fetch('./shared-core.js', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '');
-                const m = txt.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/);
-                if (m) { localStorage.setItem('pea_pub_outage_api_v1', m[0]); return m[0]; }
+                const candidates = [
+                    localStorage.getItem('pea_pub_outage_api_v1'),
+                    localStorage.getItem('elec_cloud_user_api_url'),
+                    localStorage.getItem('elec_cloud_api_url'),
+                    localStorage.getItem('elec_pm_last_api_url_v1')
+                ];
+                for (const c of candidates) {
+                    const trimmed = String(c || '').trim();
+                    if (GAS_URL_REGEX.test(trimmed)) return trimmed.split('?')[0];
+                }
             } catch (e) {}
+
+            for (const path of ['./shared-core.js', './pea-core.js', './index.html', './page2.html']) {
+                try {
+                    const txt = await fetch(path, { cache: 'no-cache' }).then(r => r.ok ? r.text() : '');
+                    const m = txt.match(/https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/);
+                    if (m) {
+                        try { localStorage.setItem('pea_pub_outage_api_v1', m[0]); } catch (e) {}
+                        return m[0];
+                    }
+                } catch (e) {}
+            }
             return '';
         }
 
@@ -230,17 +280,23 @@
         function renderRadarZonesAndList() {
             zonesLayer.clearLayers();
             zoneLayersById = {};
-            const validAll = allPlans.filter(p => calcDaysFromToday(p.date) >= 0);
+            const validAll = allPlans.filter(p => calcDaysFromToday(p.date) >= 0 && p.zone);
             document.getElementById('cnt-all').textContent = validAll.length;
             document.getElementById('cnt-today').textContent = validAll.filter(p => calcDaysFromToday(p.date) === 0).length;
             document.getElementById('cnt-tomorrow').textContent = validAll.filter(p => calcDaysFromToday(p.date) === 1).length;
 
-            const list = getFilteredPlans();
+            const list = getFilteredPlans().filter(p => p.zone);
             list.forEach(p => {
-                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft), z = p.zone;
-                const opts = { color: th.stroke, weight: 2.8, fillColor: th.fill, fillOpacity: dLeft === 0 ? 0.28 : 0.20, className: th.cls };
+                const z = p.zone;
+                if (z.t !== 'c' && z.t !== 'p') return;
+                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft);
+                const opts = {
+                    color: th.stroke, weight: 2.8, fillColor: th.fill,
+                    fillOpacity: dLeft === 0 ? 0.28 : 0.20,
+                    className: th.cls, bubblingMouseEvents: false
+                };
                 const lyr = z.t === 'c' ? L.circle(z.c, { ...opts, radius: z.r }) : L.polygon(z.p, opts);
-                lyr.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:220px;" class="space-y-1 text-xs"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><div class="font-extrabold text-slate-900 text-sm pt-0.5">${escHtml(p.title)}</div><div class="text-blue-700 font-bold">🗓️ ${formatThaiDate(p.date)} (${escHtml(p.timeSlot)} น.)</div>${p.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`);
+                lyr.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:220px;" class="space-y-1 text-xs"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><div class="font-extrabold text-slate-900 text-sm pt-0.5">${escHtml(p.title)}</div><div class="text-blue-700 font-bold">🗓️ ${formatThaiDate(p.date)} (${escHtml(fmtTimeSlot(p.timeSlot))})</div>${p.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`);
                 lyr.on('click', ev => { if (ev.latlng) inspectUserCoordinate(ev.latlng.lat, ev.latlng.lng, false); });
                 lyr.addTo(zonesLayer);
                 zoneLayersById[p.id] = lyr;
@@ -252,14 +308,15 @@
                 return;
             }
             listEl.innerHTML = list.map(p => {
-                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft), safeId = String(p.id).replace(/'/g, "\\'");
-                return `<div onclick="focusSingleZone('${safeId}')" class="cursor-pointer p-3 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 transition space-y-1 text-xs"><div class="flex items-center justify-between gap-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><span class="font-bold text-slate-600">⏰ ${escHtml(p.timeSlot)} น.</span></div><div class="font-extrabold text-slate-900 text-sm">${escHtml(p.title)}</div><div class="text-[11px] font-bold text-indigo-700">📅 ${formatThaiDate(p.date)}</div>${p.detail ? `<div class="text-[11px] text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`;
+                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft), safeId = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `<div onclick="focusSingleZone('${safeId}')" class="cursor-pointer p-3 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 transition space-y-1 text-xs"><div class="flex items-center justify-between gap-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><span class="font-bold text-slate-600">⏰ ${escHtml(fmtTimeSlot(p.timeSlot))}</span></div><div class="font-extrabold text-slate-900 text-sm">${escHtml(p.title)}</div><div class="text-[11px] font-bold text-indigo-700">📅 ${formatThaiDate(p.date)}</div>${p.detail ? `<div class="text-[11px] text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`;
             }).join('');
         }
 
         function focusSingleZone(planId) {
             const lyr = zoneLayersById[planId];
             if (!lyr) return;
+            document.getElementById('outageRadarMap')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             map.fitBounds(lyr.getBounds(), { padding: [40, 40], maxZoom: 16 });
             lyr.openPopup();
         }
@@ -281,6 +338,7 @@
         }
 
         function inspectUserCoordinate(lat, lon, flyToPoint = true) {
+            if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
             lastCheckedLatLon = [lat, lon];
             const icon = L.divIcon({
                 className: '',
@@ -293,7 +351,7 @@
             } else userMarker.setLatLng([lat, lon]);
             if (flyToPoint) map.setView([lat, lon], Math.max(map.getZoom(), 16));
 
-            const activePlans = allPlans.filter(p => calcDaysFromToday(p.date) >= 0);
+            const activePlans = allPlans.filter(p => calcDaysFromToday(p.date) >= 0 && p.zone);
             const hits = [], nearHits = [];
             let nearestMeters = Infinity;
 
@@ -313,11 +371,11 @@
             if (hits.length > 0) {
                 box.className = 'rounded-2xl p-3.5 border-2 border-rose-500 bg-rose-50 text-rose-950 space-y-2';
                 box.innerHTML = `<div class="font-extrabold text-sm text-rose-700">🚨 พิกัดที่เลือก (${coordTxt}) อยู่ในเขตแผนดับไฟ ${hits.length} รายการ!</div>` +
-                    hits.map(h => `<div class="p-2.5 bg-white rounded-xl border border-rose-200 text-xs space-y-0.5"><div class="font-extrabold text-slate-900">${escHtml(h.title)}</div><div class="font-bold text-rose-700">🗓️ ${formatThaiDate(h.date)} • เวลา ${escHtml(h.timeSlot)} น.</div>${h.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(h.detail)}</div>` : ''}</div>`).join('');
+                    hits.map(h => `<div class="p-2.5 bg-white rounded-xl border border-rose-200 text-xs space-y-0.5"><div class="font-extrabold text-slate-900">${escHtml(h.title)}</div><div class="font-bold text-rose-700">🗓️ ${formatThaiDate(h.date)} • เวลา ${escHtml(fmtTimeSlot(h.timeSlot))}</div>${h.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(h.detail)}</div>` : ''}</div>`).join('');
             } else if (nearHits.length > 0) {
                 box.className = 'rounded-2xl p-3.5 border-2 border-amber-400 bg-amber-50 text-amber-950 space-y-1.5';
                 box.innerHTML = `<div class="font-extrabold text-sm text-amber-800">⚠️ อยู่ใกล้ขอบเขตแผนดับไฟ (ห่างแนวเขตเพียง ${nearHits[0].dist} เมตร)</div><p class="text-xs text-amber-900">อาจได้รับผลกระทบหากรับไฟต่อเนื่องจากหม้อแปลงชุดเดียวกัน:</p>` +
-                    nearHits.map(n => `<div class="p-2 bg-white rounded-xl border border-amber-200 text-xs"><b>${escHtml(n.plan.title)}</b> — ${formatThaiDate(n.plan.date)} (${escHtml(n.plan.timeSlot)} น.)</div>`).join('');
+                    nearHits.map(n => `<div class="p-2 bg-white rounded-xl border border-amber-200 text-xs"><b>${escHtml(n.plan.title)}</b> — ${formatThaiDate(n.plan.date)} (${escHtml(fmtTimeSlot(n.plan.timeSlot))})</div>`).join('');
             } else {
                 const distInfo = isFinite(nearestMeters) ? ` (ห่างจากเขตแผนดับไฟที่ใกล้ที่สุด ${(nearestMeters >= 1000 ? (nearestMeters / 1000).toFixed(2) + ' กม.' : nearestMeters + ' ม.')})` : '';
                 box.className = 'rounded-2xl p-3.5 border-2 border-emerald-400 bg-emerald-50 text-emerald-950';
@@ -326,7 +384,10 @@
         }
 
         function checkCurrentMobileGps() {
-            if (!navigator.geolocation) { alert('เบราว์เซอร์ของคุณไม่รองรับการดึงพิกัด GPS'); return; }
+            if (!navigator.geolocation) {
+                showNoticeInBox('⚠️ เบราว์เซอร์ไม่รองรับการดึงพิกัด GPS', 'กรุณาเลื่อนแผนที่ดาวเทียมด้านล่าง แล้วแตะเลือกหลังคาบ้านของคุณโดยตรง');
+                return;
+            }
             const btn = document.getElementById('btnCheckMyGps');
             btn.disabled = true; btn.textContent = '⏳ กำลังจับสัญญาณดาวเทียม GPS...';
             navigator.geolocation.getCurrentPosition(
@@ -336,7 +397,10 @@
                 },
                 () => {
                     btn.disabled = false; btn.textContent = '📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)';
-                    alert('ไม่สามารถดึงพิกัด GPS ได้ กรุณาเปิด Location ในมือถือ หรือแตะเลือกหลังคาบ้านบนแผนที่โดยตรง');
+                    showNoticeInBox(
+                        '⚠️ ไม่สามารถดึงพิกัด GPS จากเครื่องได้',
+                        'หากเปิดผ่านแอป LINE กรุณากดเปิดด้วย Safari/Chrome หรือเลื่อนแผนที่ด้านล่างแตะเลือกหลังคาบ้านของคุณโดยตรงได้เลยครับ'
+                    );
                 },
                 { enableHighAccuracy: true, timeout: 10000 }
             );
@@ -345,20 +409,56 @@
         async function checkManualCoordInput() {
             const raw = (document.getElementById('manualCoordInput')?.value || '').trim();
             if (!raw) return;
-            const m = raw.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || raw.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/) || raw.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+            let decoded = raw;
+            try { decoded = decodeURIComponent(raw); } catch (e) {}
+
+            // รองรับพิกัดองศา DMS จากแอป Google Maps เช่น 13°08'10.0"N 101°01'55.9"E
+            const dms = decoded.match(/(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([NSns])[\s,]+(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([EWew])/);
+            if (dms) {
+                let la = Number(dms[1]) + Number(dms[2]) / 60 + Number(dms[3]) / 3600;
+                let lo = Number(dms[5]) + Number(dms[6]) / 60 + Number(dms[7]) / 3600;
+                if (dms[4].toUpperCase() === 'S') la = -la;
+                if (dms[8].toUpperCase() === 'W') lo = -lo;
+                inspectUserCoordinate(la, lo, true);
+                return;
+            }
+
+            const m = decoded.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/i) ||
+                      decoded.match(/[?&](?:q|ll|destination|query|center|daddr)=(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)/i) ||
+                      decoded.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/) ||
+                      decoded.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
             if (m) {
                 let la = parseFloat(m[1]), lo = parseFloat(m[2]);
                 if (Math.abs(la) > 90 && Math.abs(lo) <= 90) { const t = la; la = lo; lo = t; }
                 inspectUserCoordinate(la, lo, true);
                 return;
             }
-            if (/(?:maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(raw) && activeApiUrl) {
+
+            const shortLinkMatch = raw.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)[^\s"<>]*/i);
+            if (shortLinkMatch && !activeApiUrl) activeApiUrl = await discoverPublicApiUrl();
+            if (shortLinkMatch && activeApiUrl) {
+                const sBtn = document.getElementById('btnSearchManualCoord');
+                if (sBtn) { sBtn.disabled = true; sBtn.textContent = '⏳...'; }
+                const sCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const sTimer = sCtrl ? setTimeout(() => sCtrl.abort(), 10000) : null;
                 try {
-                    const r = await fetch(activeApiUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'resolveShortUrl', url: raw }) }).then(x => x.json());
-                    if (r && !isNaN(parseFloat(r.lat)) && !isNaN(parseFloat(r.lon))) { inspectUserCoordinate(Number(r.lat), Number(r.lon), true); return; }
+                    const r = await fetch(activeApiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'resolveShortUrl', url: shortLinkMatch[0] }),
+                        signal: sCtrl ? sCtrl.signal : undefined
+                    }).then(x => x.json());
+                    if (r && !isNaN(parseFloat(r.lat)) && !isNaN(parseFloat(r.lon))) {
+                        inspectUserCoordinate(Number(r.lat), Number(r.lon), true);
+                        return;
+                    }
                 } catch (e) {}
+                finally {
+                    if (sTimer) clearTimeout(sTimer);
+                    if (sBtn) { sBtn.disabled = false; sBtn.textContent = 'ค้นหา'; }
+                }
             }
-            alert('รูปแบบพิกัดไม่ถูกต้อง กรุณาวางพิกัด เช่น 13.1361, 101.0322 หรือแตะเลือกจุดบนแผนที่โดยตรง');
+            showNoticeInBox('⚠️ รูปแบบพิกัดหรือลิงก์ไม่ถูกต้อง', 'กรุณาวางพิกัด เช่น 13.1361, 101.0322 หรือเลื่อนแผนที่แตะเลือกหลังคาบ้านโดยตรง');
         }
 
         function onBranchChange(newGrp) {
@@ -367,41 +467,74 @@
         }
 
         async function loadOutagePlans(forceFresh = false) {
+            const seq = ++currentLoadSeq;
             const overlay = document.getElementById('mapLoadingOverlay');
+            const msgEl = document.getElementById('mapOverlayMsg');
+            const retryBtn = document.getElementById('mapOverlayRetryBtn');
             overlay.classList.remove('hidden');
+            retryBtn.classList.add('hidden');
+            msgEl.textContent = '⏳ กำลังโหลดข้อมูลโซนเรดาร์แผนดับไฟ...';
+
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), 12000) : null;
+
             try {
                 if (!activeApiUrl) activeApiUrl = await discoverPublicApiUrl();
-                if (!activeApiUrl) { overlay.textContent = '⚠️ ยังไม่ได้เชื่อมต่อลิงก์เซิร์ฟเวอร์'; return; }
-
-                const cacheKey = `pea_pub_plans_${activeGroup}`;
-                if (!forceFresh) {
-                    const cached = sessionStorage.getItem(cacheKey);
-                    if (cached) {
-                        const parsed = JSON.parse(cached);
-                        if (Date.now() - parsed.ts < 180000) {
-                            applyLoadedData(parsed.data);
-                            overlay.classList.add('hidden');
-                            return;
-                        }
-                    }
+                if (seq !== currentLoadSeq) return;
+                if (!activeApiUrl) {
+                    msgEl.textContent = '⚠️ ยังไม่ได้เชื่อมต่อลิงก์เซิร์ฟเวอร์ กรุณาเปิดจากลิงก์ประชาสัมพันธ์ของการไฟฟ้า';
+                    return;
                 }
+
+                const reqGroup = activeGroup;
+                const navType = performance.getEntriesByType?.('navigation')?.[0]?.type;
+                const cacheKey = `pea_pub_plans_${getTodayIsoBkk()}_${reqGroup}`;
+                if (!forceFresh && navType !== 'reload') {
+                    try {
+                        const cached = sessionStorage.getItem(cacheKey);
+                        if (cached) {
+                            const parsed = JSON.parse(cached);
+                            if (Date.now() - parsed.ts < 45000) {
+                                applyLoadedData(parsed.data);
+                                overlay.classList.add('hidden');
+                                return;
+                            }
+                        }
+                    } catch (e) {}
+                }
+
                 const sep = activeApiUrl.includes('?') ? '&' : '?';
-                const res = await fetch(`${activeApiUrl}${sep}action=getPublicOutages&group=${encodeURIComponent(activeGroup)}`, { cache: 'no-store' });
+                const res = await fetch(`${activeApiUrl}${sep}action=getPublicOutages&group=${encodeURIComponent(reqGroup)}`, {
+                    cache: 'no-store',
+                    signal: ctrl ? ctrl.signal : undefined
+                });
                 const data = await res.json();
-                sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+                if (seq !== currentLoadSeq) return;
+                if (!data || data.status === 'error') throw new Error(data?.message || 'Server error');
+
+                try { sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data })); } catch (e) {}
                 applyLoadedData(data);
-            } catch (err) {
-                console.error(err);
-            } finally {
                 overlay.classList.add('hidden');
+            } catch (err) {
+                if (seq !== currentLoadSeq) return;
+                console.error(err);
+                activeApiUrl = '';
+                try { localStorage.removeItem('pea_pub_outage_api_v1'); } catch (e) {}
+                msgEl.textContent = '⚠️ ไม่สามารถดึงข้อมูลแผนดับไฟได้ในขณะนี้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่';
+                retryBtn.classList.remove('hidden');
+            } finally {
+                if (timer) clearTimeout(timer);
             }
         }
 
         function applyLoadedData(data) {
+            if (data?.group) activeGroup = data.group;
             allPlans = Array.isArray(data?.plans) ? data.plans : [];
             const sel = document.getElementById('branchSelect');
-            if (Array.isArray(data?.groups) && data.groups.length > 0 && sel) {
-                sel.innerHTML = data.groups.map(g => `<option value="${escHtml(g)}" class="text-slate-900" ${g === activeGroup ? 'selected' : ''}>🏢 ${escHtml(g)}</option>`).join('');
+            if (sel) {
+                const groupList = Array.isArray(data?.groups) && data.groups.length > 0 ? [...data.groups] : [activeGroup];
+                if (!groupList.includes(activeGroup)) groupList.unshift(activeGroup);
+                sel.innerHTML = groupList.map(g => `<option value="${escHtml(g)}" class="text-slate-900" ${g === activeGroup ? 'selected' : ''}>🏢 ${escHtml(g)}</option>`).join('');
             }
             document.getElementById('lastUpdatedLabel').textContent = 'อัปเดตล่าสุด: ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
             renderRadarZonesAndList();
@@ -411,7 +544,12 @@
 
         (function init() {
             const p = new URLSearchParams(window.location.search);
-            if (p.get('g') || p.get('group')) activeGroup = (p.get('g') || p.get('group')).trim();
+            const gParam = (p.get('g') || p.get('group') || '').trim();
+            if (gParam) {
+                activeGroup = gParam;
+                const sel = document.getElementById('branchSelect');
+                if (sel) sel.innerHTML = `<option value="${escHtml(activeGroup)}" class="text-slate-900" selected>🏢 ${escHtml(activeGroup)}</option>`;
+            }
             initMap();
             loadOutagePlans(false);
         })();
