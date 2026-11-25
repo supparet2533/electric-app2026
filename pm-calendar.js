@@ -420,7 +420,7 @@
         if (cleanOz && !isArchivedDone) out.oz = cleanOz;
         if (isPubActive && p.status !== 'done') out.pub = 1;
         if (p.pubNote && !isArchivedDone) out.pbn = String(p.pubNote).slice(0, 180);
-        if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 450);
+if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         if (!isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lon))) {
             out.lat = Number(Number(p.lat).toFixed(6));
             out.lon = Number(Number(p.lon).toFixed(6));
@@ -2383,11 +2383,186 @@
     let isLassoDragging = false;
     let lastLassoFinishMs = 0;
 
-    // ตัวแปรจัดการดูดชื่อสถานที่ในกรอบไฟดับและหน้าต่างสร้างโพสต์ประกาศ FB/LINE
+        // ตัวแปรจัดการดูดชื่อสถานที่ในกรอบไฟดับ + AI Vision อ่านป้ายแผนที่แยกโควตารายกลุ่ม 100%
+          const PM_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
+        const FALLBACK_GEMINI_VISION_MODELS = [
+        'gemini-3.5-flash-lite',
+        'gemini-3.8-flash',
+        'gemini-3-flash',
+        'gemini-3-flash-preview',
+        'gemini-3.1-flash-lite-preview',
+        'gemini-2.5-flash-lite',
+        'gemini-2.5-flash'
+    ];
+        const resolvedModelsByKeyCache = new Map();
+    const unsupportedGeminiModels = new Set();
     let tempPubPlacesList = [];
     let isExtractingZonePlaces = false;
     let currentAnnounceModalItem = null;
     let currentAnnounceStyleMode = 'facebook';
+    let pendingRunScanAfterKeySave = false;
+    let directGoogleTileCorsBlocked = false;
+
+    async function resolveAvailableVisionModelsPm(apiKey) {
+        const keyTag = String(apiKey || '').slice(-10);
+        const filterUnsupported = list => list.filter(m => !unsupportedGeminiModels.has(`${keyTag}:${m}`));
+        if (resolvedModelsByKeyCache.has(keyTag)) {
+            const cached = filterUnsupported(resolvedModelsByKeyCache.get(keyTag));
+            if (cached.length > 0) return cached;
+        }
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
+            const res = await _origFetchForPm(url, { signal: ctrl ? ctrl.signal : undefined });
+            const data = await res.json().catch(() => null);
+            if (res.status === 400 || res.status === 403) {
+                const errMsg = String(data?.error?.message || '');
+                if (/API_KEY_INVALID|API key not valid|key expired|PERMISSION_DENIED/i.test(errMsg)) {
+                    const keyErr = new Error('API Key ไม่ถูกต้อง ถูกจำกัดสิทธิ์โดเมน หรือหมดอายุ กรุณาตั้งค่าคีย์ AI ใหม่');
+                    keyErr.isInvalidKey = true;
+                    throw keyErr;
+                }
+            }
+            if (res.ok && Array.isArray(data?.models)) {
+                const candidates = [];
+                data.models.forEach(m => {
+                    if (!Array.isArray(m?.supportedGenerationMethods) || !m.supportedGenerationMethods.includes('generateContent')) return;
+                    const id = String(m.name || '').replace(/^models\//, '').trim();
+                    const match = id.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview)?$/i);
+                    if (!match) return;
+                    const ver = parseFloat(match[1]);
+                    if (isNaN(ver) || ver < 2.5) return;
+                    const isLite = Boolean(match[2]);
+                    const isPreview = Boolean(match[3]);
+                    const retiringPenalty = id.toLowerCase() === 'gemini-2.5-flash' ? -25 : 0;
+                    const score = (ver >= 3 ? 1000 : 0) + (ver * 100) + (isPreview ? 0 : 20) + (isLite ? 0 : 15) + retiringPenalty;
+                    candidates.push({ id, score });
+                });
+                candidates.sort((a, b) => b.score - a.score);
+                const ordered = candidates.map(c => c.id);
+                if (ordered.length > 0) {
+                    resolvedModelsByKeyCache.set(keyTag, ordered);
+                    return filterUnsupported(ordered);
+                }
+            }
+        } catch (err) {
+            if (err?.isInvalidKey) throw err;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+        return filterUnsupported(FALLBACK_GEMINI_VISION_MODELS);
+    }
+
+    function getGroupAiStorageKey(groupName = getActivePmGroup()) {
+        const grp = normPmGrp(groupName || 'กฟส.บึง') || 'กฟส.บึง';
+        return `${PM_GROUP_AI_KEY_PREFIX}${grp}`;
+    }
+
+    function getCurrentGroupAiApiKey() {
+        const k = getGroupAiStorageKey();
+        let val = '';
+        try { val = localStorage.getItem(k) || ''; } catch (e) {}
+        return String(val || rawGet(k) || '').trim();
+    }
+
+    function maskAiApiKeyPm(rawKey) {
+        const k = String(rawKey || '').trim();
+        if (k.length < 12) return '';
+        return `${k.slice(0, 8)}••••••••${k.slice(-4)}`;
+    }
+
+    function updateGroupAiKeyButtonsUI() {
+        const hasKey = Boolean(getCurrentGroupAiApiKey());
+        const grp = getActivePmGroup();
+        const btnMap = document.getElementById('btnConfigGroupAiKeyMap');
+        if (btnMap) {
+            btnMap.textContent = hasKey ? '🔑 AI: พร้อม' : '🔑 ตั้งคีย์ AI';
+            btnMap.title = `ตั้งค่า Gemini API Key เฉพาะกลุ่ม ${grp} (แยกโควตา 100%)`;
+            btnMap.className = hasKey
+                ? 'bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/60 px-2 py-1 rounded-lg text-[10px] font-extrabold shrink-0'
+                : 'bg-amber-400 hover:bg-amber-300 text-slate-950 px-2 py-1 rounded-lg text-[10px] font-extrabold shadow shrink-0';
+        }
+        const btnForm = document.getElementById('btnConfigGroupAiKeyForm');
+        if (btnForm) {
+            btnForm.textContent = hasKey ? '🔑 คีย์ AI: พร้อม' : '🔑 ตั้งคีย์ AI กลุ่ม';
+            btnForm.title = `ตั้งค่า Gemini API Key เฉพาะกลุ่ม ${grp} (แยกโควตา 100%)`;
+            btnForm.className = hasKey
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1 rounded-lg text-[10px] font-extrabold'
+                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg text-[10px] font-extrabold';
+        }
+    }
+
+    function openPmAiKeyModal(runScanAfterSave = false) {
+        injectPmModalsDOM();
+        ensurePmOutageZoneUiInjected();
+        pendingRunScanAfterKeySave = Boolean(runScanAfterSave);
+        const grp = getActivePmGroup();
+        const savedKey = getCurrentGroupAiApiKey();
+        const grpBadge = document.getElementById('pmAiKeyModalGroupBadge');
+        const statusEl = document.getElementById('pmAiKeyCurrentStatus');
+        const inp = document.getElementById('pmAiKeyInput');
+        const saveBtn = document.getElementById('pmAiKeySaveBtn');
+        const clearBtn = document.getElementById('pmAiKeyClearBtn');
+        const skipBtn = document.getElementById('pmAiKeySkipBasicBtn');
+
+        if (grpBadge) grpBadge.textContent = `🏢 โควตาแยกเฉพาะกลุ่ม: ${grp} (ไม่ปนกับกลุ่มอื่น 100%)`;
+        if (statusEl) {
+            statusEl.innerHTML = savedKey
+                ? `สถานะปัจจุบัน: <b class="text-emerald-700">ผูกคีย์แล้ว (${safeEscHtml(maskAiApiKeyPm(savedKey))})</b>`
+                : `สถานะปัจจุบัน: <b class="text-rose-600">ยังไม่ได้ตั้งค่าคีย์ AI สำหรับกลุ่ม ${safeEscHtml(grp)} ในเครื่องนี้</b>`;
+        }
+        if (inp) inp.value = savedKey;
+        if (saveBtn) saveBtn.textContent = pendingRunScanAfterKeySave ? '💾 บันทึกคีย์ & ดูดชื่อทันที' : '💾 บันทึกคีย์ประจำกลุ่ม';
+        if (clearBtn) clearBtn.classList.toggle('hidden', !savedKey);
+        if (skipBtn) skipBtn.classList.toggle('hidden', !pendingRunScanAfterKeySave);
+
+        document.getElementById('pmAiKeyConfigModal')?.classList.remove('hidden');
+        setTimeout(() => inp?.focus(), 60);
+    }
+
+    function closePmAiKeyModal() {
+        pendingRunScanAfterKeySave = false;
+        document.getElementById('pmAiKeyConfigModal')?.classList.add('hidden');
+    }
+
+    function savePmGroupAiKeyFromModal() {
+        const inp = document.getElementById('pmAiKeyInput');
+        const keyMatch = String(inp?.value || '').trim().match(/AIza[0-9A-Za-z_-]{25,60}/);
+        const cleanKey = keyMatch ? keyMatch[0] : '';
+        if (!cleanKey) {
+            safeToast('⚠️ รูปแบบ API Key ไม่ถูกต้อง (คีย์จาก Google AI Studio ต้องขึ้นต้นด้วย AIza...)');
+            inp?.focus();
+            return;
+        }
+        const grp = getActivePmGroup();
+        try {
+            localStorage.setItem(getGroupAiStorageKey(grp), cleanKey);
+        } catch (e) {
+            safeToast('❌ พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม ไม่สามารถบันทึกคีย์ได้');
+            return;
+        }
+        const shouldScanNow = pendingRunScanAfterKeySave;
+        closePmAiKeyModal();
+        updateGroupAiKeyButtonsUI();
+        safeToast(`✅ บันทึกคีย์ AI แยกเฉพาะกลุ่ม "${grp}" เรียบร้อยแล้ว`);
+        if (shouldScanNow) extractPlacesInCurrentOutageZone(false);
+    }
+
+    function clearPmGroupAiKeyFromModal() {
+        const grp = getActivePmGroup();
+        try { localStorage.removeItem(getGroupAiStorageKey(grp)); } catch (e) {}
+        const inp = document.getElementById('pmAiKeyInput');
+        if (inp) inp.value = '';
+        updateGroupAiKeyButtonsUI();
+        closePmAiKeyModal();
+        safeToast(`🗑️ ลบคีย์ AI ของกลุ่ม "${grp}" ออกจากเครื่องนี้แล้ว`);
+    }
+
+    function skipAiAndExtractBasicZonePlaces() {
+        closePmAiKeyModal();
+        extractPlacesInCurrentOutageZone(true);
+    }
 
     function getZoneCentroidPm(oz) {
         if (!oz) return null;
@@ -2479,11 +2654,16 @@
         return false;
     }
 
-    function parsePlacesTextToList(rawStr) {
+    // ป้องกันการหั่นชื่อบริษัทที่มี Co., Ltd. / Inc. / Corp. แยกเป็น 2 ป้าย
+        function parsePlacesTextToList(rawStr) {
         const seen = new Set();
         const out = [];
-        String(rawStr || '').split(/\s*[,،\n]+\s*/).forEach(part => {
-            const clean = part.replace(/\s+/g, ' ').trim();
+        const src = Array.isArray(rawStr) ? rawStr.join('\n') : String(rawStr || '');
+        const safeStr = src
+            .replace(/\b(Co(?:\.|mpany)?)\s*,\s*(Ltd\.?|Limited)(?!\w)/gi, '$1\u0000 $2')
+            .replace(/([A-Za-z0-9.)])\s*,\s*(Inc\.?|LLC|Corp\.?|PLC)(?!\w)/gi, '$1\u0000 $2');
+        safeStr.split(/\s*[,،\n]+\s*/).forEach(part => {
+            const clean = part.replace(/\u0000/g, ',').replace(/\s+/g, ' ').trim();
             const key = clean.toLowerCase();
             if (clean && !seen.has(key)) {
                 seen.add(key);
@@ -2492,27 +2672,32 @@
         });
         return out;
     }
+    function isAdminAreaSummaryItemPm(s) {
+        return /^(?:ต\.|ตำบล|แขวง)\S+\s+(?:อ\.|อำเภอ|เขต)\S+/i.test(String(s || '').trim());
+    }
 
-    function renderTempPubPlacesUI() {
-        const joined = tempPubPlacesList.join(', ');
-        const txtEl = document.getElementById('pmPubOutagePlacesInput');
-        if (txtEl && txtEl.value !== joined) txtEl.value = joined;
+    function buildPlacesChipsHtmlPm() {
+        return tempPubPlacesList.length > 0
+            ? tempPubPlacesList.map((name, idx) =>
+                `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-full text-[10.5px] font-bold">${safeEscHtml(name)}<button type="button" onclick="removeTempPubPlaceAt(${idx})" class="text-rose-500 hover:text-rose-800 font-extrabold leading-none ml-0.5">&times;</button></span>`
+            ).join('')
+            : '<span class="text-[10px] text-slate-400 italic">ยังไม่มีรายชื่อสถานที่ — กดปุ่ม "🔍 ดูดชื่อสถานที่ในกรอบ" เพื่อให้ AI กวาดป้ายหอพัก/บริษัทในกรอบได้เลย</span>';
+    }
 
+    function renderTempPubPlacesUI(syncTextarea = true) {
+        if (syncTextarea) {
+            const joined = tempPubPlacesList.join(', ');
+            const txtEl = document.getElementById('pmPubOutagePlacesInput');
+            if (txtEl && txtEl.value !== joined) txtEl.value = joined;
+        }
         const cntBadge = document.getElementById('pmZonePlacesCountBadge');
         if (cntBadge) cntBadge.textContent = String(tempPubPlacesList.length);
-
         const mapRow = document.getElementById('pmMapZonePlacesRow');
         if (mapRow) {
             mapRow.classList.toggle('hidden', tempPubPlacesList.length === 0);
             mapRow.classList.toggle('flex', tempPubPlacesList.length > 0);
         }
-
-        const chipsHtml = tempPubPlacesList.length > 0
-            ? tempPubPlacesList.map((name, idx) =>
-                `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-full text-[10.5px] font-bold">${safeEscHtml(name)}<button type="button" onclick="removeTempPubPlaceAt(${idx})" class="text-rose-500 hover:text-rose-800 font-extrabold leading-none ml-0.5">&times;</button></span>`
-            ).join('')
-            : '<span class="text-[10px] text-slate-400 italic">ยังไม่มีรายชื่อสถานที่ — กดปุ่ม "🔍 ดูดชื่อสถานที่ในกรอบ" หรือพิมพ์/พูดชื่อที่เห็นบนแมพได้เลย</span>';
-
+        const chipsHtml = buildPlacesChipsHtmlPm();
         const mapChipBox = document.getElementById('pmMapZonePlacesChipsWrap');
         if (mapChipBox) mapChipBox.innerHTML = chipsHtml;
         const formChipBox = document.getElementById('pmFormZonePlacesChipsWrap');
@@ -2521,22 +2706,7 @@
 
     function onPubPlacesTextareaInput(val) {
         tempPubPlacesList = parsePlacesTextToList(val);
-        const cntBadge = document.getElementById('pmZonePlacesCountBadge');
-        if (cntBadge) cntBadge.textContent = String(tempPubPlacesList.length);
-        const mapRow = document.getElementById('pmMapZonePlacesRow');
-        if (mapRow) {
-            mapRow.classList.toggle('hidden', tempPubPlacesList.length === 0);
-            mapRow.classList.toggle('flex', tempPubPlacesList.length > 0);
-        }
-        const chipsHtml = tempPubPlacesList.length > 0
-            ? tempPubPlacesList.map((name, idx) =>
-                `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-full text-[10.5px] font-bold">${safeEscHtml(name)}<button type="button" onclick="removeTempPubPlaceAt(${idx})" class="text-rose-500 hover:text-rose-800 font-extrabold leading-none ml-0.5">&times;</button></span>`
-            ).join('')
-            : '<span class="text-[10px] text-slate-400 italic">ยังไม่มีรายชื่อสถานที่ — กดปุ่ม "🔍 ดูดชื่อสถานที่ในกรอบ" หรือพิมพ์/พูดชื่อที่เห็นบนแมพได้เลย</span>';
-        const mapChipBox = document.getElementById('pmMapZonePlacesChipsWrap');
-        if (mapChipBox) mapChipBox.innerHTML = chipsHtml;
-        const formChipBox = document.getElementById('pmFormZonePlacesChipsWrap');
-        if (formChipBox) formChipBox.innerHTML = chipsHtml;
+        renderTempPubPlacesUI(false);
     }
 
     function addManualTempPubPlace(rawTextOpt) {
@@ -2544,21 +2714,21 @@
         const raw = typeof rawTextOpt === 'string' ? rawTextOpt : (inp?.value || '');
         const additions = parsePlacesTextToList(raw);
         if (!additions.length) return;
-        tempPubPlacesList = parsePlacesTextToList([...tempPubPlacesList, ...additions].join(', '));
+        tempPubPlacesList = parsePlacesTextToList([...tempPubPlacesList, ...additions]);
         if (inp && typeof rawTextOpt !== 'string') inp.value = '';
-        renderTempPubPlacesUI();
+        renderTempPubPlacesUI(true);
         if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
     }
 
     function removeTempPubPlaceAt(idx) {
         tempPubPlacesList.splice(idx, 1);
-        renderTempPubPlacesUI();
+        renderTempPubPlacesUI(true);
         if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
     }
 
     function clearAllTempPubPlaces() {
         tempPubPlacesList = [];
-        renderTempPubPlacesUI();
+        renderTempPubPlacesUI(true);
         if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
     }
 
@@ -2600,6 +2770,408 @@
             return { lat: oz.p[0][0], lon: oz.p[0][1] };
         }
         return cen;
+    }
+
+    // ========================================================================
+    // 9.2 เอนจินดึงเฉพาะแผ่นแผนที่ที่ตัดผ่านโซนไฟดับ (รองรับแนวสายส่งทแยงมุม ซูมชัด z=18-19)
+    // ========================================================================
+    function lonToTileFloatXPm(lon, z) {
+        return ((lon + 180) / 360) * Math.pow(2, z);
+    }
+
+    function latToTileFloatYPm(lat, z) {
+        const rad = (lat * Math.PI) / 180;
+        const sin = Math.max(-0.9999, Math.min(0.9999, Math.sin(rad)));
+        return (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * Math.pow(2, z);
+    }
+
+    function tileXToLonPm(x, z) {
+        return (x / Math.pow(2, z)) * 360 - 180;
+    }
+
+    function tileYToLatPm(y, z) {
+        const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+        return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    }
+
+    function segIntersectsBoxPm(y1, x1, y2, x2, minY, maxY, minX, maxX) {
+        let t0 = 0, t1 = 1;
+        const dy = y2 - y1, dx = x2 - x1;
+        const checks = [[-dx, x1 - minX], [dx, maxX - x1], [-dy, y1 - minY], [dy, maxY - y1]];
+        for (const [p, q] of checks) {
+            if (Math.abs(p) < 1e-12) { if (q < 0) return false; }
+            else {
+                const r = q / p;
+                if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+                else { if (r < t0) return false; if (r < t1) t1 = r; }
+            }
+        }
+        return t0 <= t1;
+    }
+
+    function doesTileIntersectZonePm(tx, ty, z, oz) {
+        const pad = 0.28; // เผื่อขอบสำหรับป้ายข้อความที่ยื่นล้ำรอยต่อแผ่น
+        const minLon = tileXToLonPm(tx - pad, z);
+        const maxLon = tileXToLonPm(tx + 1 + pad, z);
+        const maxLat = tileYToLatPm(ty - pad, z);
+        const minLat = tileYToLatPm(ty + 1 + pad, z);
+
+        if (oz.t === 'c') {
+            const cLat = Math.max(minLat, Math.min(maxLat, oz.c[0]));
+            const cLon = Math.max(minLon, Math.min(maxLon, oz.c[1]));
+            return haversineMetersPm(oz.c[0], oz.c[1], cLat, cLon) <= oz.r;
+        }
+        const pts = oz.p;
+        for (let i = 0; i < pts.length; i++) {
+            const [la, lo] = pts[i];
+            if (la >= minLat && la <= maxLat && lo >= minLon && lo <= maxLon) return true;
+        }
+        const midLat = (minLat + maxLat) * 0.5, midLon = (minLon + maxLon) * 0.5;
+        if (isPointInPolyPm(midLat, midLon, pts) || isPointInPolyPm(minLat, minLon, pts) ||
+            isPointInPolyPm(minLat, maxLon, pts) || isPointInPolyPm(maxLat, minLon, pts) ||
+            isPointInPolyPm(maxLat, maxLon, pts)) {
+            return true;
+        }
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            if (segIntersectsBoxPm(pts[j][0], pts[j][1], pts[i][0], pts[i][1], minLat, maxLat, minLon, maxLon)) return true;
+        }
+        return false;
+    }
+
+    async function fetchGoogleLabelTileImagePm(tx, ty, z) {
+        const sub = Math.abs(tx + ty) % 4;
+        // แนบ &_ai=1 เพื่อให้ sw.js ข้ามการแคชลง TILE_CACHE_NAME ไม่ไปเบียดแผ่นแผนที่ออฟไลน์ของช่าง
+        const rawUrl = `https://mt${sub}.google.com/vt/lyrs=m&hl=th&x=${tx}&y=${ty}&z=${z}&scale=2`;
+        const candidates = [];
+        if (!directGoogleTileCorsBlocked) candidates.push({ url: rawUrl, isDirect: true });
+        candidates.push(
+            { url: `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&output=png`, isDirect: false },
+            { url: `https://corsproxy.io/?url=${encodeURIComponent(rawUrl)}`, isDirect: false },
+            { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawUrl)}`, isDirect: false }
+        );
+
+        for (const cand of candidates) {
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), 7500) : null;
+            try {
+                const res = await _origFetchForPm(cand.url, {
+                    mode: 'cors',
+                    credentials: 'omit',
+                    signal: ctrl ? ctrl.signal : undefined
+                });
+                if (res.ok) {
+                    const blob = await res.blob();
+                    if (blob && blob.size > 80 && (!blob.type || blob.type.startsWith('image/') || blob.type.includes('octet-stream'))) {
+                        return await new Promise((resolve, reject) => {
+                            const objUrl = URL.createObjectURL(blob);
+                            const img = new Image();
+                            img.onload = () => { URL.revokeObjectURL(objUrl); resolve(img); };
+                            img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error('tile decode err')); };
+                            img.src = objUrl;
+                        });
+                    }
+                }
+            } catch (e) {
+                if (cand.isDirect && e?.name !== 'AbortError') directGoogleTileCorsBlocked = true;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        }
+        return null;
+    }
+
+    async function captureOutageZoneMapBase64(oz) {
+        let minLat, maxLat, minLon, maxLon;
+        if (oz.t === 'c') {
+            const [cLat, cLon] = oz.c;
+            const dLat = oz.r / 111320;
+            const dLon = oz.r / (111320 * Math.max(0.2, Math.cos((cLat * Math.PI) / 180)));
+            minLat = cLat - dLat; maxLat = cLat + dLat;
+            minLon = cLon - dLon; maxLon = cLon + dLon;
+        } else {
+            const lats = oz.p.map(pt => pt[0]);
+            const lons = oz.p.map(pt => pt[1]);
+            minLat = Math.min(...lats); maxLat = Math.max(...lats);
+            minLon = Math.min(...lons); maxLon = Math.max(...lons);
+        }
+
+        // เผื่อขอบรอบกรอบ ~38 เมตร ป้องกันปลายข้อความของหมุดริมเส้นถูกตัดขาดที่ขอบแผ่นภาพ
+        const padLatDeg = 38 / 111320;
+        const padLonDeg = 38 / (111320 * Math.max(0.2, Math.cos(((minLat + maxLat) * 0.5 * Math.PI) / 180)));
+        const qMinLat = minLat - padLatDeg, qMaxLat = maxLat + padLatDeg;
+        const qMinLon = minLon - padLonDeg, qMaxLon = maxLon + padLonDeg;
+
+        const spanMeters = Math.max(
+            haversineMetersPm(minLat, minLon, maxLat, minLon),
+            haversineMetersPm(minLat, minLon, minLat, maxLon)
+        );
+        const startZoom = spanMeters < 180 ? 19 : 18;
+
+        let chosenZ = 13, minTx = 0, maxTx = 0, minTy = 0, maxTy = 0, activeTiles = [];
+        for (let z = startZoom; z >= 13; z--) {
+            const tx1 = Math.floor(lonToTileFloatXPm(qMinLon, z));
+            const tx2 = Math.floor(lonToTileFloatXPm(qMaxLon, z));
+            const ty1 = Math.floor(latToTileFloatYPm(qMaxLat, z));
+            const ty2 = Math.floor(latToTileFloatYPm(qMinLat, z));
+            const cols = tx2 - tx1 + 1, rows = ty2 - ty1 + 1;
+            if (Math.max(cols, rows) <= 10) {
+                const hitTiles = [];
+                for (let ty = ty1; ty <= ty2; ty++) {
+                    for (let tx = tx1; tx <= tx2; tx++) {
+                        if (doesTileIntersectZonePm(tx, ty, z, oz)) hitTiles.push([tx, ty]);
+                    }
+                }
+                const maxAllowed = z === 19 ? 12 : 24;
+                if (hitTiles.length > 0 && hitTiles.length <= maxAllowed) {
+                    chosenZ = z; minTx = tx1; maxTx = tx2; minTy = ty1; maxTy = ty2;
+                    activeTiles = hitTiles;
+                    break;
+                }
+            }
+            if (z === 13) {
+                chosenZ = 13;
+                minTx = tx1; maxTx = Math.min(tx2, tx1 + 4);
+                minTy = ty1; maxTy = Math.min(ty2, ty1 + 4);
+                activeTiles = [];
+                for (let ty = minTy; ty <= maxTy; ty++) {
+                    for (let tx = minTx; tx <= maxTx; tx++) activeTiles.push([tx, ty]);
+                }
+            }
+        }
+
+        const cols = maxTx - minTx + 1, rows = maxTy - minTy + 1;
+        const maxSideSpan = Math.max(cols, rows);
+        const tileRenderPx = maxSideSpan <= 5 ? 512 : Math.max(256, Math.min(384, Math.floor(3400 / maxSideSpan)));
+        const stitchCanvas = document.createElement('canvas');
+        stitchCanvas.width = cols * tileRenderPx;
+        stitchCanvas.height = rows * tileRenderPx;
+        const sCtx = stitchCanvas.getContext('2d');
+        sCtx.fillStyle = '#f1f5f9';
+        sCtx.fillRect(0, 0, stitchCanvas.width, stitchCanvas.height);
+
+        let loadedCount = 0;
+        const drawTileAt = async (tx, ty) => {
+            let img = await fetchGoogleLabelTileImagePm(tx, ty, chosenZ);
+            if (!img) {
+                await new Promise(r => setTimeout(r, 350));
+                img = await fetchGoogleLabelTileImagePm(tx, ty, chosenZ);
+            }
+            if (img) {
+                sCtx.drawImage(img, (tx - minTx) * tileRenderPx, (ty - minTy) * tileRenderPx, tileRenderPx, tileRenderPx);
+                loadedCount++;
+                return true;
+            }
+            return false;
+        };
+
+        if (activeTiles.length > 0) {
+            await drawTileAt(activeTiles[0][0], activeTiles[0][1]);
+        }
+        let cursor = 1;
+        const workerCount = Math.min(4, Math.max(0, activeTiles.length - 1));
+        await Promise.all(Array.from({ length: workerCount }, async () => {
+            while (cursor < activeTiles.length) {
+                const idx = cursor++;
+                await drawTileAt(activeTiles[idx][0], activeTiles[idx][1]);
+            }
+        }));
+
+        if (loadedCount === 0 || loadedCount < Math.ceil(activeTiles.length * 0.5)) {
+            stitchCanvas.width = 0; stitchCanvas.height = 0;
+            throw new Error('ดึงแผ่นภาพป้ายชื่อแผนที่ได้ไม่ครบ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่');
+        }
+
+        const toStitchXY = (lat, lon) => [
+            (lonToTileFloatXPm(lon, chosenZ) - minTx) * tileRenderPx,
+            (latToTileFloatYPm(lat, chosenZ) - minTy) * tileRenderPx
+        ];
+
+        let polyCanvasPts = [];
+        let circleCanvasGeom = null;
+        let bMinX = Infinity, bMinY = Infinity, bMaxX = -Infinity, bMaxY = -Infinity;
+
+        if (oz.t === 'c') {
+            const [cLat, cLon] = oz.c;
+            const [cx, cy] = toStitchXY(cLat, cLon);
+            const dLon = oz.r / (111320 * Math.max(0.2, Math.cos((cLat * Math.PI) / 180)));
+            const [edgeX] = toStitchXY(cLat, cLon + dLon);
+            const rPx = Math.max(20, Math.abs(edgeX - cx));
+            circleCanvasGeom = { cx, cy, rPx };
+            bMinX = cx - rPx; bMaxX = cx + rPx;
+            bMinY = cy - rPx; bMaxY = cy + rPx;
+        } else {
+            polyCanvasPts = oz.p.map(pt => {
+                const [px, py] = toStitchXY(pt[0], pt[1]);
+                if (px < bMinX) bMinX = px;
+                if (px > bMaxX) bMaxX = px;
+                if (py < bMinY) bMinY = py;
+                if (py > bMaxY) bMaxY = py;
+                return [px, py];
+            });
+        }
+
+        const padPx = 64;
+        const cropX = Math.max(0, Math.floor(bMinX - padPx));
+        const cropY = Math.max(0, Math.floor(bMinY - padPx));
+        const cropW = Math.max(64, Math.min(stitchCanvas.width - cropX, Math.ceil(bMaxX - bMinX + padPx * 2)));
+        const cropH = Math.max(64, Math.min(stitchCanvas.height - cropY, Math.ceil(bMaxY - bMinY + padPx * 2)));
+
+        const maxOutDim = 2400;
+        const outScale = Math.min(1, maxOutDim / Math.max(cropW, cropH));
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = Math.max(64, Math.round(cropW * outScale));
+        outCanvas.height = Math.max(64, Math.round(cropH * outScale));
+        const oCtx = outCanvas.getContext('2d');
+
+        oCtx.drawImage(stitchCanvas, cropX, cropY, cropW, cropH, 0, 0, outCanvas.width, outCanvas.height);
+        oCtx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+        oCtx.fillRect(0, 0, outCanvas.width, outCanvas.height);
+
+        const buildZonePathOnOut = () => {
+            oCtx.beginPath();
+            if (circleCanvasGeom) {
+                oCtx.arc(
+                    (circleCanvasGeom.cx - cropX) * outScale,
+                    (circleCanvasGeom.cy - cropY) * outScale,
+                    circleCanvasGeom.rPx * outScale,
+                    0,
+                    Math.PI * 2
+                );
+            } else {
+                polyCanvasPts.forEach((pt, idx) => {
+                    const ox = (pt[0] - cropX) * outScale;
+                    const oy = (pt[1] - cropY) * outScale;
+                    if (idx === 0) oCtx.moveTo(ox, oy);
+                    else oCtx.lineTo(ox, oy);
+                });
+                oCtx.closePath();
+            }
+        };
+
+        oCtx.save();
+        buildZonePathOnOut();
+        oCtx.clip();
+        oCtx.drawImage(stitchCanvas, cropX, cropY, cropW, cropH, 0, 0, outCanvas.width, outCanvas.height);
+        oCtx.restore();
+
+        buildZonePathOnOut();
+        oCtx.strokeStyle = '#e11d48';
+        oCtx.lineWidth = 3.5;
+        oCtx.stroke();
+
+        const dataUrl = outCanvas.toDataURL('image/jpeg', 0.86);
+        stitchCanvas.width = 0; stitchCanvas.height = 0;
+        outCanvas.width = 0; outCanvas.height = 0;
+        return dataUrl.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+    }
+
+    function parseGeminiPlacesJsonResponse(rawText) {
+        const cleaned = String(rawText || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+        if (!cleaned) return [];
+        let parsed = null;
+        try {
+            parsed = JSON.parse(cleaned);
+        } catch (e) {
+            const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+            if (arrMatch) {
+                try { parsed = JSON.parse(arrMatch[0]); } catch (e2) {}
+            }
+        }
+        let arr = [];
+        if (Array.isArray(parsed)) arr = parsed;
+        else if (parsed && typeof parsed === 'object') {
+            const firstArr = Object.values(parsed).find(v => Array.isArray(v));
+            if (firstArr) arr = firstArr;
+        }
+        return arr
+            .map(x => String(x || '').replace(/\s+/g, ' ').trim())
+            .filter(s => s.length >= 2 && !/^(?:google|map data)$/i.test(s) && !/^\d+[\/\-]?\d*$/.test(s));
+    }
+
+    async function queryGeminiVisionPlacesInZone(oz, apiKey) {
+        const keyTag = String(apiKey || '').slice(-10);
+        const modelList = await resolveAvailableVisionModelsPm(apiKey);
+        if (!modelList.length) {
+            throw new Error('ไม่พบโมเดล Gemini Vision ที่เปิดใช้งานสำหรับคีย์นี้');
+        }
+        const base64Img = await captureOutageZoneMapBase64(oz);
+        const promptText = [
+            'อ่านป้ายชื่อสถานที่ทั้งหมดที่อยู่ในเขตพื้นที่สว่างภายในเส้นขอบสีแดงบนภาพแผนที่นี้ เพื่อนำไปเขียนประกาศแจ้งพื้นที่ไฟดับให้ประชาชนทราบ',
+            'กฎการสกัดข้อมูล:',
+            '1. ดึงชื่อหอพัก อพาร์ตเมนต์ ห้องเช่า หมู่บ้านจัดสรร บริษัท โรงงาน ร้านค้า ปั๊มน้ำมัน โรงเรียน วัด สถานที่ราชการ รวมถึงชื่อถนนและซอยที่อยู่ด้านในกรอบสีแดง (พื้นที่สว่าง) ให้ครบทุกป้าย',
+            '2. ยึดตำแหน่งไอคอนหมุด (Pin/วงกลมสี) เป็นหลัก: หากไอคอนหมุดอยู่ด้านในกรอบสีแดง (พื้นที่สว่าง) แม้ปลายตัวหนังสือจะยื่นล้ำเส้นสีแดงออกไปในโซนมืดเล็กน้อย ให้ดึงชื่อเต็มมาด้วย แต่ถ้าไอคอนหมุดอยู่นอกเส้นสีแดง (ในโซนมืดทึบ) ห้ามดึงมาเด็ดขาด',
+            '3. หากป้ายชื่อเดียวกันถูกตัดแบ่งเป็น 2 บรรทัด (เช่น บรรทัดบน "บริษัท เดอะ พรีเชีย" บรรทัดล่าง "ส ทรานสปอร์ต จำกัด") ให้เชื่อมคำติดกันเป็นชื่อเต็มบรรทัดเดียวให้ถูกต้อง ("บริษัท เดอะ พรีเชียส ทรานสปอร์ต จำกัด")',
+            '4. หากเป็นปั๊มน้ำมันที่มีเฉพาะชื่อแบรนด์ เช่น Shell, PTT, Bangchak, Caltex, PT, Esso ให้เติมคำว่า "ปั๊มน้ำมัน " นำหน้า เช่น "ปั๊มน้ำมัน Shell" และไม่เอาตัวเลขเดี่ยวๆ',
+            '5. ตอบกลับเป็น JSON Array ของข้อความตามป้ายจริงเท่านั้น'
+        ].join('\n');
+
+        const baseSchemaCfg = {
+            responseMimeType: 'application/json',
+            responseSchema: { type: 'ARRAY', items: { type: 'STRING' } }
+        };
+
+        let lastErr = null;
+        let sawQuota429 = false;
+        for (const modelName of modelList) {
+            if (unsupportedGeminiModels.has(`${keyTag}:${modelName}`)) continue;
+            const verMatch = modelName.match(/^gemini-(\d+(?:\.\d+)?)/i);
+            const majorVer = verMatch ? parseFloat(verMatch[1]) : 2.5;
+            const primaryGenCfg = majorVer >= 3
+                ? { ...baseSchemaCfg, thinkingConfig: { thinkingLevel: modelName.includes('lite') ? 'MINIMAL' : 'LOW' } }
+                : { ...baseSchemaCfg, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } };
+
+            for (const cfgAttempt of [primaryGenCfg, baseSchemaCfg]) {
+                const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timer = ctrl ? setTimeout(() => ctrl.abort(), 22000) : null;
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                    const res = await _origFetchForPm(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { inlineData: { mimeType: 'image/jpeg', data: base64Img } },
+                                    { text: promptText }
+                                ]
+                            }],
+                            generationConfig: cfgAttempt
+                        }),
+                        signal: ctrl ? ctrl.signal : undefined
+                    });
+
+                    const data = await res.json().catch(() => null);
+                    if (res.ok && data) {
+                        const parts = data?.candidates?.[0]?.content?.parts || [];
+                        const rawOut = parts.filter(pt => !pt?.thought && typeof pt?.text === 'string').map(pt => pt.text).join('\n').trim();
+                        return parseGeminiPlacesJsonResponse(rawOut);
+                    }
+
+                    const errMsg = String(data?.error?.message || `HTTP ${res.status}`);
+                    if (res.status === 400 || res.status === 403) {
+                        if (/API_KEY_INVALID|API key not valid|key expired|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                            const keyErr = new Error('API Key ไม่ถูกต้อง ถูกจำกัดสิทธิ์โดเมน หรือหมดอายุ กรุณาตั้งค่าคีย์ AI ใหม่');
+                            keyErr.isInvalidKey = true;
+                            throw keyErr;
+                        }
+                        if (res.status === 400 && cfgAttempt === primaryGenCfg) continue;
+                    }
+                    if (res.status === 404 || res.status === 403) unsupportedGeminiModels.add(`${keyTag}:${modelName}`);
+                    if (res.status === 429) sawQuota429 = true;
+                    lastErr = new Error(errMsg);
+                    break;
+                } catch (err) {
+                    if (err?.isInvalidKey) throw err;
+                    lastErr = err;
+                    break;
+                } finally {
+                    if (timer) clearTimeout(timer);
+                }
+            }
+        }
+        const finalErr = lastErr || new Error('เรียกใช้งาน AI ไม่สำเร็จ');
+        if (sawQuota429) finalErr.isQuotaExceeded = true;
+        throw finalErr;
     }
 
     async function queryOverpassPlacesInZone(oz) {
@@ -2660,31 +3232,47 @@
         finally { if (timer) clearTimeout(timer); }
     }
 
-    async function extractPlacesInCurrentOutageZone() {
+    async function extractPlacesInCurrentOutageZone(skipAiMode = false) {
         if (isExtractingZonePlaces) return;
+        addManualTempPubPlace();
         const oz = await getActiveDraftZoneForExtraction();
         if (!oz) {
             safeToast(tempZoneType === 'p' ? '⚠️ กรุณาปักมุมบนแผนที่ให้ครบอย่างน้อย 3 จุดก่อนดูดชื่อสถานที่ครับ' : '⚠️ กรุณาแตะเลือกจุดศูนย์กลางวงเรดาร์บนแผนที่ก่อนครับ');
             return;
         }
 
+        const groupAiKey = skipAiMode ? '' : getCurrentGroupAiApiKey();
+        if (!skipAiMode && !groupAiKey) {
+            openPmAiKeyModal(true);
+            return;
+        }
+
         isExtractingZonePlaces = true;
         ['btnExtractZonePlacesMap', 'btnExtractZonePlacesForm'].forEach(id => {
             const b = document.getElementById(id);
-            if (b) { b.disabled = true; b.dataset.origTxt = b.textContent; b.textContent = '⏳ กำลังสแกนชื่อสถานที่...'; }
+            if (b) {
+                b.disabled = true;
+                if (!b.dataset.origTxt) b.dataset.origTxt = b.textContent;
+                b.textContent = groupAiKey ? '🤖 AI กำลังอ่านป้ายในกรอบ...' : '⏳ กำลังดึงถนน/ตำบล...';
+            }
         });
 
+        let aiPlaces = [];
+        let aiErrorObj = null;
+
         try {
-            addManualTempPubPlace();
             const cen = getZoneSafeSamplePointPm(oz);
-            const [osmElements, nomInfo] = await Promise.all([
+            const [aiRes, osmElements, nomInfo] = await Promise.all([
+                groupAiKey
+                    ? queryGeminiVisionPlacesInZone(oz, groupAiKey).catch(err => { aiErrorObj = err; return []; })
+                    : Promise.resolve([]),
                 queryOverpassPlacesInZone(oz),
                 cen ? queryNominatimAdminAtPoint(cen.lat, cen.lon) : Promise.resolve(null)
             ]);
+            aiPlaces = Array.isArray(aiRes) ? aiRes : [];
 
             const roads = [], villages = [], landmarks = [];
 
-            // 1. กวาดชื่อถนน ซอย สายทาง หมู่บ้าน และสถานที่สำคัญจาก OpenStreetMap
             osmElements.forEach(el => {
                 const tags = el?.tags;
                 if (!tags || tags.boundary === 'administrative' || tags.power || tags.place === 'country' || tags.place === 'state') return;
@@ -2705,7 +3293,6 @@
                 }
             });
 
-            // 2. กวาดจุดสังเกตในระบบของสาขาที่อยู่ในกรอบ (กรองรหัสสวิตช์/อุปกรณ์ SCADA ออกอัตโนมัติ)
             try {
                 const pins = JSON.parse(rawGet('elec_labeled_places_list') || '[]');
                 const delMap = JSON.parse(rawGet('elec_deleted_labeled_places_map') || '{}');
@@ -2720,31 +3307,42 @@
                 });
             } catch (e) {}
 
-            // 3. เติมถนน หมู่บ้าน และ ต./อ./จ. จากพิกัดกึ่งกลาง
             if (nomInfo?.road) roads.push(nomInfo.road);
             if (nomInfo?.village) villages.push(nomInfo.village);
             const adminTail = nomInfo?.adminArea ? [nomInfo.adminArea] : [];
 
+            // แยก ต./อ./จ. ของรอบก่อนไปต่อท้ายสุดเสมอ แม้กดสแกนซ้ำหลายรอบ
+            const prevNonAdmin = tempPubPlacesList.filter(x => !isAdminAreaSummaryItemPm(x));
+            const prevAdmin = tempPubPlacesList.filter(x => isAdminAreaSummaryItemPm(x));
             const mergedAll = parsePlacesTextToList([
-                ...tempPubPlacesList,
-                ...landmarks.slice(0, 25),
+                ...prevNonAdmin,
+                ...aiPlaces.slice(0, 35),
+                ...landmarks.slice(0, 20),
                 ...villages.slice(0, 10),
-                ...roads.slice(0, 12),
-                ...adminTail
-            ].join(', '));
+                ...roads.slice(0, 10),
+                ...adminTail,
+                ...prevAdmin
+            ]);
 
             const addedCount = Math.max(0, mergedAll.length - tempPubPlacesList.length);
             tempPubPlacesList = mergedAll;
-            renderTempPubPlacesUI();
+            renderTempPubPlacesUI(true);
             if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
 
-            if (mergedAll.length > 0) {
-                safeToast(addedCount > 0 ? `✅ ดูดชื่อสถานที่สำเร็จ (+${addedCount} แห่ง) พิมพ์หรือกด 🎙️ เติมจุดย่อยเพิ่มได้ครับ` : 'ℹ️ รายชื่อสถานที่ในกรอบนี้อยู่ในรายการครบแล้ว');
+            if (aiErrorObj?.isInvalidKey) {
+                safeToast(`❌ ${aiErrorObj.message}`);
+                openPmAiKeyModal(true);
+            } else if (aiErrorObj?.isQuotaExceeded) {
+                safeToast('⚠️ โควตา AI ฟรีของคีย์กลุ่มนี้เต็มชั่วคราว (ดึงข้อมูลถนน/ตำบลพื้นฐานให้แทนแล้ว)');
+            } else if (aiErrorObj && groupAiKey) {
+                safeToast(`⚠️ AI อ่านภาพขัดข้อง (${aiErrorObj.message || 'เชื่อมต่อไม่สำเร็จ'}) ดึงข้อมูลพื้นฐานให้แทนแล้ว`);
+            } else if (mergedAll.length > 0) {
+                safeToast(addedCount > 0 ? `✅ ดูดชื่อสถานที่ในกรอบสำเร็จ (+${addedCount} แห่ง)` : 'ℹ️ รายชื่อสถานที่ในกรอบนี้อยู่ในรายการครบแล้ว');
             } else {
-                safeToast('ℹ️ โซนนี้ยังไม่มีป้ายชื่อในฐานข้อมูลเปิด สามารถกด 🎙️ อ่านชื่อบนแมพดาวเทียมเพิ่มได้เลยครับ');
+                safeToast('ℹ️ ไม่พบป้ายชื่อในกรอบนี้ สามารถพิมพ์หรือกด 🎙️ อ่านชื่อเพิ่มได้ครับ');
             }
         } catch (err) {
-            safeToast('⚠️ ดึงข้อมูลแผนที่ออนไลน์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือพิมพ์เพิ่มด้วยตนเอง');
+            safeToast('⚠️ ดึงข้อมูลแผนที่ออนไลน์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต');
         } finally {
             isExtractingZonePlaces = false;
             ['btnExtractZonePlacesMap', 'btnExtractZonePlacesForm'].forEach(id => {
@@ -2753,7 +3351,7 @@
             });
         }
     }
-    
+
     function buildPublicOutageAnnouncementText(item, styleMode = 'facebook') {
         const branchName = normPmGrp(item.ownerGroup || getActivePmGroup()) || 'กฟส.บึง';
         const dateFull = formatThaiDateFull(item.date || getTodayIso());
@@ -2882,12 +3480,13 @@
                             <div class="flex flex-wrap items-center justify-between gap-1">
                                 <label class="font-extrabold text-rose-900 text-[11px]">🏘️ ชื่อสถานที่/ซอยในเขตไฟดับ (<span id="pmZonePlacesCountBadge">0</span>)</label>
                                 <div class="flex flex-wrap gap-1">
-                                    <button type="button" id="btnExtractZonePlacesForm" onclick="extractPlacesInCurrentOutageZone()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">🔍 ดูดชื่อสถานที่ในกรอบ</button>
+                                    <button type="button" id="btnExtractZonePlacesForm" onclick="extractPlacesInCurrentOutageZone(false)" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">🔍 ดูดชื่อสถานที่ในกรอบ</button>
+                                    <button type="button" id="btnConfigGroupAiKeyForm" onclick="openPmAiKeyModal(false)" class="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg text-[10px] font-extrabold">🔑 ตั้งคีย์ AI กลุ่ม</button>
                                     <button type="button" onclick="openPmPublicAnnounceModal('__FORM_DRAFT__')" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">📢 สร้างโพสต์ FB/LINE</button>
                                 </div>
                             </div>
                             <div id="pmFormZonePlacesChipsWrap" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto py-0.5"></div>
-                            <textarea id="pmPubOutagePlacesInput" rows="2" oninput="onPubPlacesTextareaInput(this.value)" placeholder="กดปุ่ม 🔍 ดูดชื่อสถานที่อัตโนมัติ หรือพิมพ์ชื่อหอพัก/หมู่บ้าน/โรงงาน คั่นด้วยเครื่องหมายจุลภาค (,)" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-[11px] font-semibold text-slate-800"></textarea>
+                            <textarea id="pmPubOutagePlacesInput" rows="2" oninput="onPubPlacesTextareaInput(this.value)" placeholder="กดปุ่ม 🔍 ดูดชื่อสถานที่ในกรอบด้วย AI หรือพิมพ์ชื่อหอพัก/หมู่บ้าน/โรงงาน คั่นด้วยเครื่องหมายจุลภาค (,)" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-[11px] font-semibold text-slate-800"></textarea>
                         </div>
                     </div>
                 </div>`;
@@ -2922,9 +3521,10 @@
                         <div id="pmPolyStatusHint" class="hidden text-[10.5px] text-emerald-300 font-semibold"></div>
                         <div class="pt-1.5 border-t border-slate-700/90 space-y-1.5">
                             <div class="flex flex-wrap items-center gap-1">
-                                <button type="button" id="btnExtractZonePlacesMap" onclick="extractPlacesInCurrentOutageZone()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow shrink-0">🔍 ดูดชื่อสถานที่ในกรอบ</button>
-                                <div class="flex items-center gap-1 flex-1 min-w-[165px]">
-                                    <input type="text" id="pmMapQuickPlaceAddInput" onkeydown="if(event.key==='Enter'){event.preventDefault();addManualTempPubPlace();}" placeholder="+ พิมพ์ชื่อหอพัก/ร้านที่เห็นบนแมพ..." class="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-800 border border-slate-600 text-white text-[10.5px] focus:outline-none">
+                                <button type="button" id="btnExtractZonePlacesMap" onclick="extractPlacesInCurrentOutageZone(false)" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow shrink-0">🔍 ดูดชื่อสถานที่ในกรอบ</button>
+                                <button type="button" id="btnConfigGroupAiKeyMap" onclick="openPmAiKeyModal(false)" class="bg-amber-400 hover:bg-amber-300 text-slate-950 px-2 py-1 rounded-lg text-[10px] font-extrabold shadow shrink-0">🔑 ตั้งคีย์ AI</button>
+                                <div class="flex items-center gap-1 flex-1 min-w-[155px]">
+                                    <input type="text" id="pmMapQuickPlaceAddInput" onkeydown="if(event.key==='Enter'){event.preventDefault();addManualTempPubPlace();}" placeholder="+ พิมพ์ชื่อเพิ่มเติม..." class="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-800 border border-slate-600 text-white text-[10.5px] focus:outline-none">
                                     <button type="button" onclick="startPmZonePlaceVoiceInput()" title="กดพูดชื่อสถานที่ตามที่เห็นบนแมพ" class="bg-slate-700 hover:bg-slate-600 text-amber-300 px-2 py-1 rounded-lg text-xs">🎙️</button>
                                     <button type="button" onclick="addManualTempPubPlace()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold">เพิ่ม</button>
                                 </div>
@@ -2962,6 +3562,43 @@
                     </div>
                 </div>`);
         }
+
+        if (!document.getElementById('pmAiKeyConfigModal')) {
+            document.body.insertAdjacentHTML('beforeend', `
+                <div id="pmAiKeyConfigModal" onclick="if(event.target===this) closePmAiKeyModal();" class="fixed inset-0 bg-slate-950/80 hidden z-[1496] flex items-center justify-center p-3 backdrop-blur-sm">
+                    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-emerald-400 flex flex-col">
+                        <div class="px-4 py-3 bg-gradient-to-r from-emerald-700 via-teal-700 to-slate-900 text-white flex justify-between items-center">
+                            <h3 class="font-extrabold text-sm">🔑 ตั้งค่า API Key AI อ่านป้ายชื่อแผนที่</h3>
+                            <button type="button" onclick="closePmAiKeyModal()" class="text-white/85 hover:text-white text-xl font-bold leading-none">&times;</button>
+                        </div>
+                        <div class="p-4 space-y-3 text-xs bg-slate-50">
+                            <div id="pmAiKeyModalGroupBadge" class="bg-indigo-950 text-amber-300 font-extrabold px-3 py-1.5 rounded-xl text-[11px] text-center shadow-sm">-</div>
+                            <div id="pmAiKeyCurrentStatus" class="text-[11px] text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2"></div>
+                            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 space-y-1.5 text-[11px] text-slate-700">
+                                <div class="font-extrabold text-emerald-900">วิธีรับคีย์ฟรี (แยกโควตาเฉพาะกลุ่ม 100% ไม่ต้องใช้บัตรเครดิต):</div>
+                                <div>1. กดปุ่มด้านล่าง ล็อกอินด้วย Gmail ประจำกลุ่ม/สาขา</div>
+                                <div>2. กด <b>Create API key in new project</b> (สำคัญ: ต้องสร้างใน Project ใหม่ โควตาถึงจะแยกขาดกัน 100%)</div>
+                                <div class="pt-1">
+                                    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-[11px] shadow-sm">🔗 เปิดหน้าขอรับ API Key ฟรี (Google AI Studio)</a>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block font-extrabold text-slate-700 mb-1">วางรหัส Gemini API Key ของกลุ่มนี้:</label>
+                                <input type="text" id="pmAiKeyInput" onkeydown="if(event.key==='Enter'){event.preventDefault();savePmGroupAiKeyFromModal();}" placeholder="AIzaSy..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 rounded-xl bg-white border-2 border-slate-300 focus:border-emerald-500 focus:outline-none font-mono text-xs text-slate-900">
+                            </div>
+                        </div>
+                        <div class="p-3 bg-white border-t space-y-2">
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" id="pmAiKeyClearBtn" onclick="clearPmGroupAiKeyFromModal()" class="hidden bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold py-2 px-3 rounded-xl text-xs">🗑️ ลบคีย์</button>
+                                <button type="button" onclick="closePmAiKeyModal()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-3.5 rounded-xl text-xs ml-auto">ยกเลิก</button>
+                                <button type="button" id="pmAiKeySaveBtn" onclick="savePmGroupAiKeyFromModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs shadow">💾 บันทึกคีย์ประจำกลุ่ม</button>
+                            </div>
+                            <button type="button" id="pmAiKeySkipBasicBtn" onclick="skipAiAndExtractBasicZonePlaces()" class="hidden w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-1.5 rounded-xl text-[11px]">ข้ามไปดึงเฉพาะชื่อถนน/ตำบลพื้นฐานก่อน (ไม่ใช้ AI)</button>
+                        </div>
+                    </div>
+                </div>`);
+        }
+        updateGroupAiKeyButtonsUI();
     }
     // ===== จบพาทที่ 5 / 6 ของไฟล์ pm-calendar.js =====
     // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js =====
@@ -2988,6 +3625,7 @@
 
     function updatePmZoneDrawToolbarUI() {
         ensurePmOutageZoneUiInjected();
+        updateGroupAiKeyButtonsUI();
         if (!document.getElementById('pmLeafletTileFixStyle')) {
             const fixSt = document.createElement('style');
             fixSt.id = 'pmLeafletTileFixStyle';
@@ -3479,17 +4117,16 @@
         const keptPlaces = [];
         let placesLen = 0;
         for (const pl of rawPlacesList) {
-            if (keptPlaces.length === 0 && pl.length > 450) {
-                keptPlaces.push(pl.slice(0, 450).trim());
+            if (keptPlaces.length === 0 && pl.length > 900) {
+                keptPlaces.push(pl.slice(0, 900).trim());
                 break;
             }
             const nextLen = keptPlaces.length === 0 ? pl.length : placesLen + 2 + pl.length;
-            if (nextLen > 450) break;
+            if (nextLen > 900) break;
             keptPlaces.push(pl);
             placesLen = nextLen;
         }
         const pubPlaces = keptPlaces.join(', ');
-
         if (!title) { safeToast('⚠️ กรุณาระบุชื่อหมุดแผนงาน / หัวข้องาน'); return; }
         if (!dateVal) { safeToast('⚠️ กรุณาเลือกวันที่กำหนดทำ'); return; }
         let customAlertTimes = normalizeCustomTimesArray(tempFormCustomTimes);
@@ -3812,9 +4449,10 @@
         return openPmCalendarModal(presetDateIso);
     }
 
-    window.addEventListener('storage', e => {
+        window.addEventListener('storage', e => {
         if (e.key === PM_REPEAT_EVERY_MIN_KEY) { isPmRepeatEveryMin = e.newValue !== 'false'; updatePmSoundAndNotifButtonsUI(); }
         else if (e.key === PM_SOUND_KEY) { isPmSoundEnabled = e.newValue !== 'false'; updatePmSoundAndNotifButtonsUI(); }
+        else if (e.key && e.key.startsWith(PM_GROUP_AI_KEY_PREFIX)) { updateGroupAiKeyButtonsUI(); }
         else if (e.key === PM_ACK_LOG_KEY && !hasAnyUnackedActiveAlertNow()) { isPopupOpenedByForcePreview = false; document.getElementById('pmAlertPopupModal')?.classList.add('hidden'); }
     });
     bindLeafletMapHooks();
@@ -3825,7 +4463,7 @@
         });
     }
 
-    Object.assign(window, {
+        Object.assign(window, {
         openPmCalendarModal: _safeOpenPmCalendarModal, closePmCalendarModal, setPmDesktopModalWidth, changePmCalendarMonth, jumpPmCalendarToday,
         selectPmCalendarDate, setPmListStatusFilter, toggleShowScadaDueOnCalendar, togglePmTechStripCollapse,
         switchCalendarLeftViewMode, fitCalendarEmbeddedMapPins, toggleShowPmPinsOnMaps, cyclePmMapFilterMode,
@@ -3846,7 +4484,9 @@
         extractPlacesInCurrentOutageZone, addManualTempPubPlace, removeTempPubPlaceAt,
         clearAllTempPubPlaces, onPubPlacesTextareaInput, startPmZonePlaceVoiceInput,
         openPmPublicAnnounceModal, closePmPublicAnnounceModal, switchPmAnnounceStyle,
-        copyPmPublicAnnounceText, sharePmPublicAnnounceToLine
+        copyPmPublicAnnounceText, sharePmPublicAnnounceToLine,
+        openPmAiKeyModal, closePmAiKeyModal, savePmGroupAiKeyFromModal,
+        clearPmGroupAiKeyFromModal, skipAiAndExtractBasicZonePlaces
     });
 
     function ensureSwitchTechTabWrapped() {
@@ -3864,7 +4504,7 @@
 
     function bootstrapPmCalendarModule() {
         rememberActiveAuthForLoggedOutAlerts(); bindLeafletMapHooks(); injectPmCalendarStyles(); injectPmModalsDOM(); ensurePmOutageZoneUiInjected(); injectQuickAddBoxIntoCalendar();
-        loadPmPlansFromStorage(); syncPmPlansFromLocationsMap(); updatePmSoundAndNotifButtonsUI();
+        loadPmPlansFromStorage(); syncPmPlansFromLocationsMap(); updatePmSoundAndNotifButtonsUI(); updateGroupAiKeyButtonsUI();
         if (isUserCurrentlyLoggedIn()) refreshPmAllViews();
         ensureSwitchTechTabWrapped();
         if (window.PeaIdbStore?.ready) {
@@ -3874,13 +4514,20 @@
             }).catch(() => {});
         }
         let lastKnownLoginState = isUserCurrentlyLoggedIn();
+        let lastKnownGroupName = getActivePmGroup();
         setInterval(() => {
             ensureSwitchTechTabWrapped();
             const nowLogged = isUserCurrentlyLoggedIn();
+            const nowGrp = getActivePmGroup();
+            if (nowGrp !== lastKnownGroupName) {
+                lastKnownGroupName = nowGrp;
+                updateGroupAiKeyButtonsUI();
+            }
             if (nowLogged !== lastKnownLoginState) {
                 lastKnownLoginState = nowLogged;
+                updateGroupAiKeyButtonsUI();
                 if (nowLogged) { rememberActiveAuthForLoggedOutAlerts(); syncPmPlansFromLocationsMap(); refreshPmAllViews(); }
-                else { closePmPlanFormModal(); closePmCalendarModal(); closePmPhotoLightbox(); closePmLineShareReadyModal(); closePmPublicAnnounceModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
+                else { closePmPlanFormModal(); closePmCalendarModal(); closePmPhotoLightbox(); closePmLineShareReadyModal(); closePmPublicAnnounceModal(); closePmAiKeyModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
             }
         }, 1200);
         setTimeout(async () => { ensureSwitchTechTabWrapped(); rememberActiveAuthForLoggedOutAlerts(); if (!isUserCurrentlyLoggedIn()) await pullPmPlansWhileLoggedOut(); else syncPmPlansFromLocationsMap(); if (isUserCurrentlyLoggedIn()) refreshPmAllViews(); checkAndTriggerScheduledPmAlerts(false); }, 1400);
@@ -3892,4 +4539,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapPmCalendarModule);
     else bootstrapPmCalendarModule();
 })();
-// ==================== จบไฟล์ pm-calendar.js (v7.6) ====================
+// ==================== จบไฟล์ pm-calendar.js (v7.7) ====================
