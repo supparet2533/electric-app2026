@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v170 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v171 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v170';
+const CACHE_NAME = 'pea-smart-tools-v171';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -99,7 +99,8 @@ const BYPASS_HOSTS = [
     'open-meteo.com',
     'nominatim.openstreetmap.org',
     'overpass-api.de',
-    'overpass.kumi.systems'
+    'overpass.kumi.systems',
+    'wsrv.nl'
 ];
 
 let isTrimmingTiles = false;
@@ -287,8 +288,9 @@ self.addEventListener('fetch', (event) => {
     if (/\/sw\.js$/i.test(url.pathname)) return;
     if (BYPASS_HOSTS.some((host) => url.hostname.includes(host))) return;
 
-    // 1. แผ่นแผนที่ (Google / OSM / CartoDB / Esri): Cache-First + คุมโควตา 120 แผ่น
+    // 1. แผ่นแผนที่ (Google / OSM / CartoDB / Esri): Cache-First + คุมโควตา 120 แผ่น (ข้ามแผ่นภาพสแกน AI)
     if (MAP_TILE_HOST_RE.test(url.hostname)) {
+        if (url.searchParams.has('_ai') || url.searchParams.get('scale') === '2') return;
         event.respondWith(
             caches.open(TILE_CACHE_NAME).then(async (tileCache) => {
                 const cachedTile = await tileCache.match(req, { ignoreVary: true });
@@ -527,4 +529,4 @@ self.addEventListener('notificationclick', (event) => {
         })
     );
 });
-// ==================== จบไฟล์ sw.js (v170) ====================
+// ==================== จบไฟล์ sw.js (v171) ====================
