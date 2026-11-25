@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v168 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v170 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v168';
+const CACHE_NAME = 'pea-smart-tools-v170';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -97,7 +97,9 @@ const BYPASS_HOSTS = [
     'api.codetabs.com',
     'corsproxy.io',
     'open-meteo.com',
-    'nominatim.openstreetmap.org'
+    'nominatim.openstreetmap.org',
+    'overpass-api.de',
+    'overpass.kumi.systems'
 ];
 
 let isTrimmingTiles = false;
@@ -525,4 +527,4 @@ self.addEventListener('notificationclick', (event) => {
         })
     );
 });
-// ==================== จบไฟล์ sw.js (v168) ====================
+// ==================== จบไฟล์ sw.js (v170) ====================
