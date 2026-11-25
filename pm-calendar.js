@@ -1,7 +1,7 @@
 // ============================================================================
-// 📅⏰📷📡 PEA SMART GRID — MAINTENANCE SCHEDULE, PHOTO, RADAR & ALERT ENGINE v7.5 (pm-calendar.js)
-// ระบบปฏิทินแผนงานบำรุงรักษา + แนบรูป 3 รูป + โซนเรดาร์แจ้งดับไฟประชาชน + ส่งรูปเข้า LINE
-// พาทที่ 1 / 6 : Config, Safe Cross-Page Wrappers, Photo URL Helpers & Baseline Helpers
+// 📅⏰📷📡 PEA SMART GRID — MAINTENANCE SCHEDULE, PHOTO, RADAR & ALERT ENGINE v7.6 (pm-calendar.js)
+// ระบบปฏิทินแผนงานบำรุงรักษา + แนบรูป 3 รูป + โซนเรดาร์ & ดูดชื่อสถานที่แจ้งดับไฟ FB/LINE
+// พาทที่ 1 / 6 : Config, Helpers, Cloud Shard (รองรับ pbp/pubPlaces) & Cross-Tab Sync
 // ============================================================================
 (function () {
     'use strict';
@@ -27,7 +27,7 @@
     const MAX_TOMBSTONE_AGE_MS = 35 * 24 * 60 * 60 * 1000;
     const MAX_DONE_CLOUD_AGE_MS = 60 * 24 * 60 * 60 * 1000;
     const MAX_CLOUD_SYNC_ITEMS = 60;
-    const MAX_SHARD_JSON_CHARS = 18000;
+    const MAX_SHARD_JSON_CHARS = 32000;
 
     // ค่ากำหนดสำหรับระบบแนบรูปประกอบแผนงาน PM (สูงสุด 3 รูปต่อแผนงาน)
     const MAX_PM_PHOTOS = 3;
@@ -362,11 +362,9 @@
         const cMeta = PM_PIN_COLORS[chosenKey] || PM_PIN_COLORS.sky;
         return { icon: cat.icon, catName: cat.name, hex: cMeta.hex, grad: cMeta.grad };
     }
-    // ===== จบพาทที่ 1 / 6 ของไฟล์ pm-calendar.js =====
 
-    // ===== เริ่มพาทที่ 2 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 2. จัดการคลังแผนงาน & บีบอัด Shard (รองรับรหัสรูป ph และโซนเรดาร์ oz ประหยัดโควตาชีต)
+    // 2. จัดการคลังแผนงาน & บีบอัด Shard (รองรับ ph, oz, pbn และรายชื่อสถานที่ pbp)
     // ========================================================================
     const MAX_RECENT_TRANSITION_QUOTA = 15;
     const RECENT_TRANSITION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -389,11 +387,12 @@
         return null;
     }
 
-    function slimPlanForCloud(p, grp) {
+        function slimPlanForCloud(p, grp) {
         if (!p || !p.id) return null;
         if (p.pmDeleted) return { id: p.id, ownerGroup: grp, pmDeleted: true, updatedAt: p.updatedAt };
         const cleanOz = normalizePmOutageZone(p.oz);
         const isPubActive = Boolean(p.pub && cleanOz);
+        const isArchivedDone = (p.status === 'done' && calcDaysUntil(p.date) < 0);
         const out = {
             id: p.id, title: p.title || '', category: p.category || 'scada',
             date: p.date || '', status: p.status || 'pending',
@@ -418,9 +417,10 @@
         if (p.note) out.note = String(p.note).slice(0, 300);
         const pIds = normalizePmPhotoIds(p);
         if (pIds.length > 0) out.ph = pIds;
-        if (cleanOz) out.oz = cleanOz;
-        if (isPubActive) out.pub = 1;
-        if (p.pubNote) out.pbn = String(p.pubNote).slice(0, 180);
+        if (cleanOz && !isArchivedDone) out.oz = cleanOz;
+        if (isPubActive && p.status !== 'done') out.pub = 1;
+        if (p.pubNote && !isArchivedDone) out.pbn = String(p.pubNote).slice(0, 180);
+        if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 450);
         if (!isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lon))) {
             out.lat = Number(Number(p.lat).toFixed(6));
             out.lon = Number(Number(p.lon).toFixed(6));
@@ -445,12 +445,14 @@
         const oz = normalizePmOutageZone(raw.oz);
         const pub = Boolean((raw.pub === 1 || raw.pub === true) && oz);
         const pubNote = String(raw.pubNote ?? raw.pbn ?? '').trim();
+        const pubPlaces = String(raw.pubPlaces ?? raw.pbp ?? '').trim();
         const cleanedRaw = { ...raw };
         delete cleanedRaw.ph;
         delete cleanedRaw.pbn;
+        delete cleanedRaw.pbp;
         return {
             ...cleanedRaw,
-            photoIds, oz, pub, pubNote,
+            photoIds, oz, pub, pubNote, pubPlaces,
             pinColor: raw.pinColor || 'auto',
             timeSlot: raw.timeSlot || '09.00-12.00',
             notifyDaysBefore: Number(raw.notifyDaysBefore ?? 3),
@@ -493,7 +495,7 @@
         return pmPlans;
     }
 
-    function selectPrioritizedCloudEntries(entriesArr, grp) {
+        function selectPrioritizedCloudEntries(entriesArr, grp) {
         const now = Date.now();
         const valid = entriesArr.filter(([, p]) => {
             if (!p?.id) return false;
@@ -506,26 +508,29 @@
             return true;
         });
 
-        const recentTransitions = valid
-            .filter(([, p]) => (p.pmDeleted || p.status === 'done') && (now - (new Date(p.updatedAt || 0).getTime() || 0)) <= RECENT_TRANSITION_AGE_MS)
+        const recentDeleted = valid
+            .filter(([, p]) => p.pmDeleted && (now - (new Date(p.updatedAt || 0).getTime() || 0)) <= RECENT_TRANSITION_AGE_MS)
             .sort((a, b) => (new Date(b[1].updatedAt || 0).getTime() || 0) - (new Date(a[1].updatedAt || 0).getTime() || 0))
-            .slice(0, MAX_RECENT_TRANSITION_QUOTA);
-        const reservedIds = new Set(recentTransitions.map(([id]) => id));
+            .slice(0, 12);
 
-        const restSorted = valid
-            .filter(([id]) => !reservedIds.has(id))
-            .sort((a, b) => {
-                const pa = a[1], pb = b[1];
-                const rank = x => (!x.pmDeleted && x.status !== 'done') ? 0 : (x.pmDeleted ? 1 : 2);
-                const rDiff = rank(pa) - rank(pb);
-                if (rDiff !== 0) return rDiff;
-                if (!pa.pmDeleted && pa.status !== 'done') {
-                    return Math.abs(calcDaysUntil(pa.date)) - Math.abs(calcDaysUntil(pb.date));
-                }
-                return (new Date(pb.updatedAt || 0).getTime() || 0) - (new Date(pa.updatedAt || 0).getTime() || 0);
-            });
+        const activePending = valid
+            .filter(([, p]) => !p.pmDeleted && p.status !== 'done')
+            .sort((a, b) => Math.abs(calcDaysUntil(a[1].date)) - Math.abs(calcDaysUntil(b[1].date)));
 
-        const byPriority = [...recentTransitions, ...restSorted].slice(0, MAX_CLOUD_SYNC_ITEMS);
+        const recentDone = valid
+            .filter(([, p]) => !p.pmDeleted && p.status === 'done')
+            .sort((a, b) => (new Date(b[1].updatedAt || 0).getTime() || 0) - (new Date(a[1].updatedAt || 0).getTime() || 0));
+
+        const seenIds = new Set();
+        const byPriority = [];
+        for (const pair of [...recentDeleted, ...activePending, ...recentDone]) {
+            if (!seenIds.has(pair[0])) {
+                seenIds.add(pair[0]);
+                byPriority.push(pair);
+                if (byPriority.length >= MAX_CLOUD_SYNC_ITEMS) break;
+            }
+        }
+
         const slimmed = [];
         let charBudget = 0;
         for (const [id, item] of byPriority) {
@@ -666,8 +671,8 @@
         }
     });
     window.addEventListener('storage', (e) => { if (e.key === PM_STORAGE_KEY && e.newValue) { try { mergeIncomingPmItems(JSON.parse(e.newValue)); } catch (err) {} } });
-    // ===== จบพาทที่ 2 / 6 ของไฟล์ pm-calendar.js =====
-        // ===== เริ่มพาทที่ 3 / 6 ของไฟล์ pm-calendar.js =====
+    // ===== จบพาทที่ 1 / 6 ของไฟล์ pm-calendar.js =====
+        // ===== เริ่มพาทที่ 2 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
     // 2.3 ตัวดักซิงค์คลาวด์, เอนจินบีบอัด/อัปโหลด/ดึงรูปภาพ PM & ระบบแจ้งเตือนตามเวลา
     // ========================================================================
@@ -900,7 +905,6 @@
             else missingIds.push(fid);
         });
 
-        // ดึงผ่าน Apps Script แบบรวมชุดเดียวก่อน (ปลอดปัญหา CORS 100% บนมือถือทุกเครื่อง)
         if (missingIds.length > 0 && navigator.onLine !== false) {
             try {
                 const gasRes = await postPmGasAction({ action: 'getJobPhotoBase64', fileIds: missingIds });
@@ -916,7 +920,6 @@
             } catch (e) {}
         }
 
-        // Fallback กรณีหลังบ้านยังไม่ได้อัปเดตฟังก์ชันเสริม ให้ลองดึงตรงจากลิงก์ภาพ Drive
         const stillMissing = cleanIds.filter(fid => !blobById.has(fid));
         if (stillMissing.length > 0 && navigator.onLine !== false) {
             await Promise.all(stillMissing.map(async fid => {
@@ -1040,7 +1043,7 @@
             const { role, explicitGroup } = getEffectiveRoleAndExplicitGroup();
             return pins.filter(p => p?.id && p.dueDate && !delMap[p.id] && ((role === 'admin' && !explicitGroup) || normPmGrp(p.ownerGroup || 'กฟส.บึง') === getActivePmGroup()))
                 .map(p => ({
-                    id: 'scada_due_' + p.id, isScadaPinDue: true, linkedPinId: p.id, photoIds: [],
+                    id: 'scada_due_' + p.id, isScadaPinDue: true, linkedPinId: p.id, photoIds: [], pubPlaces: '',
                     title: `ครบกำหนดหมุด: ${p.name}`, category: 'scada', pinColor: 'auto',
                     alertMode: 'standard', customAlertTimes: [],
                     date: String(p.dueDate).trim(), timeSlot: '08.30 น.', notifyDaysBefore: 3,
@@ -1235,11 +1238,10 @@
         fireCornerSystemNotification(roundTitle, triggeredItems, `${todayIso}_${topSlot || 'pm'}`);
         if (typeof showPmAlertSummaryModal === 'function') showPmAlertSummaryModal(roundTitle, triggeredItems);
     }
-    // ===== จบพาทที่ 3 / 6 ของไฟล์ pm-calendar.js =====
-
-    // ===== เริ่มพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
+    // ===== จบพาทที่ 2 / 6 ของไฟล์ pm-calendar.js =====
+        // ===== เริ่มพาทที่ 3 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 4. สไตล์ชีต, แถบเครื่องมือผัง SCADA, แบนเนอร์หน้าช่าง & บอลลูนหมุดพร้อมรูปภาพ
+    // 4. สไตล์ชีต, แถบเครื่องมือผัง SCADA, แบนเนอร์หน้าช่าง & บอลลูนหมุดพร้อมปุ่มโพสต์ FB/LINE
     // ========================================================================
     let isQuickInlineBoxVisible = false;
     let desktopModalWidthMode = '65vw';
@@ -1435,7 +1437,7 @@
     }
 
     // ========================================================================
-    // 5. เอนจินวาด "หมุดแผนงาน" บนแผนที่ (พร้อมสัญลักษณ์กล้อง & รูปตัวอย่างในป๊อปอัป)
+    // 5. เอนจินวาด "หมุดแผนงาน" บนแผนที่ (พร้อมรูปตัวอย่างและปุ่มคัดลอกโพสต์แจ้งไฟดับ)
     // ========================================================================
     function buildPmPlanMarkerIcon(item, isMovingThis = false) {
         const vis = getPlanPinVisualTheme(item), daysLeft = calcDaysUntil(item.date, getTodayIso()), isUrgent = item.status !== 'done' && daysLeft <= 0;
@@ -1451,7 +1453,9 @@
         const statusTag = isDone ? '<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">✅ เสร็จสิ้นแล้ว</span>' : (daysLeft < 0 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">🚨 เลยกำหนด ${Math.abs(daysLeft)} วัน</span>` : (daysLeft === 0 ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 กำหนดวันนี้</span>' : `<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-full">🗓️ อีก ${daysLeft} วัน</span>`));
         const allowEdit = !item.isScadaPinDue && canManagePmSchedule(), allowDone = !item.isScadaPinDue && canCompletePmTask();
         const photoStripHtml = pCount > 0 ? `<div class="pt-1">${buildPmPhotoStripHtml(item, 'popup')}</div>` : '';
-        const pubZoneTag = (!isDone && item.pub && item.oz) ? `<div class="text-[10.5px] font-extrabold text-rose-600">📡 เปิดเรดาร์แจ้งดับไฟประชาชนแล้ว</div>` : '';
+        const pubZoneTag = (!isDone && ((item.pub && item.oz) || item.pubPlaces))
+            ? `<div class="pt-0.5 space-y-1">${(item.pub && item.oz) ? '<div class="text-[10.5px] font-extrabold text-rose-600">📡 เปิดเรดาร์แจ้งดับไฟประชาชนแล้ว</div>' : ''}${item.pubPlaces ? `<div class="text-[10px] text-slate-600 bg-rose-50 border border-rose-200 rounded px-1.5 py-1">🏘️ <b>พื้นที่:</b> ${safeEscHtml(item.pubPlaces)}</div>` : ''}<button type="button" onclick="openPmPublicAnnounceModal('${safeId}')" style="background:#e11d48;color:#fff;padding:5px 8px;border-radius:8px;font-weight:800;font-size:10.5px;width:100%;">📢 คัดลอกโพสต์แจ้งไฟดับ (LINE / FB)</button></div>`
+            : '';
         const lineBtnLabel = pCount > 0 ? `💬 ส่ง LINE + ${pCount} รูป` : '💬 แชร์ LINE';
         return `<div style="font-family:'Prompt',sans-serif;min-width:250px;" class="space-y-1.5 text-xs"><div class="flex items-center justify-between gap-1"><span class="px-2 py-0.5 rounded text-white text-[10px] font-extrabold" style="background:${vis.hex}">${vis.icon} หมุดแผนงาน PM</span>${statusTag}</div><div class="font-extrabold text-slate-900 text-sm break-words pt-0.5">${safeEscHtml(item.title)}</div><div class="text-[11px] text-slate-600 space-y-0.5"><div>📅 <b>วันที่:</b> ${formatThaiDateFull(item.date)} (${safeEscHtml(item.timeSlot || '-')})</div><div>⏰ <b>เวลาเตือน:</b> <span class="text-indigo-700 font-bold">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div>⚡ <b>อุปกรณ์:</b> ${safeEscHtml(item.equipCode)} ${item.feeder ? `(วงจร ${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div>📝 <b>รายละเอียด:</b> ${safeEscHtml(item.note)}</div>` : ''}${pubZoneTag}</div>${photoStripHtml}<div class="pt-1.5 border-t border-slate-200 grid grid-cols-2 gap-1"><button type="button" onclick="navigatePmPlanGps('${safeId}')" style="background:#2563eb;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">🗺️ นำทาง Maps</button><button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" style="background:#00B900;color:#fff;padding:5px 8px;border-radius:8px;font-weight:700;font-size:11px;">${lineBtnLabel}</button>${allowDone ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="col-span-2" style="background:${isDone ? '#64748b' : '#059669'};color:#fff;padding:5px 8px;border-radius:8px;font-weight:800;font-size:11px;">${isDone ? '↩️ คืนสถานะรอดำเนินการ' : '✅ บันทึกดำเนินงานเสร็จสิ้น'}</button>` : ''}${allowEdit ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">✏️ แก้ไข/รูปภาพ</button><button type="button" onclick="startMovePmPlanPinOnMap('${safeId}')" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;padding:4px 8px;border-radius:8px;font-weight:700;font-size:10.5px;">📍 ย้ายจุดหมุด</button>` : ''}</div></div>`;
     }
@@ -1538,7 +1542,8 @@
         scadaMapRef?.closePopup(); repairMapRef?.closePopup(); calendarMapInstance?.closePopup();
         updatePinDropBannerOnMaps(); renderAllExternalPmMapLayers(); safeToast('📍 ลากหมุดแผนงาน หรือแตะตำแหน่งใหม่บนแผนที่ได้เลย');
     }
-        async function commitMovedPmPlanPinLocation(planId, newLat, newLon) {
+
+    async function commitMovedPmPlanPinLocation(planId, newLat, newLon) {
         if (!canManagePmSchedule()) return cancelPmMapInteractiveModes();
         loadPmPlansFromStorage();
         const idx = pmPlans.findIndex(p => p.id === planId && !p.pmDeleted);
@@ -1663,10 +1668,10 @@
         }
         discoverExistingLeafletMaps();
     }
-    // ===== จบพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
-       // ===== เริ่มพาทที่ 5 / 6 ของไฟล์ pm-calendar.js =====
+    // ===== จบพาทที่ 3 / 6 ของไฟล์ pm-calendar.js =====
+        // ===== เริ่มพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
     // ========================================================================
-    // 6. สร้าง DOM ปฏิทิน, ช่องแนบรูป 3 รูป, ตัวดูภาพเต็มจอ (Lightbox) & ส่งรูปเข้า LINE
+    // 6. สร้าง DOM ปฏิทิน, ช่องแนบรูป 3 รูป, ตัวดูภาพเต็มจอ (Lightbox) & ช่องปักแผนด่วน
     // ========================================================================
     function injectPmModalsDOM() {
         if (document.getElementById('pmCalendarModal')) return;
@@ -1676,7 +1681,7 @@
         document.body.insertAdjacentHTML('beforeend', `
             <div id="pmCalendarModal" class="fixed inset-0 bg-slate-950/70 hidden z-[1320] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm"><div class="pm-calendar-dialog bg-white rounded-2xl shadow-2xl w-full max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200" style="--pm-desktop-w: 65vw;">
                 <div class="px-4 py-3 bg-gradient-to-r from-indigo-900 via-blue-800 to-teal-700 text-white flex flex-wrap justify-between items-center gap-2 shrink-0">
-                    <div class="flex items-center gap-2"><span class="text-lg">📅</span><div><h3 class="font-bold text-sm sm:text-base flex items-center gap-2"><span>ปฏิทิน &amp; หมุดแผนงานบำรุงรักษา (PM)</span><span id="pmHeaderGroupBadge" class="bg-white/20 text-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-md">-</span></h3><p class="text-[10px] text-blue-100">แนบรูปหน้างาน 3 รูป + วาดเรดาร์แจ้งดับไฟประชาชน + ส่งรูปจริงเข้า LINE</p></div></div>
+                    <div class="flex items-center gap-2"><span class="text-lg">📅</span><div><h3 class="font-bold text-sm sm:text-base flex items-center gap-2"><span>ปฏิทิน &amp; หมุดแผนงานบำรุงรักษา (PM)</span><span id="pmHeaderGroupBadge" class="bg-white/20 text-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-md">-</span></h3><p class="text-[10px] text-blue-100">แนบรูปหน้างาน 3 รูป + วาดเรดาร์ &amp; ดูดชื่อสถานที่แจ้งดับไฟ FB/LINE</p></div></div>
                     <div class="flex flex-wrap items-center gap-1.5">
                         <div class="hidden lg:inline-flex items-center bg-slate-900/45 border border-white/20 rounded-xl p-0.5 mr-1"><button type="button" id="pmDesktopWBtn-65vw" onclick="setPmDesktopModalWidth('65vw')" class="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-extrabold text-[10px]">65%</button><button type="button" id="pmDesktopWBtn-80vw" onclick="setPmDesktopModalWidth('80vw')" class="px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]">80%</button><button type="button" id="pmDesktopWBtn-95vw" onclick="setPmDesktopModalWidth('95vw')" class="px-2 py-0.5 rounded text-blue-100 hover:bg-white/15 font-semibold text-[10px]">95%</button></div>
                         <button type="button" id="pmNotifPermBtn" onclick="requestPmBrowserNotificationPermission()" class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-xl text-[11px] font-bold">📲 แจ้งเตือนเครื่อง</button>
@@ -2103,7 +2108,7 @@
         const finalQuickPhotos = normalizePmPhotoIds(tempQuickPhotoIds);
         const newPlan = {
             id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title: rawTitle, category: catEl?.value || 'tree', pinColor: 'auto',
-            photoIds: finalQuickPhotos,
+            photoIds: finalQuickPhotos, pubPlaces: '',
             alertMode: customT ? 'both' : 'standard', customAlertTimes: customT ? [customT] : [], alertBaselineAt: getMinuteFloorIso(), createdAt: nowIso, date: targetDate,
             timeSlot: (timeEl?.value || '').trim() || '09.00-12.00', notifyDaysBefore: 3, repeatMonths: 0, equipCode: '', feeder: '', note: '',
             lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null,
@@ -2133,7 +2138,7 @@
     }
 
     // ========================================================================
-    // 8. ตารางปฏิทินรายเดือน, แผนที่หมุดแผนงาน & การ์ดงานรายวันพร้อมแถบรูปภาพ
+    // 8. ตารางปฏิทินรายเดือน, แผนที่หมุดแผนงาน & การสลับมุมมอง
     // ========================================================================
     async function initCalendarEmbeddedMap() {
         const mapEl = document.getElementById('pmCalendarEmbeddedMap'); if (!mapEl) return;
@@ -2204,7 +2209,8 @@
     function selectPmCalendarDate(isoStr) { selectedDateIso = isoStr; currentFilterStatus = 'day'; renderPmCalendarGrid(); renderPmSelectedDayList(); updateQuickInlineBoxUI(); }
     function setPmListStatusFilter(filterVal) { currentFilterStatus = filterVal || 'day'; renderPmSelectedDayList(); }
     function toggleShowScadaDueOnCalendar(checked) { showScadaDuePins = Boolean(checked); localStorage.setItem(PM_SHOW_SCADA_DUE_KEY, String(showScadaDuePins)); refreshPmAllViews(); }
-
+    // ===== จบพาทที่ 4 / 6 ของไฟล์ pm-calendar.js =====
+    // ===== เริ่มพาทที่ 5 / 6 ของไฟล์ pm-calendar.js =====
     function renderPmCalendarGrid() {
         const gridEl = document.getElementById('pmCalendarDaysGrid'), titleEl = document.getElementById('pmCalendarMonthTitle');
         const summaryEl = document.getElementById('pmMonthSummaryBar'), grpBadge = document.getElementById('pmHeaderGroupBadge');
@@ -2249,10 +2255,11 @@
             const cat = getCategoryMeta(item.category), alCfg = getPlanEffectiveAlertConfig(item), isDone = item.status === 'done';
             const daysLeft = calcDaysUntil(item.date, todayIso), safeId = String(item.id).replace(/'/g, "\\'"), hasCoord = !isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon));
             const pCount = normalizePmPhotoIds(item).length;
+            const hasPublicAnnounce = !item.isScadaPinDue && ((item.pub && item.oz) || Boolean(item.pubPlaces));
             const dueBadge = isDone ? '<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full">✅ เสร็จแล้ว</span>'
                 : (daysLeft < 0 ? `<span class="bg-rose-100 text-rose-700 border border-rose-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">🚨 เลย ${Math.abs(daysLeft)} วัน</span>`
                 : (daysLeft === 0 ? '<span class="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 วันนี้</span>' : `<span class="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full">อีก ${daysLeft} วัน</span>`));
-            return `<div class="p-3 rounded-2xl border ${isDone ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 shadow-sm'} space-y-1.5 text-xs"><div class="flex items-start justify-between gap-2"><div class="space-y-0.5 min-w-0 flex-1"><div class="flex items-center gap-1 flex-wrap"><span class="border text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.pillCls}">${cat.icon} ${cat.name}</span>${hasCoord ? '<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📍 มีหมุด</span>' : ''}${(!isDone && item.pub && item.oz) ? '<span onclick="openPublicOutageMapPage()" title="คลิกเปิดดูแมพเรดาร์ประชาชน" class="cursor-pointer bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">📡 เรดาร์ประชาชน</span>' : ''}${pCount > 0 ? `<span onclick="openPmPhotoLightbox('${safeId}', 0)" class="cursor-pointer bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📷 ${pCount} รูป</span>` : ''}</div><div ${(!item.isScadaPinDue && allowEdit) ? `onclick="quickEditPmPlanTitle('${safeId}')" title="คลิกเพื่อแก้ข้อความด่วน"` : ''} class="font-extrabold text-slate-800 text-xs sm:text-sm break-words ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:text-indigo-700' : ''} ${isDone ? 'line-through' : ''}">${safeEscHtml(item.title)}</div></div><div class="shrink-0 flex items-center gap-1">${dueBadge}${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="quickDeletePmPlanCard('${safeId}')" class="text-slate-300 hover:text-rose-600 font-bold text-sm px-1" title="ลบแผนงาน">&times;</button>` : ''}</div></div><div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600"><span>📅 ${formatThaiDateShort(item.date)} (${safeEscHtml(item.timeSlot || '-')})</span><span>• เตือนล่วงหน้า ${Number(item.notifyDaysBefore ?? 3)} วัน</span><span ${(!item.isScadaPinDue && allowEdit) ? `onclick="openPmPlanFormModal('${safeId}')" title="คลิกเพื่อตั้งเวลาเตือนของงานนี้"` : ''} class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.5 rounded font-bold text-[10px] ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:bg-indigo-100' : ''}">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[11px] font-bold text-teal-800">⚡ อุปกรณ์: ${safeEscHtml(item.equipCode)} ${item.feeder ? `(${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${safeEscHtml(item.note)}</div>` : ''}${pCount > 0 ? buildPmPhotoStripHtml(item, 'card') : ''}<div class="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5"><div class="flex flex-wrap gap-1">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">${pCount > 0 ? `💬 LINE (${pCount} รูป)` : '💬 LINE'}</button>${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg text-[10px] font-bold">✏️ แก้ไข/รูป</button>` : ''}</div>${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="${isDone ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">${isDone ? '↩️ เปิดใหม่' : '✅ เสร็จสิ้น'}</button>` : ''}</div></div>`;
+            return `<div class="p-3 rounded-2xl border ${isDone ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 shadow-sm'} space-y-1.5 text-xs"><div class="flex items-start justify-between gap-2"><div class="space-y-0.5 min-w-0 flex-1"><div class="flex items-center gap-1 flex-wrap"><span class="border text-[10px] font-bold px-1.5 py-0.5 rounded ${cat.pillCls}">${cat.icon} ${cat.name}</span>${hasCoord ? '<span class="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📍 มีหมุด</span>' : ''}${(!isDone && item.pub && item.oz) ? '<span onclick="openPublicOutageMapPage()" title="คลิกเปิดดูแมพเรดาร์ประชาชน" class="cursor-pointer bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">📡 เรดาร์ประชาชน</span>' : ''}${pCount > 0 ? `<span onclick="openPmPhotoLightbox('${safeId}', 0)" class="cursor-pointer bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-bold px-1.5 py-0.5 rounded">📷 ${pCount} รูป</span>` : ''}</div><div ${(!item.isScadaPinDue && allowEdit) ? `onclick="quickEditPmPlanTitle('${safeId}')" title="คลิกเพื่อแก้ข้อความด่วน"` : ''} class="font-extrabold text-slate-800 text-xs sm:text-sm break-words ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:text-indigo-700' : ''} ${isDone ? 'line-through' : ''}">${safeEscHtml(item.title)}</div></div><div class="shrink-0 flex items-center gap-1">${dueBadge}${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="quickDeletePmPlanCard('${safeId}')" class="text-slate-300 hover:text-rose-600 font-bold text-sm px-1" title="ลบแผนงาน">&times;</button>` : ''}</div></div><div class="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-600"><span>📅 ${formatThaiDateShort(item.date)} (${safeEscHtml(item.timeSlot || '-')})</span><span>• เตือนล่วงหน้า ${Number(item.notifyDaysBefore ?? 3)} วัน</span><span ${(!item.isScadaPinDue && allowEdit) ? `onclick="openPmPlanFormModal('${safeId}')" title="คลิกเพื่อตั้งเวลาเตือนของงานนี้"` : ''} class="bg-indigo-50 text-indigo-800 border border-indigo-200 px-1.5 py-0.5 rounded font-bold text-[10px] ${(!item.isScadaPinDue && allowEdit) ? 'cursor-pointer hover:bg-indigo-100' : ''}">${safeEscHtml(alCfg.badgeLabel)}</span></div>${item.equipCode ? `<div class="text-[11px] font-bold text-teal-800">⚡ อุปกรณ์: ${safeEscHtml(item.equipCode)} ${item.feeder ? `(${safeEscHtml(item.feeder)})` : ''}</div>` : ''}${item.note ? `<div class="text-[11px] text-slate-500 break-words">📝 ${safeEscHtml(item.note)}</div>` : ''}${item.pubPlaces ? `<div class="text-[11px] text-rose-900 bg-rose-50/80 border border-rose-200 rounded-lg px-2 py-1 break-words">🏘️ <b>พื้นที่ไฟดับ:</b> ${safeEscHtml(item.pubPlaces)}</div>` : ''}${pCount > 0 ? buildPmPhotoStripHtml(item, 'card') : ''}<div class="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5"><div class="flex flex-wrap gap-1">${hasCoord ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุด</button><button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] hover:bg-[#009900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">${pCount > 0 ? `💬 LINE (${pCount} รูป)` : '💬 LINE'}</button>${hasPublicAnnounce ? `<button type="button" onclick="openPmPublicAnnounceModal('${safeId}')" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">📢 โพสต์ FB/LINE</button>` : ''}${(!item.isScadaPinDue && allowEdit) ? `<button type="button" onclick="openPmPlanFormModal('${safeId}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-lg text-[10px] font-bold">✏️ แก้ไข/รูป</button>` : ''}</div>${(!item.isScadaPinDue && allowDone) ? `<button type="button" onclick="togglePmPlanCompleteStatus('${safeId}')" class="${isDone ? 'bg-slate-200 text-slate-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} px-2.5 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">${isDone ? '↩️ เปิดใหม่' : '✅ เสร็จสิ้น'}</button>` : ''}</div></div>`;
         }).join('');
     }
 
@@ -2268,8 +2275,9 @@
         bodyEl.innerHTML = loggedOutHeader + candidates.map(c => {
             const cat = getCategoryMeta(c.category), alCfg = getPlanEffectiveAlertConfig(c), safeId = String(c.id).replace(/'/g, "\\'"), hasCoord = !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lon));
             const pCount = normalizePmPhotoIds(c).length;
+            const hasPublicAnnounce = !c.isScadaPinDue && ((c.pub && c.oz) || Boolean(c.pubPlaces));
             const badge = c.daysLeft < 0 ? `<span class="bg-rose-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">เลยกำหนด ${Math.abs(c.daysLeft)} วัน</span>` : (c.daysLeft === 0 ? `<span class="bg-amber-500 text-slate-950 text-[10px] font-extrabold px-2 py-0.5 rounded-full">📌 วันนี้ (${safeEscHtml(c.timeSlot || '-')})</span>` : `<span class="bg-sky-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">อีก ${c.daysLeft} วัน (${formatThaiDateShort(c.date)})</span>`);
-            return `<div class="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-1.5"><div class="flex items-center justify-between gap-2">${badge}<span class="text-[10px] font-bold text-indigo-700">${safeEscHtml(alCfg.badgeLabel)}</span></div><div class="font-extrabold text-slate-800 text-xs sm:text-sm">${cat.icon} ${safeEscHtml(c.title)}</div>${pCount > 0 ? buildPmPhotoStripHtml(c, 'popup') : ''}<div class="pt-1 flex flex-wrap gap-1.5">${hasCoord && isLogged ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุดบนแมพ</button>` : ''}${hasCoord ? `<button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง Maps</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">${pCount > 0 ? `💬 LINE (${pCount} รูป)` : '💬 LINE'}</button></div></div>`;
+            return `<div class="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-1.5"><div class="flex items-center justify-between gap-2">${badge}<span class="text-[10px] font-bold text-indigo-700">${safeEscHtml(alCfg.badgeLabel)}</span></div><div class="font-extrabold text-slate-800 text-xs sm:text-sm">${cat.icon} ${safeEscHtml(c.title)}</div>${pCount > 0 ? buildPmPhotoStripHtml(c, 'popup') : ''}<div class="pt-1 flex flex-wrap gap-1.5">${hasCoord && isLogged ? `<button type="button" onclick="focusPmPlanPinOnMap('${safeId}')" class="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">📍 ดูหมุดบนแมพ</button>` : ''}${hasCoord ? `<button type="button" onclick="navigatePmPlanGps('${safeId}')" class="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">🗺️ นำทาง Maps</button>` : ''}<button type="button" onclick="shareSinglePmPlanToLine('${safeId}')" class="bg-[#00B900] text-white px-2.5 py-1 rounded-lg text-[10px] font-bold">${pCount > 0 ? `💬 LINE (${pCount} รูป)` : '💬 LINE'}</button>${hasPublicAnnounce ? `<button type="button" onclick="openPmPublicAnnounceModal('${safeId}')" class="bg-rose-600 text-white px-2.5 py-1 rounded-lg text-[10px] font-extrabold">📢 โพสต์ FB/LINE</button>` : ''}</div></div>`;
         }).join('');
         const calOrLoginBtn = document.getElementById('pmAlertModalCalOrLoginBtn');
         if (calOrLoginBtn) {
@@ -2317,10 +2325,9 @@
             modal.classList.remove('hidden'); setTimeout(() => inp.focus(), 60);
         };
     }
-    // ===== จบพาทที่ 5 / 6 ของไฟล์ pm-calendar.js ===== 
-    // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js =====
+
     // ========================================================================
-    // 9. ฟอร์มบันทึกแผนงาน + เอนจินวาดโซนเรดาร์ประชาชน (วงกลม / ปักมุม / ลากนิ้วตีกรอบ)
+    // 9. เอนจินวาดโซนเรดาร์ประชาชน + ดูดชื่อสถานที่ในกรอบไฟดับ & สร้างโพสต์ FB/LINE
     // ========================================================================
     function renderPmCustomTimeChips() {
         const wrap = document.getElementById('pmCustomTimeChipsWrap'); if (!wrap) return;
@@ -2376,6 +2383,12 @@
     let isLassoDragging = false;
     let lastLassoFinishMs = 0;
 
+    // ตัวแปรจัดการดูดชื่อสถานที่ในกรอบไฟดับและหน้าต่างสร้างโพสต์ประกาศ FB/LINE
+    let tempPubPlacesList = [];
+    let isExtractingZonePlaces = false;
+    let currentAnnounceModalItem = null;
+    let currentAnnounceStyleMode = 'facebook';
+
     function getZoneCentroidPm(oz) {
         if (!oz) return null;
         if (oz.t === 'c' && Array.isArray(oz.c)) return { lat: oz.c[0], lon: oz.c[1] };
@@ -2418,12 +2431,9 @@
 
     function buildPublicOutageMapShareUrl() {
         const base = new URL('./outage-map.html', window.location.href);
-        base.searchParams.set('g', getActivePmGroup());
-        const activeUrl = getActivePmCloudUrl();
-        const m = activeUrl.match(/\/macros\/s\/([A-Za-z0-9_-]+)\/exec/);
-        if (m && m[1]) base.searchParams.set('s', m[1]);
-        else if (activeUrl && activeUrl.includes('script.google.com')) base.searchParams.set('u', activeUrl);
-        return base.toString();
+        const grp = String(getActivePmGroup() || 'กฟส.บึง').trim();
+        const safeGrpParam = /\s/.test(grp) ? encodeURIComponent(grp) : grp;
+        return `${base.origin}${base.pathname}?g=${safeGrpParam}`;
     }
 
     function openPublicOutageMapPage() {
@@ -2436,6 +2446,417 @@
         copyPmTextSafe(msg, '📋 คัดลอกลิงก์แมพแจ้งดับไฟประชาชนแล้ว ส่งเข้า LINE ได้เลย!');
     }
 
+    function haversineMetersPm(lat1, lon1, lat2, lon2) {
+        const R = 6371000, rad = x => x * Math.PI / 180;
+        const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function isPointInPolyPm(lat, lon, pts) {
+        if (!Array.isArray(pts) || pts.length < 3) return false;
+        let inside = false;
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+            const yi = pts[i][0], xi = pts[i][1], yj = pts[j][0], xj = pts[j][1];
+            const intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    function isPointInsidePmZone(lat, lon, oz) {
+        if (!oz || isNaN(lat) || isNaN(lon)) return false;
+        if (oz.t === 'c' && Array.isArray(oz.c)) return haversineMetersPm(lat, lon, oz.c[0], oz.c[1]) <= oz.r;
+        if (oz.t === 'p' && Array.isArray(oz.p)) return isPointInPolyPm(lat, lon, oz.p);
+        return false;
+    }
+
+    function isLikelyInternalScadaCode(nameStr) {
+        const s = String(nameStr || '').trim();
+        if (!s || s.length < 2) return true;
+        if (/^(?:[A-Z]{2,5}\d{1,3}(?:[-_/\s]*[A-Z0-9.-]+)*|(?:PEA|TR|SW|ABS|RCS|VCS|LB|DS|FUSE|CAP|RECLOSER|FEEDER)(?:[-_\s.#]*[A-Z0-9.-]+)*)$/i.test(s)) return true;
+        if (/^[A-Z0-9_./-]+$/i.test(s) && /\d/.test(s) && !/^(?:3BB|7-Eleven)$/i.test(s)) return true;
+        return false;
+    }
+
+    function parsePlacesTextToList(rawStr) {
+        const seen = new Set();
+        const out = [];
+        String(rawStr || '').split(/\s*[,،\n]+\s*/).forEach(part => {
+            const clean = part.replace(/\s+/g, ' ').trim();
+            const key = clean.toLowerCase();
+            if (clean && !seen.has(key)) {
+                seen.add(key);
+                out.push(clean);
+            }
+        });
+        return out;
+    }
+
+    function renderTempPubPlacesUI() {
+        const joined = tempPubPlacesList.join(', ');
+        const txtEl = document.getElementById('pmPubOutagePlacesInput');
+        if (txtEl && txtEl.value !== joined) txtEl.value = joined;
+
+        const cntBadge = document.getElementById('pmZonePlacesCountBadge');
+        if (cntBadge) cntBadge.textContent = String(tempPubPlacesList.length);
+
+        const mapRow = document.getElementById('pmMapZonePlacesRow');
+        if (mapRow) {
+            mapRow.classList.toggle('hidden', tempPubPlacesList.length === 0);
+            mapRow.classList.toggle('flex', tempPubPlacesList.length > 0);
+        }
+
+        const chipsHtml = tempPubPlacesList.length > 0
+            ? tempPubPlacesList.map((name, idx) =>
+                `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-full text-[10.5px] font-bold">${safeEscHtml(name)}<button type="button" onclick="removeTempPubPlaceAt(${idx})" class="text-rose-500 hover:text-rose-800 font-extrabold leading-none ml-0.5">&times;</button></span>`
+            ).join('')
+            : '<span class="text-[10px] text-slate-400 italic">ยังไม่มีรายชื่อสถานที่ — กดปุ่ม "🔍 ดูดชื่อสถานที่ในกรอบ" หรือพิมพ์/พูดชื่อที่เห็นบนแมพได้เลย</span>';
+
+        const mapChipBox = document.getElementById('pmMapZonePlacesChipsWrap');
+        if (mapChipBox) mapChipBox.innerHTML = chipsHtml;
+        const formChipBox = document.getElementById('pmFormZonePlacesChipsWrap');
+        if (formChipBox) formChipBox.innerHTML = chipsHtml;
+    }
+
+    function onPubPlacesTextareaInput(val) {
+        tempPubPlacesList = parsePlacesTextToList(val);
+        const cntBadge = document.getElementById('pmZonePlacesCountBadge');
+        if (cntBadge) cntBadge.textContent = String(tempPubPlacesList.length);
+        const mapRow = document.getElementById('pmMapZonePlacesRow');
+        if (mapRow) {
+            mapRow.classList.toggle('hidden', tempPubPlacesList.length === 0);
+            mapRow.classList.toggle('flex', tempPubPlacesList.length > 0);
+        }
+        const chipsHtml = tempPubPlacesList.length > 0
+            ? tempPubPlacesList.map((name, idx) =>
+                `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-950 border border-rose-300 px-2 py-0.5 rounded-full text-[10.5px] font-bold">${safeEscHtml(name)}<button type="button" onclick="removeTempPubPlaceAt(${idx})" class="text-rose-500 hover:text-rose-800 font-extrabold leading-none ml-0.5">&times;</button></span>`
+            ).join('')
+            : '<span class="text-[10px] text-slate-400 italic">ยังไม่มีรายชื่อสถานที่ — กดปุ่ม "🔍 ดูดชื่อสถานที่ในกรอบ" หรือพิมพ์/พูดชื่อที่เห็นบนแมพได้เลย</span>';
+        const mapChipBox = document.getElementById('pmMapZonePlacesChipsWrap');
+        if (mapChipBox) mapChipBox.innerHTML = chipsHtml;
+        const formChipBox = document.getElementById('pmFormZonePlacesChipsWrap');
+        if (formChipBox) formChipBox.innerHTML = chipsHtml;
+    }
+
+    function addManualTempPubPlace(rawTextOpt) {
+        const inp = document.getElementById('pmMapQuickPlaceAddInput');
+        const raw = typeof rawTextOpt === 'string' ? rawTextOpt : (inp?.value || '');
+        const additions = parsePlacesTextToList(raw);
+        if (!additions.length) return;
+        tempPubPlacesList = parsePlacesTextToList([...tempPubPlacesList, ...additions].join(', '));
+        if (inp && typeof rawTextOpt !== 'string') inp.value = '';
+        renderTempPubPlacesUI();
+        if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
+    }
+
+    function removeTempPubPlaceAt(idx) {
+        tempPubPlacesList.splice(idx, 1);
+        renderTempPubPlacesUI();
+        if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
+    }
+
+    function clearAllTempPubPlaces() {
+        tempPubPlacesList = [];
+        renderTempPubPlacesUI();
+        if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
+    }
+
+    function startPmZonePlaceVoiceInput() {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) { safeToast('⚠️ เบราว์เซอร์นี้ไม่รองรับการพิมพ์ด้วยเสียง'); return; }
+        const rec = new SR();
+        rec.lang = 'th-TH';
+        rec.onstart = () => safeToast('🎙️ กำลังฟัง... อ่านชื่อหอพัก/ร้านค้า/ซอยที่เห็นบนแผนที่ได้เลยครับ');
+        rec.onresult = e => {
+            const tr = (e.results?.[0]?.[0]?.transcript || '').trim();
+            if (tr) {
+                addManualTempPubPlace(tr);
+                safeToast(`✅ เพิ่ม "${tr}" เข้าพื้นที่ไฟดับแล้ว`);
+            }
+        };
+        rec.onerror = () => safeToast('❌ รับเสียงไม่สำเร็จ กรุณาลองใหม่');
+        rec.start();
+    }
+
+    async function getActiveDraftZoneForExtraction() {
+        if (tempZoneType === 'p') {
+            if (tempPolyPts.length < 3) return null;
+            return normalizePmOutageZone({ t: 'p', p: tempPolyPts });
+        }
+        let center = tempCircleCenter;
+        if (!center) {
+            const parsed = await parsePmCoordOrShortLink(document.getElementById('pmCoordInput')?.value || '');
+            if (parsed) center = [Number(parsed.lat.toFixed(5)), Number(parsed.lon.toFixed(5))];
+        }
+        if (!center) return null;
+        return normalizePmOutageZone({ t: 'c', c: center, r: tempCircleRadius });
+    }
+
+    function getZoneSafeSamplePointPm(oz) {
+        const cen = getZoneCentroidPm(oz);
+        if (!cen) return null;
+        if (oz.t === 'p' && Array.isArray(oz.p) && oz.p.length >= 3 && !isPointInPolyPm(cen.lat, cen.lon, oz.p)) {
+            return { lat: oz.p[0][0], lon: oz.p[0][1] };
+        }
+        return cen;
+    }
+
+    async function queryOverpassPlacesInZone(oz) {
+        let areaFilter = '';
+        if (oz.t === 'c') {
+            areaFilter = `(around:${Math.max(80, Math.min(5000, oz.r))},${oz.c[0]},${oz.c[1]})`;
+        } else {
+            const dedupPts = oz.p.filter((pt, i, arr) => i === 0 || pt[0] !== arr[i - 1][0] || pt[1] !== arr[i - 1][1]);
+            const uniqueCoordCount = new Set(dedupPts.map(pt => `${pt[0]},${pt[1]}`)).size;
+            if (uniqueCoordCount < 3) return [];
+            areaFilter = `(poly:"${dedupPts.map(pt => `${pt[0]} ${pt[1]}`).join(' ')}")`;
+        }
+        const ql = `[out:json][timeout:9];(nw["name"]${areaFilter};nw["name:th"]${areaFilter};nw["brand"]${areaFilter};way["highway"]["ref"]${areaFilter};);out tags 180;`;
+        const endpoints = [
+            'https://overpass-api.de/api/interpreter',
+            'https://overpass.kumi.systems/api/interpreter'
+        ];
+        for (const ep of endpoints) {
+            const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const timer = ctrl ? setTimeout(() => ctrl.abort(), 9500) : null;
+            try {
+                const res = await _origFetchForPm(ep, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                    body: 'data=' + encodeURIComponent(ql),
+                    signal: ctrl ? ctrl.signal : undefined
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data?.remark && (!Array.isArray(data.elements) || data.elements.length === 0)) continue;
+                    if (Array.isArray(data?.elements)) return data.elements;
+                }
+            } catch (e) {}
+            finally { if (timer) clearTimeout(timer); }
+        }
+        return [];
+    }
+
+    async function queryNominatimAdminAtPoint(lat, lon) {
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 6500) : null;
+        try {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1&accept-language=th`;
+            const res = await _origFetchForPm(url, { signal: ctrl ? ctrl.signal : undefined });
+            if (!res.ok) return null;
+            const data = await res.json();
+            const addr = data?.address || {};
+            const road = String(addr.road || '').trim();
+            const village = String(addr.hamlet || addr.village || addr.neighbourhood || addr.quarter || '').trim();
+            const rawSub = String(addr.suburb || addr.town || addr.municipality || addr.city_district || '').trim();
+            const rawDist = String(addr.county || addr.city || '').trim();
+            const rawProv = String(addr.state || '').trim();
+            const sub = rawSub ? (/^(?:ตำบล|ต\.|แขวง|เทศบาล)/.test(rawSub) ? rawSub : `ต.${rawSub}`) : '';
+            const dist = rawDist ? (/^(?:อำเภอ|อ\.|เขต)/.test(rawDist) ? rawDist : `อ.${rawDist}`) : '';
+            const prov = rawProv ? (/^(?:จังหวัด|จ\.|กรุงเทพ)/.test(rawProv) ? rawProv : `จ.${rawProv}`) : '';
+            return { road, village, adminArea: [sub, dist, prov].filter(Boolean).join(' ') };
+        } catch (e) { return null; }
+        finally { if (timer) clearTimeout(timer); }
+    }
+
+    async function extractPlacesInCurrentOutageZone() {
+        if (isExtractingZonePlaces) return;
+        const oz = await getActiveDraftZoneForExtraction();
+        if (!oz) {
+            safeToast(tempZoneType === 'p' ? '⚠️ กรุณาปักมุมบนแผนที่ให้ครบอย่างน้อย 3 จุดก่อนดูดชื่อสถานที่ครับ' : '⚠️ กรุณาแตะเลือกจุดศูนย์กลางวงเรดาร์บนแผนที่ก่อนครับ');
+            return;
+        }
+
+        isExtractingZonePlaces = true;
+        ['btnExtractZonePlacesMap', 'btnExtractZonePlacesForm'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) { b.disabled = true; b.dataset.origTxt = b.textContent; b.textContent = '⏳ กำลังสแกนชื่อสถานที่...'; }
+        });
+
+        try {
+            addManualTempPubPlace();
+            const cen = getZoneSafeSamplePointPm(oz);
+            const [osmElements, nomInfo] = await Promise.all([
+                queryOverpassPlacesInZone(oz),
+                cen ? queryNominatimAdminAtPoint(cen.lat, cen.lon) : Promise.resolve(null)
+            ]);
+
+            const roads = [], villages = [], landmarks = [];
+
+            // 1. กวาดชื่อถนน ซอย สายทาง หมู่บ้าน และสถานที่สำคัญจาก OpenStreetMap
+            osmElements.forEach(el => {
+                const tags = el?.tags;
+                if (!tags || tags.boundary === 'administrative' || tags.power || tags.place === 'country' || tags.place === 'state') return;
+                const roadRef = (tags.highway && tags.ref)
+                    ? (/^(?:ถ\.|ถนน|ทล\.|ทางหลวง|สาย)/.test(String(tags.ref).trim()) ? String(tags.ref).trim() : `สาย ${String(tags.ref).trim()}`)
+                    : '';
+                let name = String(tags['name:th'] || tags.name || tags['brand:th'] || tags.brand || roadRef).replace(/\s+/g, ' ').trim();
+                if (!name || /^\d+[\/\-]?\d*$/.test(name)) return;
+
+                if (tags.highway) {
+                    roads.push(name);
+                } else if (tags.place || tags.landuse === 'residential') {
+                    villages.push(name);
+                } else {
+                    if (tags.amenity === 'fuel' && !/^(?:ปั๊ม|สถานีบริการ)/.test(name)) name = `ปั๊มน้ำมัน ${name}`;
+                    else if (tags.amenity === 'school' && !/^(?:โรงเรียน|รร\.|วิทยาลัย|ศูนย์พัฒนา)/.test(name)) name = `โรงเรียน${name}`;
+                    landmarks.push(name);
+                }
+            });
+
+            // 2. กวาดจุดสังเกตในระบบของสาขาที่อยู่ในกรอบ (กรองรหัสสวิตช์/อุปกรณ์ SCADA ออกอัตโนมัติ)
+            try {
+                const pins = JSON.parse(rawGet('elec_labeled_places_list') || '[]');
+                const delMap = JSON.parse(rawGet('elec_deleted_labeled_places_map') || '{}');
+                const activeGrp = getActivePmGroup();
+                pins.forEach(p => {
+                    if (!p?.id || delMap[p.id] || p.scadaNode) return;
+                    if (normPmGrp(p.ownerGroup || 'กฟส.บึง') !== activeGrp) return;
+                    const la = parseFloat(p.lat), lo = parseFloat(p.lon);
+                    if (!isPointInsidePmZone(la, lo, oz)) return;
+                    const pName = String(p.name || '').trim();
+                    if (pName && !isLikelyInternalScadaCode(pName)) landmarks.push(pName);
+                });
+            } catch (e) {}
+
+            // 3. เติมถนน หมู่บ้าน และ ต./อ./จ. จากพิกัดกึ่งกลาง
+            if (nomInfo?.road) roads.push(nomInfo.road);
+            if (nomInfo?.village) villages.push(nomInfo.village);
+            const adminTail = nomInfo?.adminArea ? [nomInfo.adminArea] : [];
+
+            const mergedAll = parsePlacesTextToList([
+                ...tempPubPlacesList,
+                ...landmarks.slice(0, 25),
+                ...villages.slice(0, 10),
+                ...roads.slice(0, 12),
+                ...adminTail
+            ].join(', '));
+
+            const addedCount = Math.max(0, mergedAll.length - tempPubPlacesList.length);
+            tempPubPlacesList = mergedAll;
+            renderTempPubPlacesUI();
+            if (isMiniMapFullscreen) setTimeout(() => formMiniMap?.invalidateSize(), 60);
+
+            if (mergedAll.length > 0) {
+                safeToast(addedCount > 0 ? `✅ ดูดชื่อสถานที่สำเร็จ (+${addedCount} แห่ง) พิมพ์หรือกด 🎙️ เติมจุดย่อยเพิ่มได้ครับ` : 'ℹ️ รายชื่อสถานที่ในกรอบนี้อยู่ในรายการครบแล้ว');
+            } else {
+                safeToast('ℹ️ โซนนี้ยังไม่มีป้ายชื่อในฐานข้อมูลเปิด สามารถกด 🎙️ อ่านชื่อบนแมพดาวเทียมเพิ่มได้เลยครับ');
+            }
+        } catch (err) {
+            safeToast('⚠️ ดึงข้อมูลแผนที่ออนไลน์ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตหรือพิมพ์เพิ่มด้วยตนเอง');
+        } finally {
+            isExtractingZonePlaces = false;
+            ['btnExtractZonePlacesMap', 'btnExtractZonePlacesForm'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) { b.disabled = false; if (b.dataset.origTxt) b.textContent = b.dataset.origTxt; }
+            });
+        }
+    }
+    
+    function buildPublicOutageAnnouncementText(item, styleMode = 'facebook') {
+        const branchName = normPmGrp(item.ownerGroup || getActivePmGroup()) || 'กฟส.บึง';
+        const dateFull = formatThaiDateFull(item.date || getTodayIso());
+        const cleanSlot = String(item.timeSlot || '09.00-16.00').replace(/\s*น\.?\s*$/g, '').trim() || '09.00-16.00';
+        const causeTxt = String(item.pubNote || item.title || 'ปรับปรุงและบำรุงรักษาระบบจำหน่ายไฟฟ้า').trim();
+        const includeRadar = Boolean(item.pub);
+        const placesTxt = String(item.pubPlaces || '').trim() || (includeRadar ? 'พื้นที่ตามแนวเขตแผนที่เรดาร์แนบท้าย' : 'พื้นที่บริเวณตามแผนปฏิบัติงาน');
+        const radarUrl = buildPublicOutageMapShareUrl();
+
+        if (styleMode === 'line') {
+            const lineRows = [
+                `⚡ แจ้งแผนดับไฟปฏิบัติงาน (${branchName})`,
+                `🗓️ ${dateFull}`,
+                `⏰ เวลา ${cleanSlot} น. (โดยประมาณ)`,
+                `🛠️ สาเหตุ: ${causeTxt}`,
+                `📍 พื้นที่ไฟดับ: ${placesTxt}`
+            ];
+            if (includeRadar) {
+                lineRows.push(`📡 เช็กพิกัดบ้านในเขตไฟดับได้ที่:`, radarUrl);
+            }
+            lineRows.push(`🙏 ขออภัยในความไม่สะดวก (หากเสร็จก่อนกำหนดจะจ่ายไฟทันทีครับ)`);
+            return lineRows.join('\n');
+        }
+
+        const fbRows = [
+            `📢 ประชาสัมพันธ์แจ้งแผนดับกระแสไฟฟ้าชั่วคราว`,
+            `🏢 การไฟฟ้าส่วนภูมิภาค (${branchName})`,
+            `━━━━━━━━━━━━━━━━━━`,
+            `🗓️ วันที่ : ${dateFull}`,
+            `⏰ เวลา : ${cleanSlot} น. (โดยประมาณ)`,
+            `🛠️ งานที่ปฏิบัติ : ${causeTxt}`,
+            ``,
+            `📍 พื้นที่ได้รับผลกระทบ (บริเวณไฟดับ) :`,
+            `${placesTxt}`
+        ];
+        if (includeRadar) {
+            fbRows.push(
+                ``,
+                `📡 ตรวจสอบพิกัดหลังคาบ้าน/สถานประกอบการของท่านบนเรดาร์แผนที่ได้ที่ :`,
+                `${radarUrl}`
+            );
+        }
+        fbRows.push(
+            `━━━━━━━━━━━━━━━━━━`,
+            `🙏 การไฟฟ้าส่วนภูมิภาค (${branchName}) ขออภัยในความไม่สะดวกมา ณ ที่นี้ ทั้งนี้หากปฏิบัติงานแล้วเสร็จก่อนกำหนด จะดำเนินการจ่ายกระแสไฟฟ้าให้ตามปกติทันทีครับ`
+        );
+        return fbRows.join('\n');
+    }
+
+    function openPmPublicAnnounceModal(planIdOrDraft) {
+        injectPmModalsDOM();
+        ensurePmOutageZoneUiInjected();
+        if (planIdOrDraft === '__FORM_DRAFT__') {
+            addManualTempPubPlace();
+            currentAnnounceModalItem = {
+                ownerGroup: getActivePmGroup(),
+                pub: Boolean(tempPubEnabled),
+                title: (document.getElementById('pmTitleInput')?.value || '').trim(),
+                date: (document.getElementById('pmDateInput')?.value || selectedDateIso || getTodayIso()).trim(),
+                timeSlot: (document.getElementById('pmTimeSlotInput')?.value || '09.00-16.00').trim(),
+                pubNote: (document.getElementById('pmPubOutageNoteInput')?.value || '').trim(),
+                pubPlaces: (document.getElementById('pmPubOutagePlacesInput')?.value || tempPubPlacesList.join(', ')).trim()
+            };
+        } else {
+            const found = getAllVisibleCalendarItems().find(x => x.id === planIdOrDraft);
+            if (!found) return;
+            currentAnnounceModalItem = found;
+        }
+        switchPmAnnounceStyle(currentAnnounceStyleMode || 'facebook');
+        document.getElementById('pmPublicAnnounceModal')?.classList.remove('hidden');
+    }
+
+    function closePmPublicAnnounceModal() {
+        document.getElementById('pmPublicAnnounceModal')?.classList.add('hidden');
+    }
+
+    function switchPmAnnounceStyle(mode) {
+        currentAnnounceStyleMode = mode === 'line' ? 'line' : 'facebook';
+        const fbBtn = document.getElementById('pmAnnStyleBtn-facebook');
+        const lnBtn = document.getElementById('pmAnnStyleBtn-line');
+        if (fbBtn) fbBtn.className = currentAnnounceStyleMode === 'facebook' ? 'flex-1 py-1.5 rounded-lg bg-blue-600 text-white font-extrabold text-xs shadow' : 'flex-1 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold text-xs';
+        if (lnBtn) lnBtn.className = currentAnnounceStyleMode === 'line' ? 'flex-1 py-1.5 rounded-lg bg-[#00B900] text-white font-extrabold text-xs shadow' : 'flex-1 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold text-xs';
+        const area = document.getElementById('pmPublicAnnounceTextarea');
+        if (area && currentAnnounceModalItem) {
+            area.value = buildPublicOutageAnnouncementText(currentAnnounceModalItem, currentAnnounceStyleMode);
+        }
+    }
+
+    function copyPmPublicAnnounceText() {
+        const area = document.getElementById('pmPublicAnnounceTextarea');
+        const txt = (area?.value || '').trim();
+        if (!txt) return;
+        copyPmTextSafe(txt, '📋 คัดลอกประกาศแจ้งไฟดับแล้ว! กดวางโพสต์ใน Facebook หรือ LINE ได้เลย');
+        try { area.select(); document.execCommand('copy'); } catch (e) {}
+    }
+
+    function sharePmPublicAnnounceToLine() {
+        const txt = (document.getElementById('pmPublicAnnounceTextarea')?.value || '').trim();
+        if (!txt) return;
+        copyPmTextSafe(txt, '💬 คัดลอกข้อความและกำลังเปิดแอป LINE...');
+        window.open('https://line.me/R/share?text=' + encodeURIComponent(txt), '_blank');
+    }
+
     function ensurePmOutageZoneUiInjected() {
         const calHdrBtns = document.querySelector('#pmCalendarModal .pm-calendar-dialog > div:first-child > div:last-child');
         if (calHdrBtns && !document.getElementById('pmOpenPublicRadarBtn')) {
@@ -2446,55 +2867,106 @@
         }
 
         const miniWrap = document.getElementById('pmFormMiniMapWrap');
-        if (!miniWrap || document.getElementById('pmPubOutagePanel')) return;
-
-        const panelHtml = `
-            <div id="pmPubOutagePanel" class="p-3 bg-rose-50/85 border-2 border-rose-200 rounded-xl space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                    <label class="flex items-center gap-2 font-extrabold text-rose-950 cursor-pointer select-none text-xs">
-                        <input type="checkbox" id="pmPubOutageEnableChk" onchange="onTogglePmPublicOutage(this.checked)" class="w-4 h-4 accent-rose-600 rounded">
-                        <span>📡 แสดงโซนเรดาร์แจ้งแผนดับไฟประชาชน (outage-map.html)</span>
-                    </label>
-                </div>
-                <div id="pmPubOutageConfigBody" class="hidden space-y-2 pt-1 border-t border-rose-200/80">
-                    <input type="text" id="pmPubOutageNoteInput" placeholder="💬 สาเหตุที่แจ้งประชาชน เช่น ดับไฟตัดรอนกิ่งไม้ / ปรับปรุงสายแรงสูง (เว้นว่างได้)" class="w-full px-2.5 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-semibold text-slate-800">
-                    <div class="text-[10.5px] text-rose-800 font-semibold">👇 วาดขอบเขตเรดาร์ไฟดับบนแผนที่ด้านบน (ข้อมูลช่าง/รหัสสวิตช์จะถูกซ่อนจากประชาชนอัตโนมัติ)</div>
-                </div>
-            </div>`;
-        miniWrap.insertAdjacentHTML('afterend', panelHtml);
-
-        const mapHdr = miniWrap.firstElementChild;
-        if (mapHdr && !document.getElementById('pmZoneDrawToolbar')) {
-            mapHdr.innerHTML = `<span id="pmMiniMapHdrHint" class="truncate">👆 แตะบนแผนที่เพื่อเลือกจุดปฏิบัติงาน</span><div class="flex items-center gap-1.5 shrink-0"><button type="button" id="pmMiniMapFsBtn" onclick="togglePmMiniMapFullscreen()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 px-2 py-0.5 rounded font-extrabold text-[10px]">⛶ ขยายเต็มจอ</button><button type="button" onclick="togglePmFormMiniMap('close_btn')" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-0.5 rounded font-bold text-[10px]">✕ ซ่อน</button></div>`;
-            mapHdr.insertAdjacentHTML('afterend', `
-                <div id="pmZoneDrawToolbar" class="hidden bg-slate-900 text-white px-2.5 py-2 space-y-2 border-b border-slate-700 text-[11px]">
-                    <div class="flex flex-wrap items-center justify-between gap-1">
-                        <div class="inline-flex bg-slate-800 p-0.5 rounded-lg gap-0.5 flex-wrap">
-                            <button type="button" id="pmDrawModeBtn-circle" onclick="setPmZoneDrawSubMode('circle')" class="px-2 py-1 rounded-md font-extrabold text-[10.5px]">⭕ วงกลมเรดาร์</button>
-                            <button type="button" id="pmDrawModeBtn-poly_click" onclick="setPmZoneDrawSubMode('poly_click')" class="px-2 py-1 rounded-md font-bold text-[10.5px]">📐 ปักมุมหลายเหลี่ยม</button>
-                            <button type="button" id="pmDrawModeBtn-poly_lasso" onclick="setPmZoneDrawSubMode('poly_lasso')" class="px-2 py-1 rounded-md font-bold text-[10.5px]">✍️ ลากนิ้วตีกรอบเอง</button>
-                        </div>
-                        <div id="pmPolyActionsGrp" class="hidden items-center gap-1">
-                            <button type="button" onclick="undoLastPmZonePolyPoint()" class="bg-slate-700 hover:bg-slate-600 text-amber-300 px-2 py-1 rounded-md text-[10px] font-bold">↩️ ลบมุม</button>
-                            <button type="button" onclick="clearPmZonePolygon()" class="bg-rose-700 hover:bg-rose-600 text-white px-2 py-1 rounded-md text-[10px] font-bold">🗑️ ล้างกรอบ</button>
+        if (miniWrap && !document.getElementById('pmPubOutagePanel')) {
+            const panelHtml = `
+                <div id="pmPubOutagePanel" class="p-3 bg-rose-50/85 border-2 border-rose-200 rounded-xl space-y-2">
+                    <div class="flex items-center justify-between gap-2">
+                        <label class="flex items-center gap-2 font-extrabold text-rose-950 cursor-pointer select-none text-xs">
+                            <input type="checkbox" id="pmPubOutageEnableChk" onchange="onTogglePmPublicOutage(this.checked)" class="w-4 h-4 accent-rose-600 rounded">
+                            <span>📡 แสดงโซนเรดาร์แจ้งแผนดับไฟประชาชน (outage-map.html)</span>
+                        </label>
+                    </div>
+                    <div id="pmPubOutageConfigBody" class="hidden space-y-2 pt-1.5 border-t border-rose-200/80">
+                        <input type="text" id="pmPubOutageNoteInput" placeholder="💬 สาเหตุที่แจ้งประชาชน เช่น ดับไฟตัดรอนกิ่งไม้ / ปรับปรุงสายแรงสูง" class="w-full px-2.5 py-1.5 bg-white border border-rose-300 rounded-lg text-xs font-semibold text-slate-800">
+                        <div class="p-2.5 bg-white rounded-xl border border-rose-200 space-y-1.5">
+                            <div class="flex flex-wrap items-center justify-between gap-1">
+                                <label class="font-extrabold text-rose-900 text-[11px]">🏘️ ชื่อสถานที่/ซอยในเขตไฟดับ (<span id="pmZonePlacesCountBadge">0</span>)</label>
+                                <div class="flex flex-wrap gap-1">
+                                    <button type="button" id="btnExtractZonePlacesForm" onclick="extractPlacesInCurrentOutageZone()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">🔍 ดูดชื่อสถานที่ในกรอบ</button>
+                                    <button type="button" onclick="openPmPublicAnnounceModal('__FORM_DRAFT__')" class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold shadow-sm">📢 สร้างโพสต์ FB/LINE</button>
+                                </div>
+                            </div>
+                            <div id="pmFormZonePlacesChipsWrap" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto py-0.5"></div>
+                            <textarea id="pmPubOutagePlacesInput" rows="2" oninput="onPubPlacesTextareaInput(this.value)" placeholder="กดปุ่ม 🔍 ดูดชื่อสถานที่อัตโนมัติ หรือพิมพ์ชื่อหอพัก/หมู่บ้าน/โรงงาน คั่นด้วยเครื่องหมายจุลภาค (,)" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-[11px] font-semibold text-slate-800"></textarea>
                         </div>
                     </div>
-                    <div id="pmCircleRadiusControls" class="flex flex-wrap items-center gap-2">
-                        <span class="text-[10.5px] text-amber-300 font-extrabold shrink-0">รัศมี: <b id="pmCircleRadiusLabel">300</b> ม.</span>
-                        <input type="range" id="pmCircleRadiusSlider" min="50" max="3000" step="25" value="300" oninput="onPmCircleRadiusInput(this.value)" class="flex-1 min-w-[100px] accent-rose-500 cursor-pointer">
-                        <div class="flex gap-1 shrink-0">
-                            <button type="button" onclick="onPmCircleRadiusInput(150)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">150ม.</button>
-                            <button type="button" onclick="onPmCircleRadiusInput(300)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">300ม.</button>
-                            <button type="button" onclick="onPmCircleRadiusInput(500)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">500ม.</button>
-                            <button type="button" onclick="onPmCircleRadiusInput(1000)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">1กม.</button>
+                </div>`;
+            miniWrap.insertAdjacentHTML('afterend', panelHtml);
+
+            const mapHdr = miniWrap.firstElementChild;
+            if (mapHdr && !document.getElementById('pmZoneDrawToolbar')) {
+                mapHdr.innerHTML = `<span id="pmMiniMapHdrHint" class="truncate">👆 แตะบนแผนที่เพื่อเลือกจุดปฏิบัติงาน</span><div class="flex items-center gap-1.5 shrink-0"><button type="button" id="pmMiniMapFsBtn" onclick="togglePmMiniMapFullscreen()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 px-2 py-0.5 rounded font-extrabold text-[10px]">⛶ ขยายเต็มจอ</button><button type="button" onclick="togglePmFormMiniMap('close_btn')" class="bg-rose-600 hover:bg-rose-700 text-white px-2 py-0.5 rounded font-bold text-[10px]">✕ ซ่อน</button></div>`;
+                mapHdr.insertAdjacentHTML('afterend', `
+                    <div id="pmZoneDrawToolbar" class="hidden bg-slate-900 text-white px-2.5 py-2 space-y-2 border-b border-slate-700 text-[11px]">
+                        <div class="flex flex-wrap items-center justify-between gap-1">
+                            <div class="inline-flex bg-slate-800 p-0.5 rounded-lg gap-0.5 flex-wrap">
+                                <button type="button" id="pmDrawModeBtn-circle" onclick="setPmZoneDrawSubMode('circle')" class="px-2 py-1 rounded-md font-extrabold text-[10.5px]">⭕ วงกลมเรดาร์</button>
+                                <button type="button" id="pmDrawModeBtn-poly_click" onclick="setPmZoneDrawSubMode('poly_click')" class="px-2 py-1 rounded-md font-bold text-[10.5px]">📐 ปักมุมหลายเหลี่ยม</button>
+                                <button type="button" id="pmDrawModeBtn-poly_lasso" onclick="setPmZoneDrawSubMode('poly_lasso')" class="px-2 py-1 rounded-md font-bold text-[10.5px]">✍️ ลากนิ้วตีกรอบเอง</button>
+                            </div>
+                            <div id="pmPolyActionsGrp" class="hidden items-center gap-1">
+                                <button type="button" onclick="undoLastPmZonePolyPoint()" class="bg-slate-700 hover:bg-slate-600 text-amber-300 px-2 py-1 rounded-md text-[10px] font-bold">↩️ ลบมุม</button>
+                                <button type="button" onclick="clearPmZonePolygon()" class="bg-rose-700 hover:bg-rose-600 text-white px-2 py-1 rounded-md text-[10px] font-bold">🗑️ ล้างกรอบ</button>
+                            </div>
+                        </div>
+                        <div id="pmCircleRadiusControls" class="flex flex-wrap items-center gap-2">
+                            <span class="text-[10.5px] text-amber-300 font-extrabold shrink-0">รัศมี: <b id="pmCircleRadiusLabel">300</b> ม.</span>
+                            <input type="range" id="pmCircleRadiusSlider" min="50" max="3000" step="25" value="300" oninput="onPmCircleRadiusInput(this.value)" class="flex-1 min-w-[100px] accent-rose-500 cursor-pointer">
+                            <div class="flex gap-1 shrink-0">
+                                <button type="button" onclick="onPmCircleRadiusInput(150)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">150ม.</button>
+                                <button type="button" onclick="onPmCircleRadiusInput(300)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">300ม.</button>
+                                <button type="button" onclick="onPmCircleRadiusInput(500)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">500ม.</button>
+                                <button type="button" onclick="onPmCircleRadiusInput(1000)" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px]">1กม.</button>
+                            </div>
+                        </div>
+                        <div id="pmPolyStatusHint" class="hidden text-[10.5px] text-emerald-300 font-semibold"></div>
+                        <div class="pt-1.5 border-t border-slate-700/90 space-y-1.5">
+                            <div class="flex flex-wrap items-center gap-1">
+                                <button type="button" id="btnExtractZonePlacesMap" onclick="extractPlacesInCurrentOutageZone()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow shrink-0">🔍 ดูดชื่อสถานที่ในกรอบ</button>
+                                <div class="flex items-center gap-1 flex-1 min-w-[165px]">
+                                    <input type="text" id="pmMapQuickPlaceAddInput" onkeydown="if(event.key==='Enter'){event.preventDefault();addManualTempPubPlace();}" placeholder="+ พิมพ์ชื่อหอพัก/ร้านที่เห็นบนแมพ..." class="flex-1 min-w-0 px-2 py-1 rounded-lg bg-slate-800 border border-slate-600 text-white text-[10.5px] focus:outline-none">
+                                    <button type="button" onclick="startPmZonePlaceVoiceInput()" title="กดพูดชื่อสถานที่ตามที่เห็นบนแมพ" class="bg-slate-700 hover:bg-slate-600 text-amber-300 px-2 py-1 rounded-lg text-xs">🎙️</button>
+                                    <button type="button" onclick="addManualTempPubPlace()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold">เพิ่ม</button>
+                                </div>
+                                <button type="button" onclick="openPmPublicAnnounceModal('__FORM_DRAFT__')" class="bg-rose-600 hover:bg-rose-500 text-white px-2 py-1 rounded-lg text-[10px] font-extrabold shrink-0">📢 โพสต์ FB/LINE</button>
+                            </div>
+                            <div id="pmMapZonePlacesRow" class="hidden items-start justify-between gap-1 bg-slate-950/75 rounded-lg p-1.5">
+                                <div id="pmMapZonePlacesChipsWrap" class="flex flex-wrap gap-1 max-h-14 overflow-y-auto flex-1"></div>
+                                <button type="button" onclick="clearAllTempPubPlaces()" title="ล้างรายชื่อทั้งหมด" class="text-[9.5px] text-slate-400 hover:text-rose-400 font-bold px-1 shrink-0">ล้าง</button>
+                            </div>
+                        </div>
+                    </div>`);
+            }
+        }
+
+        if (!document.getElementById('pmPublicAnnounceModal')) {
+            document.body.insertAdjacentHTML('beforeend', `
+                <div id="pmPublicAnnounceModal" onclick="if(event.target===this) closePmPublicAnnounceModal();" class="fixed inset-0 bg-slate-950/80 hidden z-[1492] flex items-center justify-center p-3 backdrop-blur-sm">
+                    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-rose-400 flex flex-col max-h-[90dvh]">
+                        <div class="px-4 py-3 bg-gradient-to-r from-rose-600 via-pink-600 to-indigo-800 text-white flex justify-between items-center">
+                            <h3 class="font-extrabold text-sm">📢 ข้อความแจ้งดับไฟประชาชน (Facebook / LINE)</h3>
+                            <button type="button" onclick="closePmPublicAnnounceModal()" class="text-white/85 hover:text-white text-xl font-bold leading-none">&times;</button>
+                        </div>
+                        <div class="p-3.5 space-y-2.5 overflow-y-auto flex-1 bg-slate-50 text-xs">
+                            <div class="flex bg-slate-200 p-1 rounded-xl gap-1">
+                                <button type="button" id="pmAnnStyleBtn-facebook" onclick="switchPmAnnounceStyle('facebook')" class="flex-1 py-1.5 rounded-lg bg-blue-600 text-white font-extrabold text-xs shadow">📘 สไตล์เพจ Facebook</button>
+                                <button type="button" id="pmAnnStyleBtn-line" onclick="switchPmAnnounceStyle('line')" class="flex-1 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold text-xs">💬 สไตล์ส่งกลุ่ม LINE</button>
+                            </div>
+                            <textarea id="pmPublicAnnounceTextarea" rows="11" class="w-full p-3 rounded-2xl bg-white border-2 border-slate-300 focus:border-indigo-500 focus:outline-none text-xs font-medium text-slate-800 leading-relaxed"></textarea>
+                            <p class="text-[10.5px] text-slate-500">✏️ แก้ไขตกแต่งข้อความในกล่องด้านบนเพิ่มเติมได้ตามต้องการ (ระบบตัดรหัสสวิตช์และโน้ตภายในของช่างออกให้อัตโนมัติแล้ว)</p>
+                        </div>
+                        <div class="p-3 bg-white border-t flex flex-wrap gap-2">
+                            <button type="button" onclick="copyPmPublicAnnounceText()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 px-3 rounded-xl text-xs shadow">📋 คัดลอกไปวาง Facebook / LINE</button>
+                            <button type="button" onclick="sharePmPublicAnnounceToLine()" class="bg-[#00B900] hover:bg-[#009900] text-white font-extrabold py-2.5 px-3.5 rounded-xl text-xs shadow">💬 ส่ง LINE ทันที</button>
                         </div>
                     </div>
-                    <div id="pmPolyStatusHint" class="hidden text-[10.5px] text-emerald-300 font-semibold"></div>
                 </div>`);
         }
     }
-
+    // ===== จบพาทที่ 5 / 6 ของไฟล์ pm-calendar.js =====
+    // ===== เริ่มพาทที่ 6 / 6 ของไฟล์ pm-calendar.js =====
     function togglePmMiniMapFullscreen(forceState) {
+        addManualTempPubPlace();
         const wrap = document.getElementById('pmFormMiniMapWrap'), mapCanvas = document.getElementById('pmFormMiniLeafletMap'), fsBtn = document.getElementById('pmMiniMapFsBtn');
         if (!wrap || !mapCanvas) return;
         isMiniMapFullscreen = typeof forceState === 'boolean' ? forceState : !isMiniMapFullscreen;
@@ -2638,6 +3110,7 @@
         } else if (isMiniMapFullscreen) {
             togglePmMiniMapFullscreen(false);
         }
+        renderTempPubPlacesUI();
         updatePmZoneDrawToolbarUI();
         renderFormZoneOverlay();
         if (tempPubEnabled && formMiniMap && formZoneShapeLayer?.getBounds) {
@@ -2726,7 +3199,7 @@
                         if (cen) { cdEl.value = `${cen.lat.toFixed(6)}, ${cen.lon.toFixed(6)}`; syncFormMiniMapMarker(cen.lat, cen.lon, false); }
                     }
                     setPmZoneDrawSubMode('poly_click');
-                    safeToast(`✅ ลากตีกรอบเรดาร์สำเร็จ (${tempPolyPts.length} มุม) ลากจุดมุมปรับแต่งได้`);
+                    safeToast(`✅ ลากตีกรอบเรดาร์สำเร็จ (${tempPolyPts.length} มุม) กดปุ่ม 🔍 ดูดชื่อสถานที่ต่อได้เลย!`);
                     return;
                 }
             }
@@ -2766,6 +3239,7 @@
 
     async function togglePmFormMiniMap(forceOpen) {
         ensurePmOutageZoneUiInjected();
+        if (forceOpen === false || forceOpen === 'close_btn') addManualTempPubPlace();
         if (forceOpen === 'close_btn' && isMiniMapFullscreen) return togglePmMiniMapFullscreen(false);
         const wrap = document.getElementById('pmFormMiniMapWrap'); if (!wrap) return;
         isFormMiniMapOpen = typeof forceOpen === 'boolean' ? forceOpen : (forceOpen === 'close_btn' ? false : !isFormMiniMapOpen);
@@ -2910,6 +3384,9 @@
         syncFormMiniMapMarker(NaN, NaN, false);
         sessionModalUploadedIds = [];
         tempPubEnabled = false; tempZoneType = 'c'; tempCircleCenter = null; tempCircleRadius = 300; tempPolyPts = []; pubDrawSubMode = 'circle';
+        tempPubPlacesList = [];
+        const quickAddInp = document.getElementById('pmMapQuickPlaceAddInput');
+        if (quickAddInp) quickAddInp.value = '';
         let shouldOpenMiniMap = false;
 
         if (editingPlanId) {
@@ -2934,6 +3411,8 @@
             tempPubEnabled = Boolean(target.pub && savedOz);
             const pubNoteEl = document.getElementById('pmPubOutageNoteInput');
             if (pubNoteEl) pubNoteEl.value = target.pubNote || '';
+            tempPubPlacesList = parsePlacesTextToList(target.pubPlaces || '');
+            renderTempPubPlacesUI();
             if (savedOz) {
                 if (savedOz.t === 'c') { tempZoneType = 'c'; pubDrawSubMode = 'circle'; tempCircleCenter = [...savedOz.c]; tempCircleRadius = savedOz.r; }
                 else if (savedOz.t === 'p') { tempZoneType = 'p'; pubDrawSubMode = 'poly_click'; tempPolyPts = savedOz.p.map(pt => [...pt]); }
@@ -2953,6 +3432,8 @@
             document.getElementById('pmNoteInput').value = ''; delBtn?.classList.add('hidden');
             const pubNoteEl = document.getElementById('pmPubOutageNoteInput');
             if (pubNoteEl) pubNoteEl.value = '';
+            tempPubPlacesList = [];
+            renderTempPubPlacesUI();
             if (presetLat != null && presetLon != null) tempCircleCenter = [Number(Number(presetLat).toFixed(5)), Number(Number(presetLon).toFixed(5))];
             if (presetScadaPinId) onPmScadaEquipPick(presetScadaPinId);
             shouldOpenMiniMap = (presetLat != null && presetLon != null);
@@ -2964,6 +3445,8 @@
     }
 
     function closePmPlanFormModal(skipOrphanClean = false) {
+        const quickAddInp = document.getElementById('pmMapQuickPlaceAddInput');
+        if (quickAddInp) quickAddInp.value = '';
         if (!skipOrphanClean && sessionModalUploadedIds.length > 0) {
             const orphans = sessionModalUploadedIds.filter(id => !originalEditingPhotoIds.includes(id));
             sessionModalUploadedIds = [];
@@ -2972,7 +3455,8 @@
             sessionModalUploadedIds = [];
         }
         editingPlanId = null; tempFormPhotoIds = []; originalEditingPhotoIds = [];
-        tempPubEnabled = false;
+        tempPubEnabled = false; tempPubPlacesList = [];
+        closePmPublicAnnounceModal();
         if (isMiniMapFullscreen) togglePmMiniMapFullscreen(false);
         togglePmFormMiniMap(false);
         document.getElementById('pmPlanFormModal')?.classList.add('hidden');
@@ -2981,6 +3465,7 @@
     async function savePmPlanFromModal() {
         if (!canManagePmSchedule()) return;
         if (isUploadingModalPhotos) { safeToast('⏳ กรุณารออัปโหลดรูปภาพให้เสร็จก่อนกดบันทึกครับ'); return; }
+        addManualTempPubPlace();
         const title = (document.getElementById('pmTitleInput')?.value || '').trim(), category = document.getElementById('pmCategorySelect')?.value || 'scada';
         const pinColor = document.getElementById('pmPinColorInput')?.value || 'auto', dateVal = (document.getElementById('pmDateInput')?.value || '').trim();
         const timeSlot = (document.getElementById('pmTimeSlotInput')?.value || '').trim() || '09.00-12.00';
@@ -2989,6 +3474,21 @@
         const equipCode = (document.getElementById('pmEquipCodeInput')?.value || '').trim(), feeder = (document.getElementById('pmFeederInput')?.value || '').trim().toUpperCase();
         const rawCoord = (document.getElementById('pmCoordInput')?.value || '').trim(), note = (document.getElementById('pmNoteInput')?.value || '').trim(), saveBtn = document.getElementById('pmSaveSubmitBtn');
         const pubNote = (document.getElementById('pmPubOutageNoteInput')?.value || '').trim();
+
+        const rawPlacesList = parsePlacesTextToList(document.getElementById('pmPubOutagePlacesInput')?.value ?? tempPubPlacesList.join(', '));
+        const keptPlaces = [];
+        let placesLen = 0;
+        for (const pl of rawPlacesList) {
+            if (keptPlaces.length === 0 && pl.length > 450) {
+                keptPlaces.push(pl.slice(0, 450).trim());
+                break;
+            }
+            const nextLen = keptPlaces.length === 0 ? pl.length : placesLen + 2 + pl.length;
+            if (nextLen > 450) break;
+            keptPlaces.push(pl);
+            placesLen = nextLen;
+        }
+        const pubPlaces = keptPlaces.join(', ');
 
         if (!title) { safeToast('⚠️ กรุณาระบุชื่อหมุดแผนงาน / หัวข้องาน'); return; }
         if (!dateVal) { safeToast('⚠️ กรุณาเลือกวันที่กำหนดทำ'); return; }
@@ -3007,8 +3507,9 @@
 
         loadPmPlansFromStorage();
         const prevSavedOz = editingPlanId ? normalizePmOutageZone(pmPlans.find(p => p.id === editingPlanId)?.oz) : null;
+        const hasDraftPoly = (tempZoneType === 'p' && tempPolyPts.length >= 3);
         let finalOz = null;
-        if (tempPubEnabled || prevSavedOz) {
+        if (tempPubEnabled || prevSavedOz || hasDraftPoly) {
             if (tempZoneType === 'c') {
                 const center = tempCircleCenter || (parsedCoord ? [Number(parsedCoord.lat.toFixed(5)), Number(parsedCoord.lon.toFixed(5))] : null);
                 if (center) finalOz = normalizePmOutageZone({ t: 'c', c: center, r: tempCircleRadius });
@@ -3022,7 +3523,7 @@
             return;
         }
         if (!parsedCoord && finalOz) {
-            parsedCoord = getZoneCentroidPm(finalOz);
+            parsedCoord = getZoneSafeSamplePointPm(finalOz);
         }
 
         let linkedPinId = rawLinkedPinId || undefined;
@@ -3047,12 +3548,12 @@
                 const prev = pmPlans[idx];
                 const alertChanged = (prev.date !== dateVal) || ((prev.alertMode || 'standard') !== alertMode) || (Number(prev.notifyDaysBefore ?? 3) !== cleanNotify) || (JSON.stringify(normalizeCustomTimesArray(prev.customAlertTimes || [])) !== JSON.stringify(customAlertTimes));
                 const nextBaseline = alertChanged ? getMinuteFloorIso() : (prev.alertBaselineAt || prev.createdAt || getMinuteFloorIso());
-                pmPlans[idx] = { ...prev, title, category, pinColor, photoIds: finalPhotoIds, oz: finalOz, pub: finalPub, pubNote, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: nextBaseline, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, ownerGroup: normPmGrp(prev.ownerGroup || myGroup) || myGroup, updatedBy: curUser, updatedAt: nextPmUpdatedIso(prev.updatedAt) };
+                pmPlans[idx] = { ...prev, title, category, pinColor, photoIds: finalPhotoIds, oz: finalOz, pub: finalPub, pubNote, pubPlaces, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: nextBaseline, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, ownerGroup: normPmGrp(prev.ownerGroup || myGroup) || myGroup, updatedBy: curUser, updatedAt: nextPmUpdatedIso(prev.updatedAt) };
                 savedRecord = pmPlans[idx];
             }
         } else {
             const nowIso = nextPmUpdatedIso(safeGetLocMap()[PM_LOC_PREFIX + myGroup]?.updatedAt);
-            savedRecord = { id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title, category, pinColor, photoIds: finalPhotoIds, oz: finalOz, pub: finalPub, pubNote, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: getMinuteFloorIso(), createdAt: nowIso, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, status: 'pending', ownerGroup: myGroup, createdBy: curUser, updatedBy: curUser, updatedAt: nowIso };
+            savedRecord = { id: 'pm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), title, category, pinColor, photoIds: finalPhotoIds, oz: finalOz, pub: finalPub, pubNote, pubPlaces, date: dateVal, timeSlot, notifyDaysBefore: cleanNotify, repeatMonths: cleanRepeat, alertMode, customAlertTimes, alertBaselineAt: getMinuteFloorIso(), createdAt: nowIso, linkedPinId, equipCode, feeder, note, lat: parsedCoord ? parsedCoord.lat : null, lon: parsedCoord ? parsedCoord.lon : null, gpsLink, status: 'pending', ownerGroup: myGroup, createdBy: curUser, updatedBy: curUser, updatedAt: nowIso };
             pmPlans.push(savedRecord);
         }
         if (savedRecord) preAckPastSlotsForPlanToday(savedRecord);
@@ -3144,6 +3645,7 @@
         ];
         if (item.equipCode) lines.push(`⚡ อุปกรณ์ : ${item.equipCode}${item.feeder ? ` (วงจร ${item.feeder})` : ''}`);
         if (item.note) lines.push(`📝 รายละเอียด : ${item.note}`);
+        if (item.pubPlaces) lines.push(`🏘️ พื้นที่ไฟดับ : ${item.pubPlaces}`);
         if (!isNaN(parseFloat(item.lat)) && !isNaN(parseFloat(item.lon))) {
             lines.push(`📍 พิกัดหมุด : https://www.google.com/maps?q=${Number(item.lat).toFixed(6)},${Number(item.lon).toFixed(6)}`);
         }
@@ -3249,10 +3751,10 @@
 
     async function exportPmPlansToExcel() {
         const items = getAllVisibleCalendarItems(); if (!items.length) { safeToast('⚠️ ยังไม่มีข้อมูลแผนงานสำหรับส่งออก'); return; }
-        const myGrp = getActivePmGroup(), headers = ['ลำดับ', 'กลุ่มสังกัด', 'วันที่กำหนด', 'เวลาปฏิบัติงาน', 'ประเภทงาน', 'หัวข้อแผนงาน', 'เงื่อนไขเวลาเตือน', 'เตือนล่วงหน้า(วัน)', 'รหัสอุปกรณ์', 'วงจร', 'รายละเอียด', 'สถานะ', 'ผู้ทำเสร็จ', 'ลิงก์พิกัดหมุด', 'ลิงก์รูปภาพประกอบ'];
+        const myGrp = getActivePmGroup(), headers = ['ลำดับ', 'กลุ่มสังกัด', 'วันที่กำหนด', 'เวลาปฏิบัติงาน', 'ประเภทงาน', 'หัวข้อแผนงาน', 'เงื่อนไขเวลาเตือน', 'เตือนล่วงหน้า(วัน)', 'รหัสอุปกรณ์', 'วงจร', 'รายละเอียด', 'พื้นที่แจ้งไฟดับประชาชน', 'สถานะ', 'ผู้ทำเสร็จ', 'ลิงก์พิกัดหมุด', 'ลิงก์รูปภาพประกอบ'];
         const rows = items.map((it, i) => {
             const pIds = normalizePmPhotoIds(it);
-            return [String(i + 1), normPmGrp(it.ownerGroup || myGrp), formatThaiDateShort(it.date), it.timeSlot || '-', getCategoryMeta(it.category).name, it.title || '-', getPlanEffectiveAlertConfig(it).badgeLabel, String(it.notifyDaysBefore ?? 3), it.equipCode || '-', it.feeder || '-', it.note || '-', it.status === 'done' ? 'เสร็จสิ้นแล้ว' : 'รอดำเนินการ', it.completedBy || '-', (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '-', pIds.length > 0 ? pIds.map(fid => getPmPhotoDriveViewUrl(fid)).join(' | ') : '-'];
+            return [String(i + 1), normPmGrp(it.ownerGroup || myGrp), formatThaiDateShort(it.date), it.timeSlot || '-', getCategoryMeta(it.category).name, it.title || '-', getPlanEffectiveAlertConfig(it).badgeLabel, String(it.notifyDaysBefore ?? 3), it.equipCode || '-', it.feeder || '-', it.note || '-', it.pubPlaces || '-', it.status === 'done' ? 'เสร็จสิ้นแล้ว' : 'รอดำเนินการ', it.completedBy || '-', (!isNaN(parseFloat(it.lat)) && !isNaN(parseFloat(it.lon))) ? `https://www.google.com/maps?q=${Number(it.lat).toFixed(6)},${Number(it.lon).toFixed(6)}` : '-', pIds.length > 0 ? pIds.map(fid => getPmPhotoDriveViewUrl(fid)).join(' | ') : '-'];
         });
         const fn = `PM_Schedule_${myGrp.replace(/\s+/g, '_')}_${getTodayIso()}.xlsx`;
         if ((await loadPmXlsxSafe()) && typeof XLSX !== 'undefined') { const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet([headers, ...rows]); XLSX.utils.book_append_sheet(wb, ws, 'หมุดแผนงาน_PM'); XLSX.writeFile(wb, fn); safeToast(`📊 ส่งออกไฟล์ Excel (${items.length} แผนงาน) สำเร็จ!`); }
@@ -3340,7 +3842,11 @@
         confirmPendingPmLineFileShare, fallbackPendingPmLineTextOnly, closePmLineShareReadyModal,
         onTogglePmPublicOutage, setPmZoneDrawSubMode, onPmCircleRadiusInput,
         undoLastPmZonePolyPoint, clearPmZonePolygon, togglePmMiniMapFullscreen,
-        openPublicOutageMapPage, copyPublicOutageMapLink
+        openPublicOutageMapPage, copyPublicOutageMapLink,
+        extractPlacesInCurrentOutageZone, addManualTempPubPlace, removeTempPubPlaceAt,
+        clearAllTempPubPlaces, onPubPlacesTextareaInput, startPmZonePlaceVoiceInput,
+        openPmPublicAnnounceModal, closePmPublicAnnounceModal, switchPmAnnounceStyle,
+        copyPmPublicAnnounceText, sharePmPublicAnnounceToLine
     });
 
     function ensureSwitchTechTabWrapped() {
@@ -3374,7 +3880,7 @@
             if (nowLogged !== lastKnownLoginState) {
                 lastKnownLoginState = nowLogged;
                 if (nowLogged) { rememberActiveAuthForLoggedOutAlerts(); syncPmPlansFromLocationsMap(); refreshPmAllViews(); }
-                else { closePmPlanFormModal(); closePmCalendarModal(); closePmPhotoLightbox(); closePmLineShareReadyModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
+                else { closePmPlanFormModal(); closePmCalendarModal(); closePmPhotoLightbox(); closePmLineShareReadyModal(); closePmPublicAnnounceModal(); document.getElementById('pmFallbackPromptModal')?.classList.add('hidden'); const alBtn = document.getElementById('pmAlertModalCalOrLoginBtn'); if (alBtn) alBtn.textContent = '🔐 ล็อกอินเพื่อจัดการ'; updatePmHeaderBadgesAndStrip(); }
             }
         }, 1200);
         setTimeout(async () => { ensureSwitchTechTabWrapped(); rememberActiveAuthForLoggedOutAlerts(); if (!isUserCurrentlyLoggedIn()) await pullPmPlansWhileLoggedOut(); else syncPmPlansFromLocationsMap(); if (isUserCurrentlyLoggedIn()) refreshPmAllViews(); checkAndTriggerScheduledPmAlerts(false); }, 1400);
@@ -3386,4 +3892,4 @@
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', bootstrapPmCalendarModule);
     else bootstrapPmCalendarModule();
 })();
-// ==================== จบไฟล์ pm-calendar.js (v7.5) ====================
+// ==================== จบไฟล์ pm-calendar.js (v7.6) ====================
