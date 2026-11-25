@@ -1807,22 +1807,232 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         closeMeterLinkModal();
     }
 
+    // ========================================================================
+    // 6.2 ผู้ช่วย AI รับแจ้งเหตุ (แชร์คีย์แยกโควตารายกลุ่ม 100% ร่วมกับ pm-calendar.js + ค้นหาโมเดลอัตโนมัติ)
+    // ========================================================================
+    const SHARED_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
+        const FALLBACK_MAIN_GEMINI_MODELS = [
+        'gemini-3.5-flash-lite',
+        'gemini-3.6-flash',
+        'gemini-3.8-flash',
+        'gemini-4-hydrogen',
+        'gemini-3.1-flash-lite',
+        'gemini-2.5-flash-lite'
+    ];
+    const mainResolvedModelsCache = new Map();
+    const mainUnsupportedModels = new Set();
+    let isSendingAiChat = false;
+    let pendingRetryChatMessage = '';
+    let lastMainAiStateSig = '';
+
+    function getActiveMainAiGroup() {
+        const explicitGrp = normGrp(
+            (typeof window.getCurrentUserGroup === 'function' ? window.getCurrentUserGroup() : '') ||
+            Core.rawStorageGet('elec_app_current_group') ||
+            ''
+        );
+        if (explicitGrp) return explicitGrp;
+        try {
+            const pmPlans = JSON.parse(Core.rawStorageGet('elec_pm_calendar_plans_v1') || '[]');
+            const fromPm = normGrp(pmPlans.find(p => p && !p.pmDeleted && p.ownerGroup)?.ownerGroup || '');
+            if (fromPm) return fromPm;
+        } catch (e) {}
+        return 'กฟส.บึง';
+    }
+
+    function getMainGroupAiStorageKey(groupName = getActiveMainAiGroup()) {
+        const grp = normGrp(groupName || 'กฟส.บึง') || 'กฟส.บึง';
+        return `${SHARED_GROUP_AI_KEY_PREFIX}${grp}`;
+    }
+
+    function migrateLegacyGlobalAiKeyOnce() {
+        if (Core.rawStorageGet('elec_app_logged_in') !== 'true') return;
+        let legacy = '';
+        try { legacy = String(localStorage.getItem('gemini_api_key') || Core.rawStorageGet('gemini_api_key') || '').trim(); } catch (e) {}
+        if (!legacy) return;
+        const m = legacy.match(/AIza[0-9A-Za-z_-]{25,60}/);
+        const storageKey = getMainGroupAiStorageKey();
+        try {
+            if (m && !localStorage.getItem(storageKey)) {
+                localStorage.setItem(storageKey, m[0]);
+            }
+            localStorage.removeItem('gemini_api_key');
+        } catch (e) {}
+    }
+
+    function getCurrentGroupAiKeyMain() {
+        migrateLegacyGlobalAiKeyOnce();
+        const k = getMainGroupAiStorageKey();
+        let val = '';
+        try { val = localStorage.getItem(k) || ''; } catch (e) {}
+        return String(val || Core.rawStorageGet(k) || '').trim();
+    }
+
+    function maskMainAiKey(rawKey) {
+        const k = String(rawKey || '').trim();
+        if (k.length < 12) return '';
+        return `${k.slice(0, 8)}••••••••${k.slice(-4)}`;
+    }
+
+    function notifySharedAiKeyChanged(storageKey, newVal) {
+        try {
+            window.dispatchEvent(new StorageEvent('storage', { key: storageKey, newValue: newVal }));
+        } catch (e) {}
+    }
+
+    function resetMainAiChatSession() {
+        chatContext = [];
+        pendingRetryChatMessage = '';
+        const chatHistory = document.getElementById('chatHistory');
+        if (chatHistory) {
+            chatHistory.innerHTML = '<div class="flex justify-start"><div class="bg-purple-100 text-purple-800 p-2.5 rounded-xl rounded-tl-none max-w-[85%] shadow-sm">สวัสดีครับ แจ้งรายละเอียดเหตุไฟฟ้าขัดข้องมาได้เลยครับ ผมจะช่วยสรุปและกรอกลงฟอร์มให้อัตโนมัติ</div></div>';
+        }
+    }
+
+    function updateMainChatbotKeyButtonUI() {
+        const btn = document.querySelector('#geminiChatbot button[onclick*="openApiKeyModal"]');
+        if (!btn) return;
+        if (btn.parentElement && !document.getElementById('mainAiResetChatBtn')) {
+            const wrap = document.createElement('div');
+            wrap.className = 'flex items-center gap-1.5';
+            btn.parentElement.insertBefore(wrap, btn);
+            const clrBtn = document.createElement('button');
+            clrBtn.type = 'button';
+            clrBtn.id = 'mainAiResetChatBtn';
+            clrBtn.onclick = () => { resetMainAiChatSession();
+                showToast('🧹 เริ่มบทสนทนา AI ใหม่แล้ว'); };
+            clrBtn.title = 'ล้างประวัติบทสนทนา AI เพื่อเริ่มรับแจ้งเคสใหม่';
+            clrBtn.className = 'bg-white/15 hover:bg-white/25 text-white px-2 py-1 rounded-full text-[11px] font-bold transition';
+            clrBtn.textContent = '🧹 ล้างแชท';
+            wrap.appendChild(clrBtn);
+            wrap.appendChild(btn);
+        }
+        const grp = getActiveMainAiGroup();
+        const hasKey = Boolean(getCurrentGroupAiKeyMain());
+        btn.title = `ตั้งค่า Gemini API Key ประจำกลุ่ม ${grp} (ใช้ร่วมกับสแกนแผนที่ PM อัตโนมัติ)`;
+        if (hasKey) {
+            btn.className = 'bg-emerald-400/25 hover:bg-emerald-400/35 border border-emerald-200/60 text-white px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1 transition';
+            btn.innerHTML = '<span>🔑 AI: พร้อม</span><span>⚙️</span>';
+        } else {
+            btn.className = 'bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1 shadow transition';
+            btn.innerHTML = '<span>🔑 ตั้งคีย์ AI</span><span>⚙️</span>';
+        }
+    }
+    
+    function ensureMainAiKeyModalEnhanced() {
+        const modal = document.getElementById('apiKeyModal');
+        if (!modal || modal.dataset.groupUpgraded === '1') return modal;
+        modal.dataset.groupUpgraded = '1';
+        modal.onclick = e => { if (e.target === modal) closeApiKeyModal(); };
+        modal.innerHTML = `
+            <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-purple-400 flex flex-col">
+                <div class="px-4 py-3 bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 text-white flex justify-between items-center">
+                    <h3 class="font-extrabold text-sm">🔑 ตั้งค่า API Key AI ประจำกลุ่ม</h3>
+                    <button type="button" onclick="closeApiKeyModal()" class="text-white/85 hover:text-white text-xl font-bold leading-none">&times;</button>
+                </div>
+                <div class="p-4 space-y-3 bg-slate-50 text-xs text-slate-700">
+                    <div id="mainAiKeyGroupBadge" class="bg-indigo-950 text-amber-300 font-extrabold px-3 py-1.5 rounded-xl text-[11px] text-center shadow-sm">-</div>
+                    <div id="mainAiKeyStatusBox" class="text-[11px] bg-white border border-slate-200 rounded-xl px-3 py-2"></div>
+                    <div class="bg-purple-50 border border-purple-200 rounded-xl p-2.5 space-y-1.5 text-[11px]">
+                        <div class="font-extrabold text-purple-950">✨ กรอกครั้งเดียว ใช้ได้ทั้งผู้ช่วยรับแจ้งเหตุ &amp; สแกนป้ายแผนที่ PM:</div>
+                        <div>1. ล็อกอินด้วย Gmail ประจำสาขา แล้วกด <b>Create API key in new project</b> (แยกถังโควตาขาดกัน 100%)</div>
+                        <div>2. คัดลอกรหัสที่ขึ้นต้นด้วย <code>AIza...</code> มาวางด้านล่าง</div>
+                        <div class="pt-1">
+                            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-[11px] shadow-sm">🔗 เปิดหน้าขอรับ API Key ฟรี (Google AI Studio)</a>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block font-extrabold text-slate-700 mb-1">วางรหัส Gemini API Key ของกลุ่มนี้:</label>
+                        <input type="text" id="apiKeyInput" onkeydown="if(event.key==='Enter'){event.preventDefault();saveApiKey();}" placeholder="AIzaSy..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 rounded-xl bg-white border-2 border-slate-300 focus:border-purple-500 focus:outline-none font-mono text-xs text-slate-900">
+                    </div>
+                </div>
+                <div class="p-3 border-t bg-white flex flex-wrap items-center gap-2">
+                    <button type="button" id="mainAiKeyClearBtn" onclick="clearMainApiKey()" class="hidden bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold py-2 px-3 rounded-xl text-xs">🗑️ ลบคีย์</button>
+                    <button type="button" onclick="closeApiKeyModal()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-3.5 rounded-xl text-xs ml-auto">ยกเลิก</button>
+                    <button type="button" onclick="saveApiKey()" class="bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs shadow">💾 บันทึกคีย์ประจำกลุ่ม</button>
+                </div>
+            </div>`;
+        return modal;
+    }
+
     function openApiKeyModal() {
         if (!guardNotViewer()) return;
-        document.getElementById('apiKeyInput').value = Core.rawStorageGet('gemini_api_key') || '';
-        document.getElementById('apiKeyModal')?.classList.remove('hidden');
+        const modal = ensureMainAiKeyModalEnhanced();
+        if (!modal) return;
+        const grp = getActiveMainAiGroup();
+        const savedKey = getCurrentGroupAiKeyMain();
+        const grpBadge = document.getElementById('mainAiKeyGroupBadge');
+        const statusBox = document.getElementById('mainAiKeyStatusBox');
+        const inp = document.getElementById('apiKeyInput');
+        const clearBtn = document.getElementById('mainAiKeyClearBtn');
+
+        if (grpBadge) grpBadge.textContent = `🏢 โควตาแยกเฉพาะกลุ่ม: ${grp} (เชื่อมกับแผน PM อัตโนมัติ)`;
+        if (statusBox) {
+            statusBox.innerHTML = savedKey
+                ? `สถานะปัจจุบัน: <b class="text-emerald-700">ผูกคีย์แล้ว (${escapeHtmlStr(maskMainAiKey(savedKey))})</b>`
+                : `สถานะปัจจุบัน: <b class="text-rose-600">ยังไม่ได้ตั้งค่าคีย์ AI สำหรับกลุ่ม ${escapeHtmlStr(grp)} ในเครื่องนี้</b>`;
+        }
+        if (inp) inp.value = savedKey;
+        if (clearBtn) clearBtn.classList.toggle('hidden', !savedKey);
+        modal.classList.remove('hidden');
+        setTimeout(() => inp?.focus(), 60);
     }
-    function closeApiKeyModal() { document.getElementById('apiKeyModal')?.classList.add('hidden'); }
+
+    function closeApiKeyModal() {
+        document.getElementById('apiKeyModal')?.classList.add('hidden');
+    }
+
     function saveApiKey() {
         if (!guardNotViewer()) return;
-        const key = (document.getElementById('apiKeyInput')?.value || '').trim();
-        if (!key) return showCustomAlert('กรุณากรอก API Key', '🔑 ตั้งค่า Gemini API Key');
-        localStorage.setItem('gemini_api_key', key);
-        if (typeof performAutoBackupSnapshot === 'function') performAutoBackupSnapshot();
-        showToast('✅ บันทึก API Key สำเร็จ');
-        closeMeterLinkModal();
+        const inp = document.getElementById('apiKeyInput');
+        const m = String(inp?.value || '').trim().match(/AIza[0-9A-Za-z_-]{25,60}/);
+        const cleanKey = m ? m[0] : '';
+        if (!cleanKey) {
+            showCustomAlert('⚠️ รูปแบบ API Key ไม่ถูกต้อง (รหัสจาก Google AI Studio ต้องขึ้นต้นด้วย AIza...)', '🔑 ตั้งค่า API Key ประจำกลุ่ม');
+            inp?.focus();
+            return;
+        }
+        const grp = getActiveMainAiGroup();
+        const storageKey = getMainGroupAiStorageKey(grp);
+        try {
+            localStorage.setItem(storageKey, cleanKey);
+            localStorage.removeItem('gemini_api_key');
+        } catch (e) {
+            showToast('❌ พื้นที่เบราว์เซอร์เต็ม ไม่สามารถบันทึกคีย์ได้');
+            return;
+        }
+        notifySharedAiKeyChanged(storageKey, cleanKey);
+        updateMainChatbotKeyButtonUI();
         closeApiKeyModal();
+        showToast(`✅ บันทึกคีย์ AI ประจำกลุ่ม "${grp}" แล้ว (ใช้ได้ทั้งแชทและสแกนแมพ PM)`);
+
+        if (pendingRetryChatMessage) {
+            const retryMsg = pendingRetryChatMessage;
+            pendingRetryChatMessage = '';
+            const chatInp = document.getElementById('chatInput');
+            if (chatInp) {
+                chatInp.value = retryMsg;
+                sendChatMessage();
+            }
+        }
     }
+
+    function clearMainApiKey() {
+        if (!guardNotViewer()) return;
+        const grp = getActiveMainAiGroup();
+        const storageKey = getMainGroupAiStorageKey(grp);
+        try {
+            localStorage.removeItem(storageKey);
+            localStorage.removeItem('gemini_api_key');
+        } catch (e) {}
+        const inp = document.getElementById('apiKeyInput');
+        if (inp) inp.value = '';
+        notifySharedAiKeyChanged(storageKey, null);
+        updateMainChatbotKeyButtonUI();
+        closeApiKeyModal();
+        showToast(`🗑️ ลบคีย์ AI ของกลุ่ม "${grp}" ออกจากเครื่องนี้แล้ว`);
+    }
+    window.clearMainApiKey = clearMainApiKey;
 
     function appendChatMessage(text, sender, isLoading = false) {
         const chatHistory = document.getElementById('chatHistory');
@@ -1843,78 +2053,296 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         return id;
     }
 
-    async function fetchGeminiChat(userText, apiKey) {
-        const systemInstruction = `คุณคือผู้ช่วย AI รับแจ้งเหตุไฟฟ้าขัดข้อง หน้าที่ของคุณ:
-1. สนทนากับผู้ใช้ด้วยความสุภาพและเป็นธรรมชาติ ตอบสั้นๆ กระชับ
-2. วิเคราะห์ข้อความเพื่อดึงข้อมูลไปกรอกฟอร์ม ได้แก่: ลักษณะอาการ (issueType), ชื่อผู้แจ้ง (workerName), บริเวณ (area), ที่อยู่ (address), เบอร์โทร (phone)
-3. ให้ตอบกลับมาเป็นรูปแบบ JSON เท่านั้น: {"replyText":"...","extractedData":{"issueType":"","workerName":"","area":"","address":"","phone":""}}`;
+    async function resolveAvailableChatModelsMain(apiKey) {
+        const keyTag = String(apiKey || '').slice(-10);
+        const filterUnsupported = list => list.filter(m => !mainUnsupportedModels.has(`${keyTag}:${m}`));
+        if (mainResolvedModelsCache.has(keyTag)) {
+            const cached = filterUnsupported(mainResolvedModelsCache.get(keyTag));
+            if (cached.length > 0) return cached;
+        }
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
+        try {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
+            const res = await fetch(url, { signal: ctrl ? ctrl.signal : undefined });
+            const data = await res.json().catch(() => null);
+            if (res.status === 400 || res.status === 403) {
+                const errMsg = String(data?.error?.message || '');
+                if (/API_KEY_INVALID|API key not valid|key expired|PERMISSION_DENIED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                    const keyErr = new Error('Invalid API Key');
+                    keyErr.isInvalidKey = true;
+                    throw keyErr;
+                }
+            }
+            if (res.ok && Array.isArray(data?.models)) {
+                const candidates = [];
+                data.models.forEach(m => {
+                    if (!Array.isArray(m?.supportedGenerationMethods) || !m.supportedGenerationMethods.includes('generateContent')) return;
+                    const id = String(m.name || '').replace(/^models\//, '').trim();
+                    const hydroMatch = id.match(/^gemini-(4)-hydrogen(-preview)?$/i);
+                    const flashMatch = id.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview)?$/i);
+                    if (!hydroMatch && !flashMatch) return;
+                    const ver = parseFloat((hydroMatch || flashMatch)[1]);
+                    if (isNaN(ver) || ver < 2.5) return;
+                    const isLite = Boolean(flashMatch && flashMatch[2]);
+                    const isPreview = Boolean((hydroMatch && hydroMatch[2]) || (flashMatch && flashMatch[3]));
+                    const retiringPenalty = id.toLowerCase() === 'gemini-2.5-flash' ? -25 : 0;
+                    // งานแชทสกัดข้อความฟอร์ม ให้ความสำคัญรุ่น 3.5+ ที่ตอบไวและโควตาฟรีสูง
+                    const fastChatBonus = id.toLowerCase() === 'gemini-3.5-flash-lite' ? 35 : 0;
+                    const score = (ver >= 3 ? 1000 : 0) + (ver * 100) + (isPreview ? 0 : 25) + (isLite ? 5 : 15) + fastChatBonus + retiringPenalty;
+                    candidates.push({ id, score });
+                });
+                candidates.sort((a, b) => b.score - a.score);
+                const ordered = candidates.map(c => c.id);
+                if (ordered.length > 0) {
+                    mainResolvedModelsCache.set(keyTag, ordered);
+                    return filterUnsupported(ordered);
+                }
+            }
+        } catch (err) {
+            if (err?.isInvalidKey) throw err;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+        return filterUnsupported(FALLBACK_MAIN_GEMINI_MODELS);
+    }
 
-        const requestBody = {
-            systemInstruction: { parts: [{ text: systemInstruction }] },
-            contents: [...chatContext, { role: 'user', parts: [{ text: userText }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.7 }
+    async function fetchGeminiChat(userText, apiKey) {
+        const keyTag = String(apiKey || '').slice(-10);
+        const modelList = await resolveAvailableChatModelsMain(apiKey);
+        if (!modelList.length) {
+            throw new Error('ไม่พบโมเดล Gemini ที่เปิดใช้งานสำหรับคีย์นี้');
+        }
+
+        const systemInstruction = [
+            'คุณคือผู้ช่วย AI รับแจ้งเหตุไฟฟ้าขัดข้องของการไฟฟ้าส่วนภูมิภาค (PEA)',
+            'หน้าที่ของคุณ:',
+            '1. ตอบรับผู้ใช้งานอย่างสุภาพ เป็นธรรมชาติ สั้นกระชับ ในฟิลด์ replyText',
+            '2. วิเคราะห์ข้อความเพื่อสกัดข้อมูลลงฟิลด์ extractedData (หากข้อมูลใดไม่มีในข้อความ ให้ส่งค่า "" ว่างไว้ ห้ามเดาเอง):',
+            '   - issueType: ลักษณะอาการขัดข้อง (เช่น ไฟดับ, ไฟตก, หม้อแปลงระเบิด, สายไฟขาด, มิเตอร์ชำรุด, กิ่งไม้แตะสายไฟ)',
+            '   - workerName: ชื่อช่างผู้ปฏิบัติงาน หรือผู้รับแจ้ง (ถ้าระบุ)',
+            '   - area: จุดสังเกตหรือบริเวณเกิดเหตุ (รวมถึงกรณีพูดว่า "พิกัดหน้าวัด/พิกัดซอย..." ที่เป็นชื่อสถานที่ ให้ใส่ใน area ไม่ใส่ใน gps)',
+            '   - address: บ้านเลขที่ หมู่ ซอย ถนน ตำบล (ไม่ใส่ชื่อ-นามสกุลลูกค้าปนในช่องที่อยู่)',
+            '   - phone: เบอร์โทรศัพท์ตัวเลขติดกัน (เช่น 0812345678)',
+            '   - gps: เฉพาะตัวเลขพิกัดละติจูด,ลองจิจูด หรือลิงก์ Google Maps เท่านั้น (ถ้าไม่ใช่ตัวเลขพิกัดหรือลิงก์ ให้เว้น "")',
+            '   - customerName: ชื่อ-นามสกุลผู้ใช้ไฟ (ถ้ามี)',
+            '   - caNo: หมายเลขผู้ใช้ไฟ CA 12 หลัก (ถ้ามี)',
+            '   - peaNo: หมายเลขมิเตอร์ PEA No. (ถ้ามี)',
+            '3. ตอบกลับเป็น JSON Object ตามโครงสร้างที่กำหนดเท่านั้น'
+        ].join('\n');
+
+        const baseSchemaCfg = {
+            responseMimeType: 'application/json',
+            responseSchema: {
+                type: 'OBJECT',
+                properties: {
+                    replyText: { type: 'STRING' },
+                    extractedData: {
+                        type: 'OBJECT',
+                        properties: {
+                            issueType: { type: 'STRING' },
+                            workerName: { type: 'STRING' },
+                            area: { type: 'STRING' },
+                            address: { type: 'STRING' },
+                            phone: { type: 'STRING' },
+                            gps: { type: 'STRING' },
+                            customerName: { type: 'STRING' },
+                            caNo: { type: 'STRING' },
+                            peaNo: { type: 'STRING' }
+                        }
+                    }
+                },
+                required: ['replyText', 'extractedData']
+            }
         };
 
-        let response = null;
-        for (const modelId of ['gemini-2.5-flash', 'gemini-flash-latest']) {
-            response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
-            if (response.ok) break;
-            if (response.status === 401 || response.status === 403) throw new Error('Invalid API Key');
-        }
-        if (!response || !response.ok) throw new Error(response?.status === 400 ? 'Invalid API Key' : 'API Request Failed');
+        let lastErr = null;
+        let sawQuota429 = false;
 
-        const data = await response.json();
-        const rawText = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-        try {
-            const parsed = JSON.parse(rawText);
-            chatContext.push({ role: 'user', parts: [{ text: userText }] }, { role: 'model', parts: [{ text: parsed.replyText || 'รับทราบครับ' }] });
-            if (chatContext.length > 10) chatContext = chatContext.slice(-10);
-            return { text: parsed.replyText || 'รับทราบครับ ดำเนินการอัปเดตข้อมูลให้ครับ', extractedData: parsed.extractedData };
-        } catch (e) {
-            return { text: rawText || 'รับทราบครับ', extractedData: null };
+        for (const modelName of modelList) {
+            if (mainUnsupportedModels.has(`${keyTag}:${modelName}`)) continue;
+            const verMatch = modelName.match(/^gemini-(\d+(?:\.\d+)?)/i);
+            const majorVer = verMatch ? parseFloat(verMatch[1]) : 2.5;
+            const supportsMinimal = /flash-lite|gemini-3\.6-flash|gemini-3-flash/i.test(modelName);
+            const primaryGenCfg = majorVer >= 3
+                ? { ...baseSchemaCfg, thinkingConfig: { thinkingLevel: supportsMinimal ? 'MINIMAL' : 'LOW' } }
+                : { ...baseSchemaCfg, temperature: 0.2, thinkingConfig: { thinkingBudget: 0 } };
+
+            for (const cfgAttempt of [primaryGenCfg, baseSchemaCfg]) {
+                const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                const timer = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            systemInstruction: { parts: [{ text: systemInstruction }] },
+                            contents: [...chatContext, { role: 'user', parts: [{ text: userText }] }],
+                            generationConfig: cfgAttempt
+                        }),
+                        signal: ctrl ? ctrl.signal : undefined
+                    });
+
+                    const data = await res.json().catch(() => null);
+                    if (res.ok && data) {
+                        const parts = data?.candidates?.[0]?.content?.parts || [];
+                        const rawOut = parts
+                            .filter(pt => !pt?.thought && typeof pt?.text === 'string')
+                            .map(pt => pt.text)
+                            .join('\n')
+                            .replace(/```json\s*/gi, '')
+                            .replace(/```\s*/g, '')
+                            .trim();
+
+                        let parsed = null;
+                        try {
+                            parsed = JSON.parse(rawOut);
+                        } catch (e) {
+                            const objMatch = rawOut.match(/\{[\s\S]*\}/);
+                            if (objMatch) {
+                                try { parsed = JSON.parse(objMatch[0]); } catch (e2) {}
+                            }
+                        }
+
+                        if (parsed && typeof parsed === 'object') {
+                            const reply = String(parsed.replyText || 'รับทราบครับ อัปเดตข้อมูลลงฟอร์มให้เรียบร้อยแล้วครับ').trim();
+                            chatContext.push(
+                                { role: 'user', parts: [{ text: userText }] },
+                                { role: 'model', parts: [{ text: JSON.stringify({ replyText: reply, extractedData: parsed.extractedData || {} }) }] }
+                            );
+                            if (chatContext.length > 10) chatContext = chatContext.slice(-10);
+                            return { text: reply, extractedData: parsed.extractedData || null };
+                        }
+                        return { text: rawOut || 'รับทราบครับ', extractedData: null };
+                    }
+
+                    const errMsg = String(data?.error?.message || `HTTP ${res.status}`);
+                    if (res.status === 400 || res.status === 403) {
+                        if (/API_KEY_INVALID|API key not valid|key expired|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                            const keyErr = new Error('Invalid API Key');
+                            keyErr.isInvalidKey = true;
+                            throw keyErr;
+                        }
+                        if (res.status === 400 && cfgAttempt === primaryGenCfg) continue;
+                    }
+                    if (res.status === 404 || res.status === 403 || (res.status === 429 && /\blimit:\s*0\b/i.test(errMsg))) {
+                        mainUnsupportedModels.add(`${keyTag}:${modelName}`);
+                    }
+                    if (res.status === 429) sawQuota429 = true;
+                    lastErr = new Error(errMsg);
+                    break;
+                } catch (err) {
+                    if (err?.isInvalidKey) throw err;
+                    lastErr = err;
+                    break;
+                } finally {
+                    if (timer) clearTimeout(timer);
+                }
+            }
         }
+        const finalErr = lastErr || new Error('API Request Failed');
+        if (sawQuota429) finalErr.isQuotaExceeded = true;
+        throw finalErr;
     }
 
     function fillFormWithData(data) {
-        if (!data) return;
+        if (!data || typeof data !== 'object') return;
+        const cleanAiVal = v => {
+            const s = String(v ?? '').trim();
+            return (!s || /^(?:-|none|null|undefined|n\/a|ไม่ระบุ|ไม่มี|ไม่ทราบ)$/i.test(s)) ? '' : s;
+        };
+
         let filled = false;
+        const newCust = cleanAiVal(data.customerName);
+        const newCa = cleanAiVal(data.caNo).replace(/\D/g, '');
+        const newPea = cleanAiVal(data.peaNo);
+        const newAddr = cleanAiVal(data.address);
+
+        if (newCust) lastPastedCustomerMeta.customerName = newCust;
+        if (newCa) lastPastedCustomerMeta.caNo = newCa;
+        if (newPea) lastPastedCustomerMeta.peaNo = newPea;
+
         ['issueType', 'workerName', 'area', 'phone'].forEach(k => {
-            if (data[k] && String(data[k]).trim()) { document.getElementById(k).value = String(data[k]).trim(); filled = true; }
+            const val = cleanAiVal(data[k]);
+            if (val) {
+                const el = document.getElementById(k);
+                if (el) { el.value = val; filled = true; }
+            }
         });
-        if (data.address && String(data.address).trim()) {
+
+        if (newAddr || newCa || newPea) {
             const addrEl = document.getElementById('address');
-            addrEl.value = String(data.address).trim();
-            addrEl.style.height = 'auto';
-            addrEl.style.height = addrEl.scrollHeight + 'px';
-            addrEl.dispatchEvent(new Event('input', { bubbles: true }));
-            filled = true;
+            if (addrEl) {
+                const baseAddr = newAddr || String(addrEl.value || '').trim();
+                const addrParts = baseAddr ? [baseAddr] : [];
+                const joinedBase = addrParts.join('\n');
+                if (newCa && !joinedBase.includes(newCa)) {
+                    addrParts.push(`CA : ${newCa}`);
+                }
+                if (newPea && !joinedBase.includes(newPea)) {
+                    addrParts.push(`มิเตอร์ - PEA No. : ${newPea}`);
+                }
+                if (addrParts.length > 0) {
+                    addrEl.value = addrParts.join('\n');
+                    addrEl.style.height = 'auto';
+                    addrEl.style.height = addrEl.scrollHeight + 'px';
+                    addrEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    filled = true;
+                }
+            }
         }
+
+        const newGps = cleanAiVal(data.gps);
+        if (newGps) {
+            const isRealGpsOrLink = /^(?:https?:\/\/|maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.|maps\.)?google\.[a-z.]+\/maps)/i.test(newGps) ||
+                Boolean(extractCoordsFromInput(newGps));
+            if (isRealGpsOrLink) {
+                const gpsEl = document.getElementById('gps');
+                if (gpsEl) {
+                    gpsEl.value = newGps;
+                    gpsEl.dispatchEvent(new Event('input', { bubbles: true }));
+                    filled = true;
+                }
+            } else {
+                const areaEl = document.getElementById('area');
+                if (areaEl && !areaEl.value.trim()) {
+                    areaEl.value = newGps;
+                    filled = true;
+                }
+            }
+        }
+
         if (filled) {
             autoFillJobNo(false);
+            if (typeof checkCaOverdueEnhanced === 'function') checkCaOverdueEnhanced(false);
             saveOutageDraft();
-            showToast('✨ AI อัปเดตข้อมูลในฟอร์มแล้ว!');
+            showToast('✨ AI สรุปและกรอกข้อมูลลงฟอร์มแล้ว!');
         }
     }
-
+    
     async function sendChatMessage() {
-        if (!guardNotViewer()) return;
+        if (!guardNotViewer() || isSendingAiChat) return;
         const inputEl = document.getElementById('chatInput');
         const message = (inputEl?.value || '').trim();
         if (!message) return;
-        appendChatMessage(message, 'user');
-        inputEl.value = '';
 
-        const apiKey = Core.rawStorageGet('gemini_api_key');
+        const apiKey = getCurrentGroupAiKeyMain();
+        const grp = getActiveMainAiGroup();
         if (!apiKey) {
-            appendChatMessage('⚠️ กรุณาตั้งค่า API Key (กดไอคอนรูปเฟือง ⚙️) ก่อนใช้งานครับ', 'bot');
-            setTimeout(openApiKeyModal, 800);
+            pendingRetryChatMessage = message;
+            inputEl.value = '';
+            appendChatMessage(message, 'user');
+            appendChatMessage(`⚠️ กลุ่ม "${grp}" ยังไม่ได้ตั้งค่าคีย์ AI ในเครื่องนี้ กรุณาวาง API Key ในหน้าต่างที่เด้งขึ้นมา แล้วระบบจะประมวลผลข้อความนี้ต่อให้ทันทีครับ`, 'bot');
+            setTimeout(openApiKeyModal, 350);
             return;
         }
+
+        appendChatMessage(message, 'user');
+        inputEl.value = '';
+        isSendingAiChat = true;
         const loadId = appendChatMessage('⏳ กำลังประมวลผล...', 'bot', true);
+
         try {
             const res = await fetchGeminiChat(message, apiKey);
             document.getElementById(loadId)?.remove();
@@ -1922,9 +2350,47 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
             if (res.extractedData) fillFormWithData(res.extractedData);
         } catch (err) {
             document.getElementById(loadId)?.remove();
-            appendChatMessage(err.message === 'Invalid API Key' ? '❌ API Key ไม่ถูกต้อง กรุณาตั้งค่าใหม่' : '❌ ขออภัย เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI', 'bot');
+            if (err?.isInvalidKey) {
+                pendingRetryChatMessage = message;
+                appendChatMessage(`❌ API Key ของกลุ่ม "${grp}" ไม่ถูกต้อง ถูกจำกัดสิทธิ์โดเมน หรือหมดอายุ กรุณาตั้งค่าคีย์ใหม่ครับ`, 'bot');
+                setTimeout(openApiKeyModal, 500);
+            } else if (err?.isQuotaExceeded) {
+                appendChatMessage(`⚠️ โควตา AI ฟรีของกลุ่ม "${grp}" เต็มชั่วคราว กรุณารอสักครู่แล้วลองใหม่ หรือเปลี่ยนคีย์ที่ปุ่ม ⚙️ ครับ`, 'bot');
+            } else {
+                appendChatMessage(`❌ เชื่อมต่อ AI ขัดข้อง (${err?.message || 'กรุณาตรวจสอบอินเทอร์เน็ต'})`, 'bot');
+            }
+        } finally {
+            isSendingAiChat = false;
         }
     }
+
+    function watchMainAiGroupAndKeyState() {
+        const isLogged = Core.rawStorageGet('elec_app_logged_in') === 'true';
+        const grp = isLogged ? getActiveMainAiGroup() : '';
+        const hasKey = isLogged ? Boolean(getCurrentGroupAiKeyMain()) : false;
+        const nextSig = `${isLogged ? 1 : 0}|${grp}|${hasKey ? 1 : 0}`;
+        if (nextSig !== lastMainAiStateSig) {
+            const prevParts = lastMainAiStateSig.split('|');
+            if (lastMainAiStateSig && (prevParts[0] !== (isLogged ? '1' : '0') || prevParts[1] !== grp)) {
+                resetMainAiChatSession();
+            }
+            lastMainAiStateSig = nextSig;
+            if (isLogged) updateMainChatbotKeyButtonUI();
+        }
+    }
+
+    window.addEventListener('storage', e => {
+        if (!e.key || e.key.startsWith(SHARED_GROUP_AI_KEY_PREFIX) || e.key === 'gemini_api_key' || e.key === 'elec_app_current_group') {
+            watchMainAiGroupAndKeyState();
+        }
+    });
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', () => { ensureMainAiKeyModalEnhanced(); watchMainAiGroupAndKeyState(); });
+    } else {
+        ensureMainAiKeyModalEnhanced();
+        watchMainAiGroupAndKeyState();
+    }
+    setInterval(watchMainAiGroupAndKeyState, 1200);
     // ===== จบพาทที่ 1 / 2 ของไฟล์ main-app.js =====
         // ===== เริ่มพาทที่ 2 / 3 ของไฟล์ main-app.js (วางต่อจากพาทที่ 1) =====
     function startChatVoiceInput() {
@@ -2376,8 +2842,9 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         const addrEl = document.getElementById('address'); if (addrEl) addrEl.style.height = 'auto';
         document.getElementById('caOverdueBanner')?.classList.add('hidden');
         if (typeof clearAutoFillPasteBox === 'function') clearAutoFillPasteBox(false);
-        updateMapPreview(null);
+                updateMapPreview(null);
         autoFillJobNo(true);
+        resetMainAiChatSession();
     }
 
     function confirmResetFaultForm() { if (guardNotViewer()) showCustomConfirm('ต้องการล้างข้อมูลในฟอร์มรายงานเหตุ (TR/TL) ทั้งหมดใช่หรือไม่?', () => { resetFaultForm(); showToast('🗑️ ล้างข้อมูลเรียบร้อยแล้ว'); }, '🗑️ ยืนยันการล้างข้อมูล'); }
