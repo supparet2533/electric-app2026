@@ -854,10 +854,10 @@
         </div>
     </div>
 
-    <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
+        <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/50 hidden z-[1150] flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
             <div class="px-4 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white flex justify-between items-center"><h3 class="font-bold text-sm">🔑 ตั้งค่า Gemini API Key</h3><button type="button" onclick="closeApiKeyModal()" class="text-xl font-bold">&times;</button></div>
-            <div class="p-4 space-y-3 bg-slate-50 text-xs text-slate-600"><p>ระบุ API Key สำหรับใช้งานผู้ช่วย AI (บันทึกเฉพาะในเบราว์เซอร์เครื่องนี้)</p><input type="password" id="apiKeyInput" placeholder="กรอก API Key ที่นี่..." class="w-full px-3 py-2 text-sm font-mono bg-white"></div>
+            <div class="p-4 space-y-3 bg-slate-50 text-xs text-slate-600"><p>ระบุ API Key สำหรับใช้งานผู้ช่วย AI (บันทึกเฉพาะในเบราว์เซอร์เครื่องนี้)</p><input type="text" id="apiKeyInput" placeholder="กรอก API Key ที่นี่..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 text-sm font-mono bg-white"></div>
             <div class="p-4 border-t bg-white flex justify-end gap-2"><button type="button" onclick="closeApiKeyModal()" class="px-4 py-2 text-sm text-slate-600 font-semibold">ยกเลิก</button><button type="button" onclick="saveApiKey()" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">บันทึก</button></div>
         </div>
     </div>
@@ -914,12 +914,12 @@
 
     <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=163"></script>
-    <script src="shared-core.js?v=163"></script>
-    <script src="main-app.js?v=163"></script>
-    <script src="pm-calendar.js?v=163"></script>
-    <script src="scada-fault-locator.js?v=163"></script>
-    <script src="pm-push.js?v=163"></script>
+    <script src="pea-idb-store.js?v=171"></script>
+    <script src="shared-core.js?v=171"></script>
+    <script src="main-app.js?v=171"></script>
+    <script src="pm-calendar.js?v=171"></script>
+    <script src="scada-fault-locator.js?v=171"></script>
+    <script src="pm-push.js?v=171"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
@@ -1012,7 +1012,7 @@
                     if (!hadSwController || isSwReloading) return;
                     const tag = (document.activeElement && document.activeElement.tagName) || '';
                     const hasOpenModalOrDock = Boolean(document.querySelector(
-                        '#leftBrowserDock:not(.hidden), #stationModal:not(.hidden), #issueModal:not(.hidden), #tambonModal:not(.hidden), #apiKeyModal:not(.hidden), #meterLinkModal:not(.hidden), #backupModal:not(.hidden), #caModal:not(.hidden), #stripWordsModal:not(.hidden), #scadaCadImportModal:not(.hidden), #userManageModal:not(.hidden), #onlineUsersModal:not(.hidden), #pmCalendarModal:not(.hidden)'
+                        '#leftBrowserDock:not(.hidden), #stationModal:not(.hidden), #issueModal:not(.hidden), #tambonModal:not(.hidden), #apiKeyModal:not(.hidden), #meterLinkModal:not(.hidden), #backupModal:not(.hidden), #caModal:not(.hidden), #stripWordsModal:not(.hidden), #scadaCadImportModal:not(.hidden), #userManageModal:not(.hidden), #onlineUsersModal:not(.hidden), #pmCalendarModal:not(.hidden), #pmPlanFormModal:not(.hidden), #pmAlertPopupModal:not(.hidden), #pmPublicAnnounceModal:not(.hidden), #pmAiKeyConfigModal:not(.hidden), #pmPhotoLightboxModal:not(.hidden)'
                     ));
                     const hasUnsavedFormDraft = [
                         'currA', 'currB', 'currC', 'currG', 'tab1QuickFaultAmpInput', 'tab1QuickFaultKmInput',
@@ -1039,7 +1039,7 @@
                 });
 
                 window.addEventListener('load', function() {
-                    navigator.serviceWorker.register('./sw.js').then(function(reg) {
+                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function(reg) {
                         document.addEventListener('visibilitychange', function() {
                             if (document.visibilityState === 'visible') reg.update().catch(function() {});
                         });
