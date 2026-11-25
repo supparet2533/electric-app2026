@@ -697,7 +697,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                     if (bodyObj.action === 'saveJobs' && Array.isArray(bodyObj.jobs)) {
                         let targetReg = bodyObj.jobs.find(j => j && j.jobType === 'tech_loc');
                         if (!targetReg) {
-                            targetReg = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', techLocations: safeGetLocMap(), updatedAt: new Date().toISOString() };
+                            targetReg = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: safeGetLocMap(), _keepBackups: true, _keepPins: true, _keepDelPins: true, _keepAuditLogs: true, updatedAt: new Date().toISOString() };
                             bodyObj.jobs.push(targetReg);
                         }
                         targetReg.techLocations = writePmShardsIntoLocMap(targetReg.techLocations || safeGetLocMap());
@@ -707,8 +707,9 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                         attachedSyncSeq = pendingPmSyncSeq;
                     } else if (bodyObj.action === 'patchDelta' && (bodyObj.techLocDelta || hasPendingPmCloudSync)) {
                         if (!bodyObj.techLocDelta) {
-                            bodyObj.techLocDelta = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', techLocations: safeGetLocMap(), updatedAt: new Date().toISOString() };
+                            bodyObj.techLocDelta = { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: safeGetLocMap(), _keepBackups: true, _keepPins: true, _keepDelPins: true, _keepAuditLogs: true, updatedAt: new Date().toISOString() };
                         }
+
                         bodyObj.techLocDelta.techLocations = writePmShardsIntoLocMap(bodyObj.techLocDelta.techLocations || safeGetLocMap());
                         const nextBodyStr = JSON.stringify(bodyObj);
                         init = { ...init, body: nextBodyStr, ...(init.keepalive && new Blob([nextBodyStr]).size > 55000 ? { keepalive: false } : {}) };
@@ -1011,7 +1012,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                             ...getPmAuthPayloadFields(),
                             action: 'patchDelta',
                             group: targetGroupParam,
-                            techLocDelta: { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', techLocations: freshLocMap, updatedAt: new Date().toISOString() }
+                            techLocDelta: { id: 'TECH_LOC_REGISTRY', jobType: 'tech_loc', dateTimeSaved: 'TECH_LOC_REGISTRY', techLocations: freshLocMap, _keepBackups: true, _keepPins: true, _keepDelPins: true, _keepAuditLogs: true, updatedAt: new Date().toISOString() }
                         })
                     }).catch(() => {}).finally(() => {
                         if (ackedPmSyncSeq < targetSeq && attempt < 4) {
@@ -2385,16 +2386,17 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
 
         // ตัวแปรจัดการดูดชื่อสถานที่ในกรอบไฟดับ + AI Vision อ่านป้ายแผนที่แยกโควตารายกลุ่ม 100%
           const PM_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
-        const FALLBACK_GEMINI_VISION_MODELS = [
-        'gemini-3.5-flash-lite',
+    const FALLBACK_GEMINI_VISION_MODELS = [
         'gemini-3.8-flash',
-        'gemini-3-flash',
+        'gemini-3.6-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-4-hydrogen',
+        'gemini-3.1-flash-lite',
         'gemini-3-flash-preview',
-        'gemini-3.1-flash-lite-preview',
         'gemini-2.5-flash-lite',
         'gemini-2.5-flash'
     ];
-        const resolvedModelsByKeyCache = new Map();
+    const resolvedModelsByKeyCache = new Map();
     const unsupportedGeminiModels = new Set();
     let tempPubPlacesList = [];
     let isExtractingZonePlaces = false;
@@ -2418,7 +2420,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
             const data = await res.json().catch(() => null);
             if (res.status === 400 || res.status === 403) {
                 const errMsg = String(data?.error?.message || '');
-                if (/API_KEY_INVALID|API key not valid|key expired|PERMISSION_DENIED/i.test(errMsg)) {
+                if (/API_KEY_INVALID|API key not valid|key expired|PERMISSION_DENIED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
                     const keyErr = new Error('API Key ไม่ถูกต้อง ถูกจำกัดสิทธิ์โดเมน หรือหมดอายุ กรุณาตั้งค่าคีย์ AI ใหม่');
                     keyErr.isInvalidKey = true;
                     throw keyErr;
@@ -2429,12 +2431,13 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                 data.models.forEach(m => {
                     if (!Array.isArray(m?.supportedGenerationMethods) || !m.supportedGenerationMethods.includes('generateContent')) return;
                     const id = String(m.name || '').replace(/^models\//, '').trim();
-                    const match = id.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview)?$/i);
-                    if (!match) return;
-                    const ver = parseFloat(match[1]);
+                    const hydroMatch = id.match(/^gemini-(4)-hydrogen(-preview)?$/i);
+                    const flashMatch = id.match(/^gemini-(\d+(?:\.\d+)?)-flash(-lite)?(-preview)?$/i);
+                    if (!hydroMatch && !flashMatch) return;
+                    const ver = parseFloat((hydroMatch || flashMatch)[1]);
                     if (isNaN(ver) || ver < 2.5) return;
-                    const isLite = Boolean(match[2]);
-                    const isPreview = Boolean(match[3]);
+                    const isLite = Boolean(flashMatch && flashMatch[2]);
+                    const isPreview = Boolean((hydroMatch && hydroMatch[2]) || (flashMatch && flashMatch[3]));
                     const retiringPenalty = id.toLowerCase() === 'gemini-2.5-flash' ? -25 : 0;
                     const score = (ver >= 3 ? 1000 : 0) + (ver * 100) + (isPreview ? 0 : 20) + (isLite ? 0 : 15) + retiringPenalty;
                     candidates.push({ id, score });
@@ -3116,8 +3119,9 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
             if (unsupportedGeminiModels.has(`${keyTag}:${modelName}`)) continue;
             const verMatch = modelName.match(/^gemini-(\d+(?:\.\d+)?)/i);
             const majorVer = verMatch ? parseFloat(verMatch[1]) : 2.5;
+            const supportsMinimal = /flash-lite|gemini-3\.6-flash|gemini-3-flash/i.test(modelName);
             const primaryGenCfg = majorVer >= 3
-                ? { ...baseSchemaCfg, thinkingConfig: { thinkingLevel: modelName.includes('lite') ? 'MINIMAL' : 'LOW' } }
+                ? { ...baseSchemaCfg, thinkingConfig: { thinkingLevel: supportsMinimal ? 'MINIMAL' : 'LOW' } }
                 : { ...baseSchemaCfg, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } };
 
             for (const cfgAttempt of [primaryGenCfg, baseSchemaCfg]) {
@@ -3156,7 +3160,9 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                         }
                         if (res.status === 400 && cfgAttempt === primaryGenCfg) continue;
                     }
-                    if (res.status === 404 || res.status === 403) unsupportedGeminiModels.add(`${keyTag}:${modelName}`);
+                    if (res.status === 404 || res.status === 403 || (res.status === 429 && /\blimit:\s*0\b/i.test(errMsg))) {
+                        unsupportedGeminiModels.add(`${keyTag}:${modelName}`);
+                    }
                     if (res.status === 429) sawQuota429 = true;
                     lastErr = new Error(errMsg);
                     break;
