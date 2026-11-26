@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v171 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v173 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v172';
+const CACHE_NAME = 'pea-smart-tools-v173';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -25,6 +25,7 @@ const APP_SHELL_ASSETS = [
     './scada-tie-advisor.js',
     './pm-calendar.js',
     './pm-push.js',
+    './pea-live-voice.js',
     './manifest.json',
     './manifest-main.json',
     './icon-main-192.png',
@@ -136,7 +137,7 @@ function isValidShellPayload(pathname, res, buf, destination = '') {
     if ((isMainHtml || isOutageHtml) && buf) {
         try {
             const text = new TextDecoder('utf-8').decode(buf);
-            if (isMainHtml && !/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|scada-tie-advisor|pm-calendar)\.js/i.test(text)) {
+            if (isMainHtml && !/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|scada-tie-advisor|pm-calendar|pea-live-voice)\.js/i.test(text)) {
                 return false;
             }
             if (isOutageHtml && !text.includes('outageRadarMap')) {
@@ -529,4 +530,4 @@ self.addEventListener('notificationclick', (event) => {
         })
     );
 });
-// ==================== จบไฟล์ sw.js (v171) ====================
+// ==================== จบไฟล์ sw.js (v173) ====================
