@@ -375,7 +375,7 @@
         list.forEach((bm, idx) => {
             const wrap = document.createElement('div');
             wrap.className = 'inline-flex items-center bg-slate-700/80 hover:bg-slate-600 text-slate-100 rounded-md overflow-hidden shrink-0 border border-slate-600 transition';
-            const safeUrl = String(bm.url || '').replace(/'/g, "\\'");
+            const safeUrl = escJsAttr(bm.url || '');
             wrap.innerHTML = `
                 <button type="button" onclick="loadLeftBrowserUrl('${safeUrl}', true)" class="px-2 py-0.5 font-medium truncate max-w-[160px]">${escapeHtmlStr(bm.name)}</button>
                 <button type="button" onclick="removeLeftBrowserBookmark(${idx})" class="px-1.5 py-0.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 leading-none" title="ลบลิงก์นี้">&times;</button>
@@ -1105,7 +1105,7 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
             const isNamed = gKey !== '__ADMIN_CENTRAL__' && gKey !== '__UNGROUPED__';
             const groupTitle = gKey === '__ADMIN_CENTRAL__' ? '👑 ผู้ดูแลระบบส่วนกลาง (Admin)' : (gKey === '__UNGROUPED__' ? '📂 ไม่ระบุกลุ่มสังกัด' : `🏢 กลุ่มสังกัด: ${escapeHtmlStr(gKey)}`);
             const hdrBg = gKey === '__ADMIN_CENTRAL__' ? 'from-purple-600 to-indigo-700' : (gKey === '__UNGROUPED__' ? 'from-slate-600 to-slate-700' : 'from-indigo-600 to-blue-700');
-            const safeGKey = gKey.replace(/'/g, "\\'");
+            const safeGKey = escJsAttr(gKey);
 
             const section = document.createElement('div');
             section.className = 'rounded-xl border border-slate-200 overflow-hidden bg-slate-100/80 shadow-sm mb-3';
@@ -1808,10 +1808,13 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
     }
 
     // ========================================================================
+        // ========================================================================
+    // ========================================================================
     // 6.2 ผู้ช่วย AI รับแจ้งเหตุ (แชร์คีย์แยกโควตารายกลุ่ม 100% ร่วมกับ pm-calendar.js + ค้นหาโมเดลอัตโนมัติ)
     // ========================================================================
     const SHARED_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
-        const FALLBACK_MAIN_GEMINI_MODELS = [
+    const VALID_GEMINI_KEY_REGEX = /(?:AIza[0-9A-Za-z_-]{25,80}|AQ\.[0-9A-Za-z._=-]{19,199}[0-9A-Za-z_=-])/;
+    const FALLBACK_MAIN_GEMINI_MODELS = [
         'gemini-3.5-flash-lite',
         'gemini-3.6-flash',
         'gemini-3.8-flash',
@@ -1824,6 +1827,11 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
     let isSendingAiChat = false;
     let pendingRetryChatMessage = '';
     let lastMainAiStateSig = '';
+
+    function resetMainAiModelCaches() {
+        mainResolvedModelsCache.clear();
+        mainUnsupportedModels.clear();
+    }
 
     function getActiveMainAiGroup() {
         const explicitGrp = normGrp(
@@ -1848,9 +1856,9 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
     function migrateLegacyGlobalAiKeyOnce() {
         if (Core.rawStorageGet('elec_app_logged_in') !== 'true') return;
         let legacy = '';
-        try { legacy = String(localStorage.getItem('gemini_api_key') || Core.rawStorageGet('gemini_api_key') || '').trim(); } catch (e) {}
+        try { legacy = String(localStorage.getItem('gemini_api_key') || Core.rawStorageGet('gemini_api_key') || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim(); } catch (e) {}
         if (!legacy) return;
-        const m = legacy.match(/AIza[0-9A-Za-z_-]{25,60}/);
+        const m = legacy.match(VALID_GEMINI_KEY_REGEX);
         const storageKey = getMainGroupAiStorageKey();
         try {
             if (m && !localStorage.getItem(storageKey)) {
@@ -1865,7 +1873,7 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         const k = getMainGroupAiStorageKey();
         let val = '';
         try { val = localStorage.getItem(k) || ''; } catch (e) {}
-        return String(val || Core.rawStorageGet(k) || '').trim();
+        return String(val || Core.rawStorageGet(k) || '').replace(/[^\x21-\x7E]/g, '').trim();
     }
 
     function maskMainAiKey(rawKey) {
@@ -1875,6 +1883,7 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
     }
 
     function notifySharedAiKeyChanged(storageKey, newVal) {
+        resetMainAiModelCaches();
         try {
             window.dispatchEvent(new StorageEvent('storage', { key: storageKey, newValue: newVal }));
         } catch (e) {}
@@ -1890,39 +1899,46 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
     }
 
     function updateMainChatbotKeyButtonUI() {
+        const chatHdrBar = document.querySelector('#geminiChatbot .bg-gradient-to-r');
         const btn = document.querySelector('#geminiChatbot button[onclick*="openApiKeyModal"]');
         if (!btn) return;
         if (btn.parentElement && !document.getElementById('mainAiResetChatBtn')) {
-            const wrap = document.createElement('div');
-            wrap.className = 'flex items-center gap-1.5';
-            btn.parentElement.insertBefore(wrap, btn);
+            let targetWrap = btn.parentElement;
+            if (targetWrap === chatHdrBar || targetWrap.tagName === 'BUTTON') {
+                targetWrap = document.createElement('div');
+                targetWrap.className = 'flex flex-wrap items-center justify-end gap-1.5';
+                btn.parentElement.insertBefore(targetWrap, btn);
+                targetWrap.appendChild(btn);
+            }
             const clrBtn = document.createElement('button');
             clrBtn.type = 'button';
             clrBtn.id = 'mainAiResetChatBtn';
-            clrBtn.onclick = () => { resetMainAiChatSession();
-                showToast('🧹 เริ่มบทสนทนา AI ใหม่แล้ว'); };
+            clrBtn.onclick = () => {
+                resetMainAiChatSession();
+                showToast('🧹 เริ่มบทสนทนา AI ใหม่แล้ว');
+            };
             clrBtn.title = 'ล้างประวัติบทสนทนา AI เพื่อเริ่มรับแจ้งเคสใหม่';
-            clrBtn.className = 'bg-white/15 hover:bg-white/25 text-white px-2 py-1 rounded-full text-[11px] font-bold transition';
+            clrBtn.className = 'shrink-0 bg-white/15 hover:bg-white/25 text-white px-2 py-1 rounded-full text-[11px] font-bold transition';
             clrBtn.textContent = '🧹 ล้างแชท';
-            wrap.appendChild(clrBtn);
-            wrap.appendChild(btn);
+            targetWrap.insertBefore(clrBtn, btn);
         }
         const grp = getActiveMainAiGroup();
         const hasKey = Boolean(getCurrentGroupAiKeyMain());
         btn.title = `ตั้งค่า Gemini API Key ประจำกลุ่ม ${grp} (ใช้ร่วมกับสแกนแผนที่ PM อัตโนมัติ)`;
         if (hasKey) {
-            btn.className = 'bg-emerald-400/25 hover:bg-emerald-400/35 border border-emerald-200/60 text-white px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1 transition';
+            btn.className = 'shrink-0 bg-emerald-400/25 hover:bg-emerald-400/35 border border-emerald-200/60 text-white px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1 transition';
             btn.innerHTML = '<span>🔑 AI: พร้อม</span><span>⚙️</span>';
         } else {
-            btn.className = 'bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1 shadow transition';
+            btn.className = 'shrink-0 bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1 shadow transition';
             btn.innerHTML = '<span>🔑 ตั้งคีย์ AI</span><span>⚙️</span>';
         }
     }
-    
+
     function ensureMainAiKeyModalEnhanced() {
         const modal = document.getElementById('apiKeyModal');
         if (!modal || modal.dataset.groupUpgraded === '1') return modal;
-        modal.dataset.groupUpgraded = '1';
+                modal.dataset.groupUpgraded = '1';
+        modal.style.zIndex = '1475';
         modal.onclick = e => { if (e.target === modal) closeApiKeyModal(); };
         modal.innerHTML = `
             <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-purple-400 flex flex-col">
@@ -1934,16 +1950,16 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
                     <div id="mainAiKeyGroupBadge" class="bg-indigo-950 text-amber-300 font-extrabold px-3 py-1.5 rounded-xl text-[11px] text-center shadow-sm">-</div>
                     <div id="mainAiKeyStatusBox" class="text-[11px] bg-white border border-slate-200 rounded-xl px-3 py-2"></div>
                     <div class="bg-purple-50 border border-purple-200 rounded-xl p-2.5 space-y-1.5 text-[11px]">
-                        <div class="font-extrabold text-purple-950">✨ กรอกครั้งเดียว ใช้ได้ทั้งผู้ช่วยรับแจ้งเหตุ &amp; สแกนป้ายแผนที่ PM:</div>
-                        <div>1. ล็อกอินด้วย Gmail ประจำสาขา แล้วกด <b>Create API key in new project</b> (แยกถังโควตาขาดกัน 100%)</div>
-                        <div>2. คัดลอกรหัสที่ขึ้นต้นด้วย <code>AIza...</code> มาวางด้านล่าง</div>
+                        <div class="font-extrabold text-purple-950">✨ กรอกครั้งเดียว ใช้ได้ทั้งผู้ช่วยรับแจ้งเหตุ, เสียงสด &amp; สแกนป้ายแผนที่ PM:</div>
+                        <div>1. ล็อกอินด้วย Gmail ประจำสาขา แล้วกด <b>Create API key</b> (แยกโปรเจกต์เพื่อแยกถังโควตา 100%)</div>
+                        <div>2. คัดลอกรหัสที่ขึ้นต้นด้วย <code>AIza...</code> หรือ <code>AQ....</code> มาวางด้านล่าง</div>
                         <div class="pt-1">
                             <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-[11px] shadow-sm">🔗 เปิดหน้าขอรับ API Key ฟรี (Google AI Studio)</a>
                         </div>
                     </div>
                     <div>
                         <label class="block font-extrabold text-slate-700 mb-1">วางรหัส Gemini API Key ของกลุ่มนี้:</label>
-                        <input type="text" id="apiKeyInput" onkeydown="if(event.key==='Enter'){event.preventDefault();saveApiKey();}" placeholder="AIzaSy..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 rounded-xl bg-white border-2 border-slate-300 focus:border-purple-500 focus:outline-none font-mono text-xs text-slate-900">
+                        <input type="text" id="apiKeyInput" onkeydown="if(event.key==='Enter'){event.preventDefault();saveApiKey();}" placeholder="AIzaSy... หรือ AQ...." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 rounded-xl bg-white border-2 border-slate-300 focus:border-purple-500 focus:outline-none font-mono text-xs text-slate-900">
                     </div>
                 </div>
                 <div class="p-3 border-t bg-white flex flex-wrap items-center gap-2">
@@ -1985,10 +2001,11 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
     function saveApiKey() {
         if (!guardNotViewer()) return;
         const inp = document.getElementById('apiKeyInput');
-        const m = String(inp?.value || '').trim().match(/AIza[0-9A-Za-z_-]{25,60}/);
+        const rawVal = String(inp?.value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+        const m = rawVal.match(VALID_GEMINI_KEY_REGEX);
         const cleanKey = m ? m[0] : '';
         if (!cleanKey) {
-            showCustomAlert('⚠️ รูปแบบ API Key ไม่ถูกต้อง (รหัสจาก Google AI Studio ต้องขึ้นต้นด้วย AIza...)', '🔑 ตั้งค่า API Key ประจำกลุ่ม');
+            showCustomAlert('⚠️ รูปแบบ API Key ไม่ถูกต้อง (ต้องขึ้นต้นด้วย AIza... หรือ AQ....)', '🔑 ตั้งค่า API Key ประจำกลุ่ม');
             inp?.focus();
             return;
         }
@@ -2004,7 +2021,7 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         notifySharedAiKeyChanged(storageKey, cleanKey);
         updateMainChatbotKeyButtonUI();
         closeApiKeyModal();
-        showToast(`✅ บันทึกคีย์ AI ประจำกลุ่ม "${grp}" แล้ว (ใช้ได้ทั้งแชทและสแกนแมพ PM)`);
+        showToast(`✅ บันทึกคีย์ AI ประจำกลุ่ม "${grp}" แล้ว (ใช้ได้ทั้งแชท เสียงสด และสแกนแมพ PM)`);
 
         if (pendingRetryChatMessage) {
             const retryMsg = pendingRetryChatMessage;
@@ -2063,12 +2080,15 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
-            const res = await fetch(url, { signal: ctrl ? ctrl.signal : undefined });
+            const url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100';
+            const res = await fetch(url, {
+                headers: { 'x-goog-api-key': apiKey },
+                signal: ctrl ? ctrl.signal : undefined
+            });
             const data = await res.json().catch(() => null);
-            if (res.status === 400 || res.status === 403) {
+            if (res.status === 400 || res.status === 401 || res.status === 403) {
                 const errMsg = String(data?.error?.message || '');
-                if (/API_KEY_INVALID|API key not valid|key expired|PERMISSION_DENIED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                if (res.status === 401 || /API_KEY_INVALID|API key not valid|key expired|UNAUTHENTICATED|PERMISSION_DENIED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
                     const keyErr = new Error('Invalid API Key');
                     keyErr.isInvalidKey = true;
                     throw keyErr;
@@ -2087,7 +2107,6 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
                     const isLite = Boolean(flashMatch && flashMatch[2]);
                     const isPreview = Boolean((hydroMatch && hydroMatch[2]) || (flashMatch && flashMatch[3]));
                     const retiringPenalty = id.toLowerCase() === 'gemini-2.5-flash' ? -25 : 0;
-                    // งานแชทสกัดข้อความฟอร์ม ให้ความสำคัญรุ่น 3.5+ ที่ตอบไวและโควตาฟรีสูง
                     const fastChatBonus = id.toLowerCase() === 'gemini-3.5-flash-lite' ? 35 : 0;
                     const score = (ver >= 3 ? 1000 : 0) + (ver * 100) + (isPreview ? 0 : 25) + (isLite ? 5 : 15) + fastChatBonus + retiringPenalty;
                     candidates.push({ id, score });
@@ -2172,10 +2191,13 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
                 const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
                 const timer = ctrl ? setTimeout(() => ctrl.abort(), 20000) : null;
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
                     const res = await fetch(url, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': apiKey
+                        },
                         body: JSON.stringify({
                             systemInstruction: { parts: [{ text: systemInstruction }] },
                             contents: [...chatContext, { role: 'user', parts: [{ text: userText }] }],
@@ -2218,8 +2240,8 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
                     }
 
                     const errMsg = String(data?.error?.message || `HTTP ${res.status}`);
-                    if (res.status === 400 || res.status === 403) {
-                        if (/API_KEY_INVALID|API key not valid|key expired|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                    if (res.status === 400 || res.status === 401 || res.status === 403) {
+                        if (res.status === 401 || /API_KEY_INVALID|API key not valid|key expired|UNAUTHENTICATED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
                             const keyErr = new Error('Invalid API Key');
                             keyErr.isInvalidKey = true;
                             throw keyErr;
@@ -2246,7 +2268,7 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         throw finalErr;
     }
 
-    function fillFormWithData(data) {
+        function fillFormWithData(data) {
         if (!data || typeof data !== 'object') return;
         const cleanAiVal = v => {
             const s = String(v ?? '').trim();
@@ -2259,12 +2281,16 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         const newPea = cleanAiVal(data.peaNo);
         const newAddr = cleanAiVal(data.address);
 
+        let cleanPhone = cleanAiVal(data.phone).replace(/[^\d+]/g, '');
+        if (/^\+?66\d{8,9}$/.test(cleanPhone)) cleanPhone = '0' + cleanPhone.replace(/^\+?66/, '');
+        cleanPhone = cleanPhone.replace(/\D/g, '') || cleanAiVal(data.phone);
+
         if (newCust) lastPastedCustomerMeta.customerName = newCust;
         if (newCa) lastPastedCustomerMeta.caNo = newCa;
         if (newPea) lastPastedCustomerMeta.peaNo = newPea;
 
-        ['issueType', 'workerName', 'area', 'phone'].forEach(k => {
-            const val = cleanAiVal(data[k]);
+        [['issueType', data.issueType], ['workerName', data.workerName], ['area', data.area], ['phone', cleanPhone]].forEach(([k, rawV]) => {
+            const val = cleanAiVal(rawV);
             if (val) {
                 const el = document.getElementById(k);
                 if (el) { el.value = val; filled = true; }
@@ -2274,15 +2300,23 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         if (newAddr || newCa || newPea) {
             const addrEl = document.getElementById('address');
             if (addrEl) {
-                const baseAddr = newAddr || String(addrEl.value || '').trim();
-                const addrParts = baseAddr ? [baseAddr] : [];
-                const joinedBase = addrParts.join('\n');
-                if (newCa && !joinedBase.includes(newCa)) {
-                    addrParts.push(`CA : ${newCa}`);
-                }
-                if (newPea && !joinedBase.includes(newPea)) {
-                    addrParts.push(`มิเตอร์ - PEA No. : ${newPea}`);
-                }
+                const prevLines = String(addrEl.value || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                const prevStreetLines = prevLines.filter(l => !/^(?:CA|มิเตอร์\s*-\s*PEA\s*No\.)\s*:/i.test(l));
+                const prevCaLine = prevLines.find(l => /^CA\s*:/i.test(l)) || '';
+                const prevPeaLine = prevLines.find(l => /^มิเตอร์\s*-\s*PEA\s*No\.\s*:/i.test(l)) || '';
+
+                const streetPart = newAddr || prevStreetLines.join('\n');
+                const addrParts = streetPart ? [streetPart] : [];
+                const finalCaLine = newCa ? `CA : ${newCa}` : prevCaLine;
+                const finalPeaLine = newPea ? `มิเตอร์ - PEA No. : ${newPea}` : prevPeaLine;
+
+                const streetHasCa = newCa && streetPart.includes(newCa);
+                const escPea = newPea ? newPea.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+                const streetHasPea = newPea && new RegExp(`(?:PEA\\s*No\\.?|มิเตอร์)\\s*[:：=]?\\s*${escPea}(?!\\w)`, 'i').test(streetPart);
+
+                if (finalCaLine && !streetHasCa) addrParts.push(finalCaLine);
+                if (finalPeaLine && !streetHasPea) addrParts.push(finalPeaLine);
+
                 if (addrParts.length > 0) {
                     addrEl.value = addrParts.join('\n');
                     addrEl.style.height = 'auto';
@@ -2314,13 +2348,14 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
         }
 
         if (filled) {
+            ['suggest-issue', 'suggest-worker', 'suggest-area', 'issueDropdownMenu'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
             autoFillJobNo(false);
             if (typeof checkCaOverdueEnhanced === 'function') checkCaOverdueEnhanced(false);
             saveOutageDraft();
             showToast('✨ AI สรุปและกรอกข้อมูลลงฟอร์มแล้ว!');
         }
     }
-    
+
     async function sendChatMessage() {
         if (!guardNotViewer() || isSendingAiChat) return;
         const inputEl = document.getElementById('chatInput');
@@ -2381,6 +2416,9 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
 
     window.addEventListener('storage', e => {
         if (!e.key || e.key.startsWith(SHARED_GROUP_AI_KEY_PREFIX) || e.key === 'gemini_api_key' || e.key === 'elec_app_current_group') {
+            if (!e.key || e.key.startsWith(SHARED_GROUP_AI_KEY_PREFIX) || e.key === 'gemini_api_key') {
+                resetMainAiModelCaches();
+            }
             watchMainAiGroupAndKeyState();
         }
     });
@@ -3084,8 +3122,8 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
                         if (resData?.status === 'ok' && resData?.patched !== false && !resData?.skippedBusyRam) {
                             const curList = JSON.parse(Core.rawStorageGet('elecReportsComplete_all') || '[]');
                             let cleared = false;
-                            curList.forEach(it => {
-                                if (it && it.dateTimeSaved === cleanJob.dateTimeSaved && it.pendingInitialUpload) {
+                                                        curList.forEach(it => {
+                                if (it && it.dateTimeSaved === cleanJob.dateTimeSaved && it.pendingInitialUpload && (it.editedAt || '') === (cleanJob.editedAt || '')) {
                                     delete it.pendingInitialUpload;
                                     cleared = true;
                                 }
@@ -3178,9 +3216,10 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
             const { dateStr: cycleDateStr, calendarDateStr } = getRealTimeShiftAndDate();
             let history = [...allHistory];
             if (selDate) {
-                const [y, m, d] = selDate.split('-');
-                history = history.filter(it => it.dateTimeSaved && it.dateTimeSaved.startsWith(`${d}/${m}/${parseInt(y, 10) + 543}`));
-            }
+    const [y, m, d] = selDate.split('-');
+    const targetTh = `${d}/${m}/${parseInt(y, 10) + 543}`;
+    history = history.filter(it => normalizeThaiDateMain(it.dateTimeSaved || it.reportDate) === targetTh);
+}
             if (prioFilter !== 'all') history = history.filter(it => (it.priorityLevel || getIssuePriority(it.issueType).level) === prioFilter);
             if (searchQ) history = history.filter(it => JSON.stringify(it).toLowerCase().includes(searchQ));
 
@@ -3194,7 +3233,7 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
                 const pLevel = item.priorityLevel || getIssuePriority(item.issueType).level;
                 const emoji = pLevel === 'critical' ? '🔴' : (pLevel === 'urgent' ? '🟡' : '🟢');
                 const brd = pLevel === 'critical' ? 'border-l-rose-500' : (pLevel === 'urgent' ? 'border-l-amber-500' : 'border-l-emerald-500');
-                const safeKey = String(item.dateTimeSaved || '').replace(/'/g, "\\'");
+                const safeKey = escJsAttr(item.dateTimeSaved || '');
                 const photoHtml = buildMainHistoryPhotoStripHtml(item, item.dateTimeSaved);
                 const div = document.createElement('div');
                 div.className = `bg-white p-3 rounded-xl border border-slate-200 shadow-sm text-xs space-y-1.5 overflow-hidden max-w-full border-l-4 ${brd}`;
@@ -3450,7 +3489,11 @@ if (!isMainSysRegistryLoc(k, locMap[k]) && (isSameTechPerson(k, curUser) || isSa
             } else {
                 const sd = document.getElementById('exportDateTab2')?.value || '';
                 let list = JSON.parse(localStorage.getItem('elecReportsComplete_all') || '[]').filter(o => o && !(o.dateTimeSaved && delReg[o.dateTimeSaved]));
-                if (sd) { const [y, m, d] = sd.split('-'); list = list.filter(i => i.dateTimeSaved?.startsWith(`${d}/${m}/${parseInt(y, 10) + 543}`)); }
+                if (sd) {
+    const [y, m, d] = sd.split('-');
+    const targetTh = `${d}/${m}/${parseInt(y, 10) + 543}`;
+    list = list.filter(i => normalizeThaiDateMain(i.dateTimeSaved || i.reportDate) === targetTh);
+}
                 if (!list.length) return showToast('ไม่มีข้อมูลสำหรับวันที่เลือก');
                 headers = ['วันที่บันทึก', 'วันที่แจ้ง', 'งานที่', 'กะ', 'ลักษณะอาการ', 'ผู้ปฏิบัติงาน', 'บริเวณ', 'ที่อยู่', 'เบอร์โทรศัพท์', 'พิกัด GPS', 'สถานะหน้างาน', 'สาเหตุจริง', 'การแก้ไข', 'เวลาเสร็จ', 'ช่างผู้ตรวจสอบ', 'รูปถ่ายหน้างาน (Drive)'];
                 rows = list.map(i => { const tr = i.techReport || closedReg[i.dateTimeSaved]; const pics = extractMainHistoryPhotos(i, i.dateTimeSaved).map(p => p.viewUrl).filter(Boolean).join('\n') || '-'; return [i.dateTimeSaved?.split(' ')[0] || '', i.reportDate, i.jobNo, i.shift, i.issueType, i.workerName, i.area, i.address, i.phone, tr?.fieldGps || i.gps || '-', tr?.status || (i.techNav ? 'กำลังเดินทาง' : 'รอแก้ไข'), tr?.realCause || '-', tr?.actionTaken || '-', tr?.finishTime || '-', formatTechDisplayName(tr?.inspector || '-'), pics].map(c => String(c ?? '')); });
