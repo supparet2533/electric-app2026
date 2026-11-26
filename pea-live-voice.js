@@ -1,7 +1,7 @@
 // ============================================================================
-// 🎙️🌸 PEA SMART GRID — GEMINI LIVE VOICE PR PRESENTER & ASSISTANT v2.3 (pea-live-voice.js)
+// 🎙️🌸 PEA SMART GRID — GEMINI LIVE VOICE PR PRESENTER & ASSISTANT v2.4 (pea-live-voice.js)
 // ระบบผู้ช่วยเสียงพูดสดสองทาง (WebSocket BidiGenerateContent + Function Calling)
-// รองรับคีย์ AIza & AQ. + Stable Tap DOM + Smart Split-Screen Auto-Close
+// รองรับคีย์ AIza & AQ. + พรีเซนต์ "ระบบสกาด้าจำลอง" (จำลองการจ่ายไฟ ไม่ใช่งานโอเปอเรทจริง)
 // ============================================================================
 (function () {
     'use strict';
@@ -12,7 +12,7 @@
     const Core = window.PeaCore;
     const SHARED_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
     const VOICE_PREF_STORAGE_KEY = 'elec_live_voice_name_v1';
-    const RESUME_STATE_STORAGE_PREFIX = 'elec_live_resume_v1__';
+    const RESUME_STATE_STORAGE_PREFIX = 'elec_live_resume_v2__';
     const RESUME_HANDLE_TTL_MS = 2 * 60 * 60 * 1000;
     const MAX_AUTO_RECONNECT_ATTEMPTS = 6;
     const SPEAKER_ECHO_GATE_RMS = 0.045;
@@ -189,6 +189,8 @@
         }
         if (typeof window.openPmAiKeyModal === 'function') {
             window.openPmAiKeyModal(false);
+            const pmKeyModal = document.getElementById('pmAiKeyConfigModal');
+            if (pmKeyModal) pmKeyModal.style.zIndex = '1475';
             return;
         }
         safeToast('⚠️ กรุณาตั้งค่า Gemini API Key ประจำกลุ่มก่อนใช้งานเสียงสด');
@@ -403,9 +405,10 @@
             'คุณคือผู้ช่วยประชาสัมพันธ์และผู้ช่วยปฏิบัติการอัจฉริยะ (ผู้หญิง) ประจำ "ระบบเครื่องมือจัดการงานไฟฟ้า (PEA Smart Grid Operations)" ของการไฟฟ้าส่วนภูมิภาค (กฟภ.) พัฒนาโดย คุณศุภเรศ ศรีคชา (SamSrikacha)',
             `ปัจจุบันคุณกำลังดูแลพื้นที่สังกัด: "${snap.branchGroup}" ผู้ใช้งานคือ "${snap.loggedInUser}"`,
             '',
-            'บุคลิกและน้ำเสียงการพูด:',
+            'บุคลิก น้ำเสียง และข้อกำหนดสำคัญเรื่องระบบสกาด้าจำลอง:',
             '- ใช้เสียงผู้หญิงที่นุ่มนวล อบอุ่น สุภาพ ชัดถ้อยชัดคำ น่าเชื่อถือแบบนักประชาสัมพันธ์มืออาชีพ ลงท้ายด้วย "ค่ะ" หรือ "นะคะ" เสมอ',
-            '- อ่านคำย่อทางวิศวกรรมไฟฟ้าให้เป็นธรรมชาติและฟังง่าย เช่น "กฟภ." อ่านว่า "การไฟฟ้าส่วนภูมิภาค", "22kV" อ่านว่า "ยี่สิบสองเควี", "115kV" อ่านว่า "หนึ่งร้อยสิบห้าเควี", "TR/TL" อ่านว่า "ทีอาร์ ทับ ทีแอล", "SCADA" อ่านว่า "สกาด้า", "CA" อ่านว่า "ซีเอ", "PM" อ่านว่า "พีเอ็ม"',
+            '- อ่านคำย่อทางวิศวกรรมไฟฟ้าให้เป็นธรรมชาติและฟังง่าย เช่น "กฟภ." อ่านว่า "การไฟฟ้าส่วนภูมิภาค", "22kV" อ่านว่า "ยี่สิบสองเควี", "115kV" อ่านว่า "หนึ่งร้อยสิบห้าเควี", "TR/TL" อ่านว่า "ทีอาร์ ทับ ทีแอล", "SCADA" อ่านว่า "สกาด้า", "LOTO" อ่านว่า "โลโต้", "CA" อ่านว่า "ซีเอ", "PM" อ่านว่า "พีเอ็ม"',
+            '- กฎเหล็กสำคัญมาก: ทุกครั้งที่พูดถึงผังวงจร SCADA ต้องเรียกว่า "ระบบสกาด้าจำลอง" เสมอ และต้องชี้แจงให้ชัดเจนว่า "เป็นการจำลองการจ่ายไฟและจำลองสถานะสวิตช์บนแผนที่เพื่อช่วยวางแผนและวิเคราะห์งานเท่านั้น ไม่ใช่งานโอเปอเรทสั่งสับปลดจ่ายไฟจริงในสนาม" ห้ามพูดให้เข้าใจผิดว่าเป็นการสั่งการอุปกรณ์ไฟฟ้าจริงเด็ดขาด',
             '',
             'กฎการทำงานเมื่อได้รับคำสั่ง "แนะนำระบบ" หรือ "พรีเซนต์ระบบ":',
             isMain
@@ -413,13 +416,13 @@
                     '1. กล่าวต้อนรับผู้บริหารหรือผู้รับฟังอย่างนุ่มนวล แนะนำชื่อระบบเครื่องมือจัดการงานไฟฟ้าแบบครบวงจรสำหรับศูนย์สั่งการและช่างภาคสนาม พัฒนาโดยคุณศุภเรศ ศรีคชา',
                     '2. พาชมทีละหน้าจอโดยเรียกใช้เครื่องมือ navigateAppScreen ครั้งละ 1 คำสั่งควบคู่ไปกับการอธิบายจุดเด่นทีละส่วนอย่างต่อเนื่อง (ห้ามส่งคำสั่งเปิดหลายหน้าจอพร้อมกันในรอบเดียว ให้เปิด 1 หน้า อธิบายหน้านั้น 2-3 ประโยคให้ชัดเจน แล้วจึงเรียกเปิดหน้าถัดไป):',
                     '   - ขั้นที่ 1: เรียก navigateAppScreen("tab1_fault") อธิบายฟอร์มรายงานเหตุสถานี 22kV/115kV เชื่อมเรดาร์น้ำฝน Rain Alarm อัตโนมัติ และตรวจเตือนป้ายห้ามสับไฟ LOTO',
-                    '   - ขั้นที่ 2: เรียก navigateAppScreen("scada_split") โชว์ผังวงจรไฟฟ้า SCADA อัจฉริยะคู่หน้าฟอร์ม คลิกสวิตช์ส่งรหัสเข้าฟอร์ม คำนวณจุดเกิดฟอลต์ และจำลองสับเปลี่ยนภาระโหลดได้ แล้วเรียก navigateAppScreen("close_scada_split") เมื่ออธิบายจบ',
+                    '   - ขั้นที่ 2: เรียก navigateAppScreen("scada_split") โชว์ "ระบบสกาด้าจำลอง" คู่หน้าฟอร์ม โดยย้ำชัดเจนว่าเป็นระบบสกาด้าจำลองสำหรับการจ่ายไฟและจำลองสับเปลี่ยนภาระโหลดบนหน้าจอ ไม่ใช่งานโอเปอเรทจริง ช่วยให้คลิกสวิตช์ส่งรหัสเข้าฟอร์มและคำนวณจุดเกิดฟอลต์ได้อย่างปลอดภัย แล้วเรียก navigateAppScreen("close_scada_split") เมื่ออธิบายจบ',
                     '   - ขั้นที่ 3: เรียก navigateAppScreen("tab2_outage") อธิบายระบบรับแจ้งไฟฟ้าขัดข้อง คัดกรองข้อมูลลูกค้า แจ้งเตือนเลข CA ค้างจ่าย 12 หลัก แนะนำช่างที่อยู่ใกล้จุดเกิดเหตุที่สุดด้วย GPS สด และสร้างลิงก์ใบสับเปลี่ยนมิเตอร์ชำรุดอัตโนมัติ',
                     '   - ขั้นที่ 4: เรียก navigateAppScreen("pm_calendar_grid") อธิบายตารางปฏิทินแผนงานบำรุงรักษา PM และแนบรูปส่ง LINE จากนั้นจึงเรียก navigateAppScreen("pm_calendar_map") โชว์แผนที่หมุด PM โซนเรดาร์แจ้งดับไฟประชาชน พร้อม AI อ่านป้ายชื่อสถานที่สร้างโพสต์ Facebook/LINE แล้วเรียก navigateAppScreen("close_pm_calendar")',
                     '   - ขั้นที่ 5: เรียก demoCalculate22kVFuse(160, 1, 1.5) เพื่อเปิดแท็บ 3 สาธิตคำนวณขนาดฟิวส์เมนแรงสูง 22kV ของหม้อแปลง 160 เควีเอ โชว์ผลลัพธ์จริงบนหน้าจอ',
                     '   - ขั้นที่ 6: เรียก navigateAppScreen("tab4_analytics") เปิดแท็บ 4 แดชบอร์ดกราฟสถิติ สรุปจำนวนข้อมูลจริงของสาขาจากผลลัพธ์ที่ได้ แล้วกล่าวปิดท้ายเปิดโอกาสให้ผู้ฟังซักถามเพิ่มเติมด้วยรอยยิ้มในน้ำเสียงค่ะ'
                 ].join('\n')
-                : 'คุณกำลังอยู่บนหน้าปฏิบัติงานช่างภาคสนาม (Page 2) สามารถเรียก navigateAppScreen เพื่อสลับดูรายการใบงานช่าง แผนที่ผังวงจร SCADA และปฏิทินแผนงาน PM พร้อมรายงานยอดงานค้างและงานกำลังเดินทางจากข้อมูลจริงได้ค่ะ',
+                : 'คุณกำลังอยู่บนหน้าปฏิบัติงานช่างภาคสนาม (Page 2) สามารถเรียก navigateAppScreen เพื่อสลับดูรายการใบงานช่าง แผนที่ผังวงจร "ระบบสกาด้าจำลอง" (ย้ำว่าเป็นการจำลองการจ่ายไฟเพื่อวางแผน ไม่ใช่งานโอเปอเรทจริง) และปฏิทินแผนงาน PM พร้อมรายงานยอดงานค้างและงานกำลังเดินทางจากข้อมูลจริงได้ค่ะ',
             '',
             'กฎการทำงานขณะช่วยปฏิบัติงานจริง:',
             '- หากผู้ใช้แจ้งรายละเอียดไฟฟ้าขัดข้องของชาวบ้าน ให้เรียก fillOutageReportByVoice เพื่อกรอกลงฟอร์มแท็บ 2 ทันที (หากข้อมูลใดไม่ได้ระบุให้ส่งค่าว่าง "" ห้ามเดาเอง)',
@@ -438,7 +441,7 @@
                     properties: {
                         target: {
                             type: 'STRING',
-                            description: 'รหัสหน้าจอที่ต้องการเปิด ได้แก่: tab1_fault, scada_split, close_scada_split, tab2_outage, pm_calendar_grid, pm_calendar_map, close_pm_calendar, tab3_fuse, tab4_analytics, tech_jobs_list, tech_scada_map'
+                            description: 'รหัสหน้าจอที่ต้องการเปิด ได้แก่: tab1_fault, scada_split (ผังระบบสกาด้าจำลองคู่หน้าฟอร์ม), close_scada_split, tab2_outage, pm_calendar_grid, pm_calendar_map, close_pm_calendar, tab3_fuse, tab4_analytics, tech_jobs_list, tech_scada_map (แผนที่ระบบสกาด้าจำลอง)'
                         }
                     },
                     required: ['target']
@@ -446,7 +449,7 @@
             },
             {
                 name: 'getLiveSystemStats',
-                description: 'ดึงตัวเลขสถิติใบงานจริง กะปัจจุบัน สภาพอากาศ จำนวนหมุดอุปกรณ์ SCADA และแผนงาน PM ล่าสุดในระบบ',
+                description: 'ดึงตัวเลขสถิติใบงานจริง กะปัจจุบัน สภาพอากาศ จำนวนหมุดอุปกรณ์ในระบบสกาด้าจำลอง และแผนงาน PM ล่าสุดในระบบ',
                 parameters: {
                     type: 'OBJECT',
                     properties: {
@@ -583,7 +586,7 @@
                 window.closePmCalendarModal?.();
                 if (target === 'tech_scada_map' || target === 'scada_split') {
                     setDockMinimized(true);
-                    setLiveActionSubtext('⚡ สลับไปหน้าผังวงจร SCADA');
+                    setLiveActionSubtext('⚡ สลับไปหน้าผังระบบสกาด้าจำลอง');
                     window.switchTechMainTab?.('map');
                 } else {
                     setLiveActionSubtext('🛠️ สลับไปหน้ารายการใบงานช่าง');
@@ -597,12 +600,12 @@
                         openedLeftDockByVoice = true;
                     }
                     setDockMinimized(true);
-                    setLiveActionSubtext('⚡ เปิดผังวงจร SCADA คู่หน้าฟอร์ม');
+                    setLiveActionSubtext('⚡ เปิดผังระบบสกาด้าจำลองคู่หน้าฟอร์ม');
                     window.switchTab?.('tab1');
                     window.openScadaDiagramWorkspace?.();
                 } else if (target === 'close_scada_split') {
                     openedLeftDockByVoice = false;
-                    setLiveActionSubtext('✕ ปิดหน้าต่างผัง SCADA ฝั่งซ้าย');
+                    setLiveActionSubtext('✕ ปิดหน้าต่างผังสกาด้าจำลองฝั่งซ้าย');
                     window.closeLeftWebBrowser?.();
                 } else {
                     closeVoiceOpenedLeftDockIfNeeded();
@@ -1065,7 +1068,7 @@
         clearPlaybackIdleWatchdog();
         clearFrozenAudioCheckTimer();
         activePlaybackSources.forEach(src => {
-            try { src.stop(0); src.disconnect(); } catch (e) {}
+            try { src.onended = null; src.stop(0); src.disconnect(); } catch (e) {}
         });
         activePlaybackSources.clear();
         nextPlayTimeSec = 0;
@@ -2117,14 +2120,14 @@
         setDockMinimized(true);
         setLiveActionSubtext('🎬 เริ่มโหมดวิทยากรนำเสนอระบบอัตโนมัติ...');
         sendTextCueToLiveSession(
-            'เริ่มทำหน้าที่วิทยากรประชาสัมพันธ์แนะนำระบบเครื่องมือจัดการงานไฟฟ้า (PEA Smart Grid) ให้ผู้บริหารและทีมงานฟังได้เลยค่ะ โดยเรียกใช้เครื่องมือเปิดหน้าจอจริงโชว์ทีละส่วนตามลำดับพร้อมอธิบายจุดเด่นอย่างนุ่มนวลชัดเจน และดึงตัวเลขจริงของสาขามาประกอบการบรรยายด้วยค่ะ'
+            'เริ่มทำหน้าที่วิทยากรประชาสัมพันธ์แนะนำระบบเครื่องมือจัดการงานไฟฟ้า (PEA Smart Grid) ให้ผู้บริหารและทีมงานฟังได้เลยค่ะ โดยเรียกใช้เครื่องมือเปิดหน้าจอจริงโชว์ทีละส่วนตามลำดับพร้อมอธิบายจุดเด่นอย่างนุ่มนวลชัดเจน ทั้งนี้เมื่อถึงส่วนผังวงจรให้เรียกว่า "ระบบสกาด้าจำลอง" และย้ำว่าเป็นการจำลองการจ่ายไฟเพื่อวางแผน ไม่ใช่งานโอเปอเรทจริง พร้อมดึงตัวเลขจริงของสาขามาประกอบการบรรยายด้วยค่ะ'
         );
     }
 
     function triggerSpecificTopicDemo(topicCode) {
         unlockOutputAudioContextOnGesture();
         const prompts = {
-            scada: 'ช่วยเปิดหน้าผังวงจร SCADA คู่หน้าฟอร์ม แล้วอธิบายจุดเด่นของระบบผังวงจรไฟฟ้า การตรวจเตือนป้าย LOTO และการชี้เป้าฟอลต์ให้ฟังหน่อยค่ะ',
+            scada: 'ช่วยเปิดหน้าผังวงจรระบบสกาด้าจำลองคู่หน้าฟอร์ม แล้วอธิบายจุดเด่นของ "ระบบสกาด้าจำลอง" โดยย้ำชัดเจนว่าเป็นการจำลองการจ่ายไฟและสับเปลี่ยนโหลดบนแผนที่เพื่อช่วยวางแผน ไม่ใช่งานโอเปอเรทสั่งสับปลดจริง พร้อมอธิบายการตรวจเตือนป้าย LOTO และการชี้เป้าฟอลต์ให้ฟังหน่อยค่ะ',
             pm: 'ช่วยเปิดหน้าปฏิทินและแผนที่หมุดแผนงาน PM โชว์โซนเรดาร์แจ้งดับไฟประชาชนและการใช้ AI อ่านป้ายชื่อสถานที่สร้างโพสต์ Facebook/LINE ให้ฟังหน่อยค่ะ',
             dispatch: 'สลับมาหน้าฟอร์มรับแจ้งไฟฟ้าขัดข้อง แท็บ 2 แล้วเตรียมพร้อมช่วยรับแจ้งเหตุและกรอกฟอร์มตามที่ฉันกำลังจะพูดแจ้งต่อไปนี้ค่ะ'
         };
@@ -2307,7 +2310,7 @@
                         <div id="peaLiveMemoryBadge" class="text-[10px] font-semibold text-slate-400 flex items-center justify-between gap-1 px-1">♾️ โหมดบีบอัดความจำอัตโนมัติ (คุยยาวเกิน 15 นาทีได้ไม่ตัดสาย)</div>
                         <div class="grid grid-cols-2 gap-1.5">
                             <button type="button" onclick="triggerAutoPresentationCue()" class="col-span-2 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:brightness-105 text-slate-950 font-extrabold text-xs shadow-md flex items-center justify-center gap-1.5">🎬 ให้ผู้ช่วยสาวนำเสนอระบบทั้งหมด (Auto-Demo)</button>
-                            <button type="button" onclick="triggerSpecificTopicDemo('scada')" class="py-1.5 px-2 rounded-xl bg-teal-600/80 hover:bg-teal-600 text-white font-bold text-[11px] border border-teal-400/40">⚡ สาธิตผัง SCADA</button>
+                            <button type="button" onclick="triggerSpecificTopicDemo('scada')" class="py-1.5 px-2 rounded-xl bg-teal-600/80 hover:bg-teal-600 text-white font-bold text-[11px] border border-teal-400/40">⚡ สาธิตสกาด้าจำลอง</button>
                             <button type="button" onclick="triggerSpecificTopicDemo('pm')" class="py-1.5 px-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-bold text-[11px] border border-indigo-400/40">📅 สาธิตแผน PM/เรดาร์</button>
                         </div>
                         <div class="flex items-center gap-1.5 pt-1 border-t border-white/10">
@@ -2425,4 +2428,4 @@
         injectLiveVoiceUI();
     }
 })();
-// ==================== จบไฟล์ pea-live-voice.js (v2.3) ====================
+// ==================== จบไฟล์ pea-live-voice.js (v2.4) ====================
