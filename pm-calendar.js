@@ -146,9 +146,11 @@
     }
     function normPmGrp(raw) {
         if (typeof window.normalizePeaGroupName === 'function') return window.normalizePeaGroupName(raw);
-        return String(raw || '').trim().replace(/\s+/g, ' ')
-            .replace(/^(กฟ[สฟจตอ])\.?\s+/, '$1.')
-            .replace(/^(กฟ[สฟจตอ])(?![.\s])/, '$1.');
+        let g = String(raw || '').trim().replace(/\s+/g, ' ');
+        g = g.replace(/^(กฟ[ก-ฮ]{1,2})\.\s+/, '$1.')
+            .replace(/^(กฟ[สฟจตอยภผกนฉ])\s+/, '$1.')
+            .replace(/^(กฟ[สฟจตอยภผกนฉ])(?![.\s]|[ก-ฮ]\.|$)/, '$1.');
+        return g.trim();
     }
 
     function normalizePmPhotoIds(rawObjOrArr) {
@@ -889,7 +891,10 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
     }
 
     function base64ToBlobPm(b64Str, mimeType = 'image/jpeg') {
-        const bin = atob(String(b64Str || '').replace(/\s+/g, ''));
+        let clean = String(b64Str || '').replace(/^data:[^,]+,/, '').replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+        const mod = clean.length % 4;
+        if (mod > 0) clean += '='.repeat(4 - mod);
+        const bin = atob(clean);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         return new Blob([bytes], { type: mimeType });
@@ -2384,8 +2389,8 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
     let isLassoDragging = false;
     let lastLassoFinishMs = 0;
 
-        // ตัวแปรจัดการดูดชื่อสถานที่ในกรอบไฟดับ + AI Vision อ่านป้ายแผนที่แยกโควตารายกลุ่ม 100%
-          const PM_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
+    // ตัวแปรจัดการดูดชื่อสถานที่ในกรอบไฟดับ + AI Vision อ่านป้ายแผนที่แยกโควตารายกลุ่ม 100%
+    const PM_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
     const FALLBACK_GEMINI_VISION_MODELS = [
         'gemini-3.8-flash',
         'gemini-3.6-flash',
@@ -2415,12 +2420,15 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const timer = ctrl ? setTimeout(() => ctrl.abort(), 5000) : null;
         try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${encodeURIComponent(apiKey)}`;
-            const res = await _origFetchForPm(url, { signal: ctrl ? ctrl.signal : undefined });
+            const url = 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100';
+            const res = await _origFetchForPm(url, {
+                headers: { 'x-goog-api-key': apiKey },
+                signal: ctrl ? ctrl.signal : undefined
+            });
             const data = await res.json().catch(() => null);
-            if (res.status === 400 || res.status === 403) {
+            if (res.status === 400 || res.status === 401 || res.status === 403) {
                 const errMsg = String(data?.error?.message || '');
-                if (/API_KEY_INVALID|API key not valid|key expired|PERMISSION_DENIED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                if (res.status === 401 || /API_KEY_INVALID|API key not valid|key expired|UNAUTHENTICATED|PERMISSION_DENIED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
                     const keyErr = new Error('API Key ไม่ถูกต้อง ถูกจำกัดสิทธิ์โดเมน หรือหมดอายุ กรุณาตั้งค่าคีย์ AI ใหม่');
                     keyErr.isInvalidKey = true;
                     throw keyErr;
@@ -2462,11 +2470,23 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         return `${PM_GROUP_AI_KEY_PREFIX}${grp}`;
     }
 
+    function resetPmVisionModelCaches() {
+        resolvedModelsByKeyCache.clear();
+        unsupportedGeminiModels.clear();
+    }
+
+    function notifyPmGroupAiKeyChanged(storageKey, newVal) {
+        resetPmVisionModelCaches();
+        try {
+            window.dispatchEvent(new StorageEvent('storage', { key: storageKey, newValue: newVal }));
+        } catch (e) {}
+    }
+
     function getCurrentGroupAiApiKey() {
         const k = getGroupAiStorageKey();
         let val = '';
         try { val = localStorage.getItem(k) || ''; } catch (e) {}
-        return String(val || rawGet(k) || '').trim();
+        return String(val || rawGet(k) || '').replace(/[^\x21-\x7E]/g, '').trim();
     }
 
     function maskAiApiKeyPm(rawKey) {
@@ -2531,20 +2551,24 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
 
     function savePmGroupAiKeyFromModal() {
         const inp = document.getElementById('pmAiKeyInput');
-        const keyMatch = String(inp?.value || '').trim().match(/AIza[0-9A-Za-z_-]{25,60}/);
+        const rawVal = String(inp?.value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+        const keyMatch = rawVal.match(/(?:AIza[0-9A-Za-z_-]{25,80}|AQ\.[0-9A-Za-z._=-]{19,199}[0-9A-Za-z_=-])/);
         const cleanKey = keyMatch ? keyMatch[0] : '';
         if (!cleanKey) {
-            safeToast('⚠️ รูปแบบ API Key ไม่ถูกต้อง (คีย์จาก Google AI Studio ต้องขึ้นต้นด้วย AIza...)');
+            safeToast('⚠️ รูปแบบ API Key ไม่ถูกต้อง (ต้องขึ้นต้นด้วย AIza... หรือ AQ....)');
             inp?.focus();
             return;
         }
         const grp = getActivePmGroup();
+        const storageKey = getGroupAiStorageKey(grp);
         try {
-            localStorage.setItem(getGroupAiStorageKey(grp), cleanKey);
+            localStorage.setItem(storageKey, cleanKey);
+            localStorage.removeItem('gemini_api_key');
         } catch (e) {
             safeToast('❌ พื้นที่เก็บข้อมูลเบราว์เซอร์เต็ม ไม่สามารถบันทึกคีย์ได้');
             return;
         }
+        notifyPmGroupAiKeyChanged(storageKey, cleanKey);
         const shouldScanNow = pendingRunScanAfterKeySave;
         closePmAiKeyModal();
         updateGroupAiKeyButtonsUI();
@@ -2554,9 +2578,14 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
 
     function clearPmGroupAiKeyFromModal() {
         const grp = getActivePmGroup();
-        try { localStorage.removeItem(getGroupAiStorageKey(grp)); } catch (e) {}
+        const storageKey = getGroupAiStorageKey(grp);
+        try {
+            localStorage.removeItem(storageKey);
+            localStorage.removeItem('gemini_api_key');
+        } catch (e) {}
         const inp = document.getElementById('pmAiKeyInput');
         if (inp) inp.value = '';
+        notifyPmGroupAiKeyChanged(storageKey, null);
         updateGroupAiKeyButtonsUI();
         closePmAiKeyModal();
         safeToast(`🗑️ ลบคีย์ AI ของกลุ่ม "${grp}" ออกจากเครื่องนี้แล้ว`);
@@ -2658,7 +2687,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
     }
 
     // ป้องกันการหั่นชื่อบริษัทที่มี Co., Ltd. / Inc. / Corp. แยกเป็น 2 ป้าย
-        function parsePlacesTextToList(rawStr) {
+    function parsePlacesTextToList(rawStr) {
         const seen = new Set();
         const out = [];
         const src = Array.isArray(rawStr) ? rawStr.join('\n') : String(rawStr || '');
@@ -2841,16 +2870,17 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         return false;
     }
 
-    async function fetchGoogleLabelTileImagePm(tx, ty, z) {
+        async function fetchGoogleLabelTileImagePm(tx, ty, z) {
         const sub = Math.abs(tx + ty) % 4;
-        // แนบ &_ai=1 เพื่อให้ sw.js ข้ามการแคชลง TILE_CACHE_NAME ไม่ไปเบียดแผ่นแผนที่ออฟไลน์ของช่าง
-        const rawUrl = `https://mt${sub}.google.com/vt/lyrs=m&hl=th&x=${tx}&y=${ty}&z=${z}&scale=2`;
+        const baseTileUrl = `https://mt${sub}.google.com/vt/lyrs=m&hl=th&x=${tx}&y=${ty}&z=${z}&scale=2`;
+        // แนบ &_ai=1 เฉพาะการยิงตรง เพื่อให้ sw.js ข้าม TILE_CACHE_NAME ไม่ติด Opaque CORS และไม่เบียดแคชแผนที่ออฟไลน์
+        const directUrl = `${baseTileUrl}&_ai=1`;
         const candidates = [];
-        if (!directGoogleTileCorsBlocked) candidates.push({ url: rawUrl, isDirect: true });
+        if (!directGoogleTileCorsBlocked) candidates.push({ url: directUrl, isDirect: true });
         candidates.push(
-            { url: `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&output=png`, isDirect: false },
-            { url: `https://corsproxy.io/?url=${encodeURIComponent(rawUrl)}`, isDirect: false },
-            { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(rawUrl)}`, isDirect: false }
+            { url: `https://wsrv.nl/?url=${encodeURIComponent(baseTileUrl)}&output=png`, isDirect: false },
+            { url: `https://corsproxy.io/?url=${encodeURIComponent(baseTileUrl)}`, isDirect: false },
+            { url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(baseTileUrl)}`, isDirect: false }
         );
 
         for (const cand of candidates) {
@@ -3128,10 +3158,13 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                 const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
                 const timer = ctrl ? setTimeout(() => ctrl.abort(), 22000) : null;
                 try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`;
                     const res = await _origFetchForPm(url, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': apiKey
+                        },
                         body: JSON.stringify({
                             contents: [{
                                 parts: [
@@ -3152,8 +3185,8 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                     }
 
                     const errMsg = String(data?.error?.message || `HTTP ${res.status}`);
-                    if (res.status === 400 || res.status === 403) {
-                        if (/API_KEY_INVALID|API key not valid|key expired|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
+                    if (res.status === 400 || res.status === 401 || res.status === 403) {
+                        if (res.status === 401 || /API_KEY_INVALID|API key not valid|key expired|UNAUTHENTICATED|API_KEY_HTTP_REFERRER_BLOCKED|Requests from referer/i.test(errMsg)) {
                             const keyErr = new Error('API Key ไม่ถูกต้อง ถูกจำกัดสิทธิ์โดเมน หรือหมดอายุ กรุณาตั้งค่าคีย์ AI ใหม่');
                             keyErr.isInvalidKey = true;
                             throw keyErr;
@@ -3571,7 +3604,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
 
         if (!document.getElementById('pmAiKeyConfigModal')) {
             document.body.insertAdjacentHTML('beforeend', `
-                <div id="pmAiKeyConfigModal" onclick="if(event.target===this) closePmAiKeyModal();" class="fixed inset-0 bg-slate-950/80 hidden z-[1496] flex items-center justify-center p-3 backdrop-blur-sm">
+                <div id="pmAiKeyConfigModal" onclick="if(event.target===this) closePmAiKeyModal();" class="fixed inset-0 bg-slate-950/80 hidden z-[1475] flex items-center justify-center p-3 backdrop-blur-sm">
                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-emerald-400 flex flex-col">
                         <div class="px-4 py-3 bg-gradient-to-r from-emerald-700 via-teal-700 to-slate-900 text-white flex justify-between items-center">
                             <h3 class="font-extrabold text-sm">🔑 ตั้งค่า API Key AI อ่านป้ายชื่อแผนที่</h3>
@@ -3583,14 +3616,14 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                             <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 space-y-1.5 text-[11px] text-slate-700">
                                 <div class="font-extrabold text-emerald-900">วิธีรับคีย์ฟรี (แยกโควตาเฉพาะกลุ่ม 100% ไม่ต้องใช้บัตรเครดิต):</div>
                                 <div>1. กดปุ่มด้านล่าง ล็อกอินด้วย Gmail ประจำกลุ่ม/สาขา</div>
-                                <div>2. กด <b>Create API key in new project</b> (สำคัญ: ต้องสร้างใน Project ใหม่ โควตาถึงจะแยกขาดกัน 100%)</div>
+                                <div>2. กด <b>Create API key</b> แล้วคัดลอกรหัส (รองรับทั้ง <b>AIza...</b> และ <b>AQ....</b>) มาวางด้านล่าง</div>
                                 <div class="pt-1">
                                     <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-3 py-1.5 rounded-lg text-[11px] shadow-sm">🔗 เปิดหน้าขอรับ API Key ฟรี (Google AI Studio)</a>
                                 </div>
                             </div>
                             <div>
                                 <label class="block font-extrabold text-slate-700 mb-1">วางรหัส Gemini API Key ของกลุ่มนี้:</label>
-                                <input type="text" id="pmAiKeyInput" onkeydown="if(event.key==='Enter'){event.preventDefault();savePmGroupAiKeyFromModal();}" placeholder="AIzaSy..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 rounded-xl bg-white border-2 border-slate-300 focus:border-emerald-500 focus:outline-none font-mono text-xs text-slate-900">
+                                <input type="text" id="pmAiKeyInput" onkeydown="if(event.key==='Enter'){event.preventDefault();savePmGroupAiKeyFromModal();}" placeholder="AIzaSy... หรือ AQ...." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" style="-webkit-text-security:disc;text-security:disc;" class="w-full px-3 py-2 rounded-xl bg-white border-2 border-slate-300 focus:border-emerald-500 focus:outline-none font-mono text-xs text-slate-900">
                             </div>
                         </div>
                         <div class="p-3 bg-white border-t space-y-2">
@@ -3805,6 +3838,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         };
 
         el.addEventListener('pointerdown', ev => {
+            if (ev.isPrimary === false) return;
             if (!tempPubEnabled || pubDrawSubMode !== 'poly_lasso') return;
             if (ev.target.closest('.leaflet-control')) return;
             ev.preventDefault(); ev.stopPropagation();
@@ -3817,7 +3851,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         }, { passive: false });
 
         el.addEventListener('pointermove', ev => {
-            if (!isLassoDragging) return;
+            if (ev.isPrimary === false || !isLassoDragging) return;
             ev.preventDefault();
             const ll = evToLatLng(ev);
             const prev = lassoRawPts[lassoRawPts.length - 1];
@@ -3828,7 +3862,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         }, { passive: false });
 
         const finishLasso = ev => {
-            if (!isLassoDragging) return;
+            if (ev.isPrimary === false || !isLassoDragging) return;
             isLassoDragging = false;
             lastLassoFinishMs = Date.now();
             try { el.releasePointerCapture(ev.pointerId); } catch (e) {}
@@ -4165,7 +4199,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
             safeToast(tempZoneType === 'p' ? '⚠️ กรุณาปักมุมหรือลากนิ้วตีกรอบบนแผนที่อย่างน้อย 3 มุม' : '⚠️ กรุณาแตะเลือกจุดศูนย์กลางวงเรดาร์บนแผนที่ก่อนบันทึก');
             return;
         }
-        if (!parsedCoord && finalOz) {
+        if (tempPubEnabled && !parsedCoord && finalOz) {
             parsedCoord = getZoneSafeSamplePointPm(finalOz);
         }
 
@@ -4458,7 +4492,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         window.addEventListener('storage', e => {
         if (e.key === PM_REPEAT_EVERY_MIN_KEY) { isPmRepeatEveryMin = e.newValue !== 'false'; updatePmSoundAndNotifButtonsUI(); }
         else if (e.key === PM_SOUND_KEY) { isPmSoundEnabled = e.newValue !== 'false'; updatePmSoundAndNotifButtonsUI(); }
-        else if (e.key && e.key.startsWith(PM_GROUP_AI_KEY_PREFIX)) { updateGroupAiKeyButtonsUI(); }
+        else if (e.key && e.key.startsWith(PM_GROUP_AI_KEY_PREFIX)) { resetPmVisionModelCaches(); updateGroupAiKeyButtonsUI(); }
         else if (e.key === PM_ACK_LOG_KEY && !hasAnyUnackedActiveAlertNow()) { isPopupOpenedByForcePreview = false; document.getElementById('pmAlertPopupModal')?.classList.add('hidden'); }
     });
     bindLeafletMapHooks();
