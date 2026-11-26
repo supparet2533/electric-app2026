@@ -1,8 +1,8 @@
 // ============================================================================
-// 🎙️🌸 PEA SMART GRID — GEMINI LIVE VOICE PR PRESENTER & ASSISTANT v2.4 (pea-live-voice.js)
+// 🎙️🌸 PEA SMART GRID — GEMINI LIVE VOICE PR PRESENTER & ASSISTANT v2.7 (pea-live-voice.js)
 // ระบบผู้ช่วยเสียงพูดสดสองทาง (WebSocket BidiGenerateContent + Function Calling)
-// รองรับคีย์ AIza & AQ. + พรีเซนต์ "ระบบสกาด้าจำลอง" (จำลองการจ่ายไฟ ไม่ใช่งานโอเปอเรทจริง)
-// ============================================================================
+// รองรับคีย์ AIza & AQ. + สาธิตสกาด้าจำลอง (คืนค่าฟอร์มอัตโนมัติ) + แผน PM ถึงเรดาร์ผู้ใช้ไฟ
+// ==================== เริ่มพาทที่ 1 / 2 ====================
 (function () {
     'use strict';
 
@@ -12,12 +12,31 @@
     const Core = window.PeaCore;
     const SHARED_GROUP_AI_KEY_PREFIX = 'elec_pm_ai_vision_key_v1__';
     const VOICE_PREF_STORAGE_KEY = 'elec_live_voice_name_v1';
-    const RESUME_STATE_STORAGE_PREFIX = 'elec_live_resume_v2__';
+    const RESUME_STATE_STORAGE_PREFIX = 'elec_live_resume_v5__';
     const RESUME_HANDLE_TTL_MS = 2 * 60 * 60 * 1000;
     const MAX_AUTO_RECONNECT_ATTEMPTS = 6;
     const SPEAKER_ECHO_GATE_RMS = 0.045;
     const BARGE_IN_MIN_MS = 120; // ต้องมีเสียงพูดต่อเนื่อง >= 120ms ป้องกันเสียงเคาะจอตัดบทพูด
     const POST_TURN_BARGE_WINDOW_MS = 4500;
+    const DEMO_PM_DRAFT_TITLE = 'แผนดับไฟปรับปรุงระบบจำหน่าย 22kV และตัดรอนกิ่งไม้ (ตัวอย่างสาธิต)';
+
+    const PRESENTATION_SYNC_TOOLS = new Set([
+        'navigateAppScreen',
+        'demoCalculate22kVFuse',
+        'demoScadaFaultSearch',
+        'demoScadaSwitchSimulation',
+        'demoPmOutageRadarStep'
+    ]);
+
+    const TAB1_DEMO_FIELD_IDS = [
+        'timeInput', 'systemSelect', 'circuitSelect', 'stationValue',
+        'causeSelect', 'countSelect', 'tlSelect', 'phaseSelect',
+        'currA', 'currB', 'currC', 'currG', 'distanceInput', 'zoneInput',
+        'tambonSelect', 'weatherSelect', 'presentCurrInput',
+        'deviceInput', 'disconnectDeviceInput', 'powerUpToDeviceInput',
+        'powerUpTimeInput', 'reporterInput', 'gpsInput',
+        'tab1QuickFaultKmInput', 'tab1QuickFaultAmpInput'
+    ];
 
     const FEMALE_VOICE_PROFILES = {
         Aoede: { id: 'Aoede', label: '🌸 นุ่มนวลอบอุ่น (Aoede)' },
@@ -44,6 +63,12 @@
     let pendingTopicCueAfterConnect = '';
     let pendingAutoPresentAfterConnect = false;
     let openedLeftDockByVoice = false;
+    let activatedSimByVoice = false;
+    let openedPmDraftByVoice = false;
+    let demoFaultHighlightLayer = null;
+    let tab1DemoBackup = null;
+    let isApplyingTab1DemoFill = false;
+    let tab1GuardBound = false;
     let lastKnownGroupApiKey = '';
     let lastTrackRecoveryAtMs = 0;
 
@@ -120,7 +145,7 @@
     });
 
     // ========================================================================
-    // 1. Helpers กลุ่มสังกัด, API Key ประจำกลุ่ม & จัดการ Resumption Handle (จำบทสนทนา 2 ชม.)
+    // 1. Helpers กลุ่มสังกัด, สำรอง/คืนค่าฟอร์ม, โมดอลเรดาร์ประชาชน & Resumption
     // ========================================================================
     function rawGet(key) {
         try {
@@ -146,6 +171,15 @@
     function isViewer() {
         if (typeof window.isViewerRole === 'function') return Boolean(window.isViewerRole());
         return (rawGet('elec_app_current_role') || '').trim() === 'viewer';
+    }
+
+    function canEditPmAndScadaSafe() {
+        if (!isLoggedIn() || isViewer()) return false;
+        if (Core?.simSandbox?.active) return false;
+        if (typeof window.canCurrentUserEditScada === 'function') {
+            return Boolean(window.canCurrentUserEditScada());
+        }
+        return (rawGet('elec_app_current_role') || 'user').trim() !== 'tech';
     }
 
     function normGroup(raw) {
@@ -182,7 +216,6 @@
     function openKeySetupModalFallback() {
         if (typeof window.openApiKeyModal === 'function') {
             window.openApiKeyModal();
-            // อยู่หน้าแผงคุยสด (1470) แต่อยู่หลังป๊อปอัปแจ้งเตือน (1480) และ Toast (1500)
             const mainKeyModal = document.getElementById('apiKeyModal');
             if (mainKeyModal) mainKeyModal.style.zIndex = '1475';
             return;
@@ -251,11 +284,422 @@
         } catch (e) {}
     }
 
+    // สำรองและคืนค่าฟอร์มแท็บ 1 อัตโนมัติเมื่อจบการสาธิตหากระแสฟอลต์ (ไม่ให้ค่าสมมติค้างทับงานจริง)
+    function discardTab1DemoBackup() {
+        tab1DemoBackup = null;
+    }
+
+    function ensureTab1ManualEditGuardBound() {
+        if (tab1GuardBound) return;
+        const formEl = document.getElementById('sortable-tab1');
+        if (!formEl) return;
+        tab1GuardBound = true;
+        const onUserTouchForm = (ev) => {
+            if (ev.isTrusted && !isApplyingTab1DemoFill && tab1DemoBackup) {
+                discardTab1DemoBackup();
+            }
+        };
+        formEl.addEventListener('input', onUserTouchForm, true);
+        formEl.addEventListener('change', onUserTouchForm, true);
+        document.querySelectorAll('button[onclick*="saveAndCopyFault"]').forEach(btn => {
+            btn.addEventListener('click', () => discardTab1DemoBackup(), true);
+        });
+    }
+
+    function snapshotTab1BeforeDemo() {
+        ensureTab1ManualEditGuardBound();
+        if (tab1DemoBackup || !document.getElementById('sortable-tab1')) return;
+        if (rawGet('elec_editing_fault_id')) return;
+        const values = {};
+        TAB1_DEMO_FIELD_IDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) values[id] = el.value;
+        });
+        const stDisp = document.getElementById('stationTypeDisplay');
+        let rawDraft = null;
+        try { rawDraft = localStorage.getItem('elec_draft_tab1_fault'); } catch (e) {}
+        tab1DemoBackup = {
+            values,
+            stationDispText: stDisp ? stDisp.textContent : '',
+            stationDispCls: stDisp ? stDisp.className : '',
+            rawDraft,
+            wasTimeManual: Boolean(window.isTimeManuallyEdited)
+        };
+    }
+
+    function restoreTab1DemoBackupIfNeeded() {
+        if (!tab1DemoBackup) return;
+        const snap = tab1DemoBackup;
+        tab1DemoBackup = null;
+        if (!document.getElementById('sortable-tab1') || rawGet('elec_editing_fault_id')) return;
+        isApplyingTab1DemoFill = true;
+        try {
+            const sysEl = document.getElementById('systemSelect');
+            if (sysEl && snap.values.systemSelect !== undefined) {
+                sysEl.value = snap.values.systemSelect;
+                window.updateCircuitDropdown?.();
+            }
+            TAB1_DEMO_FIELD_IDS.forEach(id => {
+                if (id === 'systemSelect') return;
+                const el = document.getElementById(id);
+                if (el && snap.values[id] !== undefined) el.value = snap.values[id];
+            });
+            const stDisp = document.getElementById('stationTypeDisplay');
+            if (stDisp && snap.stationDispText) {
+                stDisp.textContent = snap.stationDispText;
+                if (snap.stationDispCls) stDisp.className = snap.stationDispCls;
+            }
+            try {
+                if (snap.rawDraft !== null && snap.rawDraft !== undefined) {
+                    localStorage.setItem('elec_draft_tab1_fault', snap.rawDraft);
+                } else {
+                    localStorage.removeItem('elec_draft_tab1_fault');
+                }
+            } catch (e) {}
+            if ('isTimeManuallyEdited' in window) {
+                window.isTimeManuallyEdited = snap.wasTimeManual;
+            }
+            if (!snap.values.gpsInput && typeof window.updateMapPreviewTab1 === 'function') {
+                window.updateMapPreviewTab1(null);
+            }
+            window.checkAndRenderFormScadaWarnings?.();
+        } catch (e) {} finally {
+            isApplyingTab1DemoFill = false;
+        }
+    }
+
+    function getPublicOutageRadarUrl(forcePercentEncode = false) {
+        const grp = String(getActiveVoiceGroup() || 'กฟส.บึง').trim();
+        const grpParam = (forcePercentEncode || /\s/.test(grp)) ? encodeURIComponent(grp) : grp;
+        try {
+            const base = new URL('./outage-map.html', window.location.href);
+            return `${base.origin}${base.pathname}?g=${grpParam}`;
+        } catch (e) {
+            return `outage-map.html?g=${encodeURIComponent(grp)}`;
+        }
+    }
+
+    function copyPeaLivePublicRadarLink() {
+        if (typeof window.copyPublicOutageMapLink === 'function') {
+            window.copyPublicOutageMapLink();
+            return;
+        }
+        const url = getPublicOutageRadarUrl(false);
+        const msg = `📡 แผนที่ตรวจสอบพื้นที่แผนดับไฟล่วงหน้า (${getActiveVoiceGroup()})\nตรวจสอบพิกัดบ้านหรือสถานประกอบการของคุณได้ที่:\n${url}`;
+        if (typeof window.copyTextToClipboard === 'function') {
+            window.copyTextToClipboard(msg, '📋 คัดลอกลิงก์เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟแล้ว!');
+        } else if (navigator.clipboard) {
+            navigator.clipboard.writeText(msg).then(() => safeToast('📋 คัดลอกลิงก์เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟแล้ว!')).catch(() => {});
+        }
+    }
+
+    function openPeaLivePublicRadarPreview(activeZonesCount = 0) {
+        const grp = getActiveVoiceGroup();
+        const safeIframeUrl = getPublicOutageRadarUrl(true);
+        const displayShareUrl = getPublicOutageRadarUrl(false);
+        let modal = document.getElementById('peaLivePublicRadarModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'peaLivePublicRadarModal';
+            modal.className = 'fixed inset-0 z-[1450] hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-0 pb-[62px] sm:p-4';
+            modal.onclick = (e) => { if (e.target === modal) closePeaLivePublicRadarPreview(); };
+            modal.innerHTML = `
+                <div class="bg-slate-900 text-white rounded-none sm:rounded-3xl shadow-2xl w-full max-w-5xl h-full sm:h-[88dvh] overflow-hidden flex flex-col border-0 sm:border-2 sm:border-rose-400/80">
+                    <div class="px-3.5 pb-2.5 pt-[max(0.65rem,env(safe-area-inset-top))] sm:py-2.5 bg-gradient-to-r from-rose-700 via-pink-700 to-indigo-900 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-300 animate-ping shrink-0"></span>
+                            <div class="min-w-0">
+                                <div class="text-xs sm:text-sm font-extrabold truncate flex items-center gap-1.5">
+                                    <span>📡 แผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ</span>
+                                    <span id="peaLiveRadarGrpBadge" class="bg-black/30 text-amber-300 px-2 py-0.5 rounded-md text-[10px] font-extrabold shrink-0"></span>
+                                </div>
+                                <div id="peaLiveRadarSubHint" class="text-[10px] text-rose-100 truncate">มุมมองเว็บสาธารณะ (outage-map.html) — ผู้ใช้ไฟกดเช็กพิกัด GPS บ้านตนเองได้ทันทีโดยไม่ต้องล็อกอิน</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0 ml-auto">
+                            <button type="button" onclick="copyPeaLivePublicRadarLink()" class="bg-white/15 hover:bg-white/25 text-white px-2.5 py-1 rounded-xl text-[11px] font-extrabold border border-white/25">🔗 คัดลอกลิงก์</button>
+                            <a id="peaLiveRadarExtLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-amber-400 hover:bg-amber-300 text-slate-950 px-2.5 py-1 rounded-xl text-[11px] font-extrabold shadow">↗ เปิดแท็บเต็ม</a>
+                            <button type="button" onclick="closePeaLivePublicRadarPreview()" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 rounded-xl text-[11px] font-extrabold border border-white/50 shadow">✕ ปิด</button>
+                        </div>
+                    </div>
+                    <iframe id="peaLivePublicRadarIframe" src="about:blank" allow="geolocation" title="แผนที่เรดาร์ตรวจสอบพื้นที่ไฟดับสำหรับประชาชน" class="w-full flex-1 bg-slate-950 border-0"></iframe>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        const grpBadge = document.getElementById('peaLiveRadarGrpBadge');
+        if (grpBadge) grpBadge.textContent = `🏢 ${grp}`;
+        const extLink = document.getElementById('peaLiveRadarExtLink');
+        if (extLink) extLink.href = displayShareUrl;
+        const subHint = document.getElementById('peaLiveRadarSubHint');
+        if (subHint) {
+            subHint.textContent = activeZonesCount > 0
+                ? `🟢 กำลังแสดงโซนแผนดับไฟจริงของ ${grp} (${activeZonesCount} โซน) • ผู้ใช้ไฟกดเช็ก GPS บ้านตนเองได้ทันที`
+                : `💡 หน้าเว็บจริงสำหรับประชาชน (${grp}) • เมื่อเปิดสวิตช์เรดาร์ในแผน PM โซนสีแดงจะแสดงให้ผู้ใช้ไฟเช็กพิกัดทันที`;
+        }
+
+        const iframe = document.getElementById('peaLivePublicRadarIframe');
+        if (iframe && iframe.getAttribute('data-loaded-radar') !== safeIframeUrl) {
+            iframe.src = safeIframeUrl;
+            iframe.setAttribute('data-loaded-radar', safeIframeUrl);
+        }
+        modal.classList.remove('hidden');
+    }
+
+    function closePeaLivePublicRadarPreview() {
+        const modal = document.getElementById('peaLivePublicRadarModal');
+        if (modal && !modal.classList.contains('hidden')) {
+            modal.classList.add('hidden');
+        }
+        const iframe = document.getElementById('peaLivePublicRadarIframe');
+        if (iframe && iframe.getAttribute('src') !== 'about:blank') {
+            iframe.src = 'about:blank';
+            iframe.removeAttribute('data-loaded-radar');
+        }
+    }
+
+    function buildSampleAnnouncementTextForVoice(grp, styleMode = 'facebook') {
+        const radarUrl = getPublicOutageRadarUrl(false);
+        const dStr = new Date().toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+        const places = `ชุมชนและสถานประกอบการในรัศมีเรดาร์ 350 เมตร, หอพักและหมู่บ้านริมแนวสายส่ง (${grp})`;
+        const cause = 'ปรับปรุงสายแรงสูง 22kV และตัดรอนกิ่งไม้ใกล้แนวสายเพื่อป้องกันกระแสไฟฟ้าขัดข้อง';
+        if (styleMode === 'line') {
+            return [
+                `⚡ แจ้งแผนดับไฟปฏิบัติงาน (${grp})`,
+                `🗓️ ${dStr}`,
+                `⏰ เวลา 09.00-15.00 น. (โดยประมาณ)`,
+                `🛠️ สาเหตุ: ${cause}`,
+                `📍 พื้นที่ไฟดับ: ${places}`,
+                `📡 เช็กพิกัดบ้านในเขตไฟดับได้ที่:`,
+                radarUrl,
+                `🙏 ขออภัยในความไม่สะดวก (หากเสร็จก่อนกำหนดจะจ่ายไฟทันทีครับ)`
+            ].join('\n');
+        }
+        return [
+            `📢 ประชาสัมพันธ์แจ้งแผนดับกระแสไฟฟ้าชั่วคราว`,
+            `🏢 การไฟฟ้าส่วนภูมิภาค (${grp})`,
+            `━━━━━━━━━━━━━━━━━━`,
+            `🗓️ วันที่ : ${dStr}`,
+            `⏰ เวลา : 09.00-15.00 น. (โดยประมาณ)`,
+            `🛠️ งานที่ปฏิบัติ : ${cause}`,
+            ``,
+            `📍 พื้นที่ได้รับผลกระทบ (บริเวณไฟดับ) :`,
+            places,
+            ``,
+            `📡 ตรวจสอบพิกัดหลังคาบ้าน/สถานประกอบการของท่านบนเรดาร์แผนที่ได้ที่ :`,
+            radarUrl,
+            `━━━━━━━━━━━━━━━━━━`,
+            `🙏 การไฟฟ้าส่วนภูมิภาค (${grp}) ขออภัยในความไม่สะดวกมา ณ ที่นี้ ทั้งนี้หากปฏิบัติงานแล้วเสร็จก่อนกำหนด จะดำเนินการจ่ายกระแสไฟฟ้าให้ตามปกติทันทีครับ`
+        ].join('\n');
+    }
+
+    function closeVoiceOpenedPmDraftOnly() {
+        const annModal = document.getElementById('pmPublicAnnounceModal');
+        if (annModal) {
+            annModal.style.zIndex = '';
+            delete annModal.dataset.voiceDemoFallback;
+            if (!annModal.classList.contains('hidden')) {
+                window.closePmPublicAnnounceModal?.();
+                annModal.classList.add('hidden');
+            }
+        }
+        const formModal = document.getElementById('pmPlanFormModal');
+        if (openedPmDraftByVoice) {
+            openedPmDraftByVoice = false;
+            if (formModal && !formModal.classList.contains('hidden') && formModal.dataset.voiceDemoDraft === '1') {
+                delete formModal.dataset.voiceDemoDraft;
+                window.closePmPlanFormModal?.(true);
+            }
+        } else if (formModal?.dataset.voiceDemoDraft) {
+            delete formModal.dataset.voiceDemoDraft;
+        }
+    }
+
+    function closeVoiceOpenedPmAndRadarModals() {
+        closePeaLivePublicRadarPreview();
+        closeVoiceOpenedPmDraftOnly();
+        window.closePmCalendarModal?.();
+    }
+
+    function pickRepresentativeBranchCoord() {
+        const grp = getActiveVoiceGroup();
+        try {
+            const plans = JSON.parse(rawGet('elec_pm_calendar_plans_v1') || '[]');
+            const pWithCoord = plans.find(p => p && !p.pmDeleted && normGroup(p.ownerGroup || 'กฟส.บึง') === grp && !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lon)));
+            if (pWithCoord) return { lat: Number(parseFloat(pWithCoord.lat).toFixed(6)), lon: Number(parseFloat(pWithCoord.lon).toFixed(6)) };
+        } catch (e) {}
+        try {
+            const delPins = JSON.parse(rawGet('elec_deleted_labeled_places_map') || '{}');
+            const pins = JSON.parse(rawGet('elec_labeled_places_list') || '[]');
+            const pin = pins.find(p => p?.id && !delPins[p.id] && normGroup(p.ownerGroup || 'กฟส.บึง') === grp && !isNaN(parseFloat(p.lat)) && !isNaN(parseFloat(p.lon)));
+            if (pin) return { lat: Number(parseFloat(pin.lat).toFixed(6)), lon: Number(parseFloat(pin.lon).toFixed(6)) };
+        } catch (e) {}
+        try {
+            const tambons = JSON.parse(rawGet('tambonCoordinates_custom') || '{}');
+            const firstTb = Object.values(tambons)[0];
+            if (firstTb && !isNaN(parseFloat(firstTb.lat)) && !isNaN(parseFloat(firstTb.lon))) {
+                return { lat: Number(parseFloat(firstTb.lat).toFixed(6)), lon: Number(parseFloat(firstTb.lon).toFixed(6)) };
+            }
+        } catch (e) {}
+        const kc = window.lastKnownTechCoords;
+        if (kc && !isNaN(parseFloat(kc.lat)) && !isNaN(parseFloat(kc.lon ?? kc.lng))) {
+            return { lat: Number(parseFloat(kc.lat).toFixed(6)), lon: Number(parseFloat(kc.lon ?? kc.lng).toFixed(6)) };
+        }
+        return { lat: 13.1361, lon: 101.0322 };
+    }
+
+    // ค้นหาหน้าต่างแผนที่ SCADA แม้ผู้ใช้พับเก็บกรอบซ้ายไปแล้ว เพื่อล้างวงกลมและปิด Sandbox ได้ครบ 100%
+    function getAnyScadaWindowRef() {
+        if (!document.getElementById('mainAppContent')) return window;
+        const iframe = document.getElementById('leftBrowserIframe');
+        if (iframe?.contentWindow) {
+            try {
+                const srcAttr = iframe.getAttribute('src') || '';
+                if (srcAttr.includes('page2.html') || iframe.contentWindow.__labeledLeafletMap) {
+                    return iframe.contentWindow;
+                }
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    function clearDemoFaultHighlightLayer(scadaWinOpt) {
+        if (!demoFaultHighlightLayer) return;
+        try { demoFaultHighlightLayer.remove?.(); } catch (e) {}
+        try {
+            const w = scadaWinOpt || getAnyScadaWindowRef() || window;
+            w?.__labeledLeafletMap?.removeLayer?.(demoFaultHighlightLayer);
+        } catch (e) {}
+        demoFaultHighlightLayer = null;
+    }
+
+    function exitVoiceActivatedSimModeIfNeeded(scadaWinOpt) {
+        clearDemoFaultHighlightLayer(scadaWinOpt);
+        if (!activatedSimByVoice) return;
+        activatedSimByVoice = false;
+        const w = scadaWinOpt || getAnyScadaWindowRef();
+        if (!w) return;
+        try {
+            const isSimOn = Boolean(w.PeaCore?.simSandbox?.active || w.document?.body?.classList.contains('scada-sim-active'));
+            if (!isSimOn) return;
+            if (typeof w.toggleScadaSimMode === 'function') {
+                w.toggleScadaSimMode(false);
+            } else {
+                w.document?.getElementById('btnToggleScadaSimMode')?.click();
+            }
+        } catch (e) {}
+    }
+
     function closeVoiceOpenedLeftDockIfNeeded() {
+        exitVoiceActivatedSimModeIfNeeded();
+        restoreTab1DemoBackupIfNeeded();
         if (window.innerWidth < 1024 || openedLeftDockByVoice) {
             openedLeftDockByVoice = false;
             window.closeLeftWebBrowser?.();
         }
+    }
+
+    // เปิดหน้าจอผังระบบสกาด้าจำลองโดยสลับแท็บเพียงครั้งเดียว ไม่สั่งซ้ำรัวๆ ระหว่างรอแผนที่พร้อม
+    async function ensureScadaMapWindowReady() {
+        setDockMinimized(true);
+        closeVoiceOpenedPmAndRadarModals();
+        const isMainPage = Boolean(document.getElementById('mainAppContent'));
+
+        if (!isMainPage) {
+            window.switchTechMainTab?.('map');
+            for (let i = 0; i < 25; i++) {
+                if (window.__labeledLeafletMap) {
+                    try { window.__labeledLeafletMap.invalidateSize(); } catch (e) {}
+                    return window;
+                }
+                await new Promise(r => setTimeout(r, 150));
+            }
+            return window;
+        }
+
+        const leftDockEl = document.getElementById('leftBrowserDock');
+        const iframe = document.getElementById('leftBrowserIframe');
+        const isAlreadyScada = leftDockEl && !leftDockEl.classList.contains('hidden') && (iframe?.getAttribute('src') || '').includes('page2.html');
+
+        if (!isAlreadyScada) {
+            if (!leftDockEl || leftDockEl.classList.contains('hidden')) {
+                openedLeftDockByVoice = true;
+            }
+            window.switchTab?.('tab1');
+            window.openScadaDiagramWorkspace?.();
+        }
+
+        let switchedTabOnce = false;
+        for (let i = 0; i < 34; i++) {
+            const fEl = document.getElementById('leftBrowserIframe');
+            try {
+                const cw = fEl?.contentWindow;
+                if (cw && cw.document?.readyState === 'complete') {
+                    if (!switchedTabOnce && typeof cw.switchTechMainTab === 'function') {
+                        switchedTabOnce = true;
+                        cw.switchTechMainTab('map');
+                    }
+                    if (cw.__labeledLeafletMap) {
+                        cw.__labeledLeafletMap.invalidateSize?.();
+                        return cw;
+                    }
+                }
+            } catch (e) {}
+            await new Promise(r => setTimeout(r, 150));
+        }
+        return document.getElementById('leftBrowserIframe')?.contentWindow || null;
+    }
+
+    function getBranchScadaPinsFromWin(scadaWin) {
+        const grp = getActiveVoiceGroup();
+        const w = scadaWin || window;
+        try {
+            const rawDel = w.PeaCore?.rawStorageGet ? w.PeaCore.rawStorageGet('elec_deleted_labeled_places_map') : rawGet('elec_deleted_labeled_places_map');
+            const delMap = JSON.parse(rawDel || '{}');
+            let list = [];
+            if (w.PeaCore?.simSandbox?.active && w.localStorage) {
+                list = JSON.parse(w.localStorage.getItem('elec_labeled_places_list') || '[]');
+            } else {
+                const rawPins = w.PeaCore?.rawStorageGet ? w.PeaCore.rawStorageGet('elec_labeled_places_list') : rawGet('elec_labeled_places_list');
+                list = JSON.parse(rawPins || '[]');
+            }
+            return list.filter(p => p?.id && !delMap[p.id] && p.scadaNode && normGroup(p.ownerGroup || 'กฟส.บึง') === grp);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function findLeafletMarkerForPin(scadaWin, map, pin) {
+        if (!map || !pin) return null;
+        if (scadaWin?.labeledPlaceMarkersMap?.[pin.id]) return scadaWin.labeledPlaceMarkersMap[pin.id];
+        if (scadaWin?.scadaMarkersById?.[pin.id]) return scadaWin.scadaMarkersById[pin.id];
+
+        let exactById = null;
+        let nearestMarker = null;
+        let minDist = Infinity;
+        const pLat = parseFloat(pin.lat), pLon = parseFloat(pin.lon);
+
+        map.eachLayer(layer => {
+            if (exactById || typeof layer?.getLatLng !== 'function' || typeof layer?.openPopup !== 'function') return;
+            const popHtml = String(layer.getPopup?.()?.getContent?.() || '');
+            const iconHtml = String(layer.options?.icon?.options?.html || '');
+            // ข้ามหมุดแผนงาน PM เพื่อไม่ให้หยิบผิดตัวเมื่อปักทับพิกัดเดียวกัน
+            if (popHtml.includes('หมุดแผนงาน PM') || iconHtml.includes('pm-plan-pin-wrap')) return;
+            if (pin.id && popHtml.includes(pin.id)) {
+                exactById = layer;
+                return;
+            }
+            const ll = layer.getLatLng();
+            if (ll && !isNaN(pLat) && !isNaN(pLon)) {
+                const d = Math.hypot(ll.lat - pLat, ll.lng - pLon);
+                if (d < minDist && d < 0.0008) {
+                    minDist = d;
+                    nearestMarker = layer;
+                }
+            }
+        });
+        return exactById || nearestMarker;
     }
 
     // ========================================================================
@@ -338,7 +782,7 @@
     }
 
     // ========================================================================
-    // 3. ข้อมูลสถิติสด & เครื่องมือควบคุมหน้าจอ (ซิงค์จังหวะสลับหน้าจอกับคิวเสียงพูดจริง)
+    // 3. ข้อมูลสถิติสด & เครื่องมือควบคุมหน้าจอ (รวมสาธิตสกาด้าจำลอง + แผน PM ถึงเรดาร์ผู้ใช้ไฟ)
     // ========================================================================
     function collectLiveSystemSnapshot() {
         const isMainPage = Boolean(document.getElementById('mainAppContent'));
@@ -347,10 +791,21 @@
         const userDisplay = typeof window.formatTechDisplayName === 'function' ? window.formatTechDisplayName(rawUser) : (rawUser || 'ผู้ใช้งาน');
 
         let scadaPinsCount = 0, pmPendingCount = 0, pmDoneCount = 0, pmPublicRadarCount = 0;
+        const sampleSwitchNames = [];
+        const sampleFeeders = new Set();
         try {
             const delPins = JSON.parse(rawGet('elec_deleted_labeled_places_map') || '{}');
             const pins = JSON.parse(rawGet('elec_labeled_places_list') || '[]');
-            scadaPinsCount = pins.filter(p => p?.id && !delPins[p.id] && normGroup(p.ownerGroup || 'กฟส.บึง') === grp).length;
+            pins.forEach(p => {
+                if (!p?.id || delPins[p.id] || normGroup(p.ownerGroup || 'กฟส.บึง') !== grp) return;
+                scadaPinsCount++;
+                if (p.scadaNode) {
+                    if (p.scadaNode.fd) sampleFeeders.add(p.scadaNode.fd);
+                    if (sampleSwitchNames.length < 6 && ['VS', 'VSC', 'RC', 'CB', 'S', 'VB', 'DF'].includes(p.scadaNode.t)) {
+                        sampleSwitchNames.push(`${p.name}(${p.scadaNode.st || 'C'})`);
+                    }
+                }
+            });
         } catch (e) {}
         try {
             const plans = JSON.parse(rawGet('elec_pm_calendar_plans_v1') || '[]');
@@ -364,24 +819,30 @@
             });
         } catch (e) {}
 
+        const commonInfo = {
+            branchGroup: grp,
+            loggedInUser: userDisplay,
+            scadaEquipmentPins: scadaPinsCount,
+            availableFeeders: Array.from(sampleFeeders).slice(0, 8),
+            sampleSwitches: sampleSwitchNames,
+            pmPendingPlans: pmPendingCount,
+            pmPublicOutageZones: pmPublicRadarCount,
+            publicOutageRadarUrl: getPublicOutageRadarUrl(false)
+        };
+
         if (!isMainPage) {
             return {
                 currentPage: 'page2_technician_workspace',
-                branchGroup: grp,
-                loggedInUser: userDisplay,
+                ...commonInfo,
                 pendingJobs: document.getElementById('countPendingJobs')?.textContent || '0',
                 travelingJobs: document.getElementById('countTravelingJobs')?.textContent || '0',
-                doneJobs: document.getElementById('countDoneJobs')?.textContent || '0',
-                scadaEquipmentPins: scadaPinsCount,
-                pmPendingPlans: pmPendingCount,
-                pmPublicOutageZones: pmPublicRadarCount
+                doneJobs: document.getElementById('countDoneJobs')?.textContent || '0'
             };
         }
 
         return {
             currentPage: 'main_dispatch_workspace',
-            branchGroup: grp,
-            loggedInUser: userDisplay,
+            ...commonInfo,
             currentShift: document.getElementById('shift')?.value || '-',
             nextJobNo: document.getElementById('jobNo')?.value || '1',
             faultTotal: document.getElementById('statFaultTotal')?.textContent || '0',
@@ -391,10 +852,7 @@
             outageToday: document.getElementById('statOutageToday')?.textContent || '0',
             overdueCaDatabaseCount: document.getElementById('caCountBadge')?.textContent || '0',
             weatherStatus: (document.getElementById('liveWeatherStatus')?.textContent || '').trim(),
-            scadaEquipmentPins: scadaPinsCount,
-            pmPendingPlans: pmPendingCount,
-            pmCompletedPlans: pmDoneCount,
-            pmPublicOutageZones: pmPublicRadarCount
+            pmCompletedPlans: pmDoneCount
         };
     }
 
@@ -408,26 +866,35 @@
             'บุคลิก น้ำเสียง และข้อกำหนดสำคัญเรื่องระบบสกาด้าจำลอง:',
             '- ใช้เสียงผู้หญิงที่นุ่มนวล อบอุ่น สุภาพ ชัดถ้อยชัดคำ น่าเชื่อถือแบบนักประชาสัมพันธ์มืออาชีพ ลงท้ายด้วย "ค่ะ" หรือ "นะคะ" เสมอ',
             '- อ่านคำย่อทางวิศวกรรมไฟฟ้าให้เป็นธรรมชาติและฟังง่าย เช่น "กฟภ." อ่านว่า "การไฟฟ้าส่วนภูมิภาค", "22kV" อ่านว่า "ยี่สิบสองเควี", "115kV" อ่านว่า "หนึ่งร้อยสิบห้าเควี", "TR/TL" อ่านว่า "ทีอาร์ ทับ ทีแอล", "SCADA" อ่านว่า "สกาด้า", "LOTO" อ่านว่า "โลโต้", "CA" อ่านว่า "ซีเอ", "PM" อ่านว่า "พีเอ็ม"',
-            '- กฎเหล็กสำคัญมาก: ทุกครั้งที่พูดถึงผังวงจร SCADA ต้องเรียกว่า "ระบบสกาด้าจำลอง" เสมอ และต้องชี้แจงให้ชัดเจนว่า "เป็นการจำลองการจ่ายไฟและจำลองสถานะสวิตช์บนแผนที่เพื่อช่วยวางแผนและวิเคราะห์งานเท่านั้น ไม่ใช่งานโอเปอเรทสั่งสับปลดจ่ายไฟจริงในสนาม" ห้ามพูดให้เข้าใจผิดว่าเป็นการสั่งการอุปกรณ์ไฟฟ้าจริงเด็ดขาด',
+            '- กฎเหล็กสำคัญมาก: ทุกครั้งที่พูดถึงผังวงจร SCADA ต้องเรียกว่า "ระบบสกาด้าจำลอง" เสมอ และต้องชี้แจงให้ชัดเจนว่า "เป็นการจำลองการจ่ายไฟและจำลองสถานะสวิตช์บนแผนที่เพื่อช่วยวางแผนและวิเคราะห์งานเท่านั้น ไม่ใช่งานโอเปอเรทสั่งสับปลดจ่ายไฟจริงในสนาม และไม่กระทบข้อมูลจริง"',
+            '',
+            'ความสามารถในการลงมือสาธิตจริงบนหน้าจอ (ห้ามส่งคำสั่งเปิดหลายหน้าจอพร้อมกันในรอบเดียว ต้องเปิด 1 หน้า พูดอธิบายให้จบ 2-3 ประโยคก่อน แล้วจึงเรียกขั้นถัดไป):',
+            '- ระบบสกาด้าจำลอง: ใช้ demoScadaFaultSearch กรอกกระแสฟอลต์ชี้เป้าจุดเสีย และใช้ demoScadaSwitchSimulation เปิดโหมดจำลอง Sandbox เพื่อจำลองปลด-สับสวิตช์',
+            '- ระบบแผนงาน PM จนถึงแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ: ใช้ demoPmOutageRadarStep พาชมทีละขั้นตามลำดับ:',
+            '  1) step="calendar_overview": ตารางปฏิทินแผนงาน PM แนบรูปหน้างานสูงสุด 3 รูปส่งเข้า LINE และการตั้งเวลาแจ้งเตือนล่วงหน้า',
+            '  2) step="radar_zone_draft": สาธิตการตั้งค่าแผนดับไฟ วาดวงเรดาร์พื้นที่ไฟดับสีแดงบนแผนที่ และใช้ AI ดูดป้ายชื่อสถานที่ หอพัก หมู่บ้าน โรงงาน ในกรอบไฟดับอัตโนมัติ',
+            '  3) step="announce_post": สาธิตการสร้างข้อความประกาศแจ้งดับไฟสำหรับโพสต์เพจ Facebook และส่งกลุ่ม LINE พร้อมแนบลิงก์เรดาร์ให้ประชาชน',
+            '  4) step="public_radar_map": เปิดหน้าเว็บจริง "แผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ (outage-map.html)" อธิบายว่าผู้ใช้ไฟเปิดจากลิงก์ได้ทันทีโดยไม่ต้องล็อกอิน กดปุ่มเช็กพิกัด GPS ปัจจุบันจากมือถือ หรือเลื่อนหมุดตรวจสอบว่าบ้านหรือโรงงานอยู่ในเขตแผนดับไฟสีแดงหรือไม่ พร้อมดูวันเวลาและสาเหตุได้ด้วยตนเองตลอด 24 ชั่วโมง',
+            '  5) step="close_public_radar": ปิดหน้าต่างตัวอย่างเรดาร์เมื่อต้องการไปนำเสนอหน้าจออื่นต่อ',
             '',
             'กฎการทำงานเมื่อได้รับคำสั่ง "แนะนำระบบ" หรือ "พรีเซนต์ระบบ":',
             isMain
                 ? [
                     '1. กล่าวต้อนรับผู้บริหารหรือผู้รับฟังอย่างนุ่มนวล แนะนำชื่อระบบเครื่องมือจัดการงานไฟฟ้าแบบครบวงจรสำหรับศูนย์สั่งการและช่างภาคสนาม พัฒนาโดยคุณศุภเรศ ศรีคชา',
-                    '2. พาชมทีละหน้าจอโดยเรียกใช้เครื่องมือ navigateAppScreen ครั้งละ 1 คำสั่งควบคู่ไปกับการอธิบายจุดเด่นทีละส่วนอย่างต่อเนื่อง (ห้ามส่งคำสั่งเปิดหลายหน้าจอพร้อมกันในรอบเดียว ให้เปิด 1 หน้า อธิบายหน้านั้น 2-3 ประโยคให้ชัดเจน แล้วจึงเรียกเปิดหน้าถัดไป):',
+                    '2. พาชมทีละหน้าจอโดยเรียกเครื่องมือครั้งละ 1 คำสั่งควบคู่ไปกับการอธิบายจุดเด่นทีละส่วนอย่างต่อเนื่อง:',
                     '   - ขั้นที่ 1: เรียก navigateAppScreen("tab1_fault") อธิบายฟอร์มรายงานเหตุสถานี 22kV/115kV เชื่อมเรดาร์น้ำฝน Rain Alarm อัตโนมัติ และตรวจเตือนป้ายห้ามสับไฟ LOTO',
-                    '   - ขั้นที่ 2: เรียก navigateAppScreen("scada_split") โชว์ "ระบบสกาด้าจำลอง" คู่หน้าฟอร์ม โดยย้ำชัดเจนว่าเป็นระบบสกาด้าจำลองสำหรับการจ่ายไฟและจำลองสับเปลี่ยนภาระโหลดบนหน้าจอ ไม่ใช่งานโอเปอเรทจริง ช่วยให้คลิกสวิตช์ส่งรหัสเข้าฟอร์มและคำนวณจุดเกิดฟอลต์ได้อย่างปลอดภัย แล้วเรียก navigateAppScreen("close_scada_split") เมื่ออธิบายจบ',
-                    '   - ขั้นที่ 3: เรียก navigateAppScreen("tab2_outage") อธิบายระบบรับแจ้งไฟฟ้าขัดข้อง คัดกรองข้อมูลลูกค้า แจ้งเตือนเลข CA ค้างจ่าย 12 หลัก แนะนำช่างที่อยู่ใกล้จุดเกิดเหตุที่สุดด้วย GPS สด และสร้างลิงก์ใบสับเปลี่ยนมิเตอร์ชำรุดอัตโนมัติ',
-                    '   - ขั้นที่ 4: เรียก navigateAppScreen("pm_calendar_grid") อธิบายตารางปฏิทินแผนงานบำรุงรักษา PM และแนบรูปส่ง LINE จากนั้นจึงเรียก navigateAppScreen("pm_calendar_map") โชว์แผนที่หมุด PM โซนเรดาร์แจ้งดับไฟประชาชน พร้อม AI อ่านป้ายชื่อสถานที่สร้างโพสต์ Facebook/LINE แล้วเรียก navigateAppScreen("close_pm_calendar")',
-                    '   - ขั้นที่ 5: เรียก demoCalculate22kVFuse(160, 1, 1.5) เพื่อเปิดแท็บ 3 สาธิตคำนวณขนาดฟิวส์เมนแรงสูง 22kV ของหม้อแปลง 160 เควีเอ โชว์ผลลัพธ์จริงบนหน้าจอ',
-                    '   - ขั้นที่ 6: เรียก navigateAppScreen("tab4_analytics") เปิดแท็บ 4 แดชบอร์ดกราฟสถิติ สรุปจำนวนข้อมูลจริงของสาขาจากผลลัพธ์ที่ได้ แล้วกล่าวปิดท้ายเปิดโอกาสให้ผู้ฟังซักถามเพิ่มเติมด้วยรอยยิ้มในน้ำเสียงค่ะ'
+                    '   - ขั้นที่ 2: เรียก demoScadaFaultSearch(1850, 4.2) เปิดผัง "ระบบสกาด้าจำลอง" สาธิตกรอกกระแสฟอลต์ชี้เป้าจุดเสีย จากนั้นเรียก demoScadaSwitchSimulation("toggle") สาธิตจำลองปลด-สับสวิตช์โดยย้ำว่าเป็นการจำลองการจ่ายไฟเพื่อวางแผน ไม่ใช่งานโอเปอเรทจริง แล้วเรียก navigateAppScreen("close_scada_split")',
+                    '   - ขั้นที่ 3: เรียก navigateAppScreen("tab2_outage") อธิบายระบบรับแจ้งไฟฟ้าขัดข้อง คัดกรองข้อมูลลูกค้า แจ้งเตือนเลข CA ค้างจ่าย 12 หลัก แนะนำช่างใกล้จุดเกิดเหตุด้วย GPS สด และสร้างลิงก์ใบสับเปลี่ยนมิเตอร์ชำรุดอัตโนมัติ',
+                    '   - ขั้นที่ 4: สาธิตแผนงาน PM จนถึงเรดาร์ผู้ใช้ไฟทีละขั้น: เรียก demoPmOutageRadarStep("calendar_overview") -> อธิบายจบจึงเรียก demoPmOutageRadarStep("radar_zone_draft") -> อธิบายจบจึงเรียก demoPmOutageRadarStep("announce_post") -> อธิบายจบจึงเรียก demoPmOutageRadarStep("public_radar_map") โชว์หน้าเว็บเรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ -> อธิบายจบจึงเรียก demoPmOutageRadarStep("close_public_radar")',
+                    '   - ขั้นที่ 5: เรียก demoCalculate22kVFuse(160, 1, 1.5) เปิดแท็บ 3 สาธิตคำนวณขนาดฟิวส์เมนแรงสูง 22kV ของหม้อแปลง 160 เควีเอ',
+                    '   - ขั้นที่ 6: เรียก navigateAppScreen("tab4_analytics") เปิดแท็บ 4 แดชบอร์ดกราฟสถิติ สรุปจำนวนข้อมูลจริงของสาขา แล้วกล่าวปิดท้ายเปิดโอกาสให้ซักถามค่ะ'
                 ].join('\n')
-                : 'คุณกำลังอยู่บนหน้าปฏิบัติงานช่างภาคสนาม (Page 2) สามารถเรียก navigateAppScreen เพื่อสลับดูรายการใบงานช่าง แผนที่ผังวงจร "ระบบสกาด้าจำลอง" (ย้ำว่าเป็นการจำลองการจ่ายไฟเพื่อวางแผน ไม่ใช่งานโอเปอเรทจริง) และปฏิทินแผนงาน PM พร้อมรายงานยอดงานค้างและงานกำลังเดินทางจากข้อมูลจริงได้ค่ะ',
+                : 'คุณกำลังอยู่บนหน้าปฏิบัติงานช่างภาคสนาม (Page 2) สามารถเรียก navigateAppScreen, demoScadaFaultSearch, demoScadaSwitchSimulation และ demoPmOutageRadarStep เพื่อสาธิตทั้ง "ระบบสกาด้าจำลอง" (จำลองการจ่ายไฟ ไม่ใช่งานโอเปอเรทจริง) และระบบแผนงาน PM จนถึงหน้าเว็บแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟได้ครบทุกขั้นตอนค่ะ',
             '',
             'กฎการทำงานขณะช่วยปฏิบัติงานจริง:',
             '- หากผู้ใช้แจ้งรายละเอียดไฟฟ้าขัดข้องของชาวบ้าน ให้เรียก fillOutageReportByVoice เพื่อกรอกลงฟอร์มแท็บ 2 ทันที (หากข้อมูลใดไม่ได้ระบุให้ส่งค่าว่าง "" ห้ามเดาเอง)',
             '- หากผู้ใช้แจ้งเหตุเบรกเกอร์ทริป TR/TL ในสถานี ให้เรียก fillFaultReportByVoice เพื่อกรอกลงฟอร์มแท็บ 1',
-            '- หากผู้ฟังพูดแทรกถามคำถามระหว่างการนำเสนอ ให้ตอบคำถามนั้นอย่างชัดเจนและสุภาพทันทีค่ะ'
+            '- หากผู้ฟังถามหรือสั่งเปิดดูแผนงาน PM หรือเรดาร์ตรวจสอบไฟดับของผู้ใช้ไฟ ให้เรียก demoPmOutageRadarStep ตามขั้นตอนที่เกี่ยวข้องทันทีค่ะ'
         ].join('\n');
     }
 
@@ -448,8 +915,62 @@
                 }
             },
             {
+                name: 'demoPmOutageRadarStep',
+                description: 'สาธิตระบบแผนงานบำรุงรักษา (PM) ทีละขั้น ตั้งแต่ปฏิทินแผนงาน การวาดโซนเรดาร์ไฟดับและดูดชื่อสถานที่ การสร้างโพสต์แจ้งเตือน Facebook/LINE จนถึงการเปิดหน้าเว็บแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ (outage-map.html)',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        step: {
+                            type: 'STRING',
+                            description: 'ขั้นตอนการสาธิต (เรียกทีละ 1 ขั้นตอน) ได้แก่: calendar_overview, radar_zone_draft, announce_post, public_radar_map, close_public_radar'
+                        },
+                        radiusMeters: {
+                            type: 'NUMBER',
+                            description: 'รัศมีวงเรดาร์แจ้งดับไฟหน่วยเมตรสำหรับขั้น radar_zone_draft (ค่าเริ่มต้น 350)'
+                        },
+                        postStyle: {
+                            type: 'STRING',
+                            description: 'รูปแบบประกาศสำหรับขั้น announce_post ได้แก่ facebook หรือ line (ค่าเริ่มต้น facebook)'
+                        }
+                    },
+                    required: ['step']
+                }
+            },
+            {
+                name: 'demoScadaFaultSearch',
+                description: 'สาธิตการกรอกข้อมูลกระแสฟอลต์ (แอมแปร์) และระยะทาง (กม.) ลงในช่องค้นหาฟอลต์และฟอร์มแท็บ 1 พร้อมเปิดผังระบบสกาด้าจำลองเพื่อซูมชี้เป้าจุดคาดการณ์เกิดฟอลต์บนแผนที่',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        faultAmp: { type: 'NUMBER', description: 'ค่ากระแสฟอลต์หน่วยแอมแปร์ (A) เช่น 1850 (ค่าเริ่มต้น 1850)' },
+                        distanceKm: { type: 'NUMBER', description: 'ระยะทางจุดเกิดฟอลต์หน่วยกิโลเมตร (km) เช่น 4.2 (ค่าเริ่มต้น 4.2)' },
+                        feeder: { type: 'STRING', description: 'ชื่อวงจรหรือฟีดเดอร์ เช่น F6 หรือ BNF06 (ถ้าไม่ระบุระบบจะเลือกวงจรที่มีอยู่ในสาขาให้อัตโนมัติ)' },
+                        phase: { type: 'STRING', description: 'เฟสที่เกิดฟอลต์ เช่น A-G, B-G, C-G, A-B-C (ค่าเริ่มต้น A-G)' },
+                        station: { type: 'STRING', description: 'ชื่อสถานีไฟฟ้า เช่น บึง1 (ถ้ามี)' }
+                    }
+                }
+            },
+            {
+                name: 'demoScadaSwitchSimulation',
+                description: 'เปิดโหมดจำลอง (Sandbox) บนแผนที่ระบบสกาด้าจำลอง แล้วสาธิตการจำลองปลด (open) สับจ่ายไฟ (close) จำลองฟอลต์ (fault) หรือออกจากโหมดจำลอง (exit_sim) โดยไม่กระทบข้อมูลจริง',
+                parameters: {
+                    type: 'OBJECT',
+                    properties: {
+                        action: {
+                            type: 'STRING',
+                            description: 'คำสั่งจำลอง ได้แก่: open (จำลองปลดสวิตช์), close (จำลองสับสวิตช์), toggle (สลับสถานะปลด/สับ), fault (จำลองทริป/ฟอลต์), exit_sim (ปิดโหมดจำลองคืนค่าผังปกติ)'
+                        },
+                        equipCode: {
+                            type: 'STRING',
+                            description: 'รหัสสวิตช์หรืออุปกรณ์ที่ต้องการจำลองปลด-สับ เช่น VS-01, BNF06VS-01 (หากไม่ระบุ ระบบจะเลือกสวิตช์ตัวอย่างในสาขาให้อัตโนมัติ)'
+                        }
+                    },
+                    required: ['action']
+                }
+            },
+            {
                 name: 'getLiveSystemStats',
-                description: 'ดึงตัวเลขสถิติใบงานจริง กะปัจจุบัน สภาพอากาศ จำนวนหมุดอุปกรณ์ในระบบสกาด้าจำลอง และแผนงาน PM ล่าสุดในระบบ',
+                description: 'ดึงตัวเลขสถิติใบงานจริง กะปัจจุบัน สภาพอากาศ รายชื่อฟีดเดอร์/สวิตช์ตัวอย่างในระบบสกาด้าจำลอง และแผนงาน PM ล่าสุดในระบบ',
                 parameters: {
                     type: 'OBJECT',
                     properties: {
@@ -513,13 +1034,28 @@
             : baseTools;
     }
 
+    function isCleanupPresentationCall(fc) {
+        if (!fc) return false;
+        if (fc.name === 'navigateAppScreen') {
+            const t = String(fc.args?.target || '').trim();
+            return t === 'close_scada_split' || t === 'close_pm_calendar';
+        }
+        if (fc.name === 'demoPmOutageRadarStep') {
+            return /^close/i.test(String(fc.args?.step || '').trim());
+        }
+        if (fc.name === 'demoScadaSwitchSimulation') {
+            return /^(?:exit_sim|exit|reset)$/i.test(String(fc.args?.action || '').trim());
+        }
+        return false;
+    }
+
     function hideFormFloatingMenus(ids) {
         ids.forEach(id => document.getElementById(id)?.classList.add('hidden'));
     }
 
-    // รอจนเสียงบรรยายท่อนก่อนหน้าพูดจบประโยคก่อนสลับหน้าจอหรือเปิดแท็บคำนวณฟิวส์ (ยกเลิกทันทีหากพูดแทรก)
+    // รอจนเสียงบรรยายท่อนก่อนหน้าพูดจบประโยคก่อนสลับหน้าจอหรือรันการสาธิตบนจอ
     async function waitForQueuedAudioBeforeUiTool(ws, targetPlayTimeSec, fnCalls, cancelledSet, startInterruptSeq) {
-        const shouldSyncWithSpeech = fnCalls.some(fc => fc && (fc.name === 'navigateAppScreen' || fc.name === 'demoCalculate22kVFuse'));
+        const shouldSyncWithSpeech = fnCalls.some(fc => fc && PRESENTATION_SYNC_TOOLS.has(fc.name));
         if (!shouldSyncWithSpeech || !outputAudioCtx || outputAudioCtx.state === 'closed') return;
         const startedWaitMs = Date.now();
         while (activePlaybackSources.size > 0 && isUserSessionActive && !ws._peaDisposed && ws.readyState === WebSocket.OPEN) {
@@ -551,6 +1087,7 @@
             const s = String(v ?? '').trim();
             return (!s || /^(?:-|none|null|undefined|n\/a|ไม่ระบุ|ไม่มี|ไม่ทราบ)$/i.test(s)) ? '' : s;
         };
+        const normToken = s => String(s || '').toUpperCase().replace(/[\s\-/,._()[\]]+/g, '');
 
         if (name === 'getLiveSystemStats') {
             setLiveActionSubtext('📊 กำลังอ่านข้อมูลสถิติจริงในระบบ...');
@@ -562,6 +1099,8 @@
             const isMainPage = Boolean(document.getElementById('mainAppContent'));
 
             if (target === 'pm_calendar_grid') {
+                closePeaLivePublicRadarPreview();
+                closeVoiceOpenedPmDraftOnly();
                 closeVoiceOpenedLeftDockIfNeeded();
                 setDockMinimized(true);
                 setLiveActionSubtext('📅 เปิดตารางปฏิทินแผนงาน PM');
@@ -569,6 +1108,8 @@
                 await new Promise(r => setTimeout(r, 180));
                 window.switchCalendarLeftViewMode?.('grid');
             } else if (target === 'pm_calendar_map') {
+                closePeaLivePublicRadarPreview();
+                closeVoiceOpenedPmDraftOnly();
                 closeVoiceOpenedLeftDockIfNeeded();
                 setDockMinimized(true);
                 setLiveActionSubtext('📡 เปิดแผนที่หมุด PM & โซนเรดาร์ประชาชน');
@@ -580,20 +1121,21 @@
                 }
                 await window.switchCalendarLeftViewMode?.('map');
             } else if (target === 'close_pm_calendar') {
-                setLiveActionSubtext('✕ ปิดหน้าต่างปฏิทิน PM');
-                window.closePmCalendarModal?.();
+                setLiveActionSubtext('✕ ปิดหน้าต่างปฏิทิน PM และเรดาร์');
+                closeVoiceOpenedPmAndRadarModals();
             } else if (!isMainPage) {
-                window.closePmCalendarModal?.();
+                closeVoiceOpenedPmAndRadarModals();
                 if (target === 'tech_scada_map' || target === 'scada_split') {
                     setDockMinimized(true);
                     setLiveActionSubtext('⚡ สลับไปหน้าผังระบบสกาด้าจำลอง');
                     window.switchTechMainTab?.('map');
                 } else {
+                    exitVoiceActivatedSimModeIfNeeded(window);
                     setLiveActionSubtext('🛠️ สลับไปหน้ารายการใบงานช่าง');
                     window.switchTechMainTab?.('jobs');
                 }
             } else {
-                window.closePmCalendarModal?.();
+                closeVoiceOpenedPmAndRadarModals();
                 if (target === 'scada_split') {
                     const leftDockEl = document.getElementById('leftBrowserDock');
                     if (!leftDockEl || leftDockEl.classList.contains('hidden')) {
@@ -604,6 +1146,8 @@
                     window.switchTab?.('tab1');
                     window.openScadaDiagramWorkspace?.();
                 } else if (target === 'close_scada_split') {
+                    exitVoiceActivatedSimModeIfNeeded();
+                    restoreTab1DemoBackupIfNeeded();
                     openedLeftDockByVoice = false;
                     setLiveActionSubtext('✕ ปิดหน้าต่างผังสกาด้าจำลองฝั่งซ้าย');
                     window.closeLeftWebBrowser?.();
@@ -625,6 +1169,567 @@
             return { ok: true, openedScreen: target, liveStats: collectLiveSystemSnapshot() };
         }
 
+        // ====================================================================
+        // 📅📡 เครื่องมือสาธิตแผนงาน PM -> ตีกรอบเรดาร์ -> โพสต์แจ้งเตือน -> แมพเรดาร์ผู้ใช้ไฟ
+        // ====================================================================
+        if (name === 'demoPmOutageRadarStep') {
+            const step = String(args.step || 'calendar_overview').toLowerCase().trim();
+            const grp = getActiveVoiceGroup();
+            const snap = collectLiveSystemSnapshot();
+
+            if (step === 'close_public_radar' || step === 'close_all' || step === 'close') {
+                closeVoiceOpenedPmAndRadarModals();
+                setLiveActionSubtext('✕ ปิดหน้าต่างสาธิตแผนงาน PM และเรดาร์ผู้ใช้ไฟ');
+                return { ok: true, step: 'closed' };
+            }
+
+            closeVoiceOpenedLeftDockIfNeeded();
+            setDockMinimized(true);
+
+            if (step === 'calendar_overview') {
+                closePeaLivePublicRadarPreview();
+                closeVoiceOpenedPmDraftOnly();
+                window.openPmCalendarModal?.();
+                await new Promise(r => setTimeout(r, 180));
+                window.switchCalendarLeftViewMode?.('grid');
+                setLiveActionSubtext(`📅 เปิดตารางปฏิทินแผนงาน PM (${grp})`);
+                return {
+                    ok: true,
+                    step: 'calendar_overview',
+                    branchGroup: grp,
+                    pmPendingPlans: snap.pmPendingPlans,
+                    pmPublicOutageZones: snap.pmPublicOutageZones,
+                    highlights: [
+                        'วางแผนตัดรอนกิ่งไม้ บำรุงรักษาหม้อแปลง ส่องกล้องความร้อน และงาน HOTLINE',
+                        'แนบรูปภาพหน้างานสูงสุด 3 รูป ส่งไฟล์รูปจริงพร้อมข้อความเข้า LINE',
+                        'ระบบแจ้งเตือนเสียงอัตโนมัติรอบเที่ยงคืน รอบเจ็ดโมงเช้า และเวลาพิเศษรายแผนงาน'
+                    ]
+                };
+            }
+
+            if (step === 'radar_zone_draft') {
+                closePeaLivePublicRadarPreview();
+                exitVoiceActivatedSimModeIfNeeded();
+                const coord = pickRepresentativeBranchCoord();
+                const radius = Math.max(100, Math.min(2000, Math.round(Number(args.radiusMeters) || 350)));
+                const d = new Date();
+                const todayIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+                const calModal = document.getElementById('pmCalendarModal');
+                if (!calModal || calModal.classList.contains('hidden')) {
+                    window.openPmCalendarModal?.();
+                    await new Promise(r => setTimeout(r, 160));
+                }
+
+                const existingFormModal = document.getElementById('pmPlanFormModal');
+                const userEditingRealPlan = Boolean(
+                    existingFormModal &&
+                    !existingFormModal.classList.contains('hidden') &&
+                    existingFormModal.dataset.voiceDemoDraft !== '1'
+                );
+
+                if (!userEditingRealPlan && canEditPmAndScadaSafe() && typeof window.openPmPlanFormModal === 'function') {
+                    window.openPmPlanFormModal(null, todayIso, coord.lat, coord.lon);
+                    const formModal = document.getElementById('pmPlanFormModal');
+                    if (formModal && !formModal.classList.contains('hidden')) {
+                        formModal.dataset.voiceDemoDraft = '1';
+                        openedPmDraftByVoice = true;
+
+                        const titleEl = document.getElementById('pmTitleInput');
+                        const catEl = document.getElementById('pmCategorySelect');
+                        const slotEl = document.getElementById('pmTimeSlotInput');
+                        if (titleEl) titleEl.value = DEMO_PM_DRAFT_TITLE;
+                        if (catEl) catEl.value = 'patrol';
+                        if (slotEl) slotEl.value = '09.00-15.00';
+
+                        await window.onTogglePmPublicOutage?.(true);
+                        // รอจนกว่าแผนที่ย่อย Leaflet โหลดสำเร็จจริงบนเน็ตมือถือก่อนสั่งวาดวงเรดาร์
+                        for (let i = 0; i < 25; i++) {
+                            if (document.querySelector('#pmFormMiniLeafletMap.leaflet-container')) break;
+                            await new Promise(r => setTimeout(r, 140));
+                        }
+                        await new Promise(r => setTimeout(r, 120));
+                        window.onPmCircleRadiusInput?.(radius);
+
+                        const pubNoteEl = document.getElementById('pmPubOutageNoteInput');
+                        if (pubNoteEl) pubNoteEl.value = 'ปรับปรุงสายแรงสูง 22kV และตัดรอนกิ่งไม้ใกล้แนวสายเพื่อป้องกันกระแสไฟฟ้าขัดข้อง';
+                        window.clearAllTempPubPlaces?.();
+                        window.addManualTempPubPlace?.(`ชุมชนและสถานประกอบการในรัศมีเรดาร์ ${radius} เมตร, หอพักและหมู่บ้านริมแนวสายส่ง (${grp})`);
+
+                        document.getElementById('pmPubOutagePanel')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+                        setLiveActionSubtext(`📡 สาธิตตีกรอบเรดาร์ไฟดับรัศมี ${radius} ม. & ดูดชื่อสถานที่`);
+                        return {
+                            ok: true,
+                            step: 'radar_zone_draft',
+                            draftOnlyUntouchedRealData: true,
+                            radarRadiusMeters: radius,
+                            supportedDrawModes: ['วงกลมเรดาร์ปรับรัศมีได้', 'ปักมุมหลายเหลี่ยม', 'ลากนิ้วตีกรอบอิสระตามแนวสายส่ง'],
+                            aiPlaceScanFeature: 'มีปุ่ม AI กวาดอ่านป้ายชื่อหอพัก หมู่บ้าน โรงงาน ร้านค้า และซอยในกรอบสีแดงบนแผนที่อัตโนมัติ'
+                        };
+                    }
+                }
+
+                // กรณีบัญชีผู้สำรวจ/ช่าง หรือผู้ใช้กำลังเปิดฟอร์มแผนงานจริงค้างไว้ ให้สลับโชว์แผนที่หมุดและโซนเรดาร์ในปฏิทินแทน
+                await window.switchCalendarLeftViewMode?.('map');
+                setLiveActionSubtext('🗺️ แสดงแผนที่หมุด PM และเขตโซนเรดาร์แจ้งดับไฟ');
+                return {
+                    ok: true,
+                    step: 'radar_zone_draft',
+                    viewerMapMode: true,
+                    pmPublicOutageZones: snap.pmPublicOutageZones,
+                    note: 'แสดงแผนที่โซนเรดาร์บนปฏิทินอย่างปลอดภัยโดยไม่กระทบฟอร์มงานจริง'
+                };
+            }
+
+            if (step === 'announce_post') {
+                closePeaLivePublicRadarPreview();
+                const styleMode = String(args.postStyle || 'facebook').toLowerCase() === 'line' ? 'line' : 'facebook';
+                const formModal = document.getElementById('pmPlanFormModal');
+                const isDemoFormOpen = Boolean(formModal && !formModal.classList.contains('hidden') && formModal.dataset.voiceDemoDraft === '1');
+
+                let openedViaNative = false;
+                if (isDemoFormOpen && typeof window.openPmPublicAnnounceModal === 'function') {
+                    window.openPmPublicAnnounceModal('__FORM_DRAFT__');
+                    window.switchPmAnnounceStyle?.(styleMode);
+                    openedViaNative = true;
+                } else {
+                    let activePubPlanId = '';
+                    try {
+                        const plans = JSON.parse(rawGet('elec_pm_calendar_plans_v1') || '[]');
+                        const found = plans.find(p => p && !p.pmDeleted && normGroup(p.ownerGroup || 'กฟส.บึง') === grp && p.pub && p.oz);
+                        if (found?.id) activePubPlanId = found.id;
+                    } catch (e) {}
+
+                    if (activePubPlanId && typeof window.openPmPublicAnnounceModal === 'function') {
+                        window.openPmPublicAnnounceModal(activePubPlanId);
+                        window.switchPmAnnounceStyle?.(styleMode);
+                        openedViaNative = true;
+                    } else if (typeof window.openPmPublicAnnounceModal === 'function') {
+                        // สร้าง DOM ของหน้าต่างโพสต์ผ่าน pm-calendar.js แล้วเติมข้อความตัวอย่างพร้อมลิงก์เรดาร์จริงของสาขา
+                        window.openPmPublicAnnounceModal('__INIT_DOM_ONLY__');
+                    }
+                }
+
+                const annModal = document.getElementById('pmPublicAnnounceModal');
+                if (annModal) {
+                    if (!openedViaNative) {
+                        annModal.dataset.voiceDemoFallback = '1';
+                        const area = document.getElementById('pmPublicAnnounceTextarea');
+                        if (area) area.value = buildSampleAnnouncementTextForVoice(grp, styleMode);
+                        const fbBtn = document.getElementById('pmAnnStyleBtn-facebook');
+                        const lnBtn = document.getElementById('pmAnnStyleBtn-line');
+                        const applyDemoStyleBtns = (m) => {
+                            if (fbBtn) fbBtn.className = m === 'facebook' ? 'flex-1 py-1.5 rounded-lg bg-blue-600 text-white font-extrabold text-xs shadow' : 'flex-1 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold text-xs';
+                            if (lnBtn) lnBtn.className = m === 'line' ? 'flex-1 py-1.5 rounded-lg bg-[#00B900] text-white font-extrabold text-xs shadow' : 'flex-1 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200 font-bold text-xs';
+                        };
+                        applyDemoStyleBtns(styleMode);
+                        if (fbBtn && !fbBtn.__voiceFallbackHooked) {
+                            fbBtn.__voiceFallbackHooked = true;
+                            fbBtn.addEventListener('click', () => {
+                                if (annModal.dataset.voiceDemoFallback === '1' && area) {
+                                    area.value = buildSampleAnnouncementTextForVoice(getActiveVoiceGroup(), 'facebook');
+                                    applyDemoStyleBtns('facebook');
+                                }
+                            });
+                        }
+                        if (lnBtn && !lnBtn.__voiceFallbackHooked) {
+                            lnBtn.__voiceFallbackHooked = true;
+                            lnBtn.addEventListener('click', () => {
+                                if (annModal.dataset.voiceDemoFallback === '1' && area) {
+                                    area.value = buildSampleAnnouncementTextForVoice(getActiveVoiceGroup(), 'line');
+                                    applyDemoStyleBtns('line');
+                                }
+                            });
+                        }
+                        annModal.classList.remove('hidden');
+                    } else {
+                        delete annModal.dataset.voiceDemoFallback;
+                    }
+                    annModal.style.zIndex = '1465';
+                }
+
+                setLiveActionSubtext('📢 สร้างโพสต์ประกาศแจ้งไฟดับ Facebook / LINE พร้อมลิงก์เรดาร์');
+                return {
+                    ok: true,
+                    step: 'announce_post',
+                    styleMode,
+                    publicOutageRadarUrl: getPublicOutageRadarUrl(false),
+                    highlights: [
+                        'เรียบเรียงวันที่ ช่วงเวลา สาเหตุ และรายชื่อสถานที่ได้รับผลกระทบให้อัตโนมัติ',
+                        'ตัดรหัสสวิตช์และโน้ตภายในของช่างออกเพื่อความปลอดภัย',
+                        'แนบลิงก์แผนที่เรดาร์ท้ายโพสต์ให้ประชาชนคลิกตรวจสอบพิกัดบ้านตนเองได้ทันที'
+                    ]
+                };
+            }
+
+            if (step === 'public_radar_map') {
+                closeVoiceOpenedPmDraftOnly();
+                window.closePmCalendarModal?.();
+                openPeaLivePublicRadarPreview(Number(snap.pmPublicOutageZones) || 0);
+                setLiveActionSubtext('📡 เปิดหน้าเว็บเรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ (outage-map.html)');
+                return {
+                    ok: true,
+                    step: 'public_radar_map',
+                    branchGroup: grp,
+                    publicOutageRadarUrl: getPublicOutageRadarUrl(false),
+                    activePublicOutageZones: Number(snap.pmPublicOutageZones) || 0,
+                    citizenUsageFeatures: [
+                        'ผู้ใช้ไฟเปิดผ่านลิงก์จากเพจ Facebook หรือ LINE ได้ทันทีโดยไม่ต้องล็อกอิน',
+                        'กดปุ่มตรวจสอบพิกัด GPS ปัจจุบันจากสมาร์ทโฟน หรือเลื่อนหมุดไปยังตำแหน่งบ้านและสถานประกอบการของตนเอง',
+                        'ระบบเรดาร์คำนวณทันทีว่าจุดติดตั้งมิเตอร์อยู่ในเขตพื้นที่ไฟดับสีแดงหรือไม่ พร้อมบอกวัน เวลา และสาเหตุการปฏิบัติงานชัดเจน'
+                    ]
+                };
+            }
+
+            return { ok: false, error: 'ไม่รู้จักขั้นตอน step ที่ระบุ' };
+        }
+
+        // ====================================================================
+        // 🎯 เครื่องมือสาธิตหากระแสฟอลต์ & ชี้เป้าจุดเกิดฟอลต์ (สำรองและคืนค่าฟอร์มจริงอัตโนมัติ)
+        // ====================================================================
+        if (name === 'demoScadaFaultSearch') {
+            const scadaWin = await ensureScadaMapWindowReady();
+            const branchPins = getBranchScadaPinsFromWin(scadaWin);
+
+            const reqAmp = Math.max(50, Math.round(Number(args.faultAmp) || 1850));
+            const reqKm = Number((Math.max(0.2, Number(args.distanceKm) || 4.2)).toFixed(2));
+            const reqPhase = cleanVal(args.phase) || 'A-G';
+
+            let chosenFeeder = cleanVal(args.feeder).toUpperCase();
+            if (!chosenFeeder) {
+                const pinWithFd = branchPins.find(p => p.scadaNode?.fd);
+                chosenFeeder = pinWithFd?.scadaNode?.fd || 'F1';
+            }
+            const fdNumMatch = chosenFeeder.match(/F0*(\d{1,2})$/i) || chosenFeeder.match(/^(\d{1,2})$/);
+            const circuitForTab1 = fdNumMatch ? `F${parseInt(fdNumMatch[1], 10)}` : (/^F\d+$/i.test(chosenFeeder) ? chosenFeeder : 'F1');
+            const fdRegex = fdNumMatch ? new RegExp(`F0*${parseInt(fdNumMatch[1], 10)}(?!\\d)`, 'i') : null;
+
+            const feederPins = branchPins.filter(p => {
+                const pFd = String(p.scadaNode?.fd || '');
+                return (pFd && normToken(pFd) === normToken(chosenFeeder)) || (fdRegex && fdRegex.test(pFd));
+            });
+            const candidatePool = feederPins.length > 0 ? feederPins : branchPins;
+            const targetPin = candidatePool.length > 0
+                ? candidatePool[Math.min(candidatePool.length - 1, Math.max(0, Math.floor(candidatePool.length * 0.45)))]
+                : null;
+
+            let clickedNativeSearchBtn = false;
+            const isEditingRealFault = Boolean(rawGet('elec_editing_fault_id'));
+
+            if (document.getElementById('sortable-tab1') && !isViewer() && !isEditingRealFault) {
+                snapshotTab1BeforeDemo();
+                window.switchTab?.('tab1');
+                isApplyingTab1DemoFill = true;
+                try {
+                    const sysEl = document.getElementById('systemSelect');
+                    if (sysEl) { sysEl.value = '22kV'; window.updateCircuitDropdown?.(); }
+
+                    const cirEl = document.getElementById('circuitSelect');
+                    if (cirEl) { cirEl.value = circuitForTab1; cirEl.dispatchEvent(new Event('change', { bubbles: true })); }
+
+                    const rawStation = cleanVal(args.station);
+                    if (rawStation) {
+                        window.selectStation?.(rawStation);
+                    } else if (!document.getElementById('stationValue')?.value) {
+                        const firstSt = document.querySelector('#stationSortableList [data-value]')?.getAttribute('data-value');
+                        if (firstSt) window.selectStation?.(firstSt);
+                    }
+
+                    const setIfEl = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+                    setIfEl('causeSelect', 'Trip');
+                    setIfEl('countSelect', '1');
+                    setIfEl('tlSelect', 'T/R');
+                    setIfEl('phaseSelect', reqPhase);
+                    setIfEl('currA', /A/i.test(reqPhase) ? String(reqAmp) : '');
+                    setIfEl('currB', /B/i.test(reqPhase) ? String(reqAmp) : '');
+                    setIfEl('currC', /C/i.test(reqPhase) ? String(reqAmp) : '');
+                    setIfEl('currG', /G/i.test(reqPhase) ? String(Math.round(reqAmp * 0.65)) : '');
+                    setIfEl('distanceInput', `${reqKm} กม.`);
+                    if (targetPin?.name) setIfEl('deviceInput', targetPin.name);
+
+                    const kmInp = document.getElementById('tab1QuickFaultKmInput');
+                    const ampInp = document.getElementById('tab1QuickFaultAmpInput');
+                    if (kmInp) {
+                        kmInp.value = String(reqKm);
+                        kmInp.dispatchEvent(new Event('input', { bubbles: true }));
+                        kmInp.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    if (ampInp) {
+                        ampInp.value = String(reqAmp);
+                        ampInp.dispatchEvent(new Event('input', { bubbles: true }));
+                        ampInp.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                } finally {
+                    isApplyingTab1DemoFill = false;
+                }
+                hideFormFloatingMenus(['suggest-device', 'suggest-disconnect', 'suggest-powerup', 'stationDropdownMenu', 'tambonDropdownMenu']);
+
+                const mapRef = scadaWin?.__labeledLeafletMap;
+                const prevCenter = mapRef?.getCenter?.();
+                const prevZoom = mapRef?.getZoom?.();
+
+                // ไต่ขึ้นจาก parentElement เพื่อไม่ให้ .closest() จับโดนตัวช่อง <input> เอง
+                const anchorInp = document.getElementById('tab1QuickFaultAmpInput') || document.getElementById('tab1QuickFaultKmInput');
+                const quickBox = anchorInp?.parentElement?.closest('[data-id], .rounded-2xl, .rounded-xl') || anchorInp?.parentElement?.parentElement;
+                if (quickBox) {
+                    quickBox.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+                    const btns = Array.from(quickBox.querySelectorAll('button')).filter(b => {
+                        const txt = `${b.textContent || ''} ${b.getAttribute('onclick') || ''}`;
+                        return !/ล้าง|ยกเลิก|ตั้งค่า|calib|reset|clear/i.test(txt) &&
+                               /ชี้เป้า|ค้นหา|คำนวณ|ฟอลต์|fault|scada|locate|amp|กม/i.test(txt);
+                    });
+                    const bestBtn = btns.find(b => /amp|กระแส/i.test(`${b.textContent} ${b.getAttribute('onclick')}`)) || btns[0];
+                    if (bestBtn) {
+                        const origMainAlert = window.showCustomAlert;
+                        const origScadaAlert = scadaWin && scadaWin !== window ? scadaWin.showCustomAlert : null;
+                        let suppressedAlert = false;
+                        if (typeof origMainAlert === 'function') window.showCustomAlert = () => { suppressedAlert = true; };
+                        if (scadaWin && scadaWin !== window && typeof origScadaAlert === 'function') scadaWin.showCustomAlert = () => { suppressedAlert = true; };
+                        try {
+                            bestBtn.click();
+                            clickedNativeSearchBtn = true;
+                            await new Promise(r => setTimeout(r, 420));
+                        } finally {
+                            if (typeof origMainAlert === 'function') window.showCustomAlert = origMainAlert;
+                            if (scadaWin && scadaWin !== window && typeof origScadaAlert === 'function') scadaWin.showCustomAlert = origScadaAlert;
+                            if (suppressedAlert) {
+                                document.getElementById('customAlertModal')?.classList.add('hidden');
+                                scadaWin?.document?.getElementById('customAlertModal')?.classList.add('hidden');
+                            }
+                        }
+                    }
+                }
+
+                const afterCenter = mapRef?.getCenter?.();
+                const afterZoom = mapRef?.getZoom?.();
+                const nativeMapMoved = Boolean(
+                    prevCenter && afterCenter &&
+                    (Math.hypot(prevCenter.lat - afterCenter.lat, prevCenter.lng - afterCenter.lng) > 0.0002 || prevZoom !== afterZoom)
+                );
+                if (nativeMapMoved) {
+                    clearDemoFaultHighlightLayer(scadaWin);
+                    setLiveActionSubtext(`🎯 ชี้เป้ากระแสฟอลต์จำลอง ${reqAmp} A (~${reqKm} กม.) สำเร็จ`);
+                    return {
+                        ok: true,
+                        simulationOnly: true,
+                        feeder: chosenFeeder,
+                        circuit: circuitForTab1,
+                        faultAmp: reqAmp,
+                        estimatedDistanceKm: reqKm,
+                        phase: reqPhase,
+                        nearEquipment: targetPin?.name || '-',
+                        locatedByNativeEngine: true,
+                        note: 'เป็นการจำลองคำนวณระยะทางและชี้เป้าจุดเสียบนระบบสกาด้าจำลองเท่านั้น ไม่ใช่งานโอเปอเรทจริง'
+                    };
+                }
+            }
+
+            const map = scadaWin?.__labeledLeafletMap;
+            const LRef = scadaWin?.L;
+            if (map && LRef && targetPin && !isNaN(parseFloat(targetPin.lat)) && !isNaN(parseFloat(targetPin.lon))) {
+                clearDemoFaultHighlightLayer(scadaWin);
+                const tLat = parseFloat(targetPin.lat), tLon = parseFloat(targetPin.lon);
+                map.invalidateSize?.();
+                map.setView([tLat, tLon], 16);
+
+                const ring = LRef.circle([tLat, tLon], {
+                    radius: 180,
+                    color: '#ef4444',
+                    weight: 3,
+                    dashArray: '6 4',
+                    fillColor: '#f43f5e',
+                    fillOpacity: 0.28
+                }).addTo(map);
+                ring.bindPopup(
+                    `<div style="font-family:'Prompt',sans-serif;min-width:210px;" class="text-xs space-y-1">` +
+                    `<div class="font-extrabold text-rose-600">🎯 ชี้เป้าจุดเกิดฟอลต์ (ระบบสกาด้าจำลอง)</div>` +
+                    `<div>⚡ <b>วงจร:</b> ${safeEsc(chosenFeeder)} (${safeEsc(reqPhase)})</div>` +
+                    `<div>💥 <b>กระแสฟอลต์จำลอง:</b> ${reqAmp.toLocaleString('en-US')} A (~${reqKm} กม.)</div>` +
+                    `<div>📟 <b>ใกล้หมุดอุปกรณ์:</b> ${safeEsc(targetPin.name)}</div>` +
+                    `<div class="text-[10px] text-slate-500 pt-0.5">*จำลองวิเคราะห์จุดเสียเพื่อวางแผนเท่านั้น ไม่ใช่งานโอเปอเรทจริง</div>` +
+                    `</div>`
+                ).openPopup();
+                demoFaultHighlightLayer = ring;
+            }
+
+            setLiveActionSubtext(`🎯 สาธิตหากระแสฟอลต์ ${reqAmp} A (~${reqKm} กม.) วงจร ${chosenFeeder}`);
+            return {
+                ok: true,
+                simulationOnly: true,
+                feeder: chosenFeeder,
+                circuit: circuitForTab1,
+                faultAmp: reqAmp,
+                estimatedDistanceKm: reqKm,
+                phase: reqPhase,
+                nearEquipment: targetPin?.name || 'จุดจำลองบนแนวสายส่ง',
+                filledTab1Form: Boolean(document.getElementById('sortable-tab1') && !isEditingRealFault),
+                triggeredSearchButton: clickedNativeSearchBtn,
+                note: 'เป็นการจำลองคำนวณชี้เป้าจุดเกิดฟอลต์บนระบบสกาด้าจำลองเท่านั้น ไม่ใช่งานโอเปอเรทจริง'
+            };
+        }
+
+        // ====================================================================
+        // 🔀 เครื่องมือสาธิตจำลองปลด-สับสวิตช์ในโหมด Sandbox (ไม่กระทบข้อมูลจริง 100%)
+        // ====================================================================
+        if (name === 'demoScadaSwitchSimulation') {
+            const rawAction = String(args.action || 'toggle').toLowerCase().trim();
+
+            if (rawAction === 'exit_sim' || rawAction === 'reset' || rawAction === 'exit') {
+                activatedSimByVoice = true;
+                exitVoiceActivatedSimModeIfNeeded();
+                setLiveActionSubtext('↩️ ออกจากโหมดจำลอง คืนค่าผังปกติเรียบร้อย');
+                return { ok: true, simulationActive: false, message: 'ออกจากโหมดจำลองและคืนค่าผังสกาด้ากลับสู่สถานะปกติแล้วค่ะ' };
+            }
+
+            const scadaWin = await ensureScadaMapWindowReady();
+            if (!scadaWin || !scadaWin.document) {
+                return { ok: false, error: 'ไม่สามารถเปิดหน้าต่างแผนที่ระบบสกาด้าจำลองได้ในขณะนี้ค่ะ' };
+            }
+
+            const checkSimOn = () => Boolean(
+                scadaWin.PeaCore?.simSandbox?.active ||
+                scadaWin.document?.body?.classList.contains('scada-sim-active')
+            );
+            if (!checkSimOn()) {
+                if (typeof scadaWin.toggleScadaSimMode === 'function') {
+                    scadaWin.toggleScadaSimMode(true);
+                } else {
+                    scadaWin.document.getElementById('btnToggleScadaSimMode')?.click();
+                }
+                activatedSimByVoice = true;
+                await new Promise(r => setTimeout(r, 260));
+            }
+            if (!checkSimOn()) {
+                return {
+                    ok: false,
+                    error: 'ไม่สามารถเปิดโหมดจำลอง (Sandbox) ได้ ระบบจึงระงับการสลับสถานะสวิตช์เพื่อป้องกันไม่ให้กระทบข้อมูลจริงค่ะ'
+                };
+            }
+
+            const switchTypes = ['VS', 'VSC', 'RC', 'CB', 'S', 'VB', 'DF'];
+            const allPins = getBranchScadaPinsFromWin(scadaWin);
+            const switchPins = allPins.filter(p => switchTypes.includes(String(p.scadaNode?.t || '').toUpperCase()));
+
+            if (switchPins.length === 0) {
+                setLiveActionSubtext('⚡ เปิดโหมดจำลองสกาด้าแล้ว (สาขานี้ยังไม่มีหมุดสวิตช์)');
+                return {
+                    ok: true,
+                    simulationActive: true,
+                    noSwitchPinsYet: true,
+                    message: 'เปิดโหมดจำลองในระบบสกาด้าจำลองแล้วค่ะ แต่สาขานี้ยังไม่ได้ปักหมุดสวิตช์ลงบนแผนที่ สามารถกดปุ่มปลดหรือสับหลังจากเพิ่มหมุดสวิตช์ได้ค่ะ'
+                };
+            }
+
+            const reqCode = cleanVal(args.equipCode);
+            let targetPin = null;
+            if (reqCode) {
+                const qNorm = normToken(reqCode);
+                targetPin = switchPins.find(p => normToken(p.name) === qNorm || normToken(p.scadaNode?.id) === qNorm) ||
+                            switchPins.find(p => normToken(p.name).includes(qNorm) || qNorm.includes(normToken(p.name)));
+            }
+            if (!targetPin) {
+                if (rawAction === 'close') {
+                    targetPin = switchPins.find(p => p.scadaNode?.st === 'O' && !p.scadaNode?.loto) || switchPins.find(p => !p.scadaNode?.loto) || switchPins[0];
+                } else {
+                    targetPin = switchPins.find(p => p.scadaNode?.st === 'C' && !p.scadaNode?.loto) || switchPins.find(p => !p.scadaNode?.loto) || switchPins[0];
+                }
+            }
+
+            const prevState = String(targetPin.scadaNode?.st || 'C').toUpperCase();
+            let desiredState = prevState === 'O' ? 'C' : 'O';
+            if (rawAction === 'open') desiredState = 'O';
+            else if (rawAction === 'close') desiredState = 'C';
+            else if (rawAction === 'fault') desiredState = 'F';
+
+            const map = scadaWin.__labeledLeafletMap;
+            const pLat = parseFloat(targetPin.lat), pLon = parseFloat(targetPin.lon);
+            if (map && !isNaN(pLat) && !isNaN(pLon)) {
+                map.invalidateSize?.();
+                map.setView([pLat, pLon], 16);
+            }
+
+            if (desiredState === 'C' && targetPin.scadaNode?.loto) {
+                const lotoMarker = findLeafletMarkerForPin(scadaWin, map, targetPin);
+                lotoMarker?.openPopup?.();
+                setLiveActionSubtext(`🔒 แจ้งเตือน LOTO ห้ามสับ "${targetPin.name}"`);
+                return {
+                    ok: false,
+                    lotoBlocked: true,
+                    equipCode: targetPin.name,
+                    lotoReason: targetPin.scadaNode.loto,
+                    message: `สวิตช์ ${targetPin.name} ติดป้ายห้ามสับไฟ LOTO (${targetPin.scadaNode.loto}) ระบบสกาด้าจำลองจึงบล็อกการจำลองสับจ่ายไฟเพื่อความปลอดภัยค่ะ`
+                };
+            }
+
+            const readCurrentSimSt = () => {
+                const fresh = getBranchScadaPinsFromWin(scadaWin).find(p => p.id === targetPin.id);
+                return String(fresh?.scadaNode?.st || prevState).toUpperCase();
+            };
+
+            const marker = findLeafletMarkerForPin(scadaWin, map, targetPin);
+            if (marker) {
+                marker.openPopup?.();
+                await new Promise(r => setTimeout(r, 180));
+
+                const popupRoot = scadaWin.document.querySelector('.leaflet-popup-content');
+                if (popupRoot) {
+                    // กรองปุ่มส่งรหัสเข้าฟอร์มแท็บ 1 ออกอย่างเข้มงวด ป้องกันการคลิกผิดปุ่ม
+                    const popupBtns = Array.from(popupRoot.querySelectorAll('button')).filter(b => {
+                        const sig = `${b.textContent || ''} ${b.getAttribute('onclick') || ''}`;
+                        return !/openEquipPinModal|startLabeledPlaceNavigation|SCADA_FILL|sendScada|fillFault|ส่งเป็น|ส่งรหัส|เข้าฟอร์ม|pm-create|ลบ|แก้ไข|นำทาง|คัดลอก|loto/i.test(sig);
+                    });
+                    const stateRegex = desiredState === 'O'
+                        ? /ปลดสวิตช์|จำลองปลด|\bOPEN\b|['"](?:O|open)['"]/i
+                        : (desiredState === 'C'
+                            ? /สับสวิตช์|จำลองสับ|สับจ่าย|ต่อไฟ|\bCLOSE\b|['"](?:C|close)['"]/i
+                            : /จำลองฟอลต์|ทริป|\bFAULT\b|['"](?:F|fault)['"]/i);
+                    const matchedBtn = popupBtns.find(b => stateRegex.test(`${b.textContent || ''} ${b.getAttribute('onclick') || ''}`)) ||
+                                       popupBtns.find(b => /สลับสถานะ|toggle.*sim|sim.*toggle/i.test(`${b.textContent || ''} ${b.getAttribute('onclick') || ''}`));
+                    if (matchedBtn) {
+                        matchedBtn.click();
+                        await new Promise(r => setTimeout(r, 220));
+                    }
+                }
+            }
+
+            // อัปเดตสถานะใน RAM Sandbox และสั่งคำนวณสีแนวสายส่งใหม่ทันทีหากยังไม่ได้เปลี่ยนสถานะ
+            if (readCurrentSimSt() !== desiredState && scadaWin.PeaCore?.simSandbox?.active) {
+                try {
+                    const simList = JSON.parse(scadaWin.localStorage.getItem('elec_labeled_places_list') || '[]');
+                    const idx = simList.findIndex(p => p && p.id === targetPin.id);
+                    if (idx !== -1 && simList[idx].scadaNode) {
+                        simList[idx].scadaNode.st = desiredState;
+                        simList[idx].scadaNode.col = desiredState === 'F' ? '#ef4444' : (desiredState === 'O' ? '#eab308' : '#10b981');
+                        simList[idx].pinColor = desiredState === 'F' ? 'red' : (desiredState === 'O' ? 'yellow' : 'green');
+                        scadaWin.localStorage.setItem('elec_labeled_places_list', JSON.stringify(simList));
+                        scadaWin.loadLabeledPlacesFromStorage?.();
+                        scadaWin.PeaCore?.emitRealtimeChange?.(['elec_labeled_places_list']);
+                        scadaWin.renderLabeledPlacesOnMap?.();
+                        scadaWin.refreshScadaTopology?.();
+                        await new Promise(r => setTimeout(r, 120));
+                        const refreshedMarker = findLeafletMarkerForPin(scadaWin, map, targetPin);
+                        refreshedMarker?.openPopup?.();
+                    }
+                } catch (e) {}
+            }
+
+            const finalState = readCurrentSimSt();
+            const stateThai = { C: 'สับจ่ายไฟจำลอง (Closed)', O: 'ปลดสวิตช์จำลอง (Open)', F: 'ทริป/ฟอลต์จำลอง (Fault)' }[finalState] || finalState;
+            setLiveActionSubtext(`🔀 จำลอง${finalState === 'O' ? 'ปลด' : (finalState === 'C' ? 'สับ' : 'ฟอลต์')} "${targetPin.name}" (โหมดสกาด้าจำลอง)`);
+
+            return {
+                ok: true,
+                simulationSandboxActive: true,
+                realDataUntouched: true,
+                equipCode: targetPin.name,
+                feeder: targetPin.scadaNode?.fd || '-',
+                previousState: prevState,
+                simulatedState: finalState,
+                simulatedStateLabel: stateThai,
+                note: 'ดำเนินการในโหมดจำลอง (Sandbox) ของระบบสกาด้าจำลองเท่านั้น ไม่ใช่งานโอเปอเรทสั่งการจริง และไม่กระทบข้อมูลจริงบนคลาวด์'
+            };
+        }
+
         if (name === 'demoCalculate22kVFuse') {
             const sel = document.querySelector('#transformer-list select.tx-input');
             const domKvaList = sel
@@ -644,7 +1749,7 @@
             const stdFuse = [2, 3, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 65, 80, 100, 140, 200].find(f => f >= inrushAmpNum);
 
             if (sel && document.getElementById('mainAppContent')) {
-                window.closePmCalendarModal?.();
+                closeVoiceOpenedPmAndRadarModals();
                 closeVoiceOpenedLeftDockIfNeeded();
                 window.switchTab?.('tab3');
 
@@ -677,7 +1782,7 @@
         if (name === 'fillOutageReportByVoice') {
             if (isViewer()) return { ok: false, error: 'บัญชีผู้สำรวจไม่สามารถกรอกแก้ไขข้อมูลได้ค่ะ' };
             if (!document.getElementById('sortable-tab2')) return { ok: false, error: 'กรุณาเปิดหน้าหลัก (index.html) เพื่อกรอกฟอร์มรับแจ้งค่ะ' };
-            window.closePmCalendarModal?.();
+            closeVoiceOpenedPmAndRadarModals();
             closeVoiceOpenedLeftDockIfNeeded();
             window.switchTab?.('tab2');
 
@@ -762,11 +1867,13 @@
         if (name === 'fillFaultReportByVoice') {
             if (isViewer()) return { ok: false, error: 'บัญชีผู้สำรวจไม่สามารถกรอกแก้ไขข้อมูลได้ค่ะ' };
             if (!document.getElementById('sortable-tab1')) return { ok: false, error: 'กรุณาเปิดหน้าหลัก (index.html) เพื่อกรอกฟอร์ม TR/TL ค่ะ' };
-            window.closePmCalendarModal?.();
+            // ล้างตัวสำรองโหมดสาธิตทันทีเมื่อผู้ใช้สั่งกรอกข้อมูลเหตุจริงลงฟอร์มแท็บ 1
+            restoreTab1DemoBackupIfNeeded();
+            discardTab1DemoBackup();
+            closeVoiceOpenedPmAndRadarModals();
             if (window.innerWidth < 1024) closeVoiceOpenedLeftDockIfNeeded();
             window.switchTab?.('tab1');
 
-            const normToken = s => String(s || '').toUpperCase().replace(/[\s\-/,._]+/g, '');
             const setSelectSmart = (el, val) => {
                 if (!el || !val || el.tagName !== 'SELECT') return false;
                 el.value = val;
@@ -853,10 +1960,14 @@
 
         return { ok: false, error: 'ไม่รู้จักคำสั่งนี้' };
     }
-
+// ===== จบพาทที่ 1 / 2 ของไฟล์ pea-live-voice.js (v2.7) — ตอบรับเพื่อรับพาทที่ 2 ต่อด้านล่าง =====
+    // ==================== เริ่มพาทที่ 2 / 2 (วางต่อจากพาทที่ 1 จนจบไฟล์) ====================
     // ========================================================================
     // 4. ระบบประมวลผลเสียง PCM 16kHz (พร้อม Mic Singleton Lock & Async Audio Guard)
     // ========================================================================
+    let hasAudioArrivedSinceLastMajorUiStep = true;
+    let lastMajorUiStepAtMs = 0;
+
     function unlockOutputAudioContextOnGesture() {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
@@ -1065,6 +2176,8 @@
 
     function stopAllAiPlaybackImmediately() {
         turnInterruptionSeq++;
+        hasAudioArrivedSinceLastMajorUiStep = true;
+        lastMajorUiStepAtMs = 0;
         clearPlaybackIdleWatchdog();
         clearFrozenAudioCheckTimer();
         activePlaybackSources.forEach(src => {
@@ -1169,7 +2282,6 @@
             }
             micStream = acquiredStream;
 
-            // กู้คืนไมโครโฟนในเครื่องอัตโนมัติหากหูฟังบลูทูธหลุดกลางคันขณะเปิดหน้าจออยู่
             acquiredStream.getAudioTracks().forEach(track => {
                 track.onended = () => {
                     if (!isUserSessionActive || document.hidden) return;
@@ -1224,6 +2336,8 @@
                         bargeInHoldUntilMs = Date.now() + 450;
                         if (bargeInSpeechMs >= BARGE_IN_MIN_MS) {
                             lastUserSpeechAtMs = Date.now();
+                            hasAudioArrivedSinceLastMajorUiStep = true;
+                            lastMajorUiStepAtMs = 0;
                         }
                     } else {
                         bargeInSpeechMs = 0;
@@ -1234,6 +2348,10 @@
                     }
                 } else {
                     bargeInSpeechMs = 0;
+                    if (rms >= SPEAKER_ECHO_GATE_RMS) {
+                        hasAudioArrivedSinceLastMajorUiStep = true;
+                        lastMajorUiStepAtMs = 0;
+                    }
                 }
 
                 const down = downsampleFloat32(floatChunk, actualRate, 16000);
@@ -1332,7 +2450,7 @@
     }
 
     // ========================================================================
-    // 5. WebSocket (Sync ArrayBuffer FIFO) + Compression + Resumption & Auto-Reconnect
+    // 5. WebSocket (กั้นคิวไม่ให้สลับหลายหน้าจอก่อนพูดจบ) + Compression + Resumption
     // ========================================================================
     async function sendTextCueToLiveSession(promptText) {
         if (!isLiveConnected || !liveWs || liveWs._peaDisposed || liveWs.readyState !== WebSocket.OPEN) return;
@@ -1347,6 +2465,8 @@
             try { await toolCallChain; } catch (e) {}
         }
         if (myCueSeq !== textCueSeq || !isLiveConnected || liveWs !== targetWs || targetWs._peaDisposed || liveWs.readyState !== WebSocket.OPEN) return;
+        hasAudioArrivedSinceLastMajorUiStep = true;
+        lastMajorUiStepAtMs = 0;
         try {
             if (isGemini3OrNewerLiveModel(cueModel)) {
                 liveWs.send(JSON.stringify({ realtimeInput: { text: promptText } }));
@@ -1492,6 +2612,8 @@
                     isServerTurnGenerating = false;
                     serverTurnCompletedWhilePlaying = false;
                     lastUserSpeechAtMs = 0;
+                    hasAudioArrivedSinceLastMajorUiStep = true;
+                    lastMajorUiStepAtMs = 0;
                     clearSocketTimers();
                     resolve(ws);
                     return;
@@ -1552,6 +2674,10 @@
                             isServerTurnGenerating = true;
                         }
 
+                        if (audioParts.length > 0) {
+                            hasAudioArrivedSinceLastMajorUiStep = true;
+                        }
+
                         audioParts.forEach(pt => {
                             const inl = pt.inlineData || pt.inline_data;
                             const mType = String(inl.mimeType || inl.mime_type || '');
@@ -1594,10 +2720,13 @@
                                 await new Promise(r => setTimeout(r, 90));
                             }
                             const functionResponses = [];
-                            let executedUiCount = 0;
+                            let executedMajorInBatch = false;
+
                             for (const fc of fnCalls) {
                                 if (cancelledToolCallIds.has(fc.id) || ws._peaDisposed || callEpoch !== sessionEpoch || !isUserSessionActive) continue;
-                                const isPresentationUiFn = (fc.name === 'navigateAppScreen' || fc.name === 'demoCalculate22kVFuse');
+                                const isPresentationUiFn = PRESENTATION_SYNC_TOOLS.has(fc.name);
+                                const isCleanupFn = isCleanupPresentationCall(fc);
+
                                 if (turnInterruptionSeq !== callInterruptSeq && isPresentationUiFn) {
                                     functionResponses.push({
                                         id: fc.id,
@@ -1606,22 +2735,32 @@
                                     });
                                     continue;
                                 }
-                                if (executedUiCount > 0 && isPresentationUiFn) {
-                                    await new Promise(r => setTimeout(r, 900));
-                                    if (cancelledToolCallIds.has(fc.id) || ws._peaDisposed || callEpoch !== sessionEpoch || !isUserSessionActive) continue;
-                                    if (turnInterruptionSeq !== callInterruptSeq) {
-                                        functionResponses.push({
-                                            id: fc.id,
-                                            name: fc.name,
-                                            response: { result: { ok: false, skippedDueToInterruption: true } }
-                                        });
-                                        continue;
-                                    }
+
+                                // กั้นคิวป้องกัน AI มัดรวมหลายขั้นตอนเปลี่ยนหน้าจอทับกันโดยยังไม่ทันพูดอธิบายหน้าจอที่เพิ่งเปิด
+                                const rushedWithoutNarration = !isCleanupFn && !hasAudioArrivedSinceLastMajorUiStep && (Date.now() - lastMajorUiStepAtMs < 2500);
+                                if (isPresentationUiFn && (executedMajorInBatch || rushedWithoutNarration)) {
+                                    functionResponses.push({
+                                        id: fc.id,
+                                        name: fc.name,
+                                        response: {
+                                            result: {
+                                                ok: false,
+                                                deferredUntilNarrated: true,
+                                                instruction: 'หน้าจอก่อนหน้าเพิ่งเปิดขึ้นแสดงผล กรุณาพูดอธิบายจุดเด่นของหน้าจอปัจจุบันให้ผู้ฟังเข้าใจ 2-3 ประโยคให้จบก่อน แล้วจึงเรียกคำสั่งเปิดหน้าถัดไปทีละ 1 ขั้นตอนค่ะ'
+                                            }
+                                        }
+                                    });
+                                    continue;
                                 }
+
                                 let resObj = {};
                                 try {
                                     resObj = await executeVoiceToolCall(fc.name, fc.args || {});
-                                    if (fc.name !== 'getLiveSystemStats') executedUiCount++;
+                                    if (isPresentationUiFn && !isCleanupFn && resObj?.ok !== false) {
+                                        executedMajorInBatch = true;
+                                        hasAudioArrivedSinceLastMajorUiStep = false;
+                                        lastMajorUiStepAtMs = Date.now();
+                                    }
                                 } catch (err) {
                                     resObj = { ok: false, error: String(err?.message || err) };
                                 }
@@ -1985,7 +3124,7 @@
                 safeToast('🌸 เชื่อมต่อพร้อมความจำบทสนทนาเดิมเรียบร้อยค่ะ');
             } else {
                 setLiveActionSubtext('💡 พูดคุยสั่งงานได้เลย หรือกดปุ่มลัดด้านล่างเพื่อให้แนะนำระบบค่ะ');
-                sendTextCueToLiveSession('กล่าวทักทายสั้นๆ 1 ประโยคอย่างนุ่มนวลว่าพร้อมเป็นผู้ช่วยรับแจ้งเหตุและแนะนำระบบแล้วค่ะ');
+                sendTextCueToLiveSession('กล่าวทักทายสั้นๆ 1 ประโยคอย่างนุ่มนวลว่าพร้อมเป็นผู้ช่วยรับแจ้งเหตุ สาธิตระบบสกาด้าจำลอง และสาธิตแผนงาน PM ถึงเรดาร์ไฟดับผู้ใช้ไฟแล้วค่ะ');
             }
         } catch (err) {
             if (myEpoch !== sessionEpoch) return;
@@ -2042,6 +3181,9 @@
         cleanupMicHardwareOnly();
 
         if (hideDock) {
+            closeVoiceOpenedPmAndRadarModals();
+            exitVoiceActivatedSimModeIfNeeded();
+            restoreTab1DemoBackupIfNeeded();
             openedLeftDockByVoice = false;
             if (outputAudioCtx && outputAudioCtx.state !== 'closed') {
                 outputAudioCtx.close().catch(() => {});
@@ -2059,6 +3201,9 @@
 
     function resetPeaLiveVoiceMemory() {
         unlockOutputAudioContextOnGesture();
+        closeVoiceOpenedPmAndRadarModals();
+        exitVoiceActivatedSimModeIfNeeded();
+        restoreTab1DemoBackupIfNeeded();
         clearResumptionHandleState();
         seamlessRenewCount = 0;
         const dockVisible = !document.getElementById('peaLiveVoiceDock')?.classList.contains('hidden');
@@ -2120,15 +3265,18 @@
         setDockMinimized(true);
         setLiveActionSubtext('🎬 เริ่มโหมดวิทยากรนำเสนอระบบอัตโนมัติ...');
         sendTextCueToLiveSession(
-            'เริ่มทำหน้าที่วิทยากรประชาสัมพันธ์แนะนำระบบเครื่องมือจัดการงานไฟฟ้า (PEA Smart Grid) ให้ผู้บริหารและทีมงานฟังได้เลยค่ะ โดยเรียกใช้เครื่องมือเปิดหน้าจอจริงโชว์ทีละส่วนตามลำดับพร้อมอธิบายจุดเด่นอย่างนุ่มนวลชัดเจน ทั้งนี้เมื่อถึงส่วนผังวงจรให้เรียกว่า "ระบบสกาด้าจำลอง" และย้ำว่าเป็นการจำลองการจ่ายไฟเพื่อวางแผน ไม่ใช่งานโอเปอเรทจริง พร้อมดึงตัวเลขจริงของสาขามาประกอบการบรรยายด้วยค่ะ'
+            'เริ่มทำหน้าที่วิทยากรประชาสัมพันธ์แนะนำระบบเครื่องมือจัดการงานไฟฟ้า (PEA Smart Grid) ให้ผู้บริหารและทีมงานฟังได้เลยค่ะ โดยเรียกเครื่องมือทีละ 1 ขั้นตอน รอพูดอธิบายแต่ละหน้าจอให้จบก่อนไปขั้นถัดไป: ทั้งระบบสกาด้าจำลอง (ย้ำว่าเป็นการจำลองการจ่ายไฟเพื่อวางแผน ไม่ใช่งานโอเปอเรทจริง) และเมื่อถึงส่วนแผนงาน PM ให้ใช้ demoPmOutageRadarStep พาชมทีละขั้นตั้งแต่ปฏิทิน PM การตีกรอบเรดาร์ดูดชื่อสถานที่ โพสต์แจ้งเตือน Facebook/LINE ไปจนถึงเปิดหน้าเว็บแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ (public_radar_map) แล้วปิดหน้าต่างเรดาร์ก่อนสรุปแท็บคำนวณฟิวส์และกราฟสถิติค่ะ'
         );
     }
 
     function triggerSpecificTopicDemo(topicCode) {
         unlockOutputAudioContextOnGesture();
         const prompts = {
-            scada: 'ช่วยเปิดหน้าผังวงจรระบบสกาด้าจำลองคู่หน้าฟอร์ม แล้วอธิบายจุดเด่นของ "ระบบสกาด้าจำลอง" โดยย้ำชัดเจนว่าเป็นการจำลองการจ่ายไฟและสับเปลี่ยนโหลดบนแผนที่เพื่อช่วยวางแผน ไม่ใช่งานโอเปอเรทสั่งสับปลดจริง พร้อมอธิบายการตรวจเตือนป้าย LOTO และการชี้เป้าฟอลต์ให้ฟังหน่อยค่ะ',
-            pm: 'ช่วยเปิดหน้าปฏิทินและแผนที่หมุดแผนงาน PM โชว์โซนเรดาร์แจ้งดับไฟประชาชนและการใช้ AI อ่านป้ายชื่อสถานที่สร้างโพสต์ Facebook/LINE ให้ฟังหน่อยค่ะ',
+            scada: 'ช่วยเปิดหน้าผังวงจรระบบสกาด้าจำลอง แล้วเรียกใช้ demoScadaFaultSearch อธิบายการกรอกกระแสฟอลต์ชี้เป้าจุดเสียให้จบก่อน จากนั้นจึงเรียก demoScadaSwitchSimulation เพื่อสาธิตการจำลองปลด-สับสวิตช์ในโหมดจำลองให้ชมค่ะ โดยย้ำชัดเจนว่าเป็น "ระบบสกาด้าจำลอง" สำหรับวางแผนการจ่ายไฟ ไม่ใช่งานโอเปอเรทจริงค่ะ',
+            scada_fault: 'ช่วยเรียกใช้เครื่องมือ demoScadaFaultSearch เพื่อสาธิตการกรอกค่ากระแสฟอลต์และระยะทางลงในฟอร์ม แล้วชี้เป้าบริเวณจุดเกิดฟอลต์บนแผนที่ระบบสกาด้าจำลองให้ดูหน่อยค่ะ พร้อมอธิบายว่าเป็นการคำนวณจำลองเพื่อช่วยค้นหาจุดเสีย ไม่ใช่งานโอเปอเรทจริงค่ะ',
+            scada_switch: 'ช่วยเรียกใช้เครื่องมือ demoScadaSwitchSimulation(action="toggle") เพื่อเปิดโหมดจำลอง Sandbox แล้วสาธิตการจำลองปลดหรือสับสวิตช์บนแผนที่ระบบสกาด้าจำลองให้ดูหน่อยค่ะ พร้อมย้ำว่าเป็นการจำลองการจ่ายไฟและสับเปลี่ยนโหลดบนหน้าจอเท่านั้น ไม่ใช่งานโอเปอเรทสั่งการจริงค่ะ',
+            pm: 'ช่วยสาธิตระบบแผนงาน PM แบบครบวงจรจนถึงแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ โดยเรียก demoPmOutageRadarStep ทีละ 1 ขั้นตอน (พูดอธิบายให้จบทีละหน้าก่อนแล้วจึงเรียกขั้นถัดไป): เริ่มจาก 1) calendar_overview ตารางปฏิทินและแนบรูปส่ง LINE 2) radar_zone_draft ตีกรอบวงเรดาร์พื้นที่ไฟดับสีแดงและ AI ดูดชื่อสถานที่ในกรอบ 3) announce_post สร้างโพสต์ประกาศ Facebook/LINE และ 4) จบที่ public_radar_map เปิดหน้าเว็บแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟค้างไว้บนหน้าจอ พร้อมอธิบายวิธีที่ประชาชนกดเช็กพิกัด GPS บ้านของตนเองค่ะ',
+            public_radar: 'ช่วยเรียก demoPmOutageRadarStep(step="public_radar_map") เพื่อเปิดหน้าเว็บแผนที่เรดาร์ตรวจสอบไฟดับสำหรับผู้ใช้ไฟ (outage-map.html) ขึ้นมาแสดงบนหน้าจอ แล้วอธิบายจุดเด่นและวิธีที่ผู้ใช้ไฟหรือประชาชนกดตรวจสอบพิกัด GPS บ้านและโรงงานของตนเองว่าอยู่ในเขตแผนดับไฟหรือไม่ให้ฟังหน่อยค่ะ',
             dispatch: 'สลับมาหน้าฟอร์มรับแจ้งไฟฟ้าขัดข้อง แท็บ 2 แล้วเตรียมพร้อมช่วยรับแจ้งเหตุและกรอกฟอร์มตามที่ฉันกำลังจะพูดแจ้งต่อไปนี้ค่ะ'
         };
         if (!prompts[topicCode]) return;
@@ -2142,7 +3290,9 @@
             startPeaLiveVoiceSession(false);
             return;
         }
-        if (topicCode === 'scada' || topicCode === 'pm') setDockMinimized(true);
+        if (topicCode.startsWith('scada') || topicCode === 'pm' || topicCode === 'public_radar') {
+            setDockMinimized(true);
+        }
         sendTextCueToLiveSession(prompts[topicCode]);
     }
 
@@ -2220,7 +3370,6 @@
         const activeCls = 'bg-gradient-to-r from-pink-600 to-rose-500 text-white px-2.5 py-1.5 rounded-xl text-xs font-extrabold shadow-md flex items-center gap-1 border border-pink-200 animate-pulse';
         const idleMainCls = 'bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white px-2.5 py-1.5 rounded-xl text-xs transition shadow-sm flex items-center gap-1 font-semibold border border-pink-300/40';
 
-        // อัปเดต DOM เฉพาะเมื่อสถานะเปลี่ยนจริง ป้องกันการสร้าง span ใหม่ทับจังหวะแตะปุ่มบนมือถือ
         ['peaMainHeaderLiveBtn', 'peaTechHeaderLiveBtn'].forEach(id => {
             const btn = document.getElementById(id);
             if (!btn || btn.dataset.liveState === stateKey) return;
@@ -2240,6 +3389,7 @@
     }
 
     function injectLiveVoiceUI() {
+        ensureTab1ManualEditGuardBound();
         const mainHdr = document.querySelector('#mainAppContent .bg-gradient-to-r .flex.items-center.gap-1\\.5.shrink-0');
         if (mainHdr && !document.getElementById('peaMainHeaderLiveBtn')) {
             const btn = document.createElement('button');
@@ -2310,8 +3460,10 @@
                         <div id="peaLiveMemoryBadge" class="text-[10px] font-semibold text-slate-400 flex items-center justify-between gap-1 px-1">♾️ โหมดบีบอัดความจำอัตโนมัติ (คุยยาวเกิน 15 นาทีได้ไม่ตัดสาย)</div>
                         <div class="grid grid-cols-2 gap-1.5">
                             <button type="button" onclick="triggerAutoPresentationCue()" class="col-span-2 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:brightness-105 text-slate-950 font-extrabold text-xs shadow-md flex items-center justify-center gap-1.5">🎬 ให้ผู้ช่วยสาวนำเสนอระบบทั้งหมด (Auto-Demo)</button>
-                            <button type="button" onclick="triggerSpecificTopicDemo('scada')" class="py-1.5 px-2 rounded-xl bg-teal-600/80 hover:bg-teal-600 text-white font-bold text-[11px] border border-teal-400/40">⚡ สาธิตสกาด้าจำลอง</button>
-                            <button type="button" onclick="triggerSpecificTopicDemo('pm')" class="py-1.5 px-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white font-bold text-[11px] border border-indigo-400/40">📅 สาธิตแผน PM/เรดาร์</button>
+                            <button type="button" onclick="triggerSpecificTopicDemo('scada_fault')" class="py-1.5 px-2 rounded-xl bg-rose-600/85 hover:bg-rose-600 text-white font-bold text-[11px] border border-rose-400/40">🎯 สาธิตหากระแสฟอลต์</button>
+                            <button type="button" onclick="triggerSpecificTopicDemo('scada_switch')" class="py-1.5 px-2 rounded-xl bg-amber-600/85 hover:bg-amber-600 text-white font-bold text-[11px] border border-amber-400/40">🔀 สาธิตจำลองปลด-สับ</button>
+                            <button type="button" onclick="triggerSpecificTopicDemo('pm')" class="py-1.5 px-2 rounded-xl bg-indigo-600/85 hover:bg-indigo-600 text-white font-bold text-[11px] border border-indigo-400/40">📅 สาธิตแผน PM ครบวงจร</button>
+                            <button type="button" onclick="triggerSpecificTopicDemo('public_radar')" class="py-1.5 px-2 rounded-xl bg-pink-600/85 hover:bg-pink-600 text-white font-bold text-[11px] border border-pink-400/40">📡 เรดาร์ไฟดับผู้ใช้ไฟ</button>
                         </div>
                         <div class="flex items-center gap-1.5 pt-1 border-t border-white/10">
                             <button type="button" id="peaLiveMuteBtn" onclick="togglePeaLiveMicMute()" class="flex-1 py-2 px-2 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-[11px] border border-white/20 transition">🎙️ ไมค์: เปิดรับฟัง</button>
@@ -2379,7 +3531,7 @@
 
     ['pagehide', 'beforeunload'].forEach(evName => {
         window.addEventListener(evName, () => {
-            if (isUserSessionActive || liveWs) stopPeaLiveVoiceSession(true);
+            if (isUserSessionActive || liveWs || tab1DemoBackup) stopPeaLiveVoiceSession(true);
         });
     });
 
@@ -2419,7 +3571,9 @@
         openPeaLiveKeyConfig,
         triggerAutoPresentationCue,
         triggerSpecificTopicDemo,
-        onSelectFemaleVoiceProfile
+        onSelectFemaleVoiceProfile,
+        closePeaLivePublicRadarPreview,
+        copyPeaLivePublicRadarLink
     });
 
     if (document.readyState === 'loading') {
@@ -2428,4 +3582,4 @@
         injectLiveVoiceUI();
     }
 })();
-// ==================== จบไฟล์ pea-live-voice.js (v2.4) ====================
+// ==================== จบไฟล์ pea-live-voice.js (v2.7) ====================
