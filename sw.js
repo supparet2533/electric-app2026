@@ -1,8 +1,8 @@
 // ============================================================================
-// ⚡ PEA SMART GRID — SERVICE WORKER v173 (sw.js)
+// ⚡ PEA SMART GRID — SERVICE WORKER v175 (sw.js)
 // เปลี่ยนเฉพาะเลข CACHE_NAME บรรทัดเดียว บังคับอัปเดต HTML/JS ทะลุแคชทุกเครื่องอัตโนมัติ
 // ============================================================================
-const CACHE_NAME = 'pea-smart-tools-v176';
+const CACHE_NAME = 'pea-smart-tools-v177';
 const TILE_CACHE_NAME = 'pea-map-tiles-v2';
 const MAX_TILE_CACHE_ENTRIES = 120;
 
@@ -60,7 +60,9 @@ const REQUIRED_LOCAL_SHELL = new Set([
     './scada-engine.js',
     './scada-fault-locator.js',
     './scada-tie-advisor.js',
-    './pm-calendar.js'
+    './pm-calendar.js',
+    './pm-push.js',
+    './pea-live-voice.js'
 ]);
 
 const STATIC_CDN_HOSTS = [
@@ -134,15 +136,18 @@ function isValidShellPayload(pathname, res, buf, destination = '') {
     const isMainHtml = pathname === baseDirPath ||
                        /(?:^\/$|\/(?:index|page2)(?:\.html)?$|^\.\/$|^\.\/(?:index|page2)(?:\.html)?$)/i.test(pathname);
     const isOutageHtml = /(?:\/outage-map(?:\.html)?$|^\.\/outage-map\.html$)/i.test(pathname);
-    if ((isMainHtml || isOutageHtml) && buf) {
+    const isMeterHtml = /(?:\/meter-form(?:\.html)?$|^\.\/meter-form\.html$)/i.test(pathname);
+    const isTxLoadHtml = /(?:\/tx-load-form(?:\.html)?$|^\.\/tx-load-form\.html$)/i.test(pathname);
+
+    if ((isMainHtml || isOutageHtml || isMeterHtml || isTxLoadHtml) && buf) {
         try {
             const text = new TextDecoder('utf-8').decode(buf);
             if (isMainHtml && !/(?:pea-idb-store|shared-core|main-app|tech-jobs|scada-engine|scada-fault-locator|scada-tie-advisor|pm-calendar|pea-live-voice)\.js/i.test(text)) {
                 return false;
             }
-            if (isOutageHtml && !text.includes('outageRadarMap')) {
-                return false;
-            }
+            if (isOutageHtml && !text.includes('outageRadarMap')) return false;
+            if (isMeterHtml && !/มิเตอร์|html2pdf|shared-core/i.test(text)) return false;
+            if (isTxLoadHtml && !text.includes('officialReportSheet')) return false;
         } catch (e) {}
     }
     return true;
@@ -509,13 +514,14 @@ self.addEventListener('notificationclick', (event) => {
     const targetFullUrl = resolveAppTargetUrl(event.notification.data?.url);
     const standaloneRe = /(?:outage-map|meter-form|tx-load-form)(?:\.html)?(?:$|[?#])/i;
     const isTargetStandalone = standaloneRe.test(targetFullUrl);
+    const cleanTargetBase = targetFullUrl.split(/[?#]/)[0];
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
             const appClients = clientList.filter((c) =>
                 c.url.startsWith(baseDir) &&
                 c.frameType !== 'nested' &&
-                (isTargetStandalone || !standaloneRe.test(c.url))
+                (isTargetStandalone ? c.url.split(/[?#]/)[0] === cleanTargetBase : !standaloneRe.test(c.url))
             );
             const topClient = appClients.find((c) => c.focused) ||
                               appClients.find((c) => c.visibilityState === 'visible') ||
@@ -526,8 +532,8 @@ self.addEventListener('notificationclick', (event) => {
                     self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
                 );
             }
-            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null;
+            return self.clients.openWindow ? self.clients.openWindow(targetFullUrl) : null
         })
     );
 });
-// ==================== จบไฟล์ sw.js (v173) ====================
+// ==================== จบไฟล์ sw.js (v175) ====================
