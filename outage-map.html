@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ระบบเรดาร์ตรวจสอบพื้นที่แผนดับไฟล่วงหน้า — กฟภ.</title>
     <meta name="theme-color" content="#1e1b4b">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=174">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body { font-family: 'Prompt', sans-serif; background: #0f172a; color: #1e293b; min-height: 100dvh; }
+        body { font-family: 'Prompt', sans-serif; background: #0f172a; color: #1e293b; min-height: 100dvh; overflow-x: clip; }
         .leaflet-container img, .leaflet-container svg { max-width: none !important; max-height: none !important; }
         @keyframes radarSweep {
             0% { transform: scale(0.45); opacity: 0.9; }
@@ -31,7 +32,7 @@
     <header class="bg-gradient-to-r from-indigo-950 via-purple-900 to-slate-900 text-white px-4 pt-[max(0.85rem,env(safe-area-inset-top))] pb-3.5 shadow-lg">
         <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2.5">
             <div class="flex items-center gap-2.5">
-                <div class="w-9 h-9 rounded-full bg-amber-400/15 border border-amber-300/60 flex items-center justify-center text-lg shadow">📡</div>
+                <div class="w-9 h-9 rounded-full bg-amber-400/15 border border-amber-300/60 flex items-center justify-center text-lg shadow shrink-0">📡</div>
                 <div>
                     <h1 class="text-sm sm:text-base font-extrabold tracking-wide text-amber-300">เรดาร์ตรวจสอบพื้นที่แผนดับไฟล่วงหน้า</h1>
                     <p class="text-[11px] text-purple-200">การไฟฟ้าส่วนภูมิภาค (แตะบนแผนที่ หรือกดเช็กพิกัด GPS ปัจจุบัน)</p>
@@ -39,7 +40,7 @@
             </div>
             <div class="flex items-center gap-2">
                 <select id="branchSelect" onchange="onBranchChange(this.value)" class="px-2.5 py-1.5 rounded-xl bg-white/15 text-white border border-white/25 text-xs font-bold focus:outline-none">
-                    <option value="กฟส.บึง" class="text-slate-900">🏢 กฟส.บึง</option>
+                    <option value="กฟส.บึง" class="bg-white text-slate-900">🏢 กฟส.บึง</option>
                 </select>
                 <button type="button" onclick="loadOutagePlans(true)" class="bg-white/15 hover:bg-white/25 px-2.5 py-1.5 rounded-xl text-xs font-bold border border-white/20">🔄 รีเฟรช</button>
             </div>
@@ -54,7 +55,7 @@
                     📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)
                 </button>
                 <div class="flex gap-1.5 flex-1">
-                    <input type="text" id="manualCoordInput" onkeydown="if(event.key==='Enter') checkManualCoordInput()" placeholder="หรือวางพิกัด Lat, Lon / ลิงก์ Google Maps บ้านของคุณ..." class="flex-1 min-w-0 px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-500">
+                    <input type="text" id="manualCoordInput" onkeydown="if(event.key==='Enter' && !event.isComposing){ event.preventDefault(); checkManualCoordInput(); }" placeholder="หรือวางพิกัด Lat, Lon / ลิงก์ Google Maps บ้านของคุณ..." class="flex-1 min-w-0 px-3 py-2 text-base sm:text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-500">
                     <button type="button" id="btnSearchManualCoord" onclick="checkManualCoordInput()" class="bg-slate-800 hover:bg-slate-900 text-amber-300 font-extrabold px-3.5 py-2 rounded-xl text-xs shrink-0">ค้นหา</button>
                 </div>
             </div>
@@ -69,7 +70,7 @@
                 <button type="button" id="flt-all" onclick="setDateFilter('all')" class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white">ทั้งหมด (<span id="cnt-all">0</span>)</button>
                 <button type="button" id="flt-today" onclick="setDateFilter('today')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🔴 วันนี้ (<span id="cnt-today">0</span>)</button>
                 <button type="button" id="flt-tomorrow" onclick="setDateFilter('tomorrow')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🟠 พรุ่งนี้ (<span id="cnt-tomorrow">0</span>)</button>
-                <button type="button" id="flt-7days" onclick="setDateFilter('7days')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🗓️ 7 วันข้างหน้า</button>
+                <button type="button" id="flt-7days" onclick="setDateFilter('7days')" class="px-2.5 py-1 rounded-lg text-slate-600 hover:bg-slate-100">🗓️ 7 วันข้างหน้า (<span id="cnt-7days">0</span>)</button>
             </div>
             <div class="flex items-center gap-2.5 text-[10.5px] font-bold text-slate-600">
                 <span class="inline-flex items-center gap-1"><i class="w-2.5 h-2.5 rounded-full bg-rose-600 inline-block"></i> ดับไฟวันนี้</span>
@@ -104,7 +105,7 @@
         หมายเหตุ: เวลาจ่ายไฟอาจเร็วหรือช้ากว่ากำหนดขึ้นอยู่กับสภาพหน้างานและความปลอดภัยของระบบไฟฟ้า
     </footer>
 
-    <script>
+        <script>
         // 🛡️ เชื่อมต่อผ่าน Cloudflare Worker Edge Proxy เท่านั้น (ซ่อนลิงก์หลังบ้าน 100%)
         const PUBLIC_RADAR_PROXY_URL = 'https://pea-outage-radar.samsrikacha2533.workers.dev';
         const NEAR_EDGE_BUFFER_METERS = 120;
@@ -114,6 +115,8 @@
         let activeApiUrl = '';
         let activeGroup = 'กฟส.บึง';
         let allPlans = [];
+        let hasLoadedPlansSuccess = false;
+        let branchJustChanged = false;
         let dateFilter = 'all';
         let map = null, zonesLayer = null, userMarker = null;
         let zoneLayersById = {};
@@ -127,6 +130,14 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        function normalizeBranchName(raw) {
+            let g = String(raw || '').trim().replace(/\s+/g, ' ');
+            g = g.replace(/^(กฟ[ก-ฮ]{1,2})\.\s+/, '$1.')
+                 .replace(/^(กฟ[สฟจตอยภผกนฉ])\s+/, '$1.')
+                 .replace(/^(กฟ[สฟจตอยภผกนฉ])(?![.\s]|[ก-ฮ]\.|$)/, '$1.');
+            return g.trim() || 'กฟส.บึง';
         }
 
         function fmtTimeSlot(ts) {
@@ -148,22 +159,115 @@
             return `${bkk.getUTCFullYear()}-${String(bkk.getUTCMonth() + 1).padStart(2, '0')}-${String(bkk.getUTCDate()).padStart(2, '0')}`;
         }
 
+        function parseIsoYmd(isoStr) {
+            const m = String(isoStr || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+            if (!m) return null;
+            const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+            if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+            return { y, mo, d };
+        }
+
         function calcDaysFromToday(isoStr) {
-            const [y, m, d] = String(isoStr || '').split('-').map(Number);
+            const parsed = parseIsoYmd(isoStr);
+            if (!parsed) return 999;
             const [ty, tm, td] = getTodayIsoBkk().split('-').map(Number);
-            if (!y || !ty) return 999;
-            return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
+            if (!ty) return 999;
+            return Math.round((Date.UTC(parsed.y, parsed.mo - 1, parsed.d) - Date.UTC(ty, tm - 1, td)) / 86400000);
         }
 
         function formatThaiDate(isoStr) {
-            const [y, m, d] = String(isoStr || '').split('-').map(Number);
-            if (!y || !m || !d) return isoStr || '-';
-            return `${TH_DAYS[new Date(y, m - 1, d).getDay()]} ${d} ${TH_MONTHS[m - 1]} ${y + 543}`;
+            const parsed = parseIsoYmd(isoStr);
+            if (!parsed) return isoStr || '-';
+            const { y, mo, d } = parsed;
+            return `${TH_DAYS[new Date(Date.UTC(y, mo - 1, d)).getUTCDay()]} ${d} ${TH_MONTHS[mo - 1]} ${y + 543}`;
+        }
+
+        function normalizeZone(rawZone, fallbackLat, fallbackLon, fallbackRadius) {
+            if (rawZone && typeof rawZone === 'object') {
+                const zType = rawZone.t || (rawZone.type === 'circle' ? 'c' : (rawZone.type === 'polygon' ? 'p' : ''));
+                if (zType === 'c') {
+                    const center = Array.isArray(rawZone.c) ? rawZone.c : (Array.isArray(rawZone.center) ? rawZone.center : []);
+                    const lat = parseFloat(center[0]), lon = parseFloat(center[1]);
+                    const r = Math.max(20, parseFloat(rawZone.r ?? rawZone.radius) || 300);
+                    if (!isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+                        return { t: 'c', c: [lat, lon], r };
+                    }
+                } else if (zType === 'p') {
+                    const rawPts = Array.isArray(rawZone.p) ? rawZone.p : (Array.isArray(rawZone.points) ? rawZone.points : []);
+                    const pts = rawPts
+                        .map(pt => Array.isArray(pt) ? [parseFloat(pt[0]), parseFloat(pt[1])] : [parseFloat(pt?.lat), parseFloat(pt?.lon ?? pt?.lng)])
+                        .filter(([la, lo]) => !isNaN(la) && !isNaN(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180);
+                    if (pts.length >= 3) {
+                        return { t: 'p', p: pts };
+                    }
+                }
+            }
+            const fLat = parseFloat(fallbackLat), fLon = parseFloat(fallbackLon);
+            if (!isNaN(fLat) && !isNaN(fLon) && Math.abs(fLat) <= 90 && Math.abs(fLon) <= 180) {
+                return { t: 'c', c: [fLat, fLon], r: Math.max(20, parseFloat(fallbackRadius) || 350) };
+            }
+            return null;
+        }
+
+        function sanitizePlanList(rawPlans) {
+            if (!Array.isArray(rawPlans)) return [];
+            return rawPlans.map((p, idx) => {
+                if (!p || typeof p !== 'object') return null;
+                const zone = normalizeZone(p.zone || p.outageZone, p.lat, p.lon, p.outageRadius);
+                if (!zone) return null;
+                return {
+                    id: String(p.id || `plan_${idx}`),
+                    title: String(p.title || 'แผนดับไฟปฏิบัติงานปรับปรุงระบบจำหน่าย'),
+                    date: String(p.date || p.planDate || ''),
+                    timeSlot: String(p.timeSlot || p.timeRange || '09.00-16.00'),
+                    detail: String(p.detail || p.publicAreaNote || p.note || '').trim(),
+                    zone
+                };
+            }).filter(Boolean).sort((a, b) => {
+                const da = calcDaysFromToday(a.date), db = calcDaysFromToday(b.date);
+                if (da !== db) return da - db;
+                return a.timeSlot.localeCompare(b.timeSlot);
+            });
+        }
+
+                function getOfflineStaffPlansFallback(targetGroup) {
+            try {
+                const raw = localStorage.getItem('elec_pm_calendar_plans_v1');
+                if (!raw) return null;
+                const localAll = JSON.parse(raw);
+                if (!Array.isArray(localAll) || localAll.length === 0) return null;
+                const normTarget = normalizeBranchName(targetGroup);
+                const groupsSet = new Set([normTarget]);
+                localAll.forEach(p => {
+                    if (p && !p.pmDeleted && p.ownerGroup) groupsSet.add(normalizeBranchName(p.ownerGroup));
+                });
+                const matched = localAll.filter(p =>
+                    p && !p.pmDeleted &&
+                    (p.pub === true || p.pub === 1) && p.oz &&
+                    p.status !== 'done' &&
+                    normalizeBranchName(p.ownerGroup || 'กฟส.บึง') === normTarget
+                ).map(p => ({
+                    id: p.id,
+                    title: p.pubNote || p.pbn || p.title,
+                    date: p.date,
+                    timeSlot: p.timeSlot,
+                    detail: p.pubPlaces || p.pbp || '',
+                    zone: p.oz
+                }));
+                return {
+                    group: normTarget,
+                    groups: Array.from(groupsSet),
+                    plans: sanitizePlanList(matched),
+                    isOfflineFallback: true
+                };
+            } catch (e) {
+                return null;
+            }
         }
 
         function haversineMeters(lat1, lon1, lat2, lon2) {
             const R = 6371000, rad = x => x * Math.PI / 180;
-            const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1); 
+            const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
             const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
             return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
@@ -172,7 +276,8 @@
             if (!Array.isArray(pts) || pts.length < 3) return false;
             let inside = false;
             for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-                const yi = pts[i][0], xi = pts[i][1], yj = pts[j][0], xj = pts[j][1];
+                const yi = Number(pts[i][0]), xi = Number(pts[i][1]);
+                const yj = Number(pts[j][0]), xj = Number(pts[j][1]);
                 const intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi);
                 if (intersect) inside = !inside;
             }
@@ -184,8 +289,8 @@
             let minD = Infinity;
             for (let i = 0; i < pts.length; i++) {
                 const j = (i + 1) % pts.length;
-                const ax = (pts[i][1] - lon) * mLon, ay = (pts[i][0] - lat) * mLat;
-                const bx = (pts[j][1] - lon) * mLon, by = (pts[j][0] - lat) * mLat;
+                const ax = (Number(pts[i][1]) - lon) * mLon, ay = (Number(pts[i][0]) - lat) * mLat;
+                const bx = (Number(pts[j][1]) - lon) * mLon, by = (Number(pts[j][0]) - lat) * mLat;
                 const dx = bx - ax, dy = by - ay, lenSq = dx * dx + dy * dy;
                 const t = lenSq > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lenSq)) : 0;
                 const d = Math.hypot(ax + t * dx, ay + t * dy);
@@ -198,12 +303,14 @@
             const z = plan.zone;
             if (!z) return { inside: false, edgeMeters: Infinity };
             if (z.t === 'c' && Array.isArray(z.c)) {
-                const dist = haversineMeters(lat, lon, z.c[0], z.c[1]);
-                return { inside: dist <= z.r, edgeMeters: Math.max(0, Math.round(dist - z.r)) };
+                const dist = haversineMeters(lat, lon, Number(z.c[0]), Number(z.c[1]));
+                const r = Number(z.r) || 0;
+                const inside = dist <= r;
+                return { inside, edgeMeters: inside ? 0 : Math.max(1, Math.round(dist - r)) };
             }
             if (z.t === 'p' && Array.isArray(z.p)) {
                 const inside = isPointInPoly(lat, lon, z.p);
-                return { inside, edgeMeters: inside ? 0 : Math.round(distToPolyEdgeMeters(lat, lon, z.p)) };
+                return { inside, edgeMeters: inside ? 0 : Math.max(1, Math.round(distToPolyEdgeMeters(lat, lon, z.p))) };
             }
             return { inside: false, edgeMeters: Infinity };
         }
@@ -213,12 +320,20 @@
         }
 
         function initMap() {
-            map = L.map('outageRadarMap').setView([13.1361, 101.0322], 12);
+            const mapEl = document.getElementById('outageRadarMap');
+            map = L.map(mapEl).setView([13.1361, 101.0322], 12);
             const gHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' }).addTo(map);
             const gStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' });
             L.control.layers({ '🛰️ ดาวเทียม (เห็นหลังคาบ้าน)': gHybrid, '🗺️ แผนที่ถนน': gStreet }, null, { position: 'topright' }).addTo(map);
             zonesLayer = L.layerGroup().addTo(map);
             map.on('click', e => { if (e.latlng) inspectUserCoordinate(e.latlng.lat, e.latlng.lng, false); });
+
+            if (typeof ResizeObserver !== 'undefined' && mapEl) {
+                const ro = new ResizeObserver(() => {
+                    try { map.invalidateSize({ pan: false }); } catch (e) {}
+                });
+                ro.observe(mapEl);
+            }
         }
 
         function getFilteredPlans() {
@@ -245,9 +360,12 @@
             document.getElementById('cnt-all').textContent = validAll.length;
             document.getElementById('cnt-today').textContent = validAll.filter(p => calcDaysFromToday(p.date) === 0).length;
             document.getElementById('cnt-tomorrow').textContent = validAll.filter(p => calcDaysFromToday(p.date) === 1).length;
+            const cnt7El = document.getElementById('cnt-7days');
+            if (cnt7El) cnt7El.textContent = validAll.filter(p => calcDaysFromToday(p.date) <= 7).length;
 
             const list = getFilteredPlans().filter(p => p.zone);
-            list.forEach(p => {
+            // วาดแผนล่วงหน้าก่อน แล้ววาดแผนวันนี้ทับเป็นชั้นบนสุดเพื่อให้โซนสีแดงเด่นชัดเสมอ
+            [...list].reverse().forEach(p => {
                 const z = p.zone;
                 if (z.t !== 'c' && z.t !== 'p') return;
                 const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft);
@@ -256,11 +374,13 @@
                     fillOpacity: dLeft === 0 ? 0.28 : 0.20,
                     className: th.cls, bubblingMouseEvents: false
                 };
-                const lyr = z.t === 'c' ? L.circle(z.c, { ...opts, radius: z.r }) : L.polygon(z.p, opts);
-                lyr.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:220px;" class="space-y-1 text-xs"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><div class="font-extrabold text-slate-900 text-sm pt-0.5">${escHtml(p.title)}</div><div class="text-blue-700 font-bold">🗓️ ${formatThaiDate(p.date)} (${escHtml(fmtTimeSlot(p.timeSlot))})</div>${p.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`);
-                lyr.on('click', ev => { if (ev.latlng) inspectUserCoordinate(ev.latlng.lat, ev.latlng.lng, false); });
-                lyr.addTo(zonesLayer);
-                zoneLayersById[p.id] = lyr;
+                try {
+                    const lyr = z.t === 'c' ? L.circle(z.c, { ...opts, radius: z.r }) : L.polygon(z.p, opts);
+                    lyr.bindPopup(`<div style="font-family:'Prompt',sans-serif;min-width:220px;" class="space-y-1 text-xs"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><div class="font-extrabold text-slate-900 text-sm pt-0.5">${escHtml(p.title)}</div><div class="text-blue-700 font-bold">🗓️ ${escHtml(formatThaiDate(p.date))} (${escHtml(fmtTimeSlot(p.timeSlot))})</div>${p.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`);
+                    lyr.on('click', ev => { if (ev.latlng) inspectUserCoordinate(ev.latlng.lat, ev.latlng.lng, false); });
+                    lyr.addTo(zonesLayer);
+                    zoneLayersById[p.id] = lyr;
+                } catch (e) {}
             });
 
             const listEl = document.getElementById('outagePlanList');
@@ -269,8 +389,8 @@
                 return;
             }
             listEl.innerHTML = list.map(p => {
-                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft), safeId = String(p.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                return `<div onclick="focusSingleZone('${safeId}')" class="cursor-pointer p-3 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 transition space-y-1 text-xs"><div class="flex items-center justify-between gap-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><span class="font-bold text-slate-600">⏰ ${escHtml(fmtTimeSlot(p.timeSlot))}</span></div><div class="font-extrabold text-slate-900 text-sm">${escHtml(p.title)}</div><div class="text-[11px] font-bold text-indigo-700">📅 ${formatThaiDate(p.date)}</div>${p.detail ? `<div class="text-[11px] text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`;
+                const dLeft = calcDaysFromToday(p.date), th = getZoneTheme(dLeft);
+                return `<div data-plan-id="${escHtml(p.id)}" onclick="focusSingleZone(this.dataset.planId)" class="cursor-pointer p-3 rounded-xl border border-slate-200 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/40 transition space-y-1 text-xs"><div class="flex items-center justify-between gap-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold ${th.badgeCls}">${th.tag}</span><span class="font-bold text-slate-600">⏰ ${escHtml(fmtTimeSlot(p.timeSlot))}</span></div><div class="font-extrabold text-slate-900 text-sm">${escHtml(p.title)}</div><div class="text-[11px] font-bold text-indigo-700">📅 ${escHtml(formatThaiDate(p.date))}</div>${p.detail ? `<div class="text-[11px] text-slate-600">ℹ️ ${escHtml(p.detail)}</div>` : ''}</div>`;
             }).join('');
         }
 
@@ -286,7 +406,10 @@
             const layers = Object.values(zoneLayersById);
             if (!layers.length) return;
             const fg = L.featureGroup(layers);
-            map.fitBounds(fg.getBounds(), { padding: [35, 35], maxZoom: 15 });
+            const bounds = fg.getBounds();
+            if (bounds && bounds.isValid()) {
+                map.fitBounds(bounds, { padding: [35, 35], maxZoom: 15 });
+            }
         }
 
         function setDateFilter(flt) {
@@ -299,25 +422,38 @@
         }
 
         function inspectUserCoordinate(lat, lon, flyToPoint = true) {
-            if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return;
-            lastCheckedLatLon = [lat, lon];
+            const numLat = Number(lat), numLon = Number(lon);
+            if (isNaN(numLat) || isNaN(numLon) || Math.abs(numLat) > 90 || Math.abs(numLon) > 180) return;
+            lastCheckedLatLon = [numLat, numLon];
+
             const icon = L.divIcon({
                 className: '',
                 html: '<div style="position:relative;width:30px;height:30px;display:flex;align-items:center;justify-content:center;"><div class="user-radar-ring"></div><div style="position:relative;z-index:2;width:28px;height:28px;border-radius:9999px;background:#0284c7;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;font-size:14px;">🏠</div></div>',
                 iconSize: [30, 30], iconAnchor: [15, 15]
             });
             if (!userMarker) {
-                userMarker = L.marker([lat, lon], { icon, draggable: true, zIndexOffset: 950 }).addTo(map);
+                userMarker = L.marker([numLat, numLon], { icon, draggable: true, zIndexOffset: 950 }).addTo(map);
                 userMarker.on('dragend', ev => { const ll = ev.target.getLatLng(); inspectUserCoordinate(ll.lat, ll.lng, false); });
-            } else userMarker.setLatLng([lat, lon]);
-            if (flyToPoint) map.setView([lat, lon], Math.max(map.getZoom(), 16));
+            } else {
+                userMarker.setLatLng([numLat, numLon]);
+            }
+            if (flyToPoint) map.setView([numLat, numLon], Math.max(map.getZoom(), 16));
+
+            if (!hasLoadedPlansSuccess) {
+                showNoticeInBox(
+                    '⏳ ปักหมุดตำแหน่งของคุณไว้แล้ว กำลังรอข้อมูลแผนดับไฟจากเซิร์ฟเวอร์...',
+                    'ระบบจะตรวจสอบและแจ้งผลอัตโนมัติทันทีที่เชื่อมต่อสัญญาณสำเร็จครับ'
+                );
+                loadOutagePlans(true);
+                return;
+            }
 
             const activePlans = allPlans.filter(p => calcDaysFromToday(p.date) >= 0 && p.zone);
             const hits = [], nearHits = [];
             let nearestMeters = Infinity;
 
             activePlans.forEach(p => {
-                const res = evaluatePointAgainstPlan(lat, lon, p);
+                const res = evaluatePointAgainstPlan(numLat, numLon, p);
                 if (res.inside) hits.push(p);
                 else {
                     if (res.edgeMeters <= NEAR_EDGE_BUFFER_METERS) nearHits.push({ plan: p, dist: res.edgeMeters });
@@ -325,18 +461,20 @@
                 }
             });
 
+            nearHits.sort((a, b) => a.dist - b.dist);
+
             const box = document.getElementById('radarResultBox');
             box.classList.remove('hidden');
-            const coordTxt = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+            const coordTxt = `${numLat.toFixed(5)}, ${numLon.toFixed(5)}`;
 
             if (hits.length > 0) {
                 box.className = 'rounded-2xl p-3.5 border-2 border-rose-500 bg-rose-50 text-rose-950 space-y-2';
                 box.innerHTML = `<div class="font-extrabold text-sm text-rose-700">🚨 พิกัดที่เลือก (${coordTxt}) อยู่ในเขตแผนดับไฟ ${hits.length} รายการ!</div>` +
-                    hits.map(h => `<div class="p-2.5 bg-white rounded-xl border border-rose-200 text-xs space-y-0.5"><div class="font-extrabold text-slate-900">${escHtml(h.title)}</div><div class="font-bold text-rose-700">🗓️ ${formatThaiDate(h.date)} • เวลา ${escHtml(fmtTimeSlot(h.timeSlot))}</div>${h.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(h.detail)}</div>` : ''}</div>`).join('');
+                    hits.map(h => `<div class="p-2.5 bg-white rounded-xl border border-rose-200 text-xs space-y-0.5"><div class="font-extrabold text-slate-900">${escHtml(h.title)}</div><div class="font-bold text-rose-700">🗓️ ${escHtml(formatThaiDate(h.date))} • เวลา ${escHtml(fmtTimeSlot(h.timeSlot))}</div>${h.detail ? `<div class="text-slate-600">ℹ️ ${escHtml(h.detail)}</div>` : ''}</div>`).join('');
             } else if (nearHits.length > 0) {
                 box.className = 'rounded-2xl p-3.5 border-2 border-amber-400 bg-amber-50 text-amber-950 space-y-1.5';
                 box.innerHTML = `<div class="font-extrabold text-sm text-amber-800">⚠️ อยู่ใกล้ขอบเขตแผนดับไฟ (ห่างแนวเขตเพียง ${nearHits[0].dist} เมตร)</div><p class="text-xs text-amber-900">อาจได้รับผลกระทบหากรับไฟต่อเนื่องจากหม้อแปลงชุดเดียวกัน:</p>` +
-                    nearHits.map(n => `<div class="p-2 bg-white rounded-xl border border-amber-200 text-xs"><b>${escHtml(n.plan.title)}</b> — ${formatThaiDate(n.plan.date)} (${escHtml(fmtTimeSlot(n.plan.timeSlot))})</div>`).join('');
+                    nearHits.map(n => `<div class="p-2 bg-white rounded-xl border border-amber-200 text-xs"><b>${escHtml(n.plan.title)}</b> — ${escHtml(formatThaiDate(n.plan.date))} (${escHtml(fmtTimeSlot(n.plan.timeSlot))})</div>`).join('');
             } else {
                 const distInfo = isFinite(nearestMeters) ? ` (ห่างจากเขตแผนดับไฟที่ใกล้ที่สุด ${(nearestMeters >= 1000 ? (nearestMeters / 1000).toFixed(2) + ' กม.' : nearestMeters + ' ม.')})` : '';
                 box.className = 'rounded-2xl p-3.5 border-2 border-emerald-400 bg-emerald-50 text-emerald-950';
@@ -356,24 +494,25 @@
                     btn.disabled = false; btn.textContent = '📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)';
                     inspectUserCoordinate(pos.coords.latitude, pos.coords.longitude, true);
                 },
-                () => {
+                err => {
                     btn.disabled = false; btn.textContent = '📍 ตรวจสอบตำแหน่งปัจจุบันของฉัน (GPS)';
+                    const isDenied = err && err.code === 1;
                     showNoticeInBox(
-                        '⚠️ ไม่สามารถดึงพิกัด GPS จากเครื่องได้',
-                        'หากเปิดผ่านแอป LINE กรุณากดเปิดด้วย Safari/Chrome หรือเลื่อนแผนที่ด้านล่างแตะเลือกหลังคาบ้านของคุณโดยตรงได้เลยครับ'
+                        isDenied ? '⚠️ ยังไม่ได้อนุญาตสิทธิ์เข้าถึงตำแหน่ง GPS' : '⚠️ ไม่สามารถดึงพิกัด GPS จากเครื่องได้',
+                        'หากเปิดผ่านแอป LINE แนะนำกดเปิดด้วย Safari/Chrome หรือเลื่อนแผนที่ดาวเทียมด้านล่างแตะเลือกหลังคาบ้านของคุณโดยตรงได้เลยครับ'
                     );
                 },
-                { enableHighAccuracy: true, timeout: 10000 }
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
             );
         }
 
         async function checkManualCoordInput() {
             const raw = (document.getElementById('manualCoordInput')?.value || '').trim();
             if (!raw) return;
-            let decoded = raw;
+            let decoded = raw.replace(/%2C/gi, ',').replace(/%20/g, ' ');
             try { decoded = decodeURIComponent(raw); } catch (e) {}
 
-            const dms = decoded.match(/(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([NSns])[\s,]+(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([EWew])/);
+            const dms = decoded.replace(/\+/g, ' ').match(/(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([NSns])[\s,]+(\d{1,3})[°º]\s*(\d{1,2})['′]\s*(\d{1,2}(?:\.\d+)?)(?:["″]|'')?\s*([EWew])/);
             if (dms) {
                 let la = Number(dms[1]) + Number(dms[2]) / 60 + Number(dms[3]) / 3600;
                 let lo = Number(dms[5]) + Number(dms[6]) / 60 + Number(dms[7]) / 3600;
@@ -383,20 +522,24 @@
                 return;
             }
 
-            const m = decoded.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/i) ||
-                      decoded.match(/[?&](?:q|ll|destination|query|center|daddr)=(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)/i) ||
-                      decoded.match(/@(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/) ||
-                      decoded.match(/(-?\d{1,3}\.\d{3,})\s*,\s*\+?(-?\d{1,3}\.\d{3,})/);
+            const m = decoded.match(/!3d([+-]?\d+\.\d+)!4d([+-]?\d+\.\d+)/i) ||
+                      decoded.match(/[?&](?:q|ll|destination|query|center|daddr)=([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)/i) ||
+                      decoded.match(/@([+-]?\d+\.\d+)\s*,\s*([+-]?\d+\.\d+)/) ||
+                      decoded.match(/(?:lat(?:itude)?|ละติจูด)\s*[:：=]?\s*([+-]?\d{1,3}\.\d{3,})[\s,;\/|]+(?:long(?:itude)?|lon|lng|ลองจิจูด)\s*[:：=]?\s*([+-]?\d{1,3}\.\d{3,})/i) ||
+                      decoded.match(/([+-]?\d{1,3}\.\d{3,})\s*(?:,|\s+)\s*([+-]?\d{1,3}\.\d{3,})/);
             if (m) {
                 let la = parseFloat(m[1]), lo = parseFloat(m[2]);
-                if (Math.abs(la) > 90 && Math.abs(lo) <= 90) { const t = la; la = lo; lo = t; }
+                if ((Math.abs(la) > 90 && Math.abs(lo) <= 90) || (la >= 95 && la <= 108 && lo >= 4 && lo <= 23)) {
+                    const t = la; la = lo; lo = t;
+                }
                 inspectUserCoordinate(la, lo, true);
                 return;
             }
 
-            const shortLinkMatch = raw.match(/https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)[^\s"<>]*/i);
+            const shortLinkMatch = raw.match(/(?:https?:\/\/)?(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/[^\s"<>)\]]+/i);
             if (shortLinkMatch && !activeApiUrl) activeApiUrl = await discoverPublicApiUrl();
             if (shortLinkMatch && activeApiUrl) {
+                const fullShortUrl = /^https?:\/\//i.test(shortLinkMatch[0]) ? shortLinkMatch[0] : `https://${shortLinkMatch[0]}`;
                 const sBtn = document.getElementById('btnSearchManualCoord');
                 if (sBtn) { sBtn.disabled = true; sBtn.textContent = '⏳...'; }
                 const sCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -405,7 +548,7 @@
                     const r = await fetch(activeApiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'resolveShortUrl', url: shortLinkMatch[0] }),
+                        body: JSON.stringify({ action: 'resolveShortUrl', url: fullShortUrl }),
                         signal: sCtrl ? sCtrl.signal : undefined
                     }).then(x => x.json());
                     if (r && r.rateLimited) {
@@ -426,7 +569,10 @@
         }
 
         function onBranchChange(newGrp) {
-            activeGroup = newGrp;
+            activeGroup = normalizeBranchName(newGrp);
+            hasLoadedPlansSuccess = false;
+            branchJustChanged = true;
+            document.getElementById('radarResultBox')?.classList.add('hidden');
             try {
                 const safeG = /\s/.test(activeGroup) ? encodeURIComponent(activeGroup) : activeGroup;
                 window.history.replaceState(null, '', `${window.location.pathname}?g=${safeG}`);
@@ -472,6 +618,7 @@
                     cache: 'no-store',
                     signal: ctrl ? ctrl.signal : undefined
                 });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 if (seq !== currentLoadSeq) return;
                 if (!data || data.status === 'error') throw new Error(data?.message || 'Server error');
@@ -482,6 +629,14 @@
             } catch (err) {
                 if (seq !== currentLoadSeq) return;
                 console.error(err);
+
+                const localFallback = getOfflineStaffPlansFallback(activeGroup);
+                if (localFallback) {
+                    applyLoadedData(localFallback);
+                    overlay.classList.add('hidden');
+                    return;
+                }
+
                 msgEl.textContent = '⚠️ ไม่สามารถดึงข้อมูลแผนดับไฟได้ในขณะนี้ กรุณาตรวจสอบสัญญาณอินเทอร์เน็ตแล้วลองใหม่';
                 retryBtn.classList.remove('hidden');
             } finally {
@@ -490,18 +645,30 @@
         }
 
         function applyLoadedData(data) {
-            if (data?.group) activeGroup = data.group;
-            allPlans = Array.isArray(data?.plans) ? data.plans : [];
+            hasLoadedPlansSuccess = true;
+            if (data?.group) activeGroup = normalizeBranchName(data.group);
+            allPlans = sanitizePlanList(data?.plans);
             const sel = document.getElementById('branchSelect');
             if (sel) {
-                const groupList = Array.isArray(data?.groups) && data.groups.length > 0 ? [...data.groups] : [activeGroup];
-                if (!groupList.includes(activeGroup)) groupList.unshift(activeGroup);
-                sel.innerHTML = groupList.map(g => `<option value="${escHtml(g)}" class="text-slate-900" ${g === activeGroup ? 'selected' : ''}>🏢 ${escHtml(g)}</option>`).join('');
+                const rawGroups = Array.isArray(data?.groups) && data.groups.length > 0 ? data.groups.map(normalizeBranchName) : [activeGroup];
+                const groupList = Array.from(new Set([activeGroup, ...rawGroups]));
+                sel.innerHTML = groupList.map(g => `<option value="${escHtml(g)}" class="bg-white text-slate-900" ${g === activeGroup ? 'selected' : ''}>🏢 ${escHtml(g)}</option>`).join('');
             }
-            document.getElementById('lastUpdatedLabel').textContent = 'อัปเดตล่าสุด: ' + new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+            const timeStr = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+            document.getElementById('lastUpdatedLabel').textContent = data?.isOfflineFallback
+                ? `โหมดออฟไลน์ในเครื่อง (${timeStr})`
+                : `อัปเดตล่าสุด: ${timeStr}`;
+
             renderRadarZonesAndList();
-            if (lastCheckedLatLon) inspectUserCoordinate(lastCheckedLatLon[0], lastCheckedLatLon[1], false);
-            else if (Object.keys(zoneLayersById).length > 0) fitAllZonesOnMap();
+            if (lastCheckedLatLon) {
+                inspectUserCoordinate(lastCheckedLatLon[0], lastCheckedLatLon[1], false);
+                if (branchJustChanged && Object.keys(zoneLayersById).length > 0) {
+                    fitAllZonesOnMap();
+                }
+            } else if (Object.keys(zoneLayersById).length > 0) {
+                fitAllZonesOnMap();
+            }
+            branchJustChanged = false;
         }
 
         (function init() {
@@ -509,9 +676,9 @@
             const urlObj = new URL(window.location.href);
             const gParam = (urlObj.searchParams.get('g') || urlObj.searchParams.get('group') || '').trim();
             if (gParam) {
-                activeGroup = gParam;
+                activeGroup = normalizeBranchName(gParam);
                 const sel = document.getElementById('branchSelect');
-                if (sel) sel.innerHTML = `<option value="${escHtml(activeGroup)}" class="text-slate-900" selected>🏢 ${escHtml(activeGroup)}</option>`;
+                if (sel) sel.innerHTML = `<option value="${escHtml(activeGroup)}" class="bg-white text-slate-900" selected>🏢 ${escHtml(activeGroup)}</option>`;
             }
             if (urlObj.searchParams.has('s') || urlObj.searchParams.has('u') || urlObj.searchParams.has('api')) {
                 try {
@@ -521,6 +688,12 @@
             }
             initMap();
             loadOutagePlans(false);
+
+            if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
+                });
+            }
         })();
     </script>
 </body>
