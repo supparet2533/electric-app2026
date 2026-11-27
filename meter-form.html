@@ -253,8 +253,8 @@
 
   .pdf-line-span {
     flex: 1; min-width: 0; display: inline-block; border-bottom: 1px dotted #000;
-    font-family: inherit; font-size: inherit; line-height: 1.38; min-height: 1.32em;
-    color: #000; padding: 0 4px; white-space: nowrap; overflow: hidden;
+    font-family: inherit; font-size: inherit; line-height: 1.42; min-height: 1.35em;
+    color: #000; padding: 0 4px; white-space: nowrap; overflow: visible;
     vertical-align: baseline; box-sizing: border-box;
   }
 
@@ -591,7 +591,7 @@
   </div>
 </div>
 
-<script src="pea-idb-store.js?v=163"></script>
+<script src="pea-idb-store.js?v=174"></script>
 <script>
   const THAI_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   const THAI_COMBINING_MARKS_RE = /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/g;
@@ -709,21 +709,20 @@
         };
       }
     });
-      return {
+    return {
       office: document.querySelector('.pea-office-name')?.textContent?.trim() || 'กฟส.บึง',
       jobFingerprint: activeDraftFingerprint || '',
-      hasBaseJobLoaded: Boolean(loadedRawJobRecord),
+      hasBaseJobLoaded: Boolean(loadedRawJobRecord || cachedIncomingPayload || !activeShortJobId),
       fields,
       checks,
       sigs,
       updatedAt: Date.now()
     };
-
   }
-
+  
   function applySavedFormState(saved, mergeOnlyNewerSigs = false) {
     if (!saved || typeof saved !== 'object') return;
-
+    
     if (!mergeOnlyNewerSigs) {
       if (saved.office) {
         const sel = document.getElementById('officeSelect');
@@ -738,7 +737,7 @@
         }
         updateOfficeTexts(saved.office);
       }
-            if (saved.fields) {
+      if (saved.fields) {
         Object.entries(saved.fields).forEach(([id, val]) => {
           const el = document.getElementById(id);
           if (!el || val === undefined || val === null) return;
@@ -746,20 +745,22 @@
           el.value = val;
         });
       }
-      if (saved.checks && saved.hasBaseJobLoaded !== false) {
+      if (saved.checks) {
         Object.entries(saved.checks).forEach(([id, boolVal]) => {
           const el = document.getElementById(id);
-          if (el) el.checked = Boolean(boolVal);
+          if (!el) return;
+          if (saved.hasBaseJobLoaded !== false || boolVal === true) {
+            el.checked = Boolean(boolVal);
+          }
         });
       }
-
     } else if (saved.fields) {
-      ['newPeaInput', 'startUnitInput', 'causeOtherInput', 'name-sig1', 'name-sig2', 'name-sig3', 'name-sig4'].forEach(id => {
+      ['docNoInput', 'newPeaInput', 'startUnitInput', 'causeOtherInput', 'name-sig1', 'name-sig2', 'name-sig3', 'name-sig4'].forEach(id => {
         const el = document.getElementById(id);
         if (el && !el.value.trim() && saved.fields[id]) el.value = saved.fields[id];
       });
     }
-
+    
     if (saved.sigs) {
       ['sig1', 'sig2', 'sig3', 'sig4'].forEach(id => {
         const incoming = saved.sigs[id];
@@ -1008,6 +1009,8 @@
       const hit = localList.find(it => it && (makeShortJobId(it.dateTimeSaved) === shortId || it.dateTimeSaved === shortId));
       if (hit) {
         loadedRawJobRecord = hit;
+        if (hit.ownerGroup) activeOfficeGroup = String(hit.ownerGroup).trim();
+
         if (hit.meterKey && !activeMeterKey) activeMeterKey = String(hit.meterKey).trim();
         const basePayload = convertJobRecordToMeterPayload(hit, closedReg);
         if (!alreadyAppliedLiveDraft) {
@@ -1074,6 +1077,8 @@
 
         if (hit) {
           loadedRawJobRecord = hit;
+        if (hit.ownerGroup) activeOfficeGroup = String(hit.ownerGroup).trim();
+
           lastCloudVisibilityCheckMs = Date.now();
           if (hit.meterKey && !activeMeterKey) activeMeterKey = String(hit.meterKey).trim();
           const cloudPayload = convertJobRecordToMeterPayload(hit, closedMap, usersList);
@@ -1118,7 +1123,7 @@
   }
 
   // ซิงค์ลายเซ็นใหม่จากคนอื่นอัตโนมัติเมื่อสลับกลับมาเปิดแท็บหน้าจอ
-  async function refreshSignaturesOnVisible() {
+   async function refreshSignaturesOnVisible() {
     if (!activeShortJobId || activeShortJobId === 'draft_preview' || !navigator.onLine || isCloudSyncInFlight) return;
     if (document.getElementById('sigModal')?.classList.contains('active')) return;
     if (Date.now() - lastCloudVisibilityCheckMs < 15000) return;
@@ -1126,17 +1131,19 @@
     try {
       const baseUrl = await resolveCloudApiBaseUrl();
       if (!baseUrl) return;
+      const targetGroup = loadedRawJobRecord?.ownerGroup || activeOfficeGroup || 'กฟส.บึง';
       const keyParam = activeMeterKey ? `&k=${encodeURIComponent(activeMeterKey)}` : '';
-      const res = await fetch(`${baseUrl}?action=getJob&i=${encodeURIComponent(activeShortJobId)}${keyParam}&group=${encodeURIComponent(activeOfficeGroup)}${getStoredStaffAuthQuery()}&t=${Date.now()}`, { cache: 'no-store' });
+      const res = await fetch(`${baseUrl}?action=getJob&i=${encodeURIComponent(activeShortJobId)}${keyParam}&group=${encodeURIComponent(targetGroup)}${getStoredStaffAuthQuery()}&t=${Date.now()}`, { cache: 'no-store' });
       const data = await res.json();
       if (data?.job?.meterFormState) {
         loadedRawJobRecord = data.job;
+        if (data.job.ownerGroup) activeOfficeGroup = String(data.job.ownerGroup).trim();
         applySavedFormState(data.job.meterFormState, true);
         saveLocalDraftState();
       }
     } catch (e) {}
   }
-
+  
   function rasterizeSourceToPngDataUrl(srcUrl, fallbackW = 800, fallbackH = 660) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -1538,18 +1545,21 @@
     fitPaperToScreen();
   }
 
-  function updateOfficeTexts(officeName) {
+    function updateOfficeTexts(officeName) {
     const name = officeName || 'กฟส.บึง';
+    if (!loadedRawJobRecord?.ownerGroup && !name.includes('...')) {
+      activeOfficeGroup = name;
+    }
     document.querySelectorAll('.pea-office-name').forEach(el => el.textContent = name);
     document.title = 'รายงานเหตุการณ์มิเตอร์ชำรุด - ' + name;
   }
-
-  function handleOfficeChange() {
+  
+  function handleOfficeChange(shouldFocus = true) {
     const select = document.getElementById('officeSelect');
     const customInput = document.getElementById('customOfficeInput');
     if (select.value === 'custom') {
       customInput.style.display = 'inline-block';
-      customInput.focus();
+      if (shouldFocus) customInput.focus();
       applyCustomOffice();
     } else {
       customInput.style.display = 'none';
@@ -1558,7 +1568,7 @@
       scheduleAutoSave();
     }
   }
-
+  
   function applyCustomOffice() {
     const val = document.getElementById('customOfficeInput').value.trim();
     updateOfficeTexts(val || 'กฟส............');
@@ -1659,10 +1669,10 @@
     }
   });
 
-  window.addEventListener('load', () => {
+    window.addEventListener('load', () => {
     fitPaperToScreen();
     if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(() => {});
     }
   });
 
@@ -2128,14 +2138,19 @@
       imgEl.dataset.signedTs = String(nowTs);
       placeEl.style.display = 'none';
 
-      if (currentSlotId !== 'sig2' && rememberCb && rememberCb.checked) {
+            if (currentSlotId !== 'sig2' && rememberCb) {
         try {
-          localStorage.setItem(getSavedPresetKey(currentSlotId), JSON.stringify({
-            src: compactUrl,
-            name: modalNameInput.value || ''
-          }));
+          if (rememberCb.checked) {
+            localStorage.setItem(getSavedPresetKey(currentSlotId), JSON.stringify({
+              src: compactUrl,
+              name: modalNameInput.value || ''
+            }));
+          } else {
+            localStorage.removeItem(getSavedPresetKey(currentSlotId));
+          }
         } catch (e) {}
       }
+
     } else {
       imgEl.removeAttribute('src');
       imgEl.style.display = 'none';
@@ -2154,41 +2169,42 @@
     }
   }
 
-    function getPointerPos(e) {
-  const rect = modalCanvas.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const ratio = Math.max(window.devicePixelRatio || 1, 1);
-  const cw = (modalCanvas.width / ratio) || modalCanvas.offsetWidth;
-  const ch = (modalCanvas.height / ratio) || modalCanvas.offsetHeight;
-  
-  if (isLandscape) {
-  return {
-  x: (clientY - rect.top) * (cw / rect.height),
-  y: (rect.right - clientX) * (ch / rect.width)
-  };
-  }
-  return {
-  x: (clientX - rect.left) * (cw / rect.width),
-  y: (clientY - rect.top) * (ch / rect.height)
-  };
+        function getPointerPos(e) {
+    const rect = modalCanvas.getBoundingClientRect();
+    const pt = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+    const clientX = pt.clientX;
+    const clientY = pt.clientY;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const cw = (modalCanvas.width / ratio) || modalCanvas.offsetWidth;
+    const ch = (modalCanvas.height / ratio) || modalCanvas.offsetHeight;
+    
+    if (isLandscape) {
+      return {
+        x: (clientY - rect.top) * (cw / rect.height),
+        y: (rect.right - clientX) * (ch / rect.width)
+      };
+    }
+    return {
+      x: (clientX - rect.left) * (cw / rect.width),
+      y: (clientY - rect.top) * (ch / rect.height)
+    };
   }
   
   function startDraw(e) {
-  e.preventDefault();
-  isDrawing = true;
-  hasDrawn = true;
-  const pos = getPointerPos(e);
-  ctx.beginPath();
-  ctx.moveTo(pos.x, pos.y);
+    e.preventDefault();
+    isDrawing = true;
+    hasDrawn = true;
+    const pos = getPointerPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
   }
   
   function moveDraw(e) {
-  if (!isDrawing) return;
-  e.preventDefault();
-  const pos = getPointerPos(e);
-  ctx.lineTo(pos.x, pos.y);
-  ctx.stroke();
+    if (!isDrawing) return;
+    e.preventDefault();
+    const pos = getPointerPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
   }
   
   function endDraw() { isDrawing = false; }
@@ -2200,7 +2216,7 @@
   modalCanvas.addEventListener('touchstart', startDraw, { passive: false });
   modalCanvas.addEventListener('touchmove', moveDraw, { passive: false });
   modalCanvas.addEventListener('touchend', endDraw);
-  
+  modalCanvas.addEventListener('touchcancel', endDraw);  
   if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncModalToViewport);
   window.visualViewport.addEventListener('scroll', syncModalToViewport);
