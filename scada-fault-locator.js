@@ -2776,34 +2776,9 @@
         if (dz && !dz.classList.contains('hidden') && dist115) dist115.value = val;
     }
 
-    function injectIndexTab1QuickLocatorBar() {
-        if (document.getElementById('techMainApp') || document.getElementById('tab1FaultLocatorQuickBox')) return;
-        const anchorEl = document.getElementById('sortable-tab1') || document.getElementById('distanceZoneField') || document.getElementById('deviceInput')?.closest('div');
-        if (!anchorEl?.parentElement) return;
-
-        const box = document.createElement('div');
-        box.id = 'tab1FaultLocatorQuickBox';
-        box.className = 'mb-2.5 p-2.5 bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 rounded-xl flex flex-wrap items-center justify-between gap-2';
-        box.innerHTML = `<span class="text-xs font-bold text-rose-900 flex items-center gap-1">🎯 <span>คำนวณจุดฟอลต์ 22kV:</span></span>` +
-            `<div class="flex flex-wrap items-center gap-1.5 flex-1 sm:flex-initial justify-end">` +
-            `<input type="number" step="10" min="50" inputmode="numeric" id="tab1QuickFaultAmpInput" placeholder="⚡ กระแส (แอมป์)" oninput="if(this.value){const k=document.getElementById('tab1QuickFaultKmInput');if(k)k.value='';}" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();triggerFaultLocatorFromMainForm();}" class="w-32 px-2 py-1 text-xs font-extrabold bg-white border border-amber-400 rounded-lg text-slate-800">` +
-            `<select id="tab1QuickFaultTypeSelect" class="px-1.5 py-1 text-[11px] font-bold bg-white border border-amber-300 rounded-lg text-slate-700"><option value="AUTO">เฟสอัตโนมัติ</option><option value="LL">ช็อต 2 เฟส (LL)</option><option value="LLG">2 เฟสลงดิน (LLG)</option><option value="LG">ลงดิน 1 เฟส (LG)</option><option value="3P">ช็อต 3 เฟส (3P)</option></select>` +
-            `<input type="number" step="0.01" min="0.05" inputmode="decimal" id="tab1QuickFaultKmInput" placeholder="หรือ กม." oninput="onQuickFaultKmBarInput(this.value)" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();triggerFaultLocatorFromMainForm();}" class="w-24 px-2 py-1 text-xs font-bold bg-white border border-rose-300 rounded-lg text-slate-800">` +
-            `<button type="button" onclick="triggerFaultLocatorFromMainForm()" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold shadow-sm shrink-0">🎯 ดูจุดบนผัง</button>` +
-            `<button type="button" onclick="clearQuickFaultLocatorFromMainForm(false)" class="bg-white hover:bg-slate-100 text-slate-700 border border-rose-300 px-2 py-1.5 rounded-lg text-[11px] font-extrabold shadow-sm shrink-0" title="ล้างค่าระยะฟอลต์">🧹 ล้างค่า</button></div>`;
-        anchorEl.parentElement.insertBefore(box, anchorEl);
-
-        ['currA', 'currB', 'currC', 'currG', 'phaseSelect'].forEach((id) => {
-            const el = document.getElementById(id);
-            el?.addEventListener('input', syncMainFormFaultCurrentsToQuickBar);
-            el?.addEventListener('change', syncMainFormFaultCurrentsToQuickBar);
-        });
-        syncMainFormFaultCurrentsToQuickBar();
-
-        document.getElementById('distanceInput')?.addEventListener('input', function () {
-            const q = document.getElementById('tab1QuickFaultKmInput');
-            if (q && document.activeElement !== q) { const parsed = parseFloat(this.value); q.value = !isNaN(parsed) && parsed > 0 ? parsed : ''; }
-        });
+        function injectIndexTab1QuickLocatorBar() {
+        // ปิดการแสดงกล่อง "คำนวณจุดฟอลต์ 22kV:" ในแท็บ TR/TL หน้าหลัก (คงไว้เฉพาะปุ่มคำนวณในหน้าผัง SCADA)
+        document.getElementById('tab1FaultLocatorQuickBox')?.remove();
         if (typeof window.resetFaultForm === 'function' && !window.resetFaultForm.__faultKmHooked) {
             const origReset = window.resetFaultForm;
             window.resetFaultForm = Object.assign(function () {
@@ -2934,8 +2909,11 @@
         }
     });
 
-    Object.assign(window, {
+        Object.assign(window, {
         toggleScadaFaultLocatorPanel, executeFaultDistanceSearch, clearFaultLocatorOverlay,
+        openScadaFaultLocatorPanel: () => { injectPage2ToolbarLocatorUI(); return toggleScadaFaultLocatorPanel(true); },
+        runScadaFaultLocatorSearch: () => { injectPage2ToolbarLocatorUI(); return executeFaultDistanceSearch(0, 'auto'); },
+        openScadaFaultLocatorFromTab1: triggerFaultLocatorFromMainForm,
         resetFaultLocatorInputs, clearQuickFaultLocatorFromMainForm,
         zoomToFaultCandidate, navigateToFaultCandidate, openFaultStreetView,
         buildFaultLocatorReportText, copyFaultLocatorReport, shareFaultLocatorReportToLine,
