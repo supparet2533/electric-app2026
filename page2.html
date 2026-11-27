@@ -95,6 +95,7 @@
         #techOnlineModal { z-index: 1250 !important; }
         #customAlertModal, #customConfirmModal, #customPromptModal { z-index: 1480 !important; }
         #toast { z-index: 1500 !important; }
+        body:has(#techLoginScreen:not(.hidden)) #peaLiveVoiceDock { display: none !important; }
 
         body.role-viewer-readonly #inspectModal button[onclick^="submitTechReport"],
         body.role-viewer-readonly #modalPhotoUploadSection,
@@ -370,16 +371,15 @@
     <!-- 📦 โหลดไลบรารีแผนที่, MQTT, IndexedDB Engine และโมดูลระบบครบทุกไฟล์ตามลำดับ -->
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=173"></script>
-    <script src="shared-core.js?v=173"></script>
-    <script src="tech-jobs.js?v=173"></script>
-    <script src="scada-engine.js?v=173"></script>
-    <script src="pm-calendar.js?v=173"></script>
-    <script src="scada-fault-locator.js?v=173"></script>
-    <script src="scada-tie-advisor.js?v=173"></script>
-    <<script src="pm-push.js?v=173"></script>
-    <script src="pea-live-voice.js?v=173"></script>
-
+    <script src="pea-idb-store.js?v=174"></script>
+    <script src="shared-core.js?v=174"></script>
+    <script src="tech-jobs.js?v=174"></script>
+    <script src="scada-engine.js?v=174"></script>
+    <script src="pm-calendar.js?v=174"></script>
+    <script src="scada-fault-locator.js?v=174"></script>
+    <script src="scada-tie-advisor.js?v=174"></script>
+    <script src="pm-push.js?v=174"></script>
+    <script src="pea-live-voice.js?v=174"></script>
 
     <!-- 🛡️ ป้องกันลูกกลิ้งเมาส์เลื่อนค่าตัวเลขเพี้ยนขณะซูมแผนที่ + ลงทะเบียน Service Worker -->
     <script>
@@ -404,7 +404,7 @@
                     const isTypingOrModal = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
                         isSimActive || hasPendingPush ||
                         Boolean(document.querySelector(
-                            '#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaLotoPromptModal:not(.hidden), #scadaSimPlanModal:not(.hidden), #scadaColorPaletteModal:not(.hidden), #pmCalendarModal:not(.hidden), #pmPlanFormModal:not(.hidden), #pmAlertPopupModal:not(.hidden), #pmPublicAnnounceModal:not(.hidden), #pmAiKeyConfigModal:not(.hidden), #pmPhotoLightboxModal:not(.hidden), #pmLineShareReadyModal:not(.hidden), .pm-pin-drop-banner, #clearEquipPasswordModal:not(.hidden), #deletedEquipAuditModal:not(.hidden), #techOnlineModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden), #scadaFaultLocatorPanel:not(.hidden), #scadaTieAdvisorPanel:not(.hidden)'
+                            '#inspectModal:not(.hidden), #equipPinModal:not(.hidden), #scadaNodeConfigModal:not(.hidden), #scadaLotoPromptModal:not(.hidden), #scadaSimPlanModal:not(.hidden), #scadaColorPaletteModal:not(.hidden), #pmCalendarModal:not(.hidden), #pmPlanFormModal:not(.hidden), #pmAlertPopupModal:not(.hidden), #pmPublicAnnounceModal:not(.hidden), #pmAiKeyConfigModal:not(.hidden), #pmPhotoLightboxModal:not(.hidden), #pmLineShareReadyModal:not(.hidden), .pm-pin-drop-banner, #clearEquipPasswordModal:not(.hidden), #deletedEquipAuditModal:not(.hidden), #techOnlineModal:not(.hidden), #scadaDrawActivePanel:not(.hidden), #scadaMoveWirePanel:not(.hidden), #scadaMovePinPanel:not(.hidden), #scadaFaultLocatorPanel:not(.hidden), #scadaTieAdvisorPanel:not(.hidden), #peaLivePublicRadarModal:not(.hidden)'
                         ));
 
                     if (!isTypingOrModal) {
