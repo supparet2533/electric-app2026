@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ระบบวัดโหลดหม้อแปลง — PEA Smart Grid</title>
     <meta name="theme-color" content="#1e3a8a">
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=163">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-main-192.png?v=174">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
@@ -93,6 +93,8 @@
         @media print {
             body { background: #ffffff !important; padding: 0 !important; }
             .no-print, .print-hide { display: none !important; }
+            #mainWorkspaceGrid { display: block !important; }
+            #previewColumnWrap { width: 100% !important; max-width: 100% !important; }
             #officialReportWrapper { box-shadow: none !important; border: 0 !important; padding: 0 !important; }
             #officialReportSheet {
                 max-width: 100% !important;
@@ -149,11 +151,11 @@
             <div id="wiringGuideBody" class="p-3 sm:p-4 border-t border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50/60">
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบนั่งร้าน / เสาคู่)</div>
-                    <img src="./tx-circuit-1.jpg?v=163" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-1.jpg?v=174" alt="วงจรหม้อแปลงแบบเสาคู่" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-1.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                     <div class="text-xs font-bold text-slate-700 mb-2">วงจรหม้อแปลง (แบบแขวนเสาเดี่ยว)</div>
-                    <img src="./tx-circuit-2.jpg?v=163" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
+                    <img src="./tx-circuit-2.jpg?v=174" alt="วงจรหม้อแปลงแบบเสาเดี่ยว" onclick="openDiagramZoom(this.src)" onerror="this.outerHTML='<div class=\'py-8 text-center text-xs text-rose-600 bg-rose-50 rounded-lg border border-dashed border-rose-300\'>⚠️ กรุณาวางไฟล์รูปชื่อ <b>tx-circuit-2.jpg</b> ในโฟลเดอร์โปรเจกต์</div>'" class="w-full h-auto rounded-lg cursor-zoom-in">
                 </div>
             </div>
         </div>
@@ -280,7 +282,7 @@
                                 <span class="text-[10px] font-bold text-rose-700">เฟส A</span>
                                 <input type="number" step="any" inputmode="decimal" id="vEndA" oninput="recalcAndRender()" placeholder="V" class="w-full px-2 py-1.5 text-center font-semibold bg-white">
                             </div>
-                            <div>
+                            <div id="vEndBWrap">
                                 <span class="text-[10px] font-bold text-amber-700">เฟส B</span>
                                 <input type="number" step="any" inputmode="decimal" id="vEndB" oninput="recalcAndRender()" placeholder="V" class="w-full px-2 py-1.5 text-center font-semibold bg-white">
                             </div>
@@ -382,7 +384,7 @@
                 <!-- แถบจัดการและลบไฟล์ใบงาน .PDF ที่อัปโหลดไว้บนคลาวด์ -->
                 <div id="activePdfManageBar" class="hidden p-3 rounded-2xl bg-indigo-50/90 border border-indigo-200 flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div class="flex items-center gap-2 min-w-0">
-                        <span class="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0"></span>
+                        <span id="activePdfStatusDot" class="w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0"></span>
                         <span id="activePdfStatusText" class="font-bold text-indigo-950 truncate">📄 มีไฟล์ใบงาน .PDF บน Google Drive แล้ว</span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
@@ -456,8 +458,8 @@
     <div id="toast" class="no-print print-hide fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-2.5 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity text-xs z-[1500]"></div>
 
     <!-- โหลดแกนกลางระบบเพื่อแชร์บัญชีผู้ใช้ สิทธิ์ และสาขา กฟส. -->
-    <script src="pea-idb-store.js?v=163"></script>
-    <script src="shared-core.js?v=163"></script>
+    <script src="pea-idb-store.js?v=174"></script>
+    <script src="shared-core.js?v=174"></script>
 
     <script>
     (function () {
@@ -567,9 +569,21 @@
             const is3P = sysType === '3P';
             document.querySelectorAll('.ckt-col-b').forEach(el => el.classList.toggle('opacity-30', is1P2W));
             document.querySelectorAll('.ckt-col-c').forEach(el => el.classList.toggle('opacity-30', !is3P));
+            document.getElementById('vEndBWrap')?.classList.toggle('opacity-30', is1P2W);
             document.getElementById('vEndCWrap')?.classList.toggle('opacity-30', !is3P);
             document.getElementById('overrideWrapB')?.classList.toggle('hidden', is1P2W);
             document.getElementById('overrideWrapC')?.classList.toggle('hidden', !is3P);
+
+            const stSel = document.getElementById('streetPhaseSelect');
+            if (stSel) {
+                const optB = stSel.querySelector('option[value="B"]');
+                const optC = stSel.querySelector('option[value="C"]');
+                if (optB) optB.disabled = is1P2W;
+                if (optC) optC.disabled = !is3P;
+                if ((is1P2W && (stSel.value === 'B' || stSel.value === 'C')) || (!is3P && stSel.value === 'C')) {
+                    stSel.value = 'A';
+                }
+            }
         }
 
         window.toggleExtraCircuits = function (forceState) {
@@ -672,13 +686,16 @@
             ]);
         }
 
-        function getActiveFormPdfInfo() {
+        function getActiveFormPdfInfo(stOpt) {
+            const st = stOpt || collectFormState();
+            const curFp = computeReportPdfFingerprint(st);
             const recId = (document.getElementById('editingRecordId')?.value || '').trim();
             if (lastPdfCache.url) {
                 return {
                     recId,
                     url: lastPdfCache.url,
-                    fileId: lastPdfCache.fileId || extractDriveFileId(lastPdfCache.url)
+                    fileId: lastPdfCache.fileId || extractDriveFileId(lastPdfCache.url),
+                    isStale: Boolean(lastPdfCache.fp && lastPdfCache.fp !== curFp)
                 };
             }
             if (recId) {
@@ -688,25 +705,33 @@
                     return {
                         recId,
                         url: rec.pdfUrl,
-                        fileId: rec.pdfFileId || extractDriveFileId(rec.pdfUrl)
+                        fileId: rec.pdfFileId || extractDriveFileId(rec.pdfUrl),
+                        isStale: Boolean(rec.pdfFp && rec.pdfFp !== curFp)
                     };
                 }
             }
             return null;
         }
 
-        function updateActivePdfManageBar() {
+        function updateActivePdfManageBar(stOpt) {
             const bar = document.getElementById('activePdfManageBar');
             const openLink = document.getElementById('activePdfOpenLink');
             const statusTxt = document.getElementById('activePdfStatusText');
+            const statusDot = document.getElementById('activePdfStatusDot');
             if (!bar || !openLink || !statusTxt) return;
 
-            const info = getActiveFormPdfInfo();
+            const info = getActiveFormPdfInfo(stOpt);
             if (info && /^https?:\/\//i.test(info.url)) {
                 openLink.href = info.url;
-                statusTxt.textContent = info.fileId
-                    ? '📄 มีไฟล์ใบงาน .PDF บน Google Drive แล้ว'
-                    : '📄 มีลิงก์เปิดใบงาน .PDF แนบอยู่';
+                if (info.isStale) {
+                    if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0';
+                    statusTxt.textContent = '⚠️ ข้อมูลในฟอร์มเปลี่ยนจาก .PDF เดิมแล้ว (กดส่ง LINE เพื่ออัปเดตใหม่ หรือกดลบ)';
+                } else {
+                    if (statusDot) statusDot.className = 'w-2.5 h-2.5 rounded-full bg-indigo-600 shrink-0';
+                    statusTxt.textContent = info.fileId
+                        ? '📄 มีไฟล์ใบงาน .PDF บน Google Drive แล้ว'
+                        : '📄 มีลิงก์เปิดใบงาน .PDF แนบอยู่';
+                }
                 bar.classList.remove('hidden');
             } else {
                 openLink.href = '#';
@@ -823,10 +848,9 @@
                 </div>
             `;
 
-            updateActivePdfManageBar();
+            updateActivePdfManageBar(st);
         };
-        // ===== จบพาทที่ 1 / 2 ของไฟล์ tx-load-form.html =====
-                // ===== เริ่มพาทที่ 2 / 2 ของไฟล์ tx-load-form.html (วางต่อจากพาทที่ 1 / 2 จนจบไฟล์) =====
+
         // ตัดขอบว่างโปร่งใสรอบลายเซ็นอัตโนมัติ (ลดขนาด Base64 ลง 70-85% และจัดวางเหนือเส้นลงชื่อได้พอดี)
         function trimSignatureImageToCanvas(img) {
             if (!img) return null;
@@ -879,7 +903,8 @@
 
             const getPt = (e) => {
                 const r = canvas.getBoundingClientRect();
-                const t = e.touches ? e.touches[0] : e;
+                if (!r.width || !r.height) return { x: 0, y: 0 };
+                const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
                 return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) };
             };
             const start = (e) => { if (e.cancelable) e.preventDefault(); isDrawingSig = true; hasSigStroke = true; const p = getPt(e); sigCtx.beginPath(); sigCtx.moveTo(p.x, p.y); };
@@ -892,6 +917,7 @@
             canvas.addEventListener('touchstart', start, { passive: false });
             canvas.addEventListener('touchmove', move, { passive: false });
             canvas.addEventListener('touchend', end);
+            canvas.addEventListener('touchcancel', end);
         }
 
         window.openSignatureModal = function () {
@@ -1074,6 +1100,7 @@
                             pdfUrl: '',
                             pdfFileId: '',
                             pdfFp: '',
+                            pendingCloudSync: true,
                             updatedAt: nowIso
                         };
                         updatedRecord = txRecords[idx];
@@ -1123,6 +1150,7 @@
                     pdfUrl: '',
                     pdfFileId: '',
                     pdfFp: '',
+                    pendingCloudSync: true,
                     updatedAt: new Date().toISOString()
                 };
                 const updatedRec = txRecords[idx];
@@ -1199,7 +1227,7 @@
 
             document.getElementById('editingRecordId').value = recId;
             document.getElementById('formModeTitle').textContent = `✏️ แก้ไขใบวัดโหลด PEA ${record.peaNo}`;
-            updateActivePdfManageBar();
+            updateActivePdfManageBar(st);
             renderTxHistoryList();
             window.showToast?.(`✅ บันทึกผลวัดโหลดลงสาขา ${record.ownerGroup} เรียบร้อย!`);
 
@@ -1234,11 +1262,12 @@
             const apiUrl = window.getActiveCloudApiUrl?.();
             if (!apiUrl || localStorage.getItem('elec_app_logged_in') !== 'true') return;
             try {
-                // ดันรายการที่ค้างส่งตอนออฟไลน์ขึ้นคลาวด์ก่อนดึงข้อมูลรวม
+                // ดันรายการที่ค้างส่งและรายการที่สั่งลบตอนออฟไลน์ขึ้นคลาวด์ก่อนดึงข้อมูลรวม
                 if (!window.isViewerRole?.() && navigator.onLine !== false) {
                     loadLocalTxRecords();
-                    const unsynced = txRecords.filter(r => r && !r.deleted && r.pendingCloudSync && canSeeTxRecord(r));
                     let pushedAny = false;
+
+                    const unsynced = txRecords.filter(r => r && !r.deleted && r.pendingCloudSync && canSeeTxRecord(r));
                     for (const ur of unsynced) {
                         try {
                             const cleanUr = { ...ur };
@@ -1256,6 +1285,33 @@
                             }
                         } catch (e) {}
                     }
+
+                    const pendingDels = txRecords.filter(r => r && r.deleted && r.pendingCloudDelete);
+                    for (const dr of pendingDels) {
+                        try {
+                            if (dr.pdfFileId) {
+                                await requestCloudDeletePdf({ id: '', group: dr.ownerGroup || getActiveBranch(), fileId: dr.pdfFileId, pdfUrl: dr.pdfUrl || '' });
+                            }
+                            window.PeaCore?.unlockCloudWrite?.(15000);
+                            const dRes = await fetch(apiUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                                body: JSON.stringify({
+                                    action: 'deleteTxLoad',
+                                    id: dr.id,
+                                    group: dr.ownerGroup || getActiveBranch(),
+                                    fileId: dr.pdfFileId || '',
+                                    pdfUrl: dr.pdfUrl || ''
+                                })
+                            });
+                            const dJson = await dRes.json().catch(() => ({}));
+                            if (dJson?.status === 'ok') {
+                                delete dr.pendingCloudDelete;
+                                pushedAny = true;
+                            }
+                        } catch (e) {}
+                    }
+
                     if (pushedAny) saveLocalTxRecords();
                 }
 
@@ -1281,7 +1337,7 @@
                     txRecords = Array.from(byId.values()).filter(r => {
                         if (!r?.id) return false;
                         const updMs = new Date(r.updatedAt || 0).getTime() || 0;
-                        if (r.deleted) return (nowMs - updMs) <= 35 * 86400000;
+                        if (r.deleted) return Boolean(r.pendingCloudDelete) || (nowMs - updMs) <= 35 * 86400000;
                         if (canSeeTxRecord(r) && !cloudIds.has(r.id) && !r.pendingCloudSync && (nowMs - updMs > 60000)) {
                             return false;
                         }
@@ -1366,12 +1422,16 @@
                 const target = txRecords.find(x => x.id === id);
                 const oldUrl = target?.pdfUrl || '';
                 const oldFileId = target?.pdfFileId || extractDriveFileId(oldUrl);
+                const grp = target?.ownerGroup || getActiveBranch();
                 const tIdx = txRecords.findIndex(x => x.id === id);
                 if (tIdx !== -1) {
                     txRecords[tIdx] = {
                         id,
-                        ownerGroup: target?.ownerGroup || getActiveBranch(),
+                        ownerGroup: grp,
+                        pdfFileId: oldFileId || '',
+                        pdfUrl: oldUrl || '',
                         deleted: true,
+                        pendingCloudDelete: true,
                         updatedAt: new Date().toISOString()
                     };
                 }
@@ -1381,14 +1441,13 @@
                 window.showToast?.('🗑️ ลบรายการวัดโหลดเรียบร้อยแล้ว');
 
                 const apiUrl = window.getActiveCloudApiUrl?.();
-                if (apiUrl && target) {
-                    const grp = target.ownerGroup || getActiveBranch();
+                if (apiUrl && target && navigator.onLine !== false) {
                     if (oldFileId) {
                         requestCloudDeletePdf({ id: '', group: grp, fileId: oldFileId, pdfUrl: oldUrl }).catch(() => {});
                     }
                     try {
                         window.PeaCore?.unlockCloudWrite?.(15000);
-                        await fetch(apiUrl, {
+                        const res = await fetch(apiUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                             body: JSON.stringify({
@@ -1399,6 +1458,15 @@
                                 pdfUrl: oldUrl
                             })
                         });
+                        const resJson = await res.json().catch(() => ({}));
+                        if (resJson?.status === 'ok') {
+                            loadLocalTxRecords();
+                            const dIdx = txRecords.findIndex(x => x.id === id);
+                            if (dIdx !== -1) {
+                                delete txRecords[dIdx].pendingCloudDelete;
+                                saveLocalTxRecords();
+                            }
+                        }
                     } catch (e) {}
                 }
             };
@@ -1767,6 +1835,9 @@
         async function getOrUploadReportPdfLink(st, fp) {
             if (lastPdfCache.fp === fp && lastPdfCache.url) return lastPdfCache.url;
 
+            const prevCachedFileId = lastPdfCache.fileId || extractDriveFileId(lastPdfCache.url);
+            const prevCachedUrl = lastPdfCache.url || '';
+
             const apiUrl = window.getActiveCloudApiUrl?.();
             const canUploadDrive = Boolean(
                 apiUrl &&
@@ -1798,7 +1869,11 @@
                     if (resJson?.status === 'ok' && resJson.viewUrl) {
                         const uploadedFileId = resJson.fileId || extractDriveFileId(resJson.viewUrl);
                         lastPdfCache = { fp, url: resJson.viewUrl, fileId: uploadedFileId };
-                        updateActivePdfManageBar();
+                        updateActivePdfManageBar(st);
+
+                        if (prevCachedFileId && prevCachedFileId !== uploadedFileId) {
+                            requestCloudDeletePdf({ id: '', group: st.ownerGroup, fileId: prevCachedFileId, pdfUrl: prevCachedUrl }).catch(() => {});
+                        }
 
                         if (st.id) {
                             const nowIso = new Date().toISOString();
@@ -1807,8 +1882,7 @@
                             if (idx !== -1) {
                                 const targetGrp = txRecords[idx].ownerGroup || st.ownerGroup;
                                 const prevFileId = txRecords[idx].pdfFileId || extractDriveFileId(txRecords[idx].pdfUrl);
-                                // หากเคยมีไฟล์ PDF เก่าคนละไฟล์ของใบงานเดียวกัน ให้ลบไฟล์เก่าใน Drive ออกอัตโนมัติ
-                                if (prevFileId && prevFileId !== uploadedFileId) {
+                                if (prevFileId && prevFileId !== uploadedFileId && prevFileId !== prevCachedFileId) {
                                     requestCloudDeletePdf({ id: '', group: targetGrp, fileId: prevFileId, pdfUrl: txRecords[idx].pdfUrl }).catch(() => {});
                                 }
                                 txRecords[idx] = {
@@ -1845,7 +1919,7 @@
             const fallbackUrl = buildWebFallbackPdfUrl(st);
             if (fallbackUrl) {
                 lastPdfCache = { fp, url: fallbackUrl, fileId: '' };
-                updateActivePdfManageBar();
+                updateActivePdfManageBar(st);
             }
             return fallbackUrl;
         }
@@ -1943,11 +2017,14 @@
                 const mPea = String(params.pea).match(/\d{2}-\d{5,7}/);
                 document.getElementById('peaNoInput').value = mPea ? mPea[0] : params.pea;
             }
-            const combinedTxt = `${params.pea || ''} ${params.note || ''} ${params.kva || ''}`;
-            const kvaMatch = combinedTxt.match(/\b(30|50|75|100|125|160|200|250|315|400|500|630|800|1000|1250|1600)\s*(?:kva|k\b)/i);
-            if (kvaMatch) {
-                const k = kvaMatch[1];
-                const targetVal = k === '30' ? '1P3W:30' : `3P:${k}`;
+            const directKva = String(params.kva || '').trim();
+            const combinedTxt = `${params.pea || ''} ${params.note || ''} ${directKva}`;
+            const directSysMatch = directKva.match(/^(?:(3P|1P3W|1P2W):)?(30|50|75|100|125|160|200|250|315|400|500|630|800|1000|1250|1600)(?:\s*k(?:va)?)?$/i);
+            const textKvaMatch = combinedTxt.match(/\b(30|50|75|100|125|160|200|250|315|400|500|630|800|1000|1250|1600)\s*(?:kva|k\b)/i);
+            const matchedKva = directSysMatch ? directSysMatch[2] : (textKvaMatch ? textKvaMatch[1] : '');
+            if (matchedKva) {
+                const explicitSys = directSysMatch?.[1]?.toUpperCase() || '';
+                const targetVal = explicitSys ? `${explicitSys}:${matchedKva}` : (matchedKva === '30' ? '1P3W:30' : `3P:${matchedKva}`);
                 const sel = document.getElementById('txKvaSelect');
                 if (Array.from(sel.options).some(o => o.value === targetVal)) {
                     sel.value = targetVal;
@@ -1955,7 +2032,8 @@
                 }
             }
             if (params.note || (params.lat && params.lon)) {
-                const coordPart = (params.lat && params.lon) ? ` (${Number(params.lat).toFixed(5)}, ${Number(params.lon).toFixed(5)})` : '';
+                const latNum = parseFloat(params.lat), lonNum = parseFloat(params.lon);
+                const coordPart = (!isNaN(latNum) && !isNaN(lonNum)) ? ` (${latNum.toFixed(5)}, ${lonNum.toFixed(5)})` : '';
                 document.getElementById('locationNoteInput').value = `${params.note || ''}${coordPart}`.trim();
             }
             if (params.req) document.getElementById('reqNoInput').value = params.req;
@@ -2001,7 +2079,7 @@
             setTimeout(() => window.exportReportPdf(), 450);
         }
 
-        function bootTxLoadApp() {
+        async function bootTxLoadApp() {
             const q = new URLSearchParams(window.location.search);
             if (q.get('pdfview') === '1' && q.get('d')) {
                 const sharedData = decodePdfShareParam(q.get('d'));
@@ -2009,6 +2087,10 @@
                     enterPublicPdfViewerMode(sharedData);
                     return;
                 }
+            }
+
+            if (window.PeaIdbStore?.ready) {
+                try { await Promise.race([window.PeaIdbStore.ready, new Promise(r => setTimeout(r, 900))]); } catch (e) {}
             }
 
             if (localStorage.getItem('elec_app_logged_in') !== 'true') {
@@ -2031,7 +2113,7 @@
             document.getElementById('inspectorNameInput').value = cleanUser.replace(/\s*กฟ[ก-ฮ]{1,3}\.?.*$/, '').trim();
             document.getElementById('flAmpInput').value = calcDefaultFullLoadAmp('3P', 160);
 
-            if (q.has('pea') || q.has('kva') || q.has('req')) {
+            if (q.has('pea') || q.has('kva') || q.has('req') || q.has('note')) {
                 applyExternalParamsToForm({
                     pea: q.get('pea') || '', kva: q.get('kva') || '',
                     note: q.get('note') || '', lat: q.get('lat') || '', lon: q.get('lon') || '', req: q.get('req') || ''
@@ -2041,9 +2123,6 @@
             }
 
             renderTxHistoryList();
-            if (window.PeaIdbStore?.ready) {
-                window.PeaIdbStore.ready.then(() => renderTxHistoryList()).catch(() => {});
-            }
             setTimeout(() => syncTxLoadsFromCloud(true), 500);
         }
 
@@ -2070,7 +2149,7 @@
 
         if ('serviceWorker' in navigator && window.self === window.top && /^https?:$/i.test(location.protocol)) {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('./sw.js').then(function (reg) {
+                navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
                     document.addEventListener('visibilitychange', function () {
                         if (document.visibilityState === 'visible') reg.update().catch(function () {});
                     });
