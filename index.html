@@ -383,7 +383,7 @@
                 <button type="button" onclick="openLeftBrowserPopup()" class="text-[10px] text-emerald-300 hover:text-emerald-200 underline shrink-0 whitespace-nowrap">💡 เว็บปฏิเสธเชื่อมต่อ? กดเปิดหน้าต่างลอย</button>
             </div>
             <div class="relative flex-1 w-full bg-white">
-                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" allow="geolocation; clipboard-read; clipboard-write; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                <iframe id="leftBrowserIframe" src="about:blank" class="w-full h-full border-0" allow="geolocation; camera; microphone; clipboard-read; clipboard-write; accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
             </div>
         </div>
 
@@ -912,16 +912,16 @@
 
     <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 text-sm z-[1500]">แจ้งเตือนระบบ</div>
 
-    <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ -->
+    <!-- 📦 โหลด MQTT, IndexedDB Engine และโมดูลระบบตามลำดับ (สำหรับหน้าหลัก index.html) -->
     <script src="https://cdn.jsdelivr.net/npm/mqtt@5.3.4/dist/mqtt.min.js"></script>
-    <script src="pea-idb-store.js?v=173"></script>
-    <script src="shared-core.js?v=173"></script>
-    <script src="main-app.js?v=173"></script>
-    <script src="pm-calendar.js?v=173"></script>
-    <script src="scada-fault-locator.js?v=173"></script>
-    <script src="pm-push.js?v=173"></script>
-    <script src="pea-live-voice.js?v=173"></script>
-
+    <script src="pea-idb-store.js?v=174"></script>
+    <script src="shared-core.js?v=174"></script>
+    <script src="main-app.js?v=174"></script>
+    <script src="pm-calendar.js?v=174"></script>
+    <script src="scada-fault-locator.js?v=174"></script>
+    <script src="scada-tie-advisor.js?v=174"></script>
+    <script src="pm-push.js?v=174"></script>
+    <script src="pea-live-voice.js?v=174"></script>
 
     <!-- 🛡️ ระบบเฟดปิดหน้าเปิดตัวสายฟ้าสีทองอัตโนมัติ + ป้องกันลูกกลิ้งเมาส์เพี้ยน + ลงทะเบียน SW -->
     <script>
@@ -1014,7 +1014,7 @@
                     if (!hadSwController || isSwReloading) return;
                     const tag = (document.activeElement && document.activeElement.tagName) || '';
                     const hasOpenModalOrDock = Boolean(document.querySelector(
-                        '#leftBrowserDock:not(.hidden), #stationModal:not(.hidden), #issueModal:not(.hidden), #tambonModal:not(.hidden), #apiKeyModal:not(.hidden), #meterLinkModal:not(.hidden), #backupModal:not(.hidden), #caModal:not(.hidden), #stripWordsModal:not(.hidden), #scadaCadImportModal:not(.hidden), #userManageModal:not(.hidden), #onlineUsersModal:not(.hidden), #pmCalendarModal:not(.hidden), #pmPlanFormModal:not(.hidden), #pmAlertPopupModal:not(.hidden), #pmPublicAnnounceModal:not(.hidden), #pmAiKeyConfigModal:not(.hidden), #pmPhotoLightboxModal:not(.hidden)'
+                        '#leftBrowserDock:not(.hidden), #stationModal:not(.hidden), #issueModal:not(.hidden), #tambonModal:not(.hidden), #apiKeyModal:not(.hidden), #meterLinkModal:not(.hidden), #backupModal:not(.hidden), #caModal:not(.hidden), #stripWordsModal:not(.hidden), #scadaCadImportModal:not(.hidden), #userManageModal:not(.hidden), #onlineUsersModal:not(.hidden), #pmCalendarModal:not(.hidden), #pmPlanFormModal:not(.hidden), #pmAlertPopupModal:not(.hidden), #pmPublicAnnounceModal:not(.hidden), #pmAiKeyConfigModal:not(.hidden), #pmPhotoLightboxModal:not(.hidden), #peaLivePublicRadarModal:not(.hidden)'
                     ));
                     const hasUnsavedFormDraft = [
                         'currA', 'currB', 'currC', 'currG', 'tab1QuickFaultAmpInput', 'tab1QuickFaultKmInput',
