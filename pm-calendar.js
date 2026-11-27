@@ -1250,7 +1250,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
     // 4. สไตล์ชีต, แถบเครื่องมือผัง SCADA, แบนเนอร์หน้าช่าง & บอลลูนหมุดพร้อมปุ่มโพสต์ FB/LINE
     // ========================================================================
     let isQuickInlineBoxVisible = false;
-    let desktopModalWidthMode = '65vw';
+    let desktopModalWidthMode = '80vw';
 
     function injectPmCalendarStyles() {
         if (document.getElementById('peaPmCalendarStyles')) return;
@@ -1308,10 +1308,14 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                 }
             }
 
-            @media (min-width: 640px) { .pm-day-cell { min-height: 76px; } }
+               @media (min-width: 640px) {
+                .pm-day-cell { min-height: 76px; }
+                #pmPlanFormModal > div { max-width: 42rem !important; }
+            }
             @media (min-width: 1024px) {
-                #pmCalendarModal .pm-calendar-dialog { width: var(--pm-desktop-w, 65vw) !important; max-width: var(--pm-desktop-w, 65vw) !important; min-height: 84dvh; }
+                #pmCalendarModal .pm-calendar-dialog { width: var(--pm-desktop-w, 80vw) !important; max-width: var(--pm-desktop-w, 80vw) !important; min-height: 86dvh; }
                 #pmCalendarModal .pm-desktop-split { grid-template-columns: minmax(0, 65fr) minmax(0, 35fr) !important; }
+                #pmPlanFormModal > div { width: min(90vw, 1180px) !important; max-width: min(90vw, 1180px) !important; max-height: 94dvh !important; }
                 .pm-day-cell { min-height: 94px; padding: 6px !important; }
             }
             .pm-day-cell:hover { background-color: #f0f9ff; border-color: #60a5fa; }
@@ -1342,7 +1346,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
     }
 
     function setPmDesktopModalWidth(widthVal) {
-        desktopModalWidthMode = widthVal || '65vw';
+        desktopModalWidthMode = widthVal || '80vw';
         const dlg = document.querySelector('#pmCalendarModal .pm-calendar-dialog');
         if (dlg) dlg.style.setProperty('--pm-desktop-w', desktopModalWidthMode);
         ['65vw', '80vw', '95vw'].forEach(w => {
@@ -1351,6 +1355,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         });
         if (calendarLeftViewMode === 'map') setTimeout(() => calendarMapInstance?.invalidateSize(), 120);
     }
+
 
     function injectPmButtonsIntoScadaToolbar() {
         const scadaBar = document.getElementById('scadaControlToolbar');
@@ -1685,7 +1690,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         const pinColorBtns = Object.values(PM_PIN_COLORS).map(c => `<button type="button" id="pmFormColorBtn-${c.key}" onclick="selectPmFormPinColor('${c.key}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold transition">${c.label}</button>`).join('');
         const presetTimesBtns = ['06:30', '08:00', '08:30', '12:00', '13:00', '16:30'].map(t => `<button type="button" onclick="addPmCustomTimeChip('${t}')" class="px-2 py-0.5 rounded-md bg-white hover:bg-indigo-100 border border-indigo-200 text-[10px] font-bold text-indigo-700">+${t}</button>`).join('');
         document.body.insertAdjacentHTML('beforeend', `
-            <div id="pmCalendarModal" class="fixed inset-0 bg-slate-950/70 hidden z-[1320] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm"><div class="pm-calendar-dialog bg-white rounded-2xl shadow-2xl w-full max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200" style="--pm-desktop-w: 65vw;">
+            <div id="pmCalendarModal" class="fixed inset-0 bg-slate-950/70 hidden z-[1320] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm"><div class="pm-calendar-dialog bg-white rounded-2xl shadow-2xl w-full max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200" style="--pm-desktop-w: 80vw;">
                 <div class="px-4 py-3 bg-gradient-to-r from-indigo-900 via-blue-800 to-teal-700 text-white flex flex-wrap justify-between items-center gap-2 shrink-0">
                     <div class="flex items-center gap-2"><span class="text-lg">📅</span><div><h3 class="font-bold text-sm sm:text-base flex items-center gap-2"><span>ปฏิทิน &amp; หมุดแผนงานบำรุงรักษา (PM)</span><span id="pmHeaderGroupBadge" class="bg-white/20 text-amber-200 text-[10px] font-extrabold px-2 py-0.5 rounded-md">-</span></h3><p class="text-[10px] text-blue-100">แนบรูปหน้างาน 3 รูป + วาดเรดาร์ &amp; ดูดชื่อสถานที่แจ้งดับไฟ FB/LINE</p></div></div>
                     <div class="flex flex-wrap items-center gap-1.5">
@@ -1703,36 +1708,41 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                         <div class="flex flex-wrap items-center justify-between gap-2 pb-1 border-b border-slate-100"><div class="inline-flex bg-slate-100 p-1 rounded-xl text-xs font-extrabold"><button type="button" id="pmViewTab-grid" onclick="switchCalendarLeftViewMode('grid')" class="px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm">🗓️ ตารางปฏิทิน</button><button type="button" id="pmViewTab-map" onclick="switchCalendarLeftViewMode('map')" class="px-3 py-1 rounded-lg text-slate-600">📍 แผนที่หมุดแผนงาน (<span id="pmCalMapPinCount">0</span>)</button></div><label class="flex items-center gap-1 text-[10px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-1 rounded-lg cursor-pointer select-none"><input type="checkbox" id="pmShowScadaDueChk" onchange="toggleShowScadaDueOnCalendar(this.checked)" class="accent-teal-600 rounded"><span>รวมหมุดครบกำหนด SCADA</span></label></div>
                         <div id="pmMonthSummaryBar" class="grid grid-cols-4 gap-1.5 text-center text-[10px]"></div>
                         <div id="pmCalendarGridPanel" class="space-y-2"><div class="flex items-center justify-between gap-2"><div class="flex items-center gap-1"><button type="button" onclick="changePmCalendarMonth(-1)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold">◀</button><button type="button" onclick="jumpPmCalendarToday()" class="px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold">วันนี้</button><button type="button" onclick="changePmCalendarMonth(1)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold">▶</button></div><h4 id="pmCalendarMonthTitle" class="text-sm sm:text-base font-extrabold text-slate-800">-</h4><span class="text-[10px] text-slate-400">แตะวันเพื่อดูงาน</span></div><div class="grid grid-cols-7 gap-1 text-center text-[11px] font-extrabold text-slate-500"><div class="text-rose-500">อา.</div><div>จ.</div><div>อ.</div><div>พ.</div><div>พฤ.</div><div>ศ.</div><div class="text-indigo-600">ส.</div></div><div id="pmCalendarDaysGrid" class="grid grid-cols-7 gap-1.5"></div></div>
-                        <div id="pmCalendarMapPanel" class="hidden space-y-2"><div class="relative isolate rounded-2xl overflow-hidden border-2 border-indigo-200 bg-slate-100"><div id="pmCalendarEmbeddedMap" class="w-full h-[340px] lg:h-[480px] z-0"></div><div class="absolute bottom-2.5 left-2.5 right-2.5 z-[420] flex flex-wrap items-center justify-between gap-1.5 pointer-events-none"><button type="button" onclick="fitCalendarEmbeddedMapPins()" class="pointer-events-auto bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-lg">🎯 ซูมดูหมุดทั้งหมด</button><button type="button" id="btnCalMapDropPin" onclick="togglePmPinDropMode(undefined, 'calendar')" class="pm-edit-only pointer-events-auto bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg">📍 จิ้มปักหมุดแผนใหม่</button></div></div></div>
+                        <div id="pmCalendarMapPanel" class="hidden space-y-2"><div class="relative isolate rounded-2xl overflow-hidden border-2 border-indigo-200 bg-slate-100"><div id="pmCalendarEmbeddedMap" class="w-full h-[340px] lg:h-[580px] xl:h-[640px] z-0"></div>
+<div class="absolute bottom-2.5 left-2.5 right-2.5 z-[420] flex flex-wrap items-center justify-between gap-1.5 pointer-events-none"><button type="button" onclick="fitCalendarEmbeddedMapPins()" class="pointer-events-auto bg-white/95 hover:bg-white text-slate-800 border border-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-bold shadow-lg">🎯 ซูมดูหมุดทั้งหมด</button><button type="button" id="btnCalMapDropPin" onclick="togglePmPinDropMode(undefined, 'calendar')" class="pm-edit-only pointer-events-auto bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl text-[11px] font-extrabold shadow-lg">📍 จิ้มปักหมุดแผนใหม่</button></div></div></div>
                     </div>
                     <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-2.5"><div class="flex items-center justify-between gap-2"><div class="grid grid-cols-3 gap-1 flex-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold"><button type="button" id="pmFilterBtn-day" onclick="setPmListStatusFilter('day')" class="py-1 rounded-lg">📌 วันที่เลือก</button><button type="button" id="pmFilterBtn-alert" onclick="setPmListStatusFilter('alert')" class="py-1 rounded-lg">🔔 แจ้งเตือน</button><button type="button" id="pmFilterBtn-all" onclick="setPmListStatusFilter('all')" class="py-1 rounded-lg">📋 ทั้งเดือน</button></div><button type="button" id="pmAddPlanPrimaryBtn" onclick="togglePmQuickInlineBox()" class="pm-edit-only shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-xs font-extrabold shadow-sm transition">➕ ปักแผนใหม่</button></div><div id="pmSelectedListHeader" class="text-xs font-bold text-slate-700 px-1 flex items-center justify-between"></div><div id="pmSelectedDayTasksContainer" class="space-y-2 max-h-[48vh] lg:max-h-[64vh] overflow-y-auto pr-0.5"></div></div>
                 </div>
             </div></div>
-            <div id="pmPlanFormModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1360] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92dvh] overflow-hidden flex flex-col border border-slate-200">
-                <div class="px-4 py-3 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex justify-between items-center"><h3 id="pmPlanFormTitle" class="font-bold text-sm">📍 เพิ่มหมุดแผนงานบำรุงรักษา</h3><button type="button" onclick="closePmPlanFormModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div>
-                <div class="p-4 space-y-3 text-xs overflow-y-auto flex-1">
-                    <div><label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อหมุดแผนงาน / เรื่องที่ปฏิบัติงาน <span class="text-rose-500">*</span></label><input type="text" id="pmTitleInput" placeholder="เช่น ตัดกิ่งไม้หน้าโรงงาน..., HOTLINE เข้าทำงาน..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800 bg-white"></div>
-                    <div class="grid grid-cols-2 gap-2"><div><label class="block font-bold text-slate-700 mb-1">📂 ประเภทหมุดแผนงาน</label><select id="pmCategorySelect" class="w-full px-2.5 py-2 font-bold text-slate-700 bg-white">${catOptions}</select></div><div><label class="block font-bold text-slate-700 mb-1">📅 วันที่กำหนดทำ <span class="text-rose-500">*</span></label><input type="date" id="pmDateInput" class="w-full px-2.5 py-2 font-bold text-slate-800 bg-white"></div></div>
-                    <div><label class="block font-bold text-slate-700 mb-1">🎨 สีป้ายหมุดแผนงานบนแผนที่</label><input type="hidden" id="pmPinColorInput" value="auto"><div class="flex flex-wrap gap-1">${pinColorBtns}</div></div>
-                    <div class="grid grid-cols-3 gap-2"><div><label class="block font-bold text-slate-700 mb-1">⏰ ช่วงเวลาทำ</label><input type="text" id="pmTimeSlotInput" value="09.00-12.00" class="w-full px-2 py-2 text-center font-semibold bg-white"></div><div><label class="block font-bold text-amber-800 mb-1">📅 เตือนล่วงหน้า</label><select id="pmNotifyBeforeSelect" class="w-full px-2 py-2 font-bold text-amber-900 bg-amber-50 border-amber-300"><option value="0">เฉพาะวันจริง</option><option value="1">1 วัน</option><option value="2">2 วัน</option><option value="3" selected>3 วัน</option><option value="5">5 วัน</option><option value="7">7 วัน</option><option value="14">14 วัน</option><option value="30">30 วัน</option></select></div><div><label class="block font-bold text-indigo-800 mb-1">🔁 รอบทำซ้ำ</label><select id="pmRepeatMonthsSelect" class="w-full px-2 py-2 font-bold text-indigo-900 bg-indigo-50 border-indigo-200"><option value="0" selected>ครั้งเดียว</option><option value="1">ทุก 1 เดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุก 1 ปี</option></select></div></div>
-                    <div class="p-3 bg-indigo-50/85 border border-indigo-200 rounded-xl space-y-2"><label class="block font-extrabold text-indigo-950">⏰ เงื่อนไขเวลาแจ้งเตือนของงานนี้</label><select id="pmAlertModeSelect" onchange="onPmAlertModeChange(this.value)" class="w-full px-2.5 py-2 bg-white font-bold text-indigo-900 border-indigo-300"><option value="standard">🔔 มาตรฐาน (เตือนรอบ 00:00 น. และ 07:00 น.)</option><option value="both">🔔+⏰ เตือนรอบมาตรฐาน + เวลาที่ตั้งเองด้านล่าง</option><option value="custom_only">⏰ เตือนเฉพาะเวลาที่ตั้งเองเท่านั้น</option><option value="off">🔕 ปิดเสียง/ปิดป๊อปอัปแจ้งเตือนสำหรับงานนี้</option></select><div id="pmCustomTimesSection" class="hidden space-y-2 pt-1"><div class="flex items-center gap-1.5"><input type="time" id="pmCustomTimePickerInput" value="08:30" class="flex-1 px-2.5 py-1.5 bg-white font-mono font-bold text-slate-800 border-indigo-300"><button type="button" onclick="addPmCustomTimeChip()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-sm">➕ เพิ่มเวลาเตือน</button></div><div class="flex flex-wrap gap-1 items-center"><span class="text-[10px] text-slate-500 font-semibold">ด่วน:</span>${presetTimesBtns}</div><div id="pmCustomTimeChipsWrap" class="flex flex-wrap gap-1.5 pt-0.5"></div></div></div>
-                    <div class="p-2.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-2"><label class="block font-bold text-teal-900">⚡ ผูกกับหมุดอุปกรณ์ในผัง SCADA (ดึงพิกัดอัตโนมัติ)</label><select id="pmScadaPinPicker" onchange="onPmScadaEquipPick(this.value)" class="w-full px-2.5 py-1.5 bg-white text-xs font-semibold text-slate-700"><option value="">-- เลือกอุปกรณ์จากผัง SCADA --</option></select><div class="grid grid-cols-2 gap-2"><input type="text" id="pmEquipCodeInput" placeholder="รหัสอุปกรณ์ เช่น BNF06VS-01" class="px-2.5 py-1.5 bg-white font-semibold"><input type="text" id="pmFeederInput" placeholder="วงจร เช่น BNF06" class="px-2.5 py-1.5 bg-white font-semibold uppercase"></div></div>
-                    <div class="space-y-1.5"><div class="flex flex-wrap items-center justify-between gap-1"><label class="font-bold text-slate-700">📍 พิกัดหมุดแผนงาน</label><div class="flex gap-1"><button type="button" onclick="togglePmFormMiniMap()" class="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-lg font-bold">🗺️ จิ้มเลือกบนแมพ</button><button type="button" onclick="fillPmCurrentMobileGps()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg font-bold">📍 พิกัดฉัน</button></div></div><input type="text" id="pmCoordInput" oninput="onPmCoordTextManualInput(this.value)" placeholder="วางพิกัด เช่น 13.1361, 101.0322 หรือลิงก์ Google Maps" class="w-full px-3 py-2 bg-white font-mono"><div id="pmFormMiniMapWrap" class="hidden rounded-xl overflow-hidden border-2 border-indigo-300"><div class="bg-indigo-900 text-white text-[10px] font-bold px-2.5 py-1 flex justify-between"><span>👆 แตะบนแผนที่หรือลากหมุดเพื่อเลือกจุดปฏิบัติงาน</span><button type="button" onclick="togglePmFormMiniMap('close_btn')">✕ ซ่อนแมพ</button></div><div id="pmFormMiniLeafletMap" class="w-full h-44 bg-slate-100"></div></div></div>
-                    <div class="p-3 bg-violet-50/80 border border-violet-200 rounded-xl space-y-2">
-                        <div class="flex items-center justify-between gap-2">
-                            <label class="font-extrabold text-violet-950 flex items-center gap-1">📷 รูปภาพประกอบหน้างาน <span id="pmModalPhotoCountBadge" class="bg-violet-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">0/${MAX_PM_PHOTOS}</span></label>
-                            <div class="flex items-center gap-1">
-                                <button type="button" id="pmModalBtnCamera" onclick="triggerPmPhotoInput('modal', 'camera')" class="bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow-sm">📸 ถ่ายรูป</button>
-                                <button type="button" id="pmModalBtnGallery" onclick="triggerPmPhotoInput('modal', 'gallery')" class="bg-white hover:bg-violet-100 text-violet-800 border border-violet-300 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow-sm">🖼️ เลือกรูป</button>
+              <div id="pmPlanFormModal" class="fixed inset-0 bg-slate-950/75 hidden z-[1360] flex items-center justify-center p-3 backdrop-blur-sm"><div class="bg-white rounded-2xl shadow-2xl w-full max-w-md sm:max-w-2xl lg:w-[90vw] lg:max-w-[1180px] max-h-[92dvh] lg:max-h-[94dvh] overflow-hidden flex flex-col border border-slate-200">
+                <div class="px-4 py-3 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex justify-between items-center"><h3 id="pmPlanFormTitle" class="font-bold text-sm sm:text-base">📍 เพิ่มหมุดแผนงานบำรุงรักษา</h3><button type="button" onclick="closePmPlanFormModal()" class="text-white/80 hover:text-white text-xl font-bold leading-none">&times;</button></div>
+                <div class="p-4 lg:p-5 text-xs overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
+                    <div class="lg:col-span-5 space-y-3">
+                        <div><label class="block font-bold text-slate-700 mb-1">🏷️ ชื่อหมุดแผนงาน / เรื่องที่ปฏิบัติงาน <span class="text-rose-500">*</span></label><input type="text" id="pmTitleInput" placeholder="เช่น ตัดกิ่งไม้หน้าโรงงาน..., HOTLINE เข้าทำงาน..." class="w-full px-3.5 py-2 text-sm font-semibold text-slate-800 bg-white"></div>
+                        <div class="grid grid-cols-2 gap-2"><div><label class="block font-bold text-slate-700 mb-1">📂 ประเภทหมุดแผนงาน</label><select id="pmCategorySelect" class="w-full px-2.5 py-2 font-bold text-slate-700 bg-white">${catOptions}</select></div><div><label class="block font-bold text-slate-700 mb-1">📅 วันที่กำหนดทำ <span class="text-rose-500">*</span></label><input type="date" id="pmDateInput" class="w-full px-2.5 py-2 font-bold text-slate-800 bg-white"></div></div>
+                        <div><label class="block font-bold text-slate-700 mb-1">🎨 สีป้ายหมุดแผนงานบนแผนที่</label><input type="hidden" id="pmPinColorInput" value="auto"><div class="flex flex-wrap gap-1">${pinColorBtns}</div></div>
+                        <div class="grid grid-cols-3 gap-2"><div><label class="block font-bold text-slate-700 mb-1">⏰ ช่วงเวลาทำ</label><input type="text" id="pmTimeSlotInput" value="09.00-12.00" class="w-full px-2 py-2 text-center font-semibold bg-white"></div><div><label class="block font-bold text-amber-800 mb-1">📅 เตือนล่วงหน้า</label><select id="pmNotifyBeforeSelect" class="w-full px-2 py-2 font-bold text-amber-900 bg-amber-50 border-amber-300"><option value="0">เฉพาะวันจริง</option><option value="1">1 วัน</option><option value="2">2 วัน</option><option value="3" selected>3 วัน</option><option value="5">5 วัน</option><option value="7">7 วัน</option><option value="14">14 วัน</option><option value="30">30 วัน</option></select></div><div><label class="block font-bold text-indigo-800 mb-1">🔁 รอบทำซ้ำ</label><select id="pmRepeatMonthsSelect" class="w-full px-2 py-2 font-bold text-indigo-900 bg-indigo-50 border-indigo-200"><option value="0" selected>ครั้งเดียว</option><option value="1">ทุก 1 เดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุก 1 ปี</option></select></div></div>
+                        <div class="p-3 bg-indigo-50/85 border border-indigo-200 rounded-xl space-y-2"><label class="block font-extrabold text-indigo-950">⏰ เงื่อนไขเวลาแจ้งเตือนของงานนี้</label><select id="pmAlertModeSelect" onchange="onPmAlertModeChange(this.value)" class="w-full px-2.5 py-2 bg-white font-bold text-indigo-900 border-indigo-300"><option value="standard">🔔 มาตรฐาน (เตือนรอบ 00:00 น. และ 07:00 น.)</option><option value="both">🔔+⏰ เตือนรอบมาตรฐาน + เวลาที่ตั้งเองด้านล่าง</option><option value="custom_only">⏰ เตือนเฉพาะเวลาที่ตั้งเองเท่านั้น</option><option value="off">🔕 ปิดเสียง/ปิดป๊อปอัปแจ้งเตือนสำหรับงานนี้</option></select><div id="pmCustomTimesSection" class="hidden space-y-2 pt-1"><div class="flex items-center gap-1.5"><input type="time" id="pmCustomTimePickerInput" value="08:30" class="flex-1 px-2.5 py-1.5 bg-white font-mono font-bold text-slate-800 border-indigo-300"><button type="button" onclick="addPmCustomTimeChip()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl font-extrabold text-[11px] shadow-sm">➕ เพิ่มเวลาเตือน</button></div><div class="flex flex-wrap gap-1 items-center"><span class="text-[10px] text-slate-500 font-semibold">ด่วน:</span>${presetTimesBtns}</div><div id="pmCustomTimeChipsWrap" class="flex flex-wrap gap-1.5 pt-0.5"></div></div></div>
+                        <div class="p-2.5 bg-teal-50/80 border border-teal-200 rounded-xl space-y-2"><label class="block font-bold text-teal-900">⚡ ผูกกับหมุดอุปกรณ์ในผัง SCADA (ดึงพิกัดอัตโนมัติ)</label><select id="pmScadaPinPicker" onchange="onPmScadaEquipPick(this.value)" class="w-full px-2.5 py-1.5 bg-white text-xs font-semibold text-slate-700"><option value="">-- เลือกอุปกรณ์จากผัง SCADA --</option></select><div class="grid grid-cols-2 gap-2"><input type="text" id="pmEquipCodeInput" placeholder="รหัสอุปกรณ์ เช่น BNF06VS-01" class="px-2.5 py-1.5 bg-white font-semibold"><input type="text" id="pmFeederInput" placeholder="วงจร เช่น BNF06" class="px-2.5 py-1.5 bg-white font-semibold uppercase"></div></div>
+                        <div class="p-3 bg-violet-50/80 border border-violet-200 rounded-xl space-y-2">
+                            <div class="flex items-center justify-between gap-2">
+                                <label class="font-extrabold text-violet-950 flex items-center gap-1">📷 รูปภาพประกอบหน้างาน <span id="pmModalPhotoCountBadge" class="bg-violet-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">0/${MAX_PM_PHOTOS}</span></label>
+                                <div class="flex items-center gap-1">
+                                    <button type="button" id="pmModalBtnCamera" onclick="triggerPmPhotoInput('modal', 'camera')" class="bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow-sm">📸 ถ่ายรูป</button>
+                                    <button type="button" id="pmModalBtnGallery" onclick="triggerPmPhotoInput('modal', 'gallery')" class="bg-white hover:bg-violet-100 text-violet-800 border border-violet-300 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold shadow-sm">🖼️ เลือกรูป</button>
+                                </div>
                             </div>
+                            <input type="file" id="pmModalCameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePmModalPhotoSelect(event)">
+                            <input type="file" id="pmModalGalleryInput" accept="image/*" multiple class="hidden" onchange="handlePmModalPhotoSelect(event)">
+                            <div id="pmModalPhotoUploadStatus" class="hidden text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg animate-pulse">⏳ กำลังย่อขนาดและอัปโหลดรูปภาพขึ้นคลาวด์...</div>
+                            <div id="pmModalPhotoPreviewWrap" class="flex flex-wrap gap-2"></div>
+                            <p class="text-[10px] text-slate-500">แนบได้สูงสุด ${MAX_PM_PHOTOS} รูป (เมื่อกดส่ง LINE บนมือถือ ระบบจะแนบไฟล์รูปจริงพร้อมคัดลอกข้อความให้อัตโนมัติ)</p>
                         </div>
-                        <input type="file" id="pmModalCameraInput" accept="image/*" capture="environment" class="hidden" onchange="handlePmModalPhotoSelect(event)">
-                        <input type="file" id="pmModalGalleryInput" accept="image/*" multiple class="hidden" onchange="handlePmModalPhotoSelect(event)">
-                        <div id="pmModalPhotoUploadStatus" class="hidden text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg animate-pulse">⏳ กำลังย่อขนาดและอัปโหลดรูปภาพขึ้นคลาวด์...</div>
-                        <div id="pmModalPhotoPreviewWrap" class="flex flex-wrap gap-2"></div>
-                        <p class="text-[10px] text-slate-500">แนบได้สูงสุด ${MAX_PM_PHOTOS} รูป (เมื่อกดส่ง LINE บนมือถือ ระบบจะแนบไฟล์รูปจริงพร้อมคัดลอกข้อความให้อัตโนมัติ)</p>
+                        <div><label class="block font-bold text-slate-700 mb-1">👷 ผู้รับผิดชอบ / รายละเอียดงาน</label><textarea id="pmNoteInput" rows="2" placeholder="ระบุผู้รับผิดชอบ หรือสิ่งที่ต้องเตรียม..." class="w-full px-3 py-2 bg-white"></textarea></div>
                     </div>
-                    <div><label class="block font-bold text-slate-700 mb-1">👷 ผู้รับผิดชอบ / รายละเอียดงาน</label><textarea id="pmNoteInput" rows="2" placeholder="ระบุผู้รับผิดชอบ หรือสิ่งที่ต้องเตรียม..." class="w-full px-3 py-2 bg-white"></textarea></div>
+                    <div class="lg:col-span-7 space-y-2.5">
+                        <div class="space-y-1.5"><div class="flex flex-wrap items-center justify-between gap-1"><label class="font-bold text-slate-700">📍 พิกัดหมุดแผนงาน &amp; แผนที่เรดาร์</label><div class="flex gap-1"><button type="button" onclick="togglePmFormMiniMap()" class="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-lg font-bold">🗺️ จิ้มเลือกบนแมพ</button><button type="button" onclick="fillPmCurrentMobileGps()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-lg font-bold">📍 พิกัดฉัน</button></div></div><input type="text" id="pmCoordInput" oninput="onPmCoordTextManualInput(this.value)" placeholder="วางพิกัด เช่น 13.1361, 101.0322 หรือลิงก์ Google Maps" class="w-full px-3 py-2 bg-white font-mono"><div id="pmFormMiniMapWrap" class="hidden rounded-xl overflow-hidden border-2 border-indigo-300"><div class="bg-indigo-900 text-white text-[10px] font-bold px-2.5 py-1 flex justify-between"><span>👆 แตะบนแผนที่หรือลากหมุดเพื่อเลือกจุดปฏิบัติงาน</span><button type="button" onclick="togglePmFormMiniMap('close_btn')">✕ ซ่อนแมพ</button></div><div id="pmFormMiniLeafletMap" class="w-full h-44 lg:h-[420px] bg-slate-100"></div></div></div>
+                    </div>
                 </div>
                 <div class="p-3 bg-slate-50 border-t flex items-center justify-between gap-2"><button type="button" id="pmDeleteBtnInModal" onclick="deletePmPlanFromModal()" class="hidden px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs">🗑️ ลบหมุดแผน</button><div class="flex gap-2 ml-auto"><button type="button" onclick="closePmPlanFormModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs">ยกเลิก</button><button type="button" id="pmSaveSubmitBtn" onclick="savePmPlanFromModal()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs shadow">💾 บันทึกหมุดแผนงาน</button></div></div>
             </div></div>
@@ -2189,7 +2199,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
     function openPmCalendarModal(presetDateIso = null) {
         injectPmModalsDOM(); ensurePmOutageZoneUiInjected(); injectQuickAddBoxIntoCalendar();
         if (pmPinDropModeActive || pmPinMoveTargetId) cancelPmMapInteractiveModes();
-        isQuickInlineBoxVisible = false; setPmDesktopModalWidth(desktopModalWidthMode || '65vw');
+isQuickInlineBoxVisible = false; setPmDesktopModalWidth(desktopModalWidthMode || '80vw');
         if (!document.getElementById('pmFullMonthFitStyle')) {
             const fitSt = document.createElement('style'); fitSt.id = 'pmFullMonthFitStyle';
             fitSt.textContent = `@media (max-width:639px){#pmCalendarModal .pm-day-cell{min-height:50px!important;padding:3px!important;}#pmCalendarDaysGrid{gap:4px!important;}}#pmCalendarMonthTitle,#pmCalendarGridPanel button[onclick="jumpPmCalendarToday()"]{white-space:nowrap;}`;
@@ -3654,9 +3664,11 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         } else {
             wrap.className = `${isFormMiniMapOpen ? '' : 'hidden '}relative rounded-xl overflow-hidden border-2 border-indigo-300`;
             mapCanvas.style.flex = '';
-            mapCanvas.style.height = tempPubEnabled ? '300px' : '185px';
+            const isDesktop = window.innerWidth >= 1024;
+            mapCanvas.style.height = tempPubEnabled ? (isDesktop ? '460px' : '300px') : (isDesktop ? '420px' : '185px');
             if (fsBtn) fsBtn.textContent = '⛶ ขยายเต็มจอ';
         }
+
         if (formMiniMap) mapCanvas.classList.add('leaflet-container');
         setTimeout(() => formMiniMap?.invalidateSize(), 60);
         setTimeout(() => formMiniMap?.invalidateSize(), 220);
@@ -3678,8 +3690,10 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
         tb?.classList.toggle('hidden', !tempPubEnabled);
         if (!isMiniMapFullscreen && mapCanvas) {
             mapCanvas.style.flex = '';
-            mapCanvas.style.height = tempPubEnabled ? '300px' : '185px';
+            const isDesktop = window.innerWidth >= 1024;
+            mapCanvas.style.height = tempPubEnabled ? (isDesktop ? '460px' : '300px') : (isDesktop ? '420px' : '185px');
         }
+
         if (formMiniMap && mapCanvas) mapCanvas.classList.add('leaflet-container');
 
         ['circle', 'poly_click', 'poly_lasso'].forEach(m => {
@@ -3936,6 +3950,10 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
             const gStr = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, attribution: '© Google Maps' });
             L.control.layers({ '🛰️ ดาวเทียม': gHyb, '🗺️ ถนน': gStr }, null, { position: 'topright' }).addTo(formMiniMap);
             bindMiniMapLassoEvents(formMiniMap);
+            if (typeof ResizeObserver !== 'undefined') {
+                new ResizeObserver(() => { try { formMiniMap?.invalidateSize({ pan: false }); } catch (e) {} }).observe(formMiniMap.getContainer());
+            }
+
             formMiniMap.on('click', e => {
                 if (!e.latlng || (Date.now() - lastLassoFinishMs < 350)) return;
                 const la = Number(e.latlng.lat.toFixed(6)), lo = Number(e.latlng.lng.toFixed(6));
@@ -4095,7 +4113,7 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
                 if (savedOz.t === 'c') { tempZoneType = 'c'; pubDrawSubMode = 'circle'; tempCircleCenter = [...savedOz.c]; tempCircleRadius = savedOz.r; }
                 else if (savedOz.t === 'p') { tempZoneType = 'p'; pubDrawSubMode = 'poly_click'; tempPolyPts = savedOz.p.map(pt => [...pt]); }
             }
-            shouldOpenMiniMap = tempPubEnabled || (hasC && isFormMiniMapOpen);
+            shouldOpenMiniMap = (window.innerWidth >= 1024) || tempPubEnabled || (hasC && isFormMiniMapOpen);
         } else {
             if (titleHdr) titleHdr.textContent = (presetLat != null && presetLon != null) ? '📍 ปักหมุดแผนงานใหม่ (จากจุดที่แตะบนแมพ)' : '➕ เพิ่มหมุดแผนงานบำรุงรักษาใหม่';
             populatePmScadaPinPicker(presetScadaPinId || ''); selectPmFormPinColor('auto');
@@ -4114,14 +4132,14 @@ if (p.pubPlaces && !isArchivedDone) out.pbp = String(p.pubPlaces).slice(0, 900);
             renderTempPubPlacesUI();
             if (presetLat != null && presetLon != null) tempCircleCenter = [Number(Number(presetLat).toFixed(5)), Number(Number(presetLon).toFixed(5))];
             if (presetScadaPinId) onPmScadaEquipPick(presetScadaPinId);
-            shouldOpenMiniMap = (presetLat != null && presetLon != null);
+            shouldOpenMiniMap = (window.innerWidth >= 1024) || (presetLat != null && presetLon != null);
         }
         updatePmZoneDrawToolbarUI();
         modal.classList.remove('hidden');
         togglePmFormMiniMap(shouldOpenMiniMap);
         setTimeout(() => document.getElementById('pmTitleInput')?.focus(), 80);
     }
-
+    
     function closePmPlanFormModal(skipOrphanClean = false) {
         const quickAddInp = document.getElementById('pmMapQuickPlaceAddInput');
         if (quickAddInp) quickAddInp.value = '';
